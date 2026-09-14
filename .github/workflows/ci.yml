@@ -72,6 +72,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Generate Wayfinder types
+        run: php artisan wayfinder:generate --with-form
+
       - name: Run Pint, PHPStan, and Pest
         run: composer test
 

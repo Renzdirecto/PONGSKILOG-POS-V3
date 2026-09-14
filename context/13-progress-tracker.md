@@ -9,18 +9,18 @@ Check an item only when the corresponding implementation and required verificati
 
 ## Phase 0 — Foundation Verification
 
-- [ ] Laravel 13 / PHP 8.4 verified
-- [ ] React 19 / Inertia 3 verified
-- [ ] TypeScript / Tailwind 4 / Vite 8 verified
-- [ ] PostgreSQL / Supabase connected
-- [ ] Redis configured
-- [ ] Laravel Reverb configured
-- [ ] Supabase Storage configured
-- [ ] Pest configured
-- [ ] Larastan / PHPStan configured
-- [ ] Pint configured
+- [x] Laravel 13 / PHP 8.4 verified
+- [x] React 19 / Inertia 3 verified
+- [x] TypeScript / Tailwind 4 / Vite 8 verified
+- [x] PostgreSQL / Supabase connected
+- [x] Redis configured
+- [x] Laravel Reverb configured
+- [x] Supabase Storage configured
+- [x] Pest configured
+- [x] Larastan / PHPStan configured
+- [x] Pint configured
 - [ ] CI pipeline verified
-- [ ] Baseline build/tests passing
+- [x] Baseline build/tests passing
 
 ---
 

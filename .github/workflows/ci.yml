@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
+  push:
+    branches:
+      - dev
+      - staging
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP_ENV: testing
+  APP_DEBUG: false
+  APP_URL: http://localhost
+  APP_MAINTENANCE_DRIVER: file
+  BCRYPT_ROUNDS: 4
+  BROADCAST_CONNECTION: log
+  CACHE_STORE: array
+  DB_CONNECTION: sqlite
+  DB_DATABASE: ':memory:'
+  FILESYSTEM_DISK: local
+  MAIL_MAILER: array
+  QUEUE_CONNECTION: sync
+  SESSION_DRIVER: array
+  PULSE_ENABLED: false
+  TELESCOPE_ENABLED: false
+  NIGHTWATCH_ENABLED: false
+
+jobs:
+  test:
+    name: PHP, frontend, and migration checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo_sqlite
+          ini-values: memory_limit=1G
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Generate CI application key
+        run: echo "APP_KEY=base64:$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run Pint, PHPStan, and Pest
+        run: composer test
+
+      - name: Run frontend lint checks
+        run: npm run check:frontend
+
+      - name: Run TypeScript checks
+        run: npm run types:check
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Smoke-test fresh migrations
+        run: |
+          touch database/ci.sqlite
+          DB_DATABASE="$GITHUB_WORKSPACE/database/ci.sqlite" php artisan migrate:fresh --force --database=sqlite

@@ -189,6 +189,12 @@ Redis is not authoritative for:
 
 PostgreSQL remains source of truth.
 
+### Predis
+
+**Installed line:** `predis/predis ^3.6`
+
+Use Predis as the PHP Redis client for Laravel cache, queues, and Reverb scaling where configured. It keeps local and deployment environments from requiring the PHP `redis` extension.
+
 ---
 
 # Frontend
@@ -376,6 +382,12 @@ Approved storage:
 Use optimized image variants for POS.
 
 Do not store image binary blobs in normal PostgreSQL tables.
+
+### AWS S3 Flysystem Adapter
+
+**Installed line:** `league/flysystem-aws-s3-v3 3.0`
+
+Use Laravel's `s3` filesystem disk with this adapter for Supabase Storage's S3-compatible endpoint. Configure credentials, bucket, endpoint, and path-style behavior through environment variables; do not hardcode them.
 
 ---
 

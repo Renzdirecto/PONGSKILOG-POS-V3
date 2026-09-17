@@ -26,6 +26,12 @@ Check an item only when the corresponding implementation and required verificati
 
 ## Phase 1 — Identity, RBAC & Branch Foundation
 
+- [x] Phase 1A — Database + Eloquent model foundation
+- [ ] Phase 1B — RBAC + seeders
+- [ ] Phase 1C — Branch context + authorization
+- [ ] Phase 1D — Branch selector + role routing UI
+- [ ] Phase 1E — Security tests + final verification
+
 - [ ] Login
 - [ ] Logout / session handling
 - [ ] Users

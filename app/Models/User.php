@@ -72,6 +72,29 @@ class User extends Authenticatable
             ->exists();
     }
 
+    public function hasBusinessWideScope(): bool
+    {
+        return $this->roles()
+            ->whereIn('roles.name', ['super_admin', 'owner'])
+            ->exists();
+    }
+
+    public function canAccessBranch(Branch $branch): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        if ($this->hasBusinessWideScope()) {
+            return true;
+        }
+
+        return $this->branches()
+            ->whereKey($branch->getKey())
+            ->wherePivot('is_active', true)
+            ->exists();
+    }
+
     /** @return BelongsToMany<Branch, $this> */
     public function branches(): BelongsToMany
     {

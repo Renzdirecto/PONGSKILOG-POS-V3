@@ -31,7 +31,7 @@ test('a user deactivated after login is denied on the next protected request', f
     $this->post(route('login.store'), [
         'email' => $user->email,
         'password' => 'password',
-    ])->assertRedirect(route('dashboard', absolute: false));
+    ])->assertRedirect(route('workspace', absolute: false));
 
     User::query()->whereKey($user->getKey())->update(['is_active' => false]);
 

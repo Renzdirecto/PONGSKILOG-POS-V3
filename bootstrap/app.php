@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureActiveBranchContext;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            'branch' => EnsureActiveBranchContext::class,
             'permission' => EnsureUserHasPermission::class,
         ]);
     })

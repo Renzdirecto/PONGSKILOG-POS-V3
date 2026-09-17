@@ -3,15 +3,24 @@ export type User = {
     name: string;
     email: string;
     avatar?: string;
-    email_verified_at: string | null;
-    two_factor_enabled?: boolean;
-    created_at: string;
-    updated_at: string;
-    [key: string]: unknown;
 };
 
 export type Auth = {
-    user: User;
+    user: User | null;
+    roles: string[];
+    permissions: string[];
+};
+
+export type BranchSummary = {
+    id: string;
+    name: string;
+    code: string;
+};
+
+export type BranchContext = {
+    current: BranchSummary | null;
+    businessWide: boolean;
+    selectableBranches: BranchSummary[];
 };
 
 export type TwoFactorSetupData = {

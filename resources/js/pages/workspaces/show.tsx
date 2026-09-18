@@ -2,7 +2,7 @@ import { Head, usePage } from '@inertiajs/react';
 import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
 import { CashierStore } from '@/components/cashier-store';
 import type { CashierStoreState } from '@/components/cashier-store';
-import type { BranchContext } from '@/types';
+import type { BranchContext, StoreContext } from '@/types';
 
 type Props = {
     workspace: string;
@@ -13,6 +13,7 @@ type Props = {
 
 type SharedProps = {
     branchContext: BranchContext;
+    storeContext: StoreContext;
 };
 
 export default function Workspace({
@@ -21,7 +22,7 @@ export default function Workspace({
     description,
     store,
 }: Props) {
-    const { branchContext } = usePage<SharedProps>().props;
+    const { branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
 
     if (store && branchContext.current) {
@@ -32,6 +33,7 @@ export default function Workspace({
                     key={branchContext.current.id}
                     branch={branchContext.current}
                     store={store}
+                    storeContext={storeContext}
                 />
             </>
         );

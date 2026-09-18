@@ -33,7 +33,8 @@ test('cashier sees closed store when only historical or other branch sessions ex
         ->assertInertia(fn (Assert $page) => $page
             ->component('workspaces/show')
             ->where('branchContext.current.id', $branch->id)
-            ->where('store', ['status' => 'closed', 'branchStatus' => 'active', 'canOpen' => true]));
+            ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id])
+            ->where('store', ['branchStatus' => 'active', 'canOpen' => true]));
 });
 
 test('existing open store is detected without exposing opening balances', function () {
@@ -43,7 +44,8 @@ test('existing open store is detected without exposing opening balances', functi
 
     $this->actingAs($user)->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('store', ['status' => 'open', 'branchStatus' => 'active', 'canOpen' => false])
+            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+            ->where('store', ['branchStatus' => 'active', 'canOpen' => true])
             ->missing('storeSession')
             ->missing('opening_cash_amount')
             ->missing('opening_cashless_amount'));
@@ -119,7 +121,8 @@ test('assigned cashier opens store and returns to an open workspace', function (
     expect($session->opening_cashless_amount)->toBe('0.00');
 
     $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
-        ->where('store', ['status' => 'open', 'branchStatus' => 'active', 'canOpen' => false]));
+        ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+        ->where('store', ['branchStatus' => 'active', 'canOpen' => true]));
 })->with(['cashier', 'cashier_kitchen']);
 
 test('both opening amounts are required', function () {
@@ -169,7 +172,7 @@ test('active branch and actor are derived server side despite forged input', fun
 
     $this->put(route('branch-context.update', $otherBranch))->assertRedirectToRoute('workspace');
     $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
-        ->where('branchContext.current.id', $otherBranch->id)->where('store.status', 'closed'));
+        ->where('branchContext.current.id', $otherBranch->id)->where('storeContext.status', 'closed'));
 });
 
 test('missing branch selection safely returns to the workspace router', function () {

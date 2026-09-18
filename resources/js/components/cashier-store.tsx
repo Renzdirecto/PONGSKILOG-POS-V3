@@ -7,10 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { open } from '@/routes/store-sessions';
-import type { BranchSummary } from '@/types';
+import type { BranchSummary, StoreContext } from '@/types';
 
 export type CashierStoreState = {
-    status: 'open' | 'closed';
     branchStatus: 'active' | 'temporarily_closed' | 'inactive';
     canOpen: boolean;
 };
@@ -18,12 +17,14 @@ export type CashierStoreState = {
 export function CashierStore({
     branch,
     store,
+    storeContext,
 }: {
     branch: BranchSummary;
     store: CashierStoreState;
+    storeContext: StoreContext;
 }) {
     const [view, setView] = useState<'store' | 'browse' | 'opening'>('store');
-    const isOpen = store.status === 'open';
+    const isOpen = storeContext.isOpen;
     const isAvailable = store.branchStatus === 'active';
     const buttonClass = 'min-h-12 rounded-xl px-6';
 

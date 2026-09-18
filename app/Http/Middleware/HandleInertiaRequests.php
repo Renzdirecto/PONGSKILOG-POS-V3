@@ -2,17 +2,22 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\StoreState;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
-    public function __construct(private ActiveBranchContext $activeBranchContext) {}
+    public function __construct(
+        private ActiveBranchContext $activeBranchContext,
+        private StoreState $storeState,
+    ) {}
 
     /**
      * The root template that's loaded on the first page visit.
@@ -44,12 +49,14 @@ class HandleInertiaRequests extends Middleware
     {
         $authenticatedUser = $request->user();
         $user = $authenticatedUser instanceof User ? $authenticatedUser : null;
+        $currentBranch = $user === null ? null : $this->activeBranchContext->current($user);
 
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => $this->authProps($user),
-            'branchContext' => $this->branchContextProps($user),
+            'branchContext' => $this->branchContextProps($user, $currentBranch),
+            'storeContext' => fn (): array => $this->storeContextProps($currentBranch),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
@@ -89,7 +96,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /** @return array{current: array{id: string, name: string, code: string}|null, businessWide: bool, selectableBranches: list<array{id: string, name: string, code: string}>} */
-    private function branchContextProps(?User $user): array
+    private function branchContextProps(?User $user, ?Branch $currentBranch): array
     {
         if ($user === null) {
             return [
@@ -99,7 +106,6 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $currentBranch = $this->activeBranchContext->current($user);
         $businessWide = $user->hasBusinessWideScope();
         $selectableBranches = $businessWide
             ? Branch::query()
@@ -118,6 +124,18 @@ class HandleInertiaRequests extends Middleware
             'selectableBranches' => array_values($selectableBranches
                 ->map(fn (Branch $branch): array => $this->branchProps($branch))
                 ->all()),
+        ];
+    }
+
+    /** @return array{status: 'open'|'closed'|null, isOpen: bool, branchId: string|null} */
+    private function storeContextProps(?Branch $branch): array
+    {
+        $status = $branch === null ? null : $this->storeState->status($branch);
+
+        return [
+            'status' => $status?->value,
+            'isOpen' => $status === StoreSessionStatus::Open,
+            'branchId' => $branch === null ? null : (string) $branch->getKey(),
         ];
     }
 

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BranchStatus;
-use App\Enums\StoreSessionStatus;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use Illuminate\Http\RedirectResponse;
@@ -29,16 +28,13 @@ class CashierWorkspaceController extends Controller
             return to_route('workspace');
         }
 
-        $isOpen = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->exists();
-
         return Inertia::render('workspaces/show', [
             'workspace' => 'Cashier / POS',
             'eyebrow' => 'Branch Operations',
             'description' => 'Branch-scoped cashier and point-of-sale workspace.',
             'store' => [
-                'status' => $isOpen ? StoreSessionStatus::Open->value : StoreSessionStatus::Closed->value,
                 'branchStatus' => $branch->status->value,
-                'canOpen' => ! $isOpen && $branch->status === BranchStatus::Active
+                'canOpen' => $branch->status === BranchStatus::Active
                     && $user->hasPermission('store.open_close')
                     && $user->branches()->whereKey($branch->getKey())->wherePivot('is_active', true)->exists(),
             ],

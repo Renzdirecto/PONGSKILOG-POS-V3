@@ -23,6 +23,12 @@ export type BranchContext = {
     selectableBranches: BranchSummary[];
 };
 
+export type StoreContext = {
+    status: 'open' | 'closed' | null;
+    isOpen: boolean;
+    branchId: string | null;
+};
+
 export type TwoFactorSetupData = {
     svg: string;
     url: string;

@@ -188,14 +188,26 @@ Phase 3F final verification (2026-09-18):
 
 ## Phase 4 — Inventory Foundation
 
-- [ ] Branch inventory balance
-- [ ] Inventory movement ledger
+- [x] Phase 4A — Inventory foundation + core mutation rules
+- [ ] Phase 4B — Inventory operations UI + stock state integration
+- [ ] Phase 4C — Concurrency / security / final verification
+
+- [x] Branch inventory balance
+- [x] Inventory movement ledger
 - [ ] Low-stock state
 - [ ] Out-of-stock state
 - [ ] Manual adjustment
-- [ ] Negative stock protection
+- [x] Negative stock protection
 - [ ] Concurrency-safe stock updates
 - [ ] Inventory branch-isolation tests
+
+Phase 4A verification (2026-09-19):
+
+- Added UUID `BranchInventory` and `InventoryMovement` models/factories and an additive migration. Quantities and versions use signed BIGINT whole units, with zero balance/version defaults, unique branch/product balances, non-negative balance/version CHECKs, nonzero movement CHECK, all eight frozen movement types, and restrictive existing foreign keys. Future reference UUIDs are nullable/indexed without premature foreign keys. `branch_products.low_stock_threshold` remains the sole threshold configuration; inventory holds stock state only.
+- `ApplyInventoryMovement` reloads persisted inputs, locks branch/product tracking configuration, initializes missing balances with `insertOrIgnore` plus the unique pair, locks the balance `FOR UPDATE`, rejects insufficient stock/zero deltas/integer overflow, increments version once, and appends the ledger in one transaction. Failed writes and outer workflow rollback preserve both balance and history. This internal primitive has no HTTP endpoint; later callers must authorize their own workflow.
+- Phase 4A tests: 47 passed / 200 assertions, including schema constraints, enum/relationships, first-row initialization, MAIN/QAVE and product isolation, stale tracking configuration, retained ledger history, negative/last-unit stock, rollback fault injection, future references, and integer limits. Relevant Phase 3 catalog tests: 395 passed / 2265 assertions. Full `php artisan test --compact`: 727 passed / 3816 assertions. Pint and PHPStan passed; PHPStan used process-only `--memory-limit=1G`.
+- Local PostgreSQL at `127.0.0.1:5432` accepted only the additive inventory migration. Read-only metadata verified UUID/BIGINT types/defaults, unique branch/product constraint, four CHECK constraints, five `ON DELETE RESTRICT` foreign keys, and all expected indexes. Isolated SQLite in-memory fresh migration smoke passed with process-only `DB_URL=null` explicitly clearing the URL. The normal local database was not reset; Supabase was untouched.
+- No frontend, routes/controllers, manual adjustment flow, stock-state integration, orders/payments, purchases, or transfers were added. Low/out-of-stock state, manual adjustment, final concurrency, and inventory branch-isolation completion remain unchecked. Independent-process PostgreSQL race verification remains Phase 4C; the sequential/transactional tests do not claim that verification. Phase 4B was not started.
 
 ---
 

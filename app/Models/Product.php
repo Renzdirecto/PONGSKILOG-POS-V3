@@ -32,6 +32,12 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /** @return HasMany<BranchInventory, $this> */
+    public function inventoryBalances(): HasMany
+    {
+        return $this->hasMany(BranchInventory::class);
+    }
+
     /** @return HasMany<BranchProduct, $this> */
     public function branchProducts(): HasMany
     {

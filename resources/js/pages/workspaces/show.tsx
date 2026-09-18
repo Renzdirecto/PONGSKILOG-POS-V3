@@ -1,20 +1,41 @@
 import { Head, usePage } from '@inertiajs/react';
 import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
+import { CashierStore } from '@/components/cashier-store';
+import type { CashierStoreState } from '@/components/cashier-store';
 import type { BranchContext } from '@/types';
 
 type Props = {
     workspace: string;
     eyebrow: string;
     description: string;
+    store?: CashierStoreState;
 };
 
 type SharedProps = {
     branchContext: BranchContext;
 };
 
-export default function Workspace({ workspace, eyebrow, description }: Props) {
+export default function Workspace({
+    workspace,
+    eyebrow,
+    description,
+    store,
+}: Props) {
     const { branchContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
+
+    if (store && branchContext.current) {
+        return (
+            <>
+                <Head title="Cashier / POS workspace" />
+                <CashierStore
+                    key={branchContext.current.id}
+                    branch={branchContext.current}
+                    store={store}
+                />
+            </>
+        );
+    }
 
     return (
         <>

@@ -52,19 +52,19 @@ Check an item only when the corresponding implementation and required verificati
 
 - [x] Phase 2A — Store Session database + Eloquent foundation
 - [x] Phase 2B — Open Store business operation
-- [ ] Phase 2C — Store Closed / Browse / Open Store UI
+- [x] Phase 2C — Store Closed / Browse / Open Store UI
 - [ ] Phase 2D — Existing Store Session + shared store state
 - [ ] Phase 2E — Security / concurrency / final verification
 
 - [ ] Branch management foundation
 - [ ] Branch status
-- [ ] Store Closed state
-- [ ] Browse mode
+- [x] Store Closed state
+- [x] Browse mode
 - [ ] Backend read-only enforcement for Browse
-- [ ] Open Store
-- [ ] Opening Cash
-- [ ] Opening Cashless
-- [ ] Existing Open Store detection
+- [x] Open Store
+- [x] Opening Cash
+- [x] Opening Cashless
+- [x] Existing Open Store detection
 - [ ] One active Store Session per branch constraint
 - [ ] Concurrent Open Store protection
 - [ ] Store state propagated to Customer QR

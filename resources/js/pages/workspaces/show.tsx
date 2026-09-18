@@ -1,20 +1,45 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
-import type { BranchContext } from '@/types';
+import { CashierStore } from '@/components/cashier-store';
+import type { CashierStoreState } from '@/components/cashier-store';
+import { index as branchesIndex } from '@/routes/branches';
+import type { Auth, BranchContext, StoreContext } from '@/types';
 
 type Props = {
     workspace: string;
     eyebrow: string;
     description: string;
+    store?: CashierStoreState;
 };
 
 type SharedProps = {
+    auth: Auth;
     branchContext: BranchContext;
+    storeContext: StoreContext;
 };
 
-export default function Workspace({ workspace, eyebrow, description }: Props) {
-    const { branchContext } = usePage<SharedProps>().props;
+export default function Workspace({
+    workspace,
+    eyebrow,
+    description,
+    store,
+}: Props) {
+    const { auth, branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
+
+    if (store && branchContext.current) {
+        return (
+            <>
+                <Head title="Cashier / POS workspace" />
+                <CashierStore
+                    key={branchContext.current.id}
+                    branch={branchContext.current}
+                    store={store}
+                    storeContext={storeContext}
+                />
+            </>
+        );
+    }
 
     return (
         <>
@@ -49,6 +74,15 @@ export default function Workspace({ workspace, eyebrow, description }: Props) {
                     </div>
                 </div>
 
+                {branchContext.businessWide &&
+                    auth.permissions.includes('settings.manage') && (
+                        <Link
+                            href={branchesIndex()}
+                            className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800"
+                        >
+                            <Building2 className="size-4" /> Branch management
+                        </Link>
+                    )}
                 <section className="rounded-3xl border border-neutral-200 bg-white p-7 shadow-sm sm:p-10">
                     <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
                         <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">

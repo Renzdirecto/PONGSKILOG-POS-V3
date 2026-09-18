@@ -9,7 +9,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property BranchStatus $status
+ */
 #[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours'])]
 class Branch extends Model
 {
@@ -27,6 +31,12 @@ class Branch extends Model
             'status' => BranchStatus::class,
             'operating_hours' => 'array',
         ];
+    }
+
+    /** @return HasMany<StoreSession, $this> */
+    public function storeSessions(): HasMany
+    {
+        return $this->hasMany(StoreSession::class);
     }
 
     /** @return BelongsToMany<User, $this> */

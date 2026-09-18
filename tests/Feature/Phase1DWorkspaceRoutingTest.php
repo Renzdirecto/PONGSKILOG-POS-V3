@@ -237,6 +237,13 @@ test('authenticated inertia props expose only minimal identity and branch contex
             'email' => $user->email,
         ])
         ->where('auth.roles', ['cashier'])
+        ->where('auth.permissions', [
+            'pos.access',
+            'qr_orders.access',
+            'store.open_close',
+            'store_expenses.manage',
+            'transactions.view',
+        ])
         ->where('branchContext.current', [
             'id' => $branch->getKey(),
             'name' => 'Main Branch',

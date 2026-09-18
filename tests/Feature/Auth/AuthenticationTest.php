@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Support\ActiveBranchContext;
 use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
@@ -62,11 +63,16 @@ test('invalid credentials receive the generic authentication failure', function 
 test('users can logout', function () {
     $user = User::factory()->create();
 
-    $response = $this->actingAs($user)->post(route('logout'));
+    $response = $this
+        ->actingAs($user)
+        ->withSession([ActiveBranchContext::SESSION_KEY => 'stale-branch'])
+        ->post(route('logout'));
 
     $response->assertRedirect(route('home'));
-
+    $response->assertSessionMissing(ActiveBranchContext::SESSION_KEY);
     $this->assertGuest();
+
+    $this->get(route('workspace'))->assertRedirect(route('login'));
 });
 
 test('users are rate limited', function () {

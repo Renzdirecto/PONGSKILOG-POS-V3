@@ -183,6 +183,8 @@ test('catalog signs only returned card variants and exposes no image internals',
     $product = Product::factory()->create();
     $directory = 'catalog/products/'.$product->id.'/'.Str::uuid();
     $product->update(['image_path' => $directory.'/detail.webp']);
+    BranchProduct::factory()->for($branch)->for($product)->create(['price_override' => '0.00', 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
+    $product->modifierGroups()->attach(ModifierGroup::factory()->create());
     Product::factory()->create(['is_active' => false, 'image_path' => 'must-not-be-resolved']);
     Product::factory()->for(Category::factory()->create(['is_active' => false]))
         ->create(['image_path' => 'must-not-be-resolved']);
@@ -200,7 +202,16 @@ test('catalog signs only returned card variants and exposes no image internals',
             ->where('catalog.products.0.image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
             ->missing('catalog.products.0.image_path')
             ->missing('catalog.products.0.source_url')
-            ->missing('catalog.products.0.detail_url'));
+            ->missing('catalog.products.0.detail_url')
+            ->has('catalog.products.0', fn (Assert $item) => $item
+                ->where('id', $product->id)
+                ->where('name', $product->name)
+                ->where('category_id', $product->category_id)
+                ->where('category_name', $product->category->name)
+                ->where('effective_price', '0.00')
+                ->where('is_available', true)
+                ->where('image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
+                ->where('has_modifiers', true)));
 
     expect($signedPaths)->toBe([$directory.'/card.webp']);
 });
@@ -251,11 +262,18 @@ test('closed and open store catalog reads never write operational data', functio
 })->with(['closed' => false, 'open' => true]);
 
 test('catalog query count stays bounded with products categories overrides and modifiers', function (int $count) {
+    $signedPaths = [];
+    Storage::fake('s3')->buildTemporaryUrlsUsing(function (string $path) use (&$signedPaths): string {
+        $signedPaths[] = $path;
+
+        return 'https://assets.example.test/'.$path;
+    });
     $branch = Branch::factory()->create();
     $other = Branch::factory()->create();
     $group = ModifierGroup::factory()->create();
     $products = Product::factory()->count($count)->create();
     foreach ($products as $product) {
+        $product->update(['image_path' => 'catalog/products/'.$product->id.'/'.Str::uuid().'/detail.webp']);
         BranchProduct::factory()->for($branch)->for($product)->create();
         BranchProduct::factory()->for($other)->for($product)->create(['is_available' => false]);
         $product->modifierGroups()->attach($group);
@@ -269,7 +287,10 @@ test('catalog query count stays bounded with products categories overrides and m
     DB::disableQueryLog();
     expect($catalog['products'])->toHaveCount($count);
     expect(count($queries))->toBeLessThanOrEqual(3);
-})->with([1, 30]);
+    expect($signedPaths)->toHaveCount($count);
+    expect(collect($catalog['products'])->every(fn (array $product): bool => str_ends_with($product['image_url'], '/card.webp')
+        && $product['is_available'] && $product['has_modifiers']))->toBeTrue();
+})->with([1, 30, 100]);
 
 test('an empty catalog returns empty lists', function () {
     $branch = Branch::factory()->create();

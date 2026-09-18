@@ -100,7 +100,20 @@ test('management listing exposes exact branch prices and safe image urls', funct
         ->where('products.data.0.branch_prices.1.tracks_inventory', false)
         ->where('products.data.0.branch_prices.1.low_stock_threshold', null)
         ->where('products.data.0.image_url', 'https://assets.example.test/'.dirname($product->image_path).'/card.webp')
-        ->missing('products.data.0.image_path'));
+        ->missing('products.data.0.image_path')
+        ->has('products.data.0', fn (Assert $item) => $item
+            ->where('id', $product->id)
+            ->where('name', $product->name)
+            ->where('description', null)
+            ->where('category_id', $product->category_id)
+            ->where('default_price', '95.00')
+            ->where('is_active', true)
+            ->where('category_name', $product->category->name)
+            ->where('category_active', true)
+            ->where('image_url', 'https://assets.example.test/'.dirname($product->image_path).'/card.webp')
+            ->where('has_image', true)
+            ->where('modifier_group_ids', [])
+            ->has('branch_prices', 2)));
 
     $this->assertDatabaseCount('branch_products', 1);
 });
@@ -350,11 +363,17 @@ test('catalog endpoints require active authentication and catalog permission', f
     $option = ModifierOption::factory()->for($group)->create();
     $branch = Branch::factory()->create();
     if ($access !== 'guest') {
-        $user = catalogWebManager($access === 'staff' ? 'cashier' : 'owner');
-        if ($access === 'inactive') {
+        $role = match ($access) {
+            'staff' => 'cashier',
+            'kitchen_staff', 'cashier_kitchen' => $access,
+            'inactive super admin', 'revoked super admin' => 'super_admin',
+            default => 'owner',
+        };
+        $user = catalogWebManager($role);
+        if (str_starts_with($access, 'inactive')) {
             $user->forceFill(['is_active' => false])->save();
         }
-        if ($access === 'revoked') {
+        if (str_starts_with($access, 'revoked')) {
             $user->roles()->firstOrFail()->permissions()->detach();
         }
         $this->actingAs($user);
@@ -372,7 +391,7 @@ test('catalog endpoints require active authentication and catalog permission', f
             ? ['price_override' => null, 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => 5]
             : [];
         $response = $this->{$method}(route($name, $parameters), $input);
-        if (in_array($access, ['guest', 'inactive'])) {
+        if ($access === 'guest' || str_starts_with($access, 'inactive')) {
             $response->assertRedirectToRoute('login');
         } else {
             $response->assertForbidden();
@@ -382,4 +401,15 @@ test('catalog endpoints require active authentication and catalog permission', f
     $this->assertDatabaseCount('branch_products', 0);
     $this->assertDatabaseCount('modifier_groups', 1);
     $this->assertDatabaseCount('modifier_options', 1);
-})->with(['guest', 'inactive', 'staff', 'revoked']);
+})->with(['guest', 'inactive', 'staff', 'revoked', 'kitchen_staff', 'cashier_kitchen', 'inactive super admin', 'revoked super admin']);
+
+test('catalog records cannot be deleted through direct management requests', function (string $resource) {
+    $product = Product::factory()->create();
+    $category = $product->category;
+    $model = $resource === 'products' ? $product : $category;
+
+    $this->actingAs(catalogWebManager())->delete(route($resource.'.update', $model))->assertMethodNotAllowed();
+
+    $this->assertModelExists($product);
+    $this->assertModelExists($category);
+})->with(['products', 'categories']);

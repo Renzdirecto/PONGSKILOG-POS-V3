@@ -3,13 +3,16 @@ import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
 import { CashierStore } from '@/components/cashier-store';
 import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
+import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
+import type { CashierCatalog } from '@/types/catalog';
 
 type Props = {
     workspace: string;
     eyebrow: string;
     description: string;
     store?: CashierStoreState;
+    catalog?: CashierCatalog;
 };
 
 type SharedProps = {
@@ -23,11 +26,12 @@ export default function Workspace({
     eyebrow,
     description,
     store,
+    catalog,
 }: Props) {
     const { auth, branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
 
-    if (store && branchContext.current) {
+    if (store && catalog && branchContext.current) {
         return (
             <>
                 <Head title="Cashier / POS workspace" />
@@ -36,6 +40,7 @@ export default function Workspace({
                     branch={branchContext.current}
                     store={store}
                     storeContext={storeContext}
+                    catalog={catalog}
                 />
             </>
         );
@@ -74,6 +79,14 @@ export default function Workspace({
                     </div>
                 </div>
 
+                {auth.permissions.includes('products.manage') && (
+                    <Link
+                        href={productsIndex()}
+                        className="mr-3 mb-6 inline-flex min-h-11 items-center rounded-xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800"
+                    >
+                        Product management
+                    </Link>
+                )}
                 {branchContext.businessWide &&
                     auth.permissions.includes('settings.manage') && (
                         <Link

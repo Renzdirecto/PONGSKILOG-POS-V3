@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\BranchStatus;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\BranchCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,7 +16,7 @@ class CashierWorkspaceController extends Controller
     /**
      * Handle the incoming request.
      */
-    public function __invoke(Request $request, ActiveBranchContext $activeBranchContext): RedirectResponse|Response
+    public function __invoke(Request $request, ActiveBranchContext $activeBranchContext, BranchCatalog $catalog): RedirectResponse|Response
     {
         $user = $request->user();
 
@@ -32,6 +33,9 @@ class CashierWorkspaceController extends Controller
             'workspace' => 'Cashier / POS',
             'eyebrow' => 'Branch Operations',
             'description' => 'Branch-scoped cashier and point-of-sale workspace.',
+            'catalog' => fn () => $branch->status === BranchStatus::Active
+                ? $catalog->browse($branch)
+                : ['categories' => [], 'products' => []],
             'store' => [
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active

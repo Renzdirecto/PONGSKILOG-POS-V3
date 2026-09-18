@@ -93,17 +93,96 @@ Phase 2F final verification (2026-09-18):
 
 ## Phase 3 — Catalog & Product Images
 
-- [ ] Categories
-- [ ] Products
-- [ ] Product modifiers
-- [ ] Product image upload
-- [ ] Branch product overrides
-- [ ] Branch price override
-- [ ] Branch availability
-- [ ] Low-stock threshold
-- [ ] Optimized image variants
-- [ ] Product image fallback
-- [ ] Lazy-loading / image performance
+- [x] Phase 3A — Catalog database + Eloquent foundation
+- [x] Phase 3B — Catalog rules + branch overrides + modifiers
+- [x] Phase 3C — Product image pipeline
+- [x] Phase 3D — Product management UI
+- [x] Phase 3E — Cashier real catalog Browse
+- [x] Phase 3F — Security / performance / final verification
+
+- [x] Categories
+- [x] Products
+- [x] Product modifiers
+- [x] Product image upload
+- [x] Branch product overrides
+- [x] Branch price override
+- [x] Branch availability
+- [x] Low-stock threshold
+- [x] Optimized image variants
+- [x] Product image fallback
+- [x] Lazy-loading / image performance
+
+Phase 3A verification (2026-09-18):
+
+- Added six catalog tables, five UUID Eloquent models and factories, Branch relationships, and the `single`/`multiple` modifier selection enum. Prices use `numeric(14,2)` with `decimal:2` string casts, matching StoreSession; no authoritative floats.
+- Database constraints enforce non-negative prices/thresholds, valid selection bounds/types, unique branch/product and product/modifier mappings, and restrictive foreign keys. Indexes cover active/sorted categories, category/active products, branch availability, sorted modifier options, and reverse relationships.
+- Targeted `CatalogFoundationTest`: 43 passed / 121 assertions. `composer test`: 328 passed / 1472 assertions; Pint and PHPStan passed with a temporary process-only 1 GB memory override after PHPStan reached the local 128 MB limit. No machine-specific configuration was committed.
+- Additive migration passed on local PostgreSQL at `127.0.0.1:5432`. Read-only metadata queries verified all three `numeric(14,2)` columns, both mapping uniqueness constraints, seven CHECK constraints, six restrictive foreign keys, and lookup indexes. Isolated SQLite in-memory fresh migration passed with `DB_URL` explicitly cleared. Supabase was untouched.
+- Scope is schema/model foundation only. Main Phase 3 behavior checkboxes remain incomplete; catalog actions, effective pricing/availability, image processing, management UI, cashier Browse, and inventory quantities are not implemented in this batch.
+
+Phase 3B verification (2026-09-18):
+
+- Added explicit Category, Product, Modifier Group, and Modifier Option create/update actions, BranchProduct upsert, and transactional Product Modifier Group sync. Every mutation uses the existing `products.manage` permission through a Gate that rechecks persisted user activity and permission; seeded Owner/Super Admin pass, while normal staff, inactive users, and revoked permissions are rejected.
+- Monetary input must be an unsigned decimal string with up to 12 integer digits and 2 decimal places; floats, malformed values, negatives, and overflow are rejected. Product updates preserve the existing image path. Branch overrides remain unique per branch/product and configure inventory tracking/threshold only, without inventory balances.
+- `BranchCatalog` returns the requested branch's non-null override price or the global default as an exact decimal string. Availability requires an active Category and Product and no unavailable override for that branch. It rechecks persisted state, keeps branches isolated, and excludes Store Session state.
+- Modifier configuration validates the selection enum and bounds, option group membership and price, and all submitted group IDs. Sync deduplicates mappings, accepts an empty list, preserves other products, and rolls back failed replacement writes.
+- Targeted Phase 3B tests: 220 passed / 1018 assertions. Combined Phase 3A + 3B catalog tests: 263 passed / 1139 assertions. `composer test`: 548 passed / 2490 assertions, with Pint and PHPStan passing. Tests used isolated SQLite in memory with `DB_URL` explicitly cleared. No migrations, dependencies, frontend files, or Supabase changes.
+- Only Phase 3B and completed branch override/price/availability/threshold configuration items are checked. Broader Categories, Products, and Product modifiers checklist items remain conservative pending their management integration. Phase 3C–3F, images, cashier catalog Browse, and inventory quantities remain unimplemented.
+
+Phase 3C verification (2026-09-18):
+
+- Added synchronous `ReplaceProductImage` and `RemoveProductImage` actions using the existing persisted-state `products.manage` Gate. Owner/Super Admin pass; staff, inactive users, revoked permissions, and missing Products are rejected. No endpoint or frontend was added.
+- Native GD supports JPEG, PNG, and WebP. Uploads require content/MIME validation, at most 8 MB and 6000 x 6000 dimensions, a safe available-memory budget, and successful decoding. Exactly two WebP variants use quality 84: card within 480 x 480 and detail within 1200 x 1200, preserving aspect ratio and transparency without cropping/upscaling. Re-encoding removes source metadata; processing creates no local temporary files.
+- Existing private `s3` storage holds `catalog/products/{product_uuid}/{asset_uuid}/source.{jpg|png|webp}`, `card.webp`, and `detail.webp`. `products.image_path` stores only the canonical detail key. `ProductImages` derives application paths and temporary URLs (five-minute default), returns null for absent images, and refuses unsafe/foreign paths. No source URL is exposed.
+- Replacement checks each write and all three objects' existence before locking/reloading the Product and saving its new reference. Old cleanup runs after commit; failures before commit clean the new asset best-effort and propagate the primary error. Outer transaction rollbacks also clean uncommitted assets. Removal clears the DB reference before cleanup. Cleanup failures log only Product ID and exception type and do not undo valid DB state.
+- Targeted `ProductImagesTest`: 63 passed / 260 assertions. Combined Phase 3A–3C catalog tests: 326 passed / 1399 assertions. `composer test`: 611 passed / 2750 assertions, with Pint and PHPStan passing. The standalone PHPStan run used a process-only 1 GB limit; final `composer test` passed with default settings. Tests use SQLite in memory, fake storage, and an offline real-S3-adapter signing check with dummy credentials.
+- Live Supabase Storage smoke skipped: local configuration appears development-oriented, but the bucket's development-only status was not independently confirmed. No Supabase PostgreSQL or Storage writes were performed. No migration, dependency, filesystem configuration, or machine-specific setting changed.
+- Only Phase 3C, Product image upload, and Optimized image variants were checked. Image fallback, frontend lazy loading/performance, and Phase 3D–3F remain incomplete.
+
+---
+
+Phase 3D implementation and verification (2026-09-18):
+
+- Added Products, Categories, and Modifiers management pages and permission-protected routes, linked from the management workspace. Existing catalog actions remain authoritative; no schema or dependency changes.
+- Products support create/edit, default decimal price, category, active/inactive status, and atomic modifier-group assignment. Search, category/status filters, and 24-item pagination bound the product listing; relationships are eager-loaded.
+- Branch cards distinguish overrides from inherited default prices. Per-branch forms save price/availability, accept zero prices, restore default pricing, and preserve inventory settings and other branches. Product/category inactivity remains authoritative.
+- Image upload, replacement, and removal use the existing private-storage pipeline. Cards receive only signed optimized variant URLs, reserve image space, lazy-load, and provide a missing/broken-image fallback. Storage upload failures return a recoverable field error.
+- Added 25 management endpoint tests covering allowed/denied access, validation, missing records, atomic rollback, pagination, bounded queries, price inheritance/isolation, category and modifier edits, and the image lifecycle. Final combined management, catalog business rules, branch catalog, product images, and workspace-routing verification passed: 328 tests / 1696 assertions.
+- Developer manual browser QA passed, as confirmed by the developer. The real management cards and image dialog use `ProductImage`, which renders the `No image available` placeholder for missing or failed images; the management image fallback is complete.
+- Final full verification passed: `php artisan test --compact` — 636 tests / 3081 assertions; `vendor/bin/pint --format agent`; `vendor/bin/phpstan analyse --no-progress` with the default memory limit; `npm run check:frontend`; `npm run types:check`; and `npm run build`. The build retains its non-blocking optional `fontaine` warning and plugin timing diagnostics. No regression or dependency change.
+- Scope review confirmed product/category/modifier management, product modifier assignment, image upload/replace/remove UI, branch overrides, search/filter/pagination, Owner/Super Admin access through `products.manage`, and workspace navigation only. No cashier catalog, cart/order/payment logic, inventory quantities, Customer QR ordering, destructive Product/Category deletion, or unrelated UI redesign was added.
+- Phase 3E and Phase 3F remain unchecked. The overall lazy-loading/image-performance checklist remains unchecked pending the cashier catalog in Phase 3E, despite management cards already using optimized variants and lazy loading. Automated tests use isolated SQLite and fake storage; no live database or storage writes were performed by this finalization.
+
+---
+
+Phase 3E implementation and final verification (2026-09-18):
+
+- Replaced the Cashier Browse placeholder in the existing workspace with the real active branch catalog. Browse is accessible with a CLOSED or OPEN Store Session; existing Open Store behavior remains intact. No cart, order, payment, inventory balance, Customer QR ordering, or Kitchen integration was added.
+- `BranchCatalog::browse()` bulk-loads active Categories containing active Products, with only the selected branch's overrides and an active-assigned-modifier existence summary. Categories sort by sort order/name; products sort by name. The catalog read uses at most three queries at both 1 and 30 products, without calling the per-product resolvers.
+- The server returns exact decimal effective prices (non-null override, including zero, otherwise default), branch availability independent of Store Session state, and a lean explicit projection. Branch-unavailable Products stay visible; inactive Products/Categories are excluded. Existing authentication, active-account, `pos.access`, cashier-role, and branch-context checks protect the workspace; unavailable branches receive an empty catalog.
+- Added local name search, category buttons, empty/no-match states, availability labels, and an active modifier-group summary. Reused `ProductImage` for signed five-minute `card.webp` URLs, lazy loading, reserved aspect ratio/dimensions, and missing/broken-image fallback. No raw image path, source/detail URL, inventory configuration, or management fields are included in the catalog projection.
+- Final verification rerun after UI corrections passed: focused `CashierCatalogTest` 26 tests / 220 assertions; full `php artisan test --compact` 673 tests / 3469 assertions; Pint; PHPStan with a process-only `--memory-limit=1G`; `npm run check:frontend`; `npm run types:check`; and `npm run build`. The earlier combined catalog/Cashier Store run passed 418 tests / 2324 assertions. No regression, dependency change, or machine configuration change.
+- UI rules re-check passed for the Phase 3E Browse changes after comparison with restored `08-ui-rules.md`, `09-ui-registry.md`, the decoded `design/pos.html` reference, existing Cashier components, and `14-coding-standards.md`. Corrections make category buttons grow/wrap long labels, improve fallback text contrast/alignment, use a compact 15px Browse heading and 20px section gaps, and explicitly label READ-ONLY / STORE CLOSED or STORE OPEN. Search remains 48px high and category/reset buttons at least 44px; responsive cards retain readable labels, 3:2 image space, explicit dimensions, and no added animation or component library.
+- Developer manual QA and responsive QA are accepted as PASS from the finalization request, covering CLOSED/OPEN Browse, MAIN/QAVE isolation, filters, images/fallback, and mobile/tablet/desktop behavior. Source-level responsive review also checked the 360/390/430px breakpoints and wrapping. A fresh automated visual pass after the small corrections could not run: browser tooling still reports `Unable to load browser request-header policy`. No automated visual pass is claimed.
+- Pre-existing shell exception: the current workspace uses a top header and Instrument Sans rather than the frozen dark sidebar/Poppins direction. This is recorded explicitly, not claimed as full-workspace visual compliance; the requested Phase 3E review does not redesign the shared workspace shell.
+- Restored `08-ui-rules.md` is the frozen Batch 3 file referenced by the context index and coding standards, was absent at HEAD, and is included unchanged. Its intentional Markdown hard break on line 3 produces a staged whitespace warning; other changed files pass `git diff --check`. The build retains its non-blocking optional `fontaine` warning and plugin timing diagnostics. Tests used isolated SQLite and fake storage; no live database/storage writes were performed.
+- Phase 3E and Lazy-loading / image performance are complete: the grid uses only optimized signed `card.webp` URLs, lazy loading, stable image dimensions, and missing/broken-image fallback. No ordering mutations, cart/quantity/order-type controls, payments, inventory quantities/deduction, Kitchen workflow, Customer QR ordering, or Phase 3F work was added. Phase 3F remains unchecked and Phase 3 is not marked complete.
+
+---
+
+Phase 3F final verification (2026-09-18):
+
+- Pre-flight passed on `feature/catalog-product-images` at `ae0860b6df0152c6b01033c2b70802203109a496` with a clean working tree. Freshly fetched `origin/dev` matched local `dev`; the branch was zero behind and six commits ahead. Restored `08-ui-rules.md` is present and tracked. Reviewed all 57 files in the complete `git diff dev...HEAD` against the frozen context, including Phase 3A–3E and the decoded Owner/POS design references. No security, data-integrity, or functional production defect requiring a fix was found; production code, migrations, dependencies, and configuration remain unchanged.
+- Authorization passed: management routes/actions require active authentication and `products.manage`; Owner/Super Admin succeed, while Cashier, Kitchen Staff, Cashier + Kitchen, inactive users, revoked-permission users, and guests are denied. Added the missing Kitchen/combined-role and inactive/revoked Super Admin direct-route cases. Cashier Browse requires a cashier-capable role, `pos.access`, and valid assigned branch context; forged/revoked scope and Kitchen-only access are rejected server-side.
+- Branch isolation and exact money passed: MAIN changes do not affect QAVE with existing or absent overrides, including tracking/threshold settings. Non-null overrides, including `0.00`, take precedence over the default; inactive Products/Categories remain unavailable regardless of branch enablement or Store Session state. All authoritative prices use `decimal:2` strings backed by `numeric(14,2)`; malformed, negative, excess-precision, overflow, and float inputs are rejected. Frontend money stays string-valued through submission; numeric conversion is display-only. Uniqueness, restrictive relationships, modifier bounds, retained inactive records, image-path preservation, and empty modifier sync passed. Added direct DELETE regressions proving Products/Categories cannot be destroyed through management routes.
+- Image pipeline/failure coverage passed: JPEG/PNG/WebP, inclusive 8 MB/6000-pixel limits, GD decoding and memory checks, rejection of unsafe/corrupt uploads, aspect ratio/transparency, and no upscaling. Card/detail bounds remain 480/1200 pixels. Random asset UUID keys exclude client filenames; the database retains only the detail object key. Existing fault injection verifies old-image preservation for processing, first/later writes, existence checks, DB failures, and outer rollback; successful replacement/removal cleans afterward, and cleanup failures preserve committed state with sanitized logs. No duplicate fault-injection tests were needed.
+- Private-data contracts passed. Strengthened strict Inertia product projections for management and a populated Cashier product with image, zero override, inventory configuration, and modifiers. Cashier receives only operational fields and an active-assigned-group boolean; groups/options, raw paths, source/detail URLs, default/override internals, and inventory/admin settings are absent. Management exposes its intended editable fields and card URL, without source data or storage secrets. S3 adapter writes default to private; signing uses five-minute variant URLs without a storage request. Live bucket policy was not independently inspected.
+- CLOSED and OPEN Browse GET regressions detect no database writes and preserve Store Sessions/catalog configuration. Open Store remains the separate intentional mutation. Routes and UI contain no cart, quantity/order-type selection, order, payment, inventory quantity/deduction, Kitchen, or Customer QR ordering implementation.
+- Performance passed: expanded the existing query regression to 1, 30, and 100 Products, each with a category, image key, two branch overrides, and an assigned active modifier group. Every fixture stays at most three catalog queries, signs one `card.webp` URL per returned Product, and ignores the other branch's disablement. Management's query count remains constant as Products/branches grow, with eager relationships and 24-item pagination. Both grids use optimized `card.webp`, lazy loading, explicit dimensions/reserved 3:2 space, and missing/broken-image fallback; no source/detail image download is required by a grid. This is query/asset-contract evidence, not a measured live-network latency or CDN/cache claim.
+- Read-only local PostgreSQL 18.4 metadata verification at `127.0.0.1:5432` confirmed all three `numeric(14,2)` columns, two mapping uniqueness constraints, seven CHECK constraints, six `ON DELETE RESTRICT` foreign keys, and expected lookup indexes. Isolated SQLite in-memory `migrate:fresh --database=sqlite --no-interaction` passed with process-only `DB_URL=null` explicitly clearing the URL and `DB_DATABASE=:memory:`. The normal developer database was not migrated/reset; Supabase was untouched.
+- Final targeted catalog/image/management/Cashier/Store tests: 480 passed / 2758 assertions. Full `php artisan test --compact`: 680 passed / 3616 assertions, up from 673 / 3469. Seven additional dataset cases cover missing endpoint/retention/100-product checks; existing exposure/performance tests were strengthened. Pint, PHPStan (`--memory-limit=1G`, process-only), `npm run check:frontend` (74 files), `npm run types:check`, and `npm run build` passed. Complete diff review and secret-pattern scan found no environment files, credentials, real signed URLs, machine paths, temporary images, dumps, or dependency additions.
+- Existing Phase 3D/3E developer manual and responsive QA remains accepted; no user-facing behavior changed and no browser automation pass is claimed. Source review confirms functional controls, validation/loading states, scrollable dialogs, readable availability/prices, and explicit CLOSED/OPEN read-only indicators. Non-blocking UI polish remains: top-header/Instrument Sans versus frozen sidebar/Poppins, larger management headings/card density, and management pagination/shared dialog-close targets below the 44px direction. These were not cosmetically redesigned. Image optimization remains synchronous on management upload; live storage delivery, CDN/cache behavior, and automatic renewal of five-minute image URLs remain unverified/unimplemented. The optional `fontaine` warning and plugin timing diagnostics remain non-blocking.
+- All three frozen Phase 3 exit criteria are satisfied within the accepted manual QA and stated performance evidence: server-enforced branch price/availability; resilient missing/broken-image Browse; and bounded queries with optimized, lazy-loaded card images. **Phase 3 is complete.** Phase 4 and later checkboxes remain untouched.
 
 ---
 

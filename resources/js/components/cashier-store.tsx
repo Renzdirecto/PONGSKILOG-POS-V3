@@ -2,12 +2,14 @@ import { useForm } from '@inertiajs/react';
 import { ArrowLeft, CheckCircle2, Eye, LockKeyhole, Store } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { CashierCatalog } from '@/components/cashier-catalog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { open } from '@/routes/store-sessions';
 import type { BranchSummary, StoreContext } from '@/types';
+import type { CashierCatalog as CashierCatalogData } from '@/types/catalog';
 
 export type CashierStoreState = {
     branchStatus: 'active' | 'temporarily_closed' | 'inactive';
@@ -18,10 +20,12 @@ export function CashierStore({
     branch,
     store,
     storeContext,
+    catalog,
 }: {
     branch: BranchSummary;
     store: CashierStoreState;
     storeContext: StoreContext;
+    catalog: CashierCatalogData;
 }) {
     const [view, setView] = useState<'store' | 'browse' | 'opening'>('store');
     const isOpen = storeContext.isOpen;
@@ -29,7 +33,9 @@ export function CashierStore({
     const buttonClass = 'min-h-12 rounded-xl px-6';
 
     return (
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <div
+            className={`mx-auto flex flex-col gap-6 ${view === 'browse' ? 'max-w-6xl' : 'max-w-3xl'}`}
+        >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="min-w-0 space-y-2">
                     <p className="text-xs font-bold tracking-[0.18em] text-[#8c671e] uppercase">
@@ -53,7 +59,7 @@ export function CashierStore({
             </div>
 
             <section
-                className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10"
+                className={`rounded-3xl border border-neutral-200 bg-white shadow-sm ${view === 'browse' ? 'p-3 sm:p-6' : 'p-6 sm:p-10'}`}
                 aria-labelledby="store-heading"
             >
                 {!isAvailable ? (
@@ -72,6 +78,33 @@ export function CashierStore({
                             branch.
                         </p>
                     </div>
+                ) : view === 'browse' ? (
+                    <div className="flex flex-col gap-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                                <Eye className="size-4 shrink-0" />
+                                {isOpen
+                                    ? 'READ-ONLY / STORE OPEN'
+                                    : 'READ-ONLY / STORE CLOSED'}
+                            </span>
+                            <Button
+                                variant="outline"
+                                className={`${buttonClass} border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950`}
+                                onClick={() => setView('store')}
+                            >
+                                <ArrowLeft /> Back to store
+                            </Button>
+                        </div>
+                        <h2
+                            id="store-heading"
+                            className="text-[15px] font-bold"
+                            tabIndex={-1}
+                            ref={(node) => node?.focus()}
+                        >
+                            Browse catalog
+                        </h2>
+                        <CashierCatalog catalog={catalog} />
+                    </div>
                 ) : isOpen ? (
                     <div className="flex flex-col gap-4" role="status">
                         <span className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
@@ -81,40 +114,22 @@ export function CashierStore({
                             Store is open
                         </h2>
                         <p className="text-sm leading-6 text-neutral-600">
-                            POS operations will be enabled in later phases.
+                            Browse this branch’s products and prices in
+                            read-only mode.
                         </p>
+                        <Button
+                            variant="outline"
+                            className={`${buttonClass} w-fit border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950`}
+                            onClick={() => setView('browse')}
+                        >
+                            <Eye /> Browse
+                        </Button>
                     </div>
                 ) : view === 'opening' && store.canOpen ? (
                     <OpenStoreForm
                         branchName={branch.name}
                         onCancel={() => setView('store')}
                     />
-                ) : view === 'browse' ? (
-                    <div className="flex flex-col items-start gap-5">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-                            <Eye className="size-4" /> Read-only browsing
-                        </span>
-                        <h2
-                            id="store-heading"
-                            className="text-2xl font-bold"
-                            tabIndex={-1}
-                            ref={(node) => node?.focus()}
-                        >
-                            Catalog coming soon
-                        </h2>
-                        <p className="text-sm leading-6 text-neutral-600">
-                            Products will appear here when the catalog is
-                            available. Browsing does not open the store. Orders,
-                            payments, and other POS operations are unavailable.
-                        </p>
-                        <Button
-                            variant="outline"
-                            className={`${buttonClass} border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950`}
-                            onClick={() => setView('store')}
-                        >
-                            <ArrowLeft /> Back to store
-                        </Button>
-                    </div>
                 ) : (
                     <div className="flex flex-col gap-6">
                         <span className="flex size-16 items-center justify-center rounded-2xl bg-neutral-100 text-neutral-700">

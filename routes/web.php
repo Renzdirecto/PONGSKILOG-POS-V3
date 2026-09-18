@@ -1,19 +1,25 @@
 <?php
 
 use App\Http\Controllers\ActiveBranchController;
+use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
+use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
+Route::get('qr/{branch}', CustomerQrController::class)
+    ->whereUuid('branch')->middleware('throttle:60,1')->name('qr.show');
+
 Route::middleware(['auth'])->group(function () {
     Route::get('workspace', WorkspaceController::class)->name('workspace');
     Route::redirect('dashboard', '/workspace')->name('dashboard');
 
     Route::get('branches/select', BranchSelectionController::class)->name('branches.select');
+    Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
     Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
         ->name('branch-context.update');
     Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])

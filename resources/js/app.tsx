@@ -20,6 +20,7 @@ void createInertiaApp({
     layout: (name) => {
         switch (true) {
             case name === 'welcome':
+            case name.startsWith('qr/'):
                 return null;
             case name === 'auth/login':
                 return LoginLayout;

@@ -47,6 +47,10 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if ($request->routeIs('qr.show')) {
+            return [];
+        }
+
         $authenticatedUser = $request->user();
         $user = $authenticatedUser instanceof User ? $authenticatedUser : null;
         $currentBranch = $user === null ? null : $this->activeBranchContext->current($user);

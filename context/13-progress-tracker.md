@@ -50,6 +50,12 @@ Check an item only when the corresponding implementation and required verificati
 
 ## Phase 2 — Branches & Store Sessions
 
+- [x] Phase 2A — Store Session database + Eloquent foundation
+- [ ] Phase 2B — Open Store business operation
+- [ ] Phase 2C — Store Closed / Browse / Open Store UI
+- [ ] Phase 2D — Existing Store Session + shared store state
+- [ ] Phase 2E — Security / concurrency / final verification
+
 - [ ] Branch management foundation
 - [ ] Branch status
 - [ ] Store Closed state

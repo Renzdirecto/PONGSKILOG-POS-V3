@@ -4,7 +4,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
+import LoginLayout from '@/layouts/auth/login-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import WorkspaceLayout from '@/layouts/workspace-layout';
 import { configureEcho } from '@laravel/echo-react';
 
 configureEcho({
@@ -19,10 +21,15 @@ void createInertiaApp({
         switch (true) {
             case name === 'welcome':
                 return null;
+            case name === 'auth/login':
+                return LoginLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
+            case name.startsWith('branches/'):
+            case name.startsWith('workspaces/'):
+                return WorkspaceLayout;
             default:
                 return AppLayout;
         }

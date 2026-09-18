@@ -26,19 +26,25 @@ Check an item only when the corresponding implementation and required verificati
 
 ## Phase 1 — Identity, RBAC & Branch Foundation
 
-- [ ] Login
-- [ ] Logout / session handling
-- [ ] Users
-- [ ] Roles
-- [ ] Permissions
-- [ ] User role assignment
-- [ ] Staff branch assignments
-- [ ] Branch selection
-- [ ] Active branch context
-- [ ] Owner business-wide scope
-- [ ] Super Admin business-wide scope
-- [ ] Policies / Gates
-- [ ] Branch authorization tests
+- [x] Phase 1A — Database + Eloquent model foundation
+- [x] Phase 1B — RBAC + seeders
+- [x] Phase 1C — Branch context + authorization
+- [x] Phase 1D — Branch selector + role routing UI
+- [x] Phase 1E — Security tests + final verification
+
+- [x] Login
+- [x] Logout / session handling
+- [x] Users
+- [x] Roles
+- [x] Permissions
+- [x] User role assignment
+- [x] Staff branch assignments
+- [x] Branch selection
+- [x] Active branch context
+- [x] Owner business-wide scope
+- [x] Super Admin business-wide scope
+- [x] Policies / Gates
+- [x] Branch authorization tests
 
 ---
 

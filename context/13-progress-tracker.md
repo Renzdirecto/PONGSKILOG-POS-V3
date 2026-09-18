@@ -54,20 +54,30 @@ Check an item only when the corresponding implementation and required verificati
 - [x] Phase 2B — Open Store business operation
 - [x] Phase 2C — Store Closed / Browse / Open Store UI
 - [x] Phase 2D — Existing Store Session + shared store state
-- [ ] Phase 2E — Security / concurrency / final verification
+- [x] Phase 2E — Security / concurrency / final verification
 
 - [ ] Branch management foundation
-- [ ] Branch status
+- [x] Branch status
 - [x] Store Closed state
 - [x] Browse mode
-- [ ] Backend read-only enforcement for Browse
+- [x] Backend read-only enforcement for Browse (current Phase 2 route surface; see scope below)
 - [x] Open Store
 - [x] Opening Cash
 - [x] Opening Cashless
 - [x] Existing Open Store detection
-- [ ] One active Store Session per branch constraint
-- [ ] Concurrent Open Store protection
+- [x] One active Store Session per branch constraint
+- [x] Concurrent Open Store protection
 - [ ] Store state propagated to Customer QR
+
+Phase 2E verification (2026-09-18):
+
+- Reviewed the complete Phase 2 diff against `dev`, routes, middleware, authorization, action transactions, schema, shared props, and local seeder. No production-code defect found; added four missing security/read-only regressions and an opt-in PostgreSQL harness.
+- `php tests/verify-store-session-postgres.php` uses explicit local PostgreSQL settings with `DB_URL=null`. Two independent cashier processes must both be observed waiting on the branch lock before the harness releases it. Both returned session `01a0b3cb-13d2-73a0-902f-9dcb3e1b58b6`; exactly one OPEN row existed, with the winning opener, timestamp, Cash `111.11`, and Cashless `222.22` unchanged. Both connections remained usable with no open transaction.
+- PostgreSQL 18 verification used a temporary `phase2e_*` schema on `127.0.0.1:5432`, because the local app role lacks database-creation permission. Fresh migrations/RBAC seed, UUID/numeric(14,2) schema, partial unique index, constraint rejection, retained history, multiple CLOSED sessions, and independent branch OPEN sessions passed. The schema was removed; the normal local database's partial unique index was also verified read-only. Supabase was untouched.
+- Targeted Phase 2 tests: 117 passed / 634 assertions. `composer test`: 245 passed / 994 assertions, Pint and PHPStan passed (process-only 1 GB memory override). `npm run check:frontend`, `npm run types:check`, and `npm run build` passed. Isolated SQLite fresh migration/RBAC seed passed with `DB_URL` cleared.
+- Security, existing-session preservation, branch switching/state isolation, safe shared props, and LocalDevelopmentSeeder production guard/idempotency passed. Phase 2C/2D developer manual QA remains accepted; no user-facing behavior changed.
+- Browse/closed-store scope: the current workspace is read-only and exposes no order, payment, inventory, expense, or other operational mutation endpoint/button. Open Store is the sole operational write and is intentionally allowed while CLOSED, subject to backend authorization. Account settings and branch selection are separate identity/context operations. Future operational routes still require Store OPEN enforcement; no general mutation middleware is claimed here.
+- Branch management CRUD and Customer QR integration remain incomplete. `StoreState` is reusable, but no QR-facing endpoint consumes it yet. Phase 3 was not started.
 
 ---
 

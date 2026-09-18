@@ -223,3 +223,47 @@ test('repeated opening request succeeds without overwriting original session', f
 
     expect(StoreSession::query()->sole()->getAttributes())->toBe($original);
 });
+
+test('an unassigned cashier cannot open a store through forged branch context', function () {
+    $branch = Branch::factory()->create();
+    $user = cashierFlowUser($branch);
+    $user->branches()->detach();
+
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->post(route('store-sessions.open'), [
+            'branch_id' => $branch->id,
+            'opening_cash_amount' => '10',
+            'opening_cashless_amount' => '20',
+        ])->assertRedirectToRoute('workspace')->assertSessionMissing(ActiveBranchContext::SESSION_KEY);
+
+    $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('a deleted cashier cannot open a store with an existing authenticated session', function () {
+    $branch = Branch::factory()->create();
+    $user = cashierFlowUser($branch);
+    $this->actingAs($user);
+    User::query()->whereKey($user->id)->delete();
+
+    $this->post(route('store-sessions.open'), [
+        'opening_cash_amount' => '10',
+        'opening_cashless_amount' => '20',
+    ])->assertRedirectToRoute('login');
+
+    $this->assertGuest();
+    $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('visiting the closed cashier workspace remains read only even with opening inputs', function () {
+    $branch = Branch::factory()->create();
+    $user = cashierFlowUser($branch);
+
+    $this->actingAs($user)->get(route('workspaces.cashier', [
+        'browse' => '1',
+        'opening_cash_amount' => '10',
+        'opening_cashless_amount' => '20',
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id]));
+
+    $this->assertDatabaseCount('store_sessions', 0);
+});

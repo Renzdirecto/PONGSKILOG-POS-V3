@@ -148,6 +148,18 @@ test('a deleted user cannot open a store using a stale model', function () {
     $this->assertDatabaseCount('store_sessions', 0);
 });
 
+test('revoked cashier roles override previously loaded role and permission relationships', function () {
+    $branch = Branch::factory()->create();
+    $user = assignedStoreOpener($branch);
+    $user->load('roles.permissions', 'branches');
+    $user->roles()->detach();
+
+    expect(fn () => app(OpenStoreSession::class)->execute($user, $branch, '10', '20'))
+        ->toThrow(AuthorizationException::class);
+
+    $this->assertDatabaseCount('store_sessions', 0);
+});
+
 test('an unsaved user cannot impersonate a persisted cashier', function () {
     $branch = Branch::factory()->create();
     $cashier = assignedStoreOpener($branch);

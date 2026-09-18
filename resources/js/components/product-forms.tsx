@@ -176,7 +176,11 @@ export function ProductForm({
     );
 }
 
-export function ProductImage({ product }: { product: CatalogProduct }) {
+export function ProductImage({
+    product,
+}: {
+    product: Pick<CatalogProduct, 'name' | 'image_url'>;
+}) {
     const [failedUrl, setFailedUrl] = useState<string | null>(null);
     return product.image_url && failedUrl !== product.image_url ? (
         <img
@@ -189,7 +193,7 @@ export function ProductImage({ product }: { product: CatalogProduct }) {
             onError={() => setFailedUrl(product.image_url)}
         />
     ) : (
-        <div className="flex aspect-[3/2] w-full items-center justify-center bg-neutral-100 text-sm font-medium text-neutral-400">
+        <div className="flex aspect-[3/2] w-full items-center justify-center bg-neutral-100 px-2 text-center text-sm font-medium text-neutral-600">
             No image available
         </div>
     );

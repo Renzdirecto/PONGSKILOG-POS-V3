@@ -97,7 +97,7 @@ Phase 2F final verification (2026-09-18):
 - [x] Phase 3B — Catalog rules + branch overrides + modifiers
 - [x] Phase 3C — Product image pipeline
 - [x] Phase 3D — Product management UI
-- [ ] Phase 3E — Cashier real catalog Browse
+- [x] Phase 3E — Cashier real catalog Browse
 - [ ] Phase 3F — Security / performance / final verification
 
 - [x] Categories
@@ -110,7 +110,7 @@ Phase 2F final verification (2026-09-18):
 - [x] Low-stock threshold
 - [x] Optimized image variants
 - [x] Product image fallback
-- [ ] Lazy-loading / image performance
+- [x] Lazy-loading / image performance
 
 Phase 3A verification (2026-09-18):
 
@@ -152,6 +152,21 @@ Phase 3D implementation and verification (2026-09-18):
 - Final full verification passed: `php artisan test --compact` — 636 tests / 3081 assertions; `vendor/bin/pint --format agent`; `vendor/bin/phpstan analyse --no-progress` with the default memory limit; `npm run check:frontend`; `npm run types:check`; and `npm run build`. The build retains its non-blocking optional `fontaine` warning and plugin timing diagnostics. No regression or dependency change.
 - Scope review confirmed product/category/modifier management, product modifier assignment, image upload/replace/remove UI, branch overrides, search/filter/pagination, Owner/Super Admin access through `products.manage`, and workspace navigation only. No cashier catalog, cart/order/payment logic, inventory quantities, Customer QR ordering, destructive Product/Category deletion, or unrelated UI redesign was added.
 - Phase 3E and Phase 3F remain unchecked. The overall lazy-loading/image-performance checklist remains unchecked pending the cashier catalog in Phase 3E, despite management cards already using optimized variants and lazy loading. Automated tests use isolated SQLite and fake storage; no live database or storage writes were performed by this finalization.
+
+---
+
+Phase 3E implementation and final verification (2026-09-18):
+
+- Replaced the Cashier Browse placeholder in the existing workspace with the real active branch catalog. Browse is accessible with a CLOSED or OPEN Store Session; existing Open Store behavior remains intact. No cart, order, payment, inventory balance, Customer QR ordering, or Kitchen integration was added.
+- `BranchCatalog::browse()` bulk-loads active Categories containing active Products, with only the selected branch's overrides and an active-assigned-modifier existence summary. Categories sort by sort order/name; products sort by name. The catalog read uses at most three queries at both 1 and 30 products, without calling the per-product resolvers.
+- The server returns exact decimal effective prices (non-null override, including zero, otherwise default), branch availability independent of Store Session state, and a lean explicit projection. Branch-unavailable Products stay visible; inactive Products/Categories are excluded. Existing authentication, active-account, `pos.access`, cashier-role, and branch-context checks protect the workspace; unavailable branches receive an empty catalog.
+- Added local name search, category buttons, empty/no-match states, availability labels, and an active modifier-group summary. Reused `ProductImage` for signed five-minute `card.webp` URLs, lazy loading, reserved aspect ratio/dimensions, and missing/broken-image fallback. No raw image path, source/detail URL, inventory configuration, or management fields are included in the catalog projection.
+- Final verification rerun after UI corrections passed: focused `CashierCatalogTest` 26 tests / 220 assertions; full `php artisan test --compact` 673 tests / 3469 assertions; Pint; PHPStan with a process-only `--memory-limit=1G`; `npm run check:frontend`; `npm run types:check`; and `npm run build`. The earlier combined catalog/Cashier Store run passed 418 tests / 2324 assertions. No regression, dependency change, or machine configuration change.
+- UI rules re-check passed for the Phase 3E Browse changes after comparison with restored `08-ui-rules.md`, `09-ui-registry.md`, the decoded `design/pos.html` reference, existing Cashier components, and `14-coding-standards.md`. Corrections make category buttons grow/wrap long labels, improve fallback text contrast/alignment, use a compact 15px Browse heading and 20px section gaps, and explicitly label READ-ONLY / STORE CLOSED or STORE OPEN. Search remains 48px high and category/reset buttons at least 44px; responsive cards retain readable labels, 3:2 image space, explicit dimensions, and no added animation or component library.
+- Developer manual QA and responsive QA are accepted as PASS from the finalization request, covering CLOSED/OPEN Browse, MAIN/QAVE isolation, filters, images/fallback, and mobile/tablet/desktop behavior. Source-level responsive review also checked the 360/390/430px breakpoints and wrapping. A fresh automated visual pass after the small corrections could not run: browser tooling still reports `Unable to load browser request-header policy`. No automated visual pass is claimed.
+- Pre-existing shell exception: the current workspace uses a top header and Instrument Sans rather than the frozen dark sidebar/Poppins direction. This is recorded explicitly, not claimed as full-workspace visual compliance; the requested Phase 3E review does not redesign the shared workspace shell.
+- Restored `08-ui-rules.md` is the frozen Batch 3 file referenced by the context index and coding standards, was absent at HEAD, and is included unchanged. Its intentional Markdown hard break on line 3 produces a staged whitespace warning; other changed files pass `git diff --check`. The build retains its non-blocking optional `fontaine` warning and plugin timing diagnostics. Tests used isolated SQLite and fake storage; no live database/storage writes were performed.
+- Phase 3E and Lazy-loading / image performance are complete: the grid uses only optimized signed `card.webp` URLs, lazy loading, stable image dimensions, and missing/broken-image fallback. No ordering mutations, cart/quantity/order-type controls, payments, inventory quantities/deduction, Kitchen workflow, Customer QR ordering, or Phase 3F work was added. Phase 3F remains unchecked and Phase 3 is not marked complete.
 
 ---
 

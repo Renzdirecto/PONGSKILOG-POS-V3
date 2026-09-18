@@ -1,4 +1,17 @@
 export type CatalogChoice = { id: string; name: string; is_active: boolean };
+export type CashierCatalog = {
+    categories: { id: string; name: string }[];
+    products: {
+        id: string;
+        name: string;
+        category_id: string;
+        category_name: string;
+        effective_price: string;
+        is_available: boolean;
+        image_url: string | null;
+        has_modifiers: boolean;
+    }[];
+};
 export type Category = CatalogChoice & {
     sort_order: number;
     products_count: number;

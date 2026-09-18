@@ -5,12 +5,14 @@ import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
 import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
+import type { CashierCatalog } from '@/types/catalog';
 
 type Props = {
     workspace: string;
     eyebrow: string;
     description: string;
     store?: CashierStoreState;
+    catalog?: CashierCatalog;
 };
 
 type SharedProps = {
@@ -24,11 +26,12 @@ export default function Workspace({
     eyebrow,
     description,
     store,
+    catalog,
 }: Props) {
     const { auth, branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
 
-    if (store && branchContext.current) {
+    if (store && catalog && branchContext.current) {
         return (
             <>
                 <Head title="Cashier / POS workspace" />
@@ -37,6 +40,7 @@ export default function Workspace({
                     branch={branchContext.current}
                     store={store}
                     storeContext={storeContext}
+                    catalog={catalog}
                 />
             </>
         );

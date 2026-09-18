@@ -93,6 +93,13 @@ Phase 2F final verification (2026-09-18):
 
 ## Phase 3 — Catalog & Product Images
 
+- [x] Phase 3A — Catalog database + Eloquent foundation
+- [ ] Phase 3B — Catalog rules + branch overrides + modifiers
+- [ ] Phase 3C — Product image pipeline
+- [ ] Phase 3D — Product management UI
+- [ ] Phase 3E — Cashier real catalog Browse
+- [ ] Phase 3F — Security / performance / final verification
+
 - [ ] Categories
 - [ ] Products
 - [ ] Product modifiers
@@ -104,6 +111,14 @@ Phase 2F final verification (2026-09-18):
 - [ ] Optimized image variants
 - [ ] Product image fallback
 - [ ] Lazy-loading / image performance
+
+Phase 3A verification (2026-09-18):
+
+- Added six catalog tables, five UUID Eloquent models and factories, Branch relationships, and the `single`/`multiple` modifier selection enum. Prices use `numeric(14,2)` with `decimal:2` string casts, matching StoreSession; no authoritative floats.
+- Database constraints enforce non-negative prices/thresholds, valid selection bounds/types, unique branch/product and product/modifier mappings, and restrictive foreign keys. Indexes cover active/sorted categories, category/active products, branch availability, sorted modifier options, and reverse relationships.
+- Targeted `CatalogFoundationTest`: 43 passed / 121 assertions. `composer test`: 328 passed / 1472 assertions; Pint and PHPStan passed with a temporary process-only 1 GB memory override after PHPStan reached the local 128 MB limit. No machine-specific configuration was committed.
+- Additive migration passed on local PostgreSQL at `127.0.0.1:5432`. Read-only metadata queries verified all three `numeric(14,2)` columns, both mapping uniqueness constraints, seven CHECK constraints, six restrictive foreign keys, and lookup indexes. Isolated SQLite in-memory fresh migration passed with `DB_URL` explicitly cleared. Supabase was untouched.
+- Scope is schema/model foundation only. Main Phase 3 behavior checkboxes remain incomplete; catalog actions, effective pricing/availability, image processing, management UI, cashier Browse, and inventory quantities are not implemented in this batch.
 
 ---
 

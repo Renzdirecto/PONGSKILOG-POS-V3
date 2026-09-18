@@ -33,6 +33,12 @@ class Branch extends Model
         ];
     }
 
+    /** @return HasMany<BranchProduct, $this> */
+    public function branchProducts(): HasMany
+    {
+        return $this->hasMany(BranchProduct::class);
+    }
+
     /** @return HasMany<StoreSession, $this> */
     public function storeSessions(): HasMany
     {

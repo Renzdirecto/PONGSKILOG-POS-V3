@@ -94,7 +94,7 @@ Phase 2F final verification (2026-09-18):
 ## Phase 3 — Catalog & Product Images
 
 - [x] Phase 3A — Catalog database + Eloquent foundation
-- [ ] Phase 3B — Catalog rules + branch overrides + modifiers
+- [x] Phase 3B — Catalog rules + branch overrides + modifiers
 - [ ] Phase 3C — Product image pipeline
 - [ ] Phase 3D — Product management UI
 - [ ] Phase 3E — Cashier real catalog Browse
@@ -104,10 +104,10 @@ Phase 2F final verification (2026-09-18):
 - [ ] Products
 - [ ] Product modifiers
 - [ ] Product image upload
-- [ ] Branch product overrides
-- [ ] Branch price override
-- [ ] Branch availability
-- [ ] Low-stock threshold
+- [x] Branch product overrides
+- [x] Branch price override
+- [x] Branch availability
+- [x] Low-stock threshold
 - [ ] Optimized image variants
 - [ ] Product image fallback
 - [ ] Lazy-loading / image performance
@@ -119,6 +119,15 @@ Phase 3A verification (2026-09-18):
 - Targeted `CatalogFoundationTest`: 43 passed / 121 assertions. `composer test`: 328 passed / 1472 assertions; Pint and PHPStan passed with a temporary process-only 1 GB memory override after PHPStan reached the local 128 MB limit. No machine-specific configuration was committed.
 - Additive migration passed on local PostgreSQL at `127.0.0.1:5432`. Read-only metadata queries verified all three `numeric(14,2)` columns, both mapping uniqueness constraints, seven CHECK constraints, six restrictive foreign keys, and lookup indexes. Isolated SQLite in-memory fresh migration passed with `DB_URL` explicitly cleared. Supabase was untouched.
 - Scope is schema/model foundation only. Main Phase 3 behavior checkboxes remain incomplete; catalog actions, effective pricing/availability, image processing, management UI, cashier Browse, and inventory quantities are not implemented in this batch.
+
+Phase 3B verification (2026-09-18):
+
+- Added explicit Category, Product, Modifier Group, and Modifier Option create/update actions, BranchProduct upsert, and transactional Product Modifier Group sync. Every mutation uses the existing `products.manage` permission through a Gate that rechecks persisted user activity and permission; seeded Owner/Super Admin pass, while normal staff, inactive users, and revoked permissions are rejected.
+- Monetary input must be an unsigned decimal string with up to 12 integer digits and 2 decimal places; floats, malformed values, negatives, and overflow are rejected. Product updates preserve the existing image path. Branch overrides remain unique per branch/product and configure inventory tracking/threshold only, without inventory balances.
+- `BranchCatalog` returns the requested branch's non-null override price or the global default as an exact decimal string. Availability requires an active Category and Product and no unavailable override for that branch. It rechecks persisted state, keeps branches isolated, and excludes Store Session state.
+- Modifier configuration validates the selection enum and bounds, option group membership and price, and all submitted group IDs. Sync deduplicates mappings, accepts an empty list, preserves other products, and rolls back failed replacement writes.
+- Targeted Phase 3B tests: 220 passed / 1018 assertions. Combined Phase 3A + 3B catalog tests: 263 passed / 1139 assertions. `composer test`: 548 passed / 2490 assertions, with Pint and PHPStan passing. Tests used isolated SQLite in memory with `DB_URL` explicitly cleared. No migrations, dependencies, frontend files, or Supabase changes.
+- Only Phase 3B and completed branch override/price/availability/threshold configuration items are checked. Broader Categories, Products, and Product modifiers checklist items remain conservative pending their management integration. Phase 3C–3F, images, cashier catalog Browse, and inventory quantities remain unimplemented.
 
 ---
 

@@ -52,6 +52,8 @@ class ProductController extends Controller
                             'price_override' => $override?->price_override,
                             'effective_price' => $override->price_override ?? $product->default_price,
                             'is_available' => $override->is_available ?? true,
+                            'tracks_inventory' => $override->tracks_inventory ?? false,
+                            'low_stock_threshold' => $override?->low_stock_threshold,
                             'effective_available' => $product->is_active && $product->category->is_active && ($override->is_available ?? true),
                         ];
                     })->all(),

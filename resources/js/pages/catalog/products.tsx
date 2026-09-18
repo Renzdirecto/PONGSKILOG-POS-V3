@@ -258,13 +258,13 @@ export default function Products({
                 open={!!branchProduct}
                 onClose={() => setBranchProductId(null)}
                 title={`Branch overrides · ${branchProduct?.name ?? ''}`}
-                description="Keep the default price or set a price for each branch."
+                description="Configure pricing, availability, and inventory settings for each branch."
             >
                 {branchProduct && (
                     <div className="flex flex-col gap-4">
                         {branchProduct.branch_prices.map((branch) => (
                             <BranchPriceForm
-                                key={`${branch.branch_id}-${branch.price_override}-${branch.is_available}`}
+                                key={`${branch.branch_id}-${branch.price_override}-${branch.is_available}-${branch.tracks_inventory}-${branch.low_stock_threshold}`}
                                 product={branchProduct}
                                 branch={branch}
                             />

@@ -302,9 +302,13 @@ export function BranchPriceForm({
     const form = useForm<{
         price_override: string | null;
         is_available: boolean;
+        tracks_inventory: boolean;
+        low_stock_threshold: string;
     }>({
         price_override: branch.price_override,
         is_available: branch.is_available,
+        tracks_inventory: branch.tracks_inventory,
+        low_stock_threshold: branch.low_stock_threshold?.toString() ?? '',
     });
     const submitting = useRef(false);
     const inherited = form.data.price_override === null;
@@ -315,6 +319,25 @@ export function BranchPriceForm({
             onSubmit={(event) => {
                 event.preventDefault();
                 if (submitting.current) return;
+                const threshold =
+                    !form.data.tracks_inventory ||
+                    form.data.low_stock_threshold.trim() === ''
+                        ? null
+                        : Number(form.data.low_stock_threshold);
+                if (
+                    threshold !== null &&
+                    (!Number.isSafeInteger(threshold) || threshold < 0)
+                ) {
+                    form.setError(
+                        'low_stock_threshold',
+                        'Enter a non-negative whole number or leave blank.',
+                    );
+                    return;
+                }
+                form.transform((data) => ({
+                    ...data,
+                    low_stock_threshold: threshold,
+                }));
                 submitting.current = true;
                 form.submit(
                     updateBranch({
@@ -376,6 +399,47 @@ export function BranchPriceForm({
                     value={form.data.is_available}
                     onChange={(value) => form.setData('is_available', value)}
                 />
+                <ActiveField
+                    label="Tracks inventory"
+                    value={form.data.tracks_inventory}
+                    onChange={(value) => {
+                        form.setData((data) => ({
+                            ...data,
+                            tracks_inventory: value,
+                            low_stock_threshold: value
+                                ? data.low_stock_threshold
+                                : '',
+                        }));
+                        form.clearErrors('low_stock_threshold');
+                    }}
+                />
+                <Field
+                    id={`branch-threshold-${branch.branch_id}`}
+                    label="Low stock threshold (optional)"
+                    error={form.errors.low_stock_threshold}
+                >
+                    <input
+                        id={`branch-threshold-${branch.branch_id}`}
+                        type="number"
+                        min={0}
+                        step={1}
+                        disabled={!form.data.tracks_inventory}
+                        className={controlClass}
+                        value={form.data.low_stock_threshold}
+                        aria-invalid={!!form.errors.low_stock_threshold}
+                        aria-describedby={`branch-inventory-help-${branch.branch_id}`}
+                        onChange={(event) =>
+                            form.setData('low_stock_threshold', event.target.value)
+                        }
+                    />
+                </Field>
+                <p
+                    id={`branch-inventory-help-${branch.branch_id}`}
+                    className="text-xs text-neutral-500"
+                >
+                    Configuration only. Actual stock quantities are handled in
+                    Phase 4. Turning tracking off clears the threshold.
+                </p>
             </fieldset>
             {(!product.is_active || !product.category_active) && (
                 <p className="text-sm text-amber-800">

@@ -84,7 +84,7 @@ test('management listing exposes exact branch prices and safe image urls', funct
     $product = Product::factory()->create(['default_price' => '95.00']);
     $product->update(['image_path' => 'catalog/products/'.$product->id.'/'.Str::uuid().'/detail.webp']);
     Storage::fake('s3')->buildTemporaryUrlsUsing(fn ($path) => 'https://assets.example.test/'.$path);
-    BranchProduct::factory()->for($product)->for($main)->create(['price_override' => '99.00', 'is_available' => false]);
+    BranchProduct::factory()->for($product)->for($main)->create(['price_override' => '99.00', 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
 
     $this->actingAs($user)->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
         ->component('catalog/products')->has('products.data', 1)
@@ -92,11 +92,17 @@ test('management listing exposes exact branch prices and safe image urls', funct
         ->where('products.data.0.branch_prices.0.code', 'MAIN')
         ->where('products.data.0.branch_prices.0.effective_price', '99.00')
         ->where('products.data.0.branch_prices.0.effective_available', false)
+        ->where('products.data.0.branch_prices.0.tracks_inventory', true)
+        ->where('products.data.0.branch_prices.0.low_stock_threshold', 5)
         ->where('products.data.0.branch_prices.1.code', 'QAVE')
         ->where('products.data.0.branch_prices.1.price_override', null)
         ->where('products.data.0.branch_prices.1.effective_price', '95.00')
+        ->where('products.data.0.branch_prices.1.tracks_inventory', false)
+        ->where('products.data.0.branch_prices.1.low_stock_threshold', null)
         ->where('products.data.0.image_url', 'https://assets.example.test/'.dirname($product->image_path).'/card.webp')
         ->missing('products.data.0.image_path'));
+
+    $this->assertDatabaseCount('branch_products', 1);
 });
 
 test('product search category status and pagination constrain the catalog', function () {
@@ -140,11 +146,11 @@ test('branch prices can be overridden and restored without changing other branch
     $override = BranchProduct::factory()->for($product)->for($main)->create(['tracks_inventory' => true, 'low_stock_threshold' => 7]);
     $other = BranchProduct::factory()->for($product)->for($qave)->create(['price_override' => null]);
     $otherAttributes = $other->fresh()->getAttributes();
-    $this->actingAs($user)->from(route('products.index'))->put(route('products.branches.update', [$product, $main]), ['price_override' => '99.00', 'is_available' => false, 'tracks_inventory' => false, 'low_stock_threshold' => 0])
+    $this->actingAs($user)->from(route('products.index'))->put(route('products.branches.update', [$product, $main]), ['price_override' => '99.00', 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => 7])
         ->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
     expect($override->refresh()->price_override)->toBe('99.00')->and($override->is_available)->toBeFalse()->and($override->tracks_inventory)->toBeTrue()->and($override->low_stock_threshold)->toBe(7);
 
-    $this->put(route('products.branches.update', [$product, $main]), ['price_override' => null, 'is_available' => true])->assertSessionHasNoErrors();
+    $this->put(route('products.branches.update', [$product, $main]), ['price_override' => null, 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => 7])->assertSessionHasNoErrors();
     expect($override->refresh()->price_override)->toBeNull()->and($override->is_available)->toBeTrue();
     expect($other->refresh()->getAttributes())->toBe($otherAttributes);
     $this->assertDatabaseCount('branch_products', 2);
@@ -153,11 +159,96 @@ test('branch prices can be overridden and restored without changing other branch
 test('zero override prices are preserved and invalid prices do not replace them', function () {
     $product = Product::factory()->create();
     $branch = Branch::factory()->create();
-    $this->actingAs(catalogWebManager())->put(route('products.branches.update', [$product, $branch]), ['price_override' => '0.00', 'is_available' => true])->assertSessionHasNoErrors();
+    $this->actingAs(catalogWebManager())->put(route('products.branches.update', [$product, $branch]), ['price_override' => '0.00', 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null])->assertSessionHasNoErrors();
     $this->assertDatabaseHas('branch_products', ['product_id' => $product->id, 'branch_id' => $branch->id, 'price_override' => 0]);
 
-    $this->put(route('products.branches.update', [$product, $branch]), ['price_override' => '-1.00', 'is_available' => false])->assertSessionHasErrors('price_override');
+    $this->put(route('products.branches.update', [$product, $branch]), ['price_override' => '-1.00', 'is_available' => false, 'tracks_inventory' => false, 'low_stock_threshold' => null])->assertSessionHasErrors('price_override');
     expect(BranchProduct::query()->sole()->price_override)->toBe('0.00')->and(BranchProduct::query()->sole()->is_available)->toBeTrue();
+});
+
+test('managers can enable branch inventory configuration without affecting another branch', function (string $role) {
+    $user = catalogWebManager($role);
+    $product = Product::factory()->create();
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    $qave = Branch::factory()->create(['code' => 'QAVE']);
+    $other = BranchProduct::factory()->for($product)->for($qave)->create();
+    $otherAttributes = $other->fresh()->getAttributes();
+
+    $this->actingAs($user)->from(route('products.index'))->put(route('products.branches.update', [$product, $main]), [
+        'price_override' => null, 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => 5,
+    ])->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas('branch_products', ['product_id' => $product->id, 'branch_id' => $main->id, 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
+    expect($other->refresh()->getAttributes())->toBe($otherAttributes);
+    $this->assertDatabaseCount('branch_products', 2);
+    $this->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+        ->where('products.data.0.branch_prices.0.tracks_inventory', true)
+        ->where('products.data.0.branch_prices.0.low_stock_threshold', 5)
+        ->where('products.data.0.branch_prices.1.tracks_inventory', false)
+        ->where('products.data.0.branch_prices.1.low_stock_threshold', null));
+})->with(['owner', 'super_admin']);
+
+test('branch inventory configuration can be changed or cleared without affecting another branch', function (bool $tracksInventory, ?int $threshold) {
+    $user = catalogWebManager();
+    $product = Product::factory()->create();
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    $qave = Branch::factory()->create(['code' => 'QAVE']);
+    $override = BranchProduct::factory()->for($product)->for($main)->create(['price_override' => '99.00', 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
+    $other = BranchProduct::factory()->for($product)->for($qave)->create(['tracks_inventory' => true, 'low_stock_threshold' => 3]);
+    $otherAttributes = $other->fresh()->getAttributes();
+
+    $this->actingAs($user)->from(route('products.index'))->put(route('products.branches.update', [$product, $main]), [
+        'price_override' => '99.00', 'is_available' => true, 'tracks_inventory' => $tracksInventory, 'low_stock_threshold' => $threshold,
+    ])->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+
+    expect($override->refresh()->tracks_inventory)->toBe($tracksInventory)
+        ->and($override->low_stock_threshold)->toBe($threshold)
+        ->and($override->price_override)->toBe('99.00')
+        ->and($override->is_available)->toBeTrue();
+    expect($other->refresh()->getAttributes())->toBe($otherAttributes);
+    $this->assertDatabaseCount('branch_products', 2);
+    $this->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+        ->where('products.data.0.branch_prices.0.tracks_inventory', $tracksInventory)
+        ->where('products.data.0.branch_prices.0.low_stock_threshold', $threshold)
+        ->where('products.data.0.branch_prices.1.tracks_inventory', true)
+        ->where('products.data.0.branch_prices.1.low_stock_threshold', 3));
+})->with([
+    'change threshold' => [true, 10],
+    'zero threshold' => [true, 0],
+    'clear threshold while tracking' => [true, null],
+    'disable tracking and clear threshold' => [false, null],
+]);
+
+test('branch inventory validation rejects invalid settings without changing the override', function (array $invalid, string $field) {
+    $user = catalogWebManager();
+    $override = BranchProduct::factory()->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+    $attributes = $override->fresh()->getAttributes();
+
+    $this->actingAs($user)->put(route('products.branches.update', [$override->product, $override->branch]), array_replace([
+        'price_override' => '99.00', 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => 10,
+    ], $invalid))->assertSessionHasErrors($field);
+
+    expect($override->refresh()->getAttributes())->toBe($attributes);
+})->with([
+    'invalid tracking flag' => [['tracks_inventory' => 'invalid'], 'tracks_inventory'],
+    'negative threshold' => [['low_stock_threshold' => -1], 'low_stock_threshold'],
+    'fractional threshold' => [['low_stock_threshold' => 1.5], 'low_stock_threshold'],
+    'overflow threshold' => [['low_stock_threshold' => 2147483648], 'low_stock_threshold'],
+]);
+
+test('viewing branch inventory defaults does not create overrides', function () {
+    $user = catalogWebManager();
+    Product::factory()->create();
+    Branch::factory()->create(['code' => 'MAIN']);
+    Branch::factory()->create(['code' => 'QAVE']);
+
+    $this->actingAs($user)->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+        ->where('products.data.0.branch_prices.0.tracks_inventory', false)
+        ->where('products.data.0.branch_prices.0.low_stock_threshold', null)
+        ->where('products.data.0.branch_prices.1.tracks_inventory', false)
+        ->where('products.data.0.branch_prices.1.low_stock_threshold', null));
+
+    $this->assertDatabaseCount('branch_products', 0);
 });
 
 test('category management creates edits and deactivates categories', function () {
@@ -277,7 +368,10 @@ test('catalog endpoints require active authentication and catalog permission', f
         ['put', 'products.branches.update', [$product, $branch]],
     ];
     foreach ($routes as [$method, $name, $parameters]) {
-        $response = $this->{$method}(route($name, $parameters));
+        $input = $name === 'products.branches.update'
+            ? ['price_override' => null, 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => 5]
+            : [];
+        $response = $this->{$method}(route($name, $parameters), $input);
         if (in_array($access, ['guest', 'inactive'])) {
             $response->assertRedirectToRoute('login');
         } else {

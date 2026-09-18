@@ -15,12 +15,9 @@ class BranchProductController extends Controller
     {
         DB::transaction(function () use ($request, $product, $branch, $upsert): void {
             $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
-            $override = $product->branchProducts()->where('branch_id', $branch->id)->first();
-            $upsert->execute($request->user(), $branch, $product, [
-                ...$request->only(['price_override', 'is_available']),
-                'tracks_inventory' => $override->tracks_inventory ?? false,
-                'low_stock_threshold' => $override?->low_stock_threshold,
-            ]);
+            $upsert->execute($request->user(), $branch, $product, $request->only([
+                'price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold',
+            ]));
         });
 
         return back();

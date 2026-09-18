@@ -21,6 +21,8 @@ export type BranchPrice = {
     price_override: string | null;
     effective_price: string;
     is_available: boolean;
+    tracks_inventory: boolean;
+    low_stock_threshold: number | null;
     effective_available: boolean;
 };
 export type CatalogProduct = CatalogChoice & {

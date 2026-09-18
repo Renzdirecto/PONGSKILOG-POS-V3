@@ -2,10 +2,16 @@
 
 use App\Http\Controllers\ActiveBranchController;
 use App\Http\Controllers\BranchController;
+use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerQrController;
+use App\Http\Controllers\ModifierGroupController;
+use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +26,15 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('branches/select', BranchSelectionController::class)->name('branches.select');
     Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
+    Route::middleware('can:products.manage')->group(function () {
+        Route::resource('products', ProductController::class)->only(['index', 'store', 'update']);
+        Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);
+        Route::resource('modifier-groups', ModifierGroupController::class)->only(['index', 'store', 'update']);
+        Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
+        Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:20,1')->name('products.image.store');
+        Route::delete('products/{product}/image', [ProductImageController::class, 'destroy'])->name('products.image.destroy');
+        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
+    });
     Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
         ->name('branch-context.update');
     Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])

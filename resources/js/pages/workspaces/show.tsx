@@ -3,6 +3,7 @@ import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
 import { CashierStore } from '@/components/cashier-store';
 import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
+import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 
 type Props = {
@@ -74,6 +75,14 @@ export default function Workspace({
                     </div>
                 </div>
 
+                {auth.permissions.includes('products.manage') && (
+                    <Link
+                        href={productsIndex()}
+                        className="mr-3 mb-6 inline-flex min-h-11 items-center rounded-xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800"
+                    >
+                        Product management
+                    </Link>
+                )}
                 {branchContext.businessWide &&
                     auth.permissions.includes('settings.manage') && (
                         <Link

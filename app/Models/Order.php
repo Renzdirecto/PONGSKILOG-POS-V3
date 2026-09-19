@@ -27,7 +27,7 @@ use Illuminate\Support\Carbon;
  * @property PaymentTerm|null $payment_term
  * @property KitchenStatus $kitchen_status
  */
-#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'version'])]
+#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'pay_later_idempotency_key', 'version'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
@@ -97,6 +97,12 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    /** @return HasMany<InventoryMovement, $this> */
+    public function inventoryMovements(): HasMany
+    {
+        return $this->hasMany(InventoryMovement::class);
     }
 
     /** @return HasOne<KitchenTicket, $this> */

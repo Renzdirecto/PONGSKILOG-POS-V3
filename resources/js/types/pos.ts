@@ -42,6 +42,16 @@ export type OrderSummary = {
     }[];
 };
 
+export type PayLaterOrder = OrderSummary & {
+    commercial_status: 'active';
+    payment_status: 'unpaid';
+    payment_term: 'pay_later';
+    kitchen_status: 'kitchen';
+    store_session_id: string;
+    committed_at: string;
+    cashier: string;
+};
+
 export type PaymentInput = {
     payment_method: 'cash' | 'cashless' | 'split';
     cash_received: string | null;

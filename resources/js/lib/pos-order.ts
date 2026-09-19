@@ -1,4 +1,23 @@
-import type { BranchTable, OrderType, PosProduct } from '@/types/pos';
+import type { BranchTable, CartLine, OrderType, PosProduct } from '@/types/pos';
+
+export function freshOrderDetails(): {
+    order_type: string;
+    branch_table_id: string;
+    customer_label: string;
+    items: {
+        product_id: string;
+        quantity: number;
+        notes: string;
+        modifiers: CartLine['modifiers'];
+    }[];
+} {
+    return {
+        order_type: '',
+        branch_table_id: '',
+        customer_label: '',
+        items: [],
+    };
+}
 
 export function orderNumberLabel(orderNumber: string | null): string {
     return orderNumber ? `#${orderNumber}` : 'Preparing order…';

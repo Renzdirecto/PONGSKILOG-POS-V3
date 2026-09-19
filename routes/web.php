@@ -14,6 +14,8 @@ use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
+use App\Http\Controllers\PosPayLaterController;
+use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
@@ -70,6 +72,8 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
         Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
+        Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
+        Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
     });
 

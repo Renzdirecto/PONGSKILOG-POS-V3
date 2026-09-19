@@ -8,6 +8,8 @@ import {
 import {
     Check,
     ChevronRight,
+    Clock3,
+    Plus,
     ShoppingBag,
     UtensilsCrossed,
 } from 'lucide-react';
@@ -35,11 +37,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
 import {
+    confirmedPayLaterState,
+    payLaterAttemptForOrder,
+    type PayLaterAttemptIdentity,
+} from '@/lib/pos-pay-later';
+import {
     customerDisplayLabel,
     customerLabelAfterTableChange,
+    freshOrderDetails,
     needsOrderReservation,
 } from '@/lib/pos-order';
 import { store } from '@/routes/pos/orders';
+import { store as commitPayLater } from '@/routes/pos/orders/pay-later';
 import type { BranchSummary } from '@/types';
 import type { CashierCatalog as Catalog } from '@/types/catalog';
 import type {
@@ -48,6 +57,7 @@ import type {
     OrderSummary,
     OrderReservation,
     OrderType,
+    PayLaterOrder,
     PosProduct,
     PaymentInput,
     PaymentAttempt,
@@ -89,6 +99,16 @@ export function CashierPos({
         null,
         `${rememberKey}:receipt`,
     );
+    const [payLaterAttempt, setPayLaterAttempt] =
+        useRemember<PayLaterAttemptIdentity | null>(
+            null,
+            `${rememberKey}:pay-later-attempt`,
+        );
+    const [payLaterSuccess, setPayLaterSuccess] =
+        useRemember<PayLaterOrder | null>(
+            null,
+            `${rememberKey}:pay-later-success`,
+        );
     const payment = useHttp<PaymentAttempt, { receipt: PaidReceipt }>({
         idempotency_key: '',
         payment_method: 'cash',
@@ -99,21 +119,30 @@ export function CashierPos({
         { order_type: OrderType },
         { order: OrderReservation }
     >({ order_type: 'take_out' });
+    const payLater = useHttp<
+        { idempotency_key: string },
+        { order: PayLaterOrder }
+    >({ idempotency_key: '' });
     const reservationSubmitting = useRef(false);
     const [reservationError, setReservationError] = useState('');
     const [paymentError, setPaymentError] = useState('');
+    const [payLaterError, setPayLaterError] = useState('');
     const paymentSubmitting = useRef(false);
+    const payLaterSubmitting = useRef(false);
     const [dialog, setDialog] = useState<
         | 'type'
         | 'cart'
         | 'information'
         | 'payment'
         | 'paid'
+        | 'payLaterSuccess'
         | 'receipt'
         | 'discard'
         | null
     >(
-        attempt
+        payLaterSuccess
+            ? 'payLaterSuccess'
+            : attempt
             ? 'payment'
             : receipt
               ? 'paid'
@@ -129,17 +158,7 @@ export function CashierPos({
         line?: CartLine;
     } | null>(null);
     const submitting = useRef(false);
-    const form = useForm(`${rememberKey}:details`, {
-        order_type: '',
-        branch_table_id: '',
-        customer_label: '',
-        items: [] as {
-            product_id: string;
-            quantity: number;
-            notes: string;
-            modifiers: CartLine['modifiers'];
-        }[],
-    });
+    const form = useForm(`${rememberKey}:details`, freshOrderDetails());
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber = saved?.order_number ?? reservation?.order_number ?? null;
 
@@ -186,6 +205,9 @@ export function CashierPos({
     }
     function beginOrder(type: OrderType | null) {
         setReceipt(null);
+        setPayLaterSuccess(null);
+        setPayLaterAttempt(null);
+        setPayLaterError('');
         setAttempt(null);
         setPaymentError('');
         setLines([]);
@@ -194,6 +216,7 @@ export function CashierPos({
         setOrderType(type);
         setPendingType(null);
         form.reset();
+        form.setData(freshOrderDetails());
         form.clearErrors();
         setDialog(type ? null : 'type');
     }
@@ -278,6 +301,7 @@ export function CashierPos({
             setSaved(null);
             setReservation(null);
             form.reset();
+            form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('paid');
             router.reload({ only: ['catalog', 'storeSession'] });
@@ -319,6 +343,81 @@ export function CashierPos({
             }
         } finally {
             paymentSubmitting.current = false;
+        }
+    }
+    async function activatePayLater() {
+        if (payLaterSubmitting.current || !saved) return;
+        if (!navigator.onLine) {
+            setPayLaterError(
+                'You are offline. Reconnect before activating Pay Later.',
+            );
+            return;
+        }
+
+        const activation = payLaterAttemptForOrder(
+            payLaterAttempt,
+            saved.id,
+        );
+        payLaterSubmitting.current = true;
+        setPayLaterAttempt(activation);
+        setPayLaterError('');
+        payLater.transform(() => ({
+            idempotency_key: activation.idempotency_key,
+        }));
+        try {
+            const result = await payLater.submit(commitPayLater(saved.id));
+            if (!result.order || !confirmedPayLaterState(result.order)) {
+                throw new Error('Unconfirmed Pay Later result');
+            }
+            setPayLaterSuccess(result.order);
+            setPayLaterAttempt(null);
+            setLines([]);
+            setSaved(null);
+            setReservation(null);
+            form.reset();
+            form.setData(freshOrderDetails());
+            form.clearErrors();
+            setDialog('payLaterSuccess');
+            router.reload({ only: ['catalog', 'storeSession'] });
+        } catch (error: unknown) {
+            const response =
+                error && typeof error === 'object' && 'response' in error
+                    ? (error.response as {
+                          status: number;
+                          data?: {
+                              message?: string;
+                              errors?: Record<string, string[]>;
+                          };
+                      })
+                    : null;
+            if (
+                response &&
+                [401, 403, 404, 409, 419, 422].includes(response.status)
+            ) {
+                setPayLaterAttempt(null);
+                const messages = Object.values(
+                    response.data?.errors ?? {},
+                ).flat();
+                setPayLaterError(
+                    messages.join(' ') ||
+                        response.data?.message ||
+                        ({
+                            401: 'Your session expired. Sign in again before activating Pay Later.',
+                            403: 'Your cashier or branch access is no longer available.',
+                            404: 'This order is unavailable in the current branch.',
+                            409: 'This order was already committed by another Pay Later attempt.',
+                            419: 'Your session expired. Refresh and sign in again.',
+                            422: 'Check the order details and current stock before trying again.',
+                        }[response.status] ??
+                            'Pay Later was rejected.'),
+                );
+            } else {
+                setPayLaterError(
+                    'Pay Later result is unconfirmed. Retry to safely recover the same attempt.',
+                );
+            }
+        } finally {
+            payLaterSubmitting.current = false;
         }
     }
     const customer = saved
@@ -451,7 +550,9 @@ export function CashierPos({
                             !open &&
                             !form.processing &&
                             !payment.processing &&
+                            !payLater.processing &&
                             !attempt &&
+                            !payLaterAttempt &&
                             dialog !== 'type'
                         )
                             setDialog(null);
@@ -468,13 +569,15 @@ export function CashierPos({
                                 ? `${posDialogClass} pos-payment-dialog`
                                 : dialog === 'cart'
                                   ? `${posDialogClass} sm:max-w-[480px]`
-                                  : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
+                                : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&:has([data-pay-later-success])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
                         }
                         onInteractOutside={(event) => {
                             if (
                                 form.processing ||
                                 payment.processing ||
+                                payLater.processing ||
                                 attempt ||
+                                payLaterAttempt ||
                                 dialog === 'type'
                             )
                                 event.preventDefault();
@@ -483,7 +586,9 @@ export function CashierPos({
                             if (
                                 form.processing ||
                                 payment.processing ||
+                                payLater.processing ||
                                 attempt ||
+                                payLaterAttempt ||
                                 dialog === 'type'
                             )
                                 event.preventDefault();
@@ -592,7 +697,9 @@ export function CashierPos({
                             <>
                                 <div
                                     className={
-                                        dialog === 'paid' || dialog === 'receipt'
+                                        dialog === 'paid' ||
+                                        dialog === 'receipt' ||
+                                        dialog === 'payLaterSuccess'
                                             ? 'sr-only'
                                             : 'shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14'
                                     }
@@ -603,7 +710,9 @@ export function CashierPos({
                                             : dialog === 'payment'
                                               ? 'Payment'
                                               : dialog === 'paid'
-                                                ? 'Payment successful'
+                                              ? 'Payment successful'
+                                              : dialog === 'payLaterSuccess'
+                                                ? 'Pay Later activated'
                                                 : dialog === 'receipt'
                                                   ? 'Receipt'
                                                   : dialog === 'discard'
@@ -658,6 +767,164 @@ export function CashierPos({
                                             onBack={() => setDialog('paid')}
                                             onNewOrder={() => beginOrder(null)}
                                         />
+                                    )}
+                                {dialog === 'payLaterSuccess' &&
+                                    payLaterSuccess && (
+                                        <div
+                                            data-pay-later-success
+                                            className="flex min-h-0 flex-col"
+                                        >
+                                            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[18px] pt-6 pb-[18px]">
+                                                <div className="flex flex-col items-center gap-2 text-center">
+                                                    <span className="mb-0.5 flex size-[50px] items-center justify-center rounded-[15px] bg-amber-50 text-amber-700">
+                                                        <Clock3 className="size-6" />
+                                                    </span>
+                                                    <p className="text-[40px] leading-none font-bold tracking-tight wrap-anywhere text-red-700">
+                                                        #
+                                                        {
+                                                            payLaterSuccess.order_number
+                                                        }
+                                                    </p>
+                                                    <div className="flex flex-wrap justify-center gap-2">
+                                                        <span className="inline-flex h-[26px] items-center rounded-full border border-red-200 bg-red-50 px-3 text-[11.5px] font-bold tracking-wider text-red-700">
+                                                            UNPAID
+                                                        </span>
+                                                        <span className="inline-flex h-[26px] items-center rounded-full border border-amber-300 bg-amber-50 px-3 text-[11.5px] font-bold tracking-wider text-amber-800">
+                                                            PAY LATER
+                                                        </span>
+                                                    </div>
+                                                    <p className="max-w-72 text-[12.5px] leading-5 text-neutral-600">
+                                                        Sent to the kitchen and
+                                                        recorded in Transaction
+                                                        History. Payment remains
+                                                        pending.
+                                                    </p>
+                                                </div>
+                                                <dl className="overflow-hidden rounded-[14px] border border-neutral-200">
+                                                    {[
+                                                        [
+                                                            'Order type',
+                                                            payLaterSuccess.order_type ===
+                                                            'dine_in'
+                                                                ? 'Dine in'
+                                                                : 'Take out',
+                                                        ],
+                                                        [
+                                                            'Customer / table',
+                                                            customerDisplayLabel(
+                                                                payLaterSuccess.customer_label,
+                                                                payLaterSuccess.table_name,
+                                                            ) || 'Walk-in',
+                                                        ],
+                                                        [
+                                                            'Reference',
+                                                            payLaterSuccess.reference_number ??
+                                                                'â€”',
+                                                        ],
+                                                        [
+                                                            'Payment status',
+                                                            'Pending · Pay Later',
+                                                        ],
+                                                    ].map(([label, value]) => (
+                                                        <div
+                                                            key={label}
+                                                            className="flex items-center justify-between gap-3 border-b border-neutral-100 px-3.5 py-3 last:border-b-0"
+                                                        >
+                                                            <dt className="shrink-0 text-xs text-neutral-500">
+                                                                {label}
+                                                            </dt>
+                                                            <dd className="min-w-0 text-right text-[13px] font-semibold wrap-anywhere">
+                                                                {value}
+                                                            </dd>
+                                                        </div>
+                                                    ))}
+                                                </dl>
+                                                <div className="overflow-hidden rounded-[14px] border border-neutral-200">
+                                                    <p className="bg-neutral-50 px-3.5 py-2.5 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
+                                                        Order items
+                                                    </p>
+                                                    <ul className="max-h-[200px] divide-y divide-neutral-100 overflow-y-auto">
+                                                        {payLaterSuccess.items.map(
+                                                            (item) => (
+                                                                <li
+                                                                    key={
+                                                                        item.id
+                                                                    }
+                                                                    className="flex items-start justify-between gap-3 px-3.5 py-2.5"
+                                                                >
+                                                                    <span className="min-w-0 space-y-0.5">
+                                                                        <span className="block text-[13px] font-semibold wrap-anywhere">
+                                                                            {
+                                                                                item.quantity
+                                                                            }
+                                                                            ×{' '}
+                                                                            {
+                                                                                item.name
+                                                                            }
+                                                                        </span>
+                                                                        {item.modifiers.map(
+                                                                            (
+                                                                                modifier,
+                                                                            ) => (
+                                                                                <span
+                                                                                    key={
+                                                                                        modifier.id
+                                                                                    }
+                                                                                    className="block text-[11px] leading-4 text-neutral-500 wrap-anywhere"
+                                                                                >
+                                                                                    {
+                                                                                        modifier.group_name
+                                                                                    }
+                                                                                    :{' '}
+                                                                                    {
+                                                                                        modifier.name
+                                                                                    }
+                                                                                </span>
+                                                                            ),
+                                                                        )}
+                                                                        {item.notes && (
+                                                                            <span className="block text-[11px] leading-4 text-amber-800 wrap-anywhere">
+                                                                                Note:{' '}
+                                                                                {
+                                                                                    item.notes
+                                                                                }
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
+                                                                    <span className="shrink-0 text-[13px] font-semibold tabular-nums">
+                                                                        {pesos(
+                                                                            item.line_total,
+                                                                        )}
+                                                                    </span>
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                    <div className="flex items-baseline justify-between gap-3 bg-neutral-950 px-3.5 py-3 text-white">
+                                                        <span className="text-[13px] font-semibold">
+                                                            Total
+                                                        </span>
+                                                        <span className="text-[22px] font-bold tracking-tight tabular-nums">
+                                                            {pesos(
+                                                                payLaterSuccess.total,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <footer className="shrink-0 border-t border-neutral-200 px-3.5 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
+                                                <Button
+                                                    type="button"
+                                                    className="h-12 w-full rounded-xl bg-neutral-950 text-[15.5px] text-white hover:bg-black"
+                                                    onClick={() =>
+                                                        beginOrder(null)
+                                                    }
+                                                >
+                                                    <Plus className="size-4" />
+                                                    New order
+                                                </Button>
+                                            </footer>
+                                        </div>
                                     )}
                                 {dialog === 'payment' &&
                                     orderType &&
@@ -845,12 +1112,12 @@ export function CashierPos({
                                             <div className="space-y-1.5 rounded-xl bg-neutral-50 p-3 text-xs">
                                                 <p className="font-semibold">
                                                     {saved
-                                                        ? 'Draft saved · unpaid'
+                                                        ? 'Ready for Pay Later'
                                                         : `${lines.reduce((sum, line) => sum + line.quantity, 0)} items · ${pesos(total)} preview`}
                                                 </p>
                                                 <p className="leading-5 text-neutral-500">
                                                     {saved
-                                                        ? 'Stock has not been reserved. This is an uncommitted draft.'
+                                                        ? 'Activating Pay Later deducts stock immediately and sends this order to the kitchen. Payment remains unpaid.'
                                                         : 'Proceed saves a draft and checks current prices and availability. No payment, stock deduction or kitchen ticket.'}
                                                 </p>
                                             </div>
@@ -872,19 +1139,34 @@ export function CashierPos({
                                                     </p>
                                                 </div>
                                             )}
+                                            {payLaterError && (
+                                                <div
+                                                    role="alert"
+                                                    className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                                                >
+                                                    <p>{payLaterError}</p>
+                                                    <p>
+                                                        This order is kept. Fix
+                                                        the issue, then retry
+                                                        safely.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                         <footer className="flex shrink-0 flex-col gap-2 border-t border-neutral-200 px-3.5 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
-                                            <p className="text-center text-[11px] text-neutral-500">
-                                                Pay Later activation will be
-                                                enabled in Phase 7.
-                                            </p>
                                             {saved ? (
                                                 <Button
                                                     type="button"
-                                                    disabled
-                                                    className="h-12 rounded-xl bg-amber-50 text-amber-800"
+                                                    disabled={
+                                                        payLater.processing
+                                                    }
+                                                    className="h-12 rounded-xl border border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                                    onClick={activatePayLater}
                                                 >
-                                                    Activate Pay Later
+                                                    <Clock3 className="size-4" />
+                                                    {payLater.processing
+                                                        ? 'Activating Pay Later…'
+                                                        : 'Activate Pay Later'}
                                                 </Button>
                                             ) : (
                                                 <Button
@@ -901,8 +1183,14 @@ export function CashierPos({
                                             <button
                                                 type="button"
                                                 className="min-h-11 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
-                                                disabled={form.processing}
-                                                onClick={() => setDialog(null)}
+                                                disabled={
+                                                    form.processing ||
+                                                    payLater.processing
+                                                }
+                                                onClick={() => {
+                                                    setPayLaterError('');
+                                                    setDialog(null);
+                                                }}
                                             >
                                                 {saved
                                                     ? 'Back to POS'

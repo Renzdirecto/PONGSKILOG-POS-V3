@@ -446,14 +446,22 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 
 ## Phase 7 — Pay Later
 
-- [ ] Save as UNPAID / PAY LATER
-- [ ] Immediate inventory deduction
-- [ ] Immediate Kitchen ticket
-- [ ] Transaction History entry
-- [ ] Later payment settlement
-- [ ] Prevent second inventory deduction
-- [ ] Prevent duplicate Kitchen ticket
-- [ ] Pay Later idempotency tests
+- [x] Save as UNPAID / PAY LATER
+- [x] Immediate inventory deduction
+- [x] Immediate Kitchen ticket
+- [x] Transaction History entry
+- [x] Later payment settlement
+- [x] Prevent second inventory deduction
+- [x] Prevent duplicate Kitchen ticket
+- [x] Pay Later idempotency tests
+
+Phase 7 implementation verification (2026-09-20):
+
+- Added an idempotent Pay Later activation boundary that atomically commits the existing POS draft as `UNPAID / PAY LATER`, applies one aggregated `pay_later_commit` movement per tracked product, creates one Kitchen ticket, and emits the existing order/Kitchen events only after commit. Later settlement is a separate idempotent backend operation that writes exact Cash, Cashless, or Split payment legs and marks the order paid without repeating inventory or Kitchen effects.
+- Authorization, persisted active-user/branch access, current OPEN Store Session, branch/order/table ownership, draft eligibility, server-owned fields, current product/category/branch availability, tracked stock, snapshot prices, replay identity, and rollback behavior are covered. The additive UUID activation key migration passed local PostgreSQL and isolated SQLite fresh migration checks.
+- Focused order/payment/inventory/session coverage passed at 364 tests / 2,532 assertions. The full suite passed at 1,081 tests / 6,553 assertions. The isolated PostgreSQL harness passed same-key replay, competing activation keys, last-unit stock, repeated-line aggregation, reversed product ordering, Kitchen rollback, duplicate Cash/Split settlement, after-commit event replay, and schema cleanup.
+- Frontend verification passed 13 Node tests, frontend lint, TypeScript, PHPStan with a 1 GB process limit, Pint, and the production build. Browser QA passed Take Out with no label/table, Dine In with table only, Take Out with a custom label, tracked-stock refresh, clean New order state, and responsive widths 390 / 430 / 820 / 1024 / 1440 with no horizontal overflow or browser console errors.
+- This checkpoint does not add the Phase 8 KDS or the Phase 12 Transaction History interface. User manual acceptance and the separate final implementation audit remain pending; this note is not a production-readiness approval.
 
 ---
 

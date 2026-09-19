@@ -8,6 +8,8 @@
  */
 
 use App\Actions\Orders\PayNowOrder;
+use App\Actions\Orders\ReservePosOrder;
+use App\Enums\OrderType;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Models\Branch;
@@ -67,7 +69,8 @@ verify(app()->environment(['local', 'testing']), 'Only local/testing environment
 verify(config('database.default') === 'pgsql' && empty($connection['url']), 'Explicit pgsql settings and DB_URL=null are required.');
 verify(in_array($connection['host'], ['127.0.0.1', '::1'], true), 'Only literal loopback PostgreSQL hosts are allowed.');
 verify(ctype_digit((string) $connection['port']), 'A single numeric local port is required.');
-$worker = ($argv[1] ?? null) === '--worker';
+$workerMode = $argv[1] ?? null;
+$worker = in_array($workerMode, ['--worker', '--reservation-worker', '--multi-product-worker'], true);
 $schema = $worker ? ($argv[2] ?? '') : 'phase6_'.bin2hex(random_bytes(8));
 verify(preg_match('/\Aphase6_[a-f0-9]{16}\z/', $schema) === 1, 'Invalid isolated schema name.');
 config([
@@ -85,6 +88,53 @@ if ($worker) {
     verify(DB::selectOne('SELECT current_schema() AS schema')->schema === $schema, 'Worker schema isolation failed.');
     DB::statement("SET lock_timeout = '15s'");
     DB::statement("SET statement_timeout = '20s'");
+
+    if ($workerMode === '--reservation-worker') {
+        DB::selectOne("SELECT set_config('application_name', ?, false)", [$schema.'_reservation_'.$argv[6]]);
+        $order = app(ReservePosOrder::class)->execute(
+            User::findOrFail($argv[3]),
+            Branch::findOrFail($argv[4]),
+            OrderType::from($argv[5]),
+        );
+        verifyUsableConnection();
+        echo json_encode([
+            'status' => 'reserved',
+            'order' => $order->id,
+            'number' => $order->order_number,
+            'reference' => $order->reference_number,
+            'type' => $order->order_type->value,
+            'pid' => DB::selectOne('SELECT pg_backend_pid() AS pid')->pid,
+        ], JSON_THROW_ON_ERROR).PHP_EOL;
+        exit(0);
+    }
+
+    if ($workerMode === '--multi-product-worker') {
+        DB::selectOne("SELECT set_config('application_name', ?, false)", [$schema.'_multi_'.$argv[8]]);
+        $productIds = [$argv[5], $argv[6]];
+        if ($argv[8] === '1') {
+            $productIds = array_reverse($productIds);
+        }
+        $payload = [
+            'order_type' => 'take_out',
+            'idempotency_key' => $argv[7],
+            'payment_method' => 'cash',
+            'cash_received' => '1000.00',
+            'items' => array_map(
+                fn (string $productId): array => ['product_id' => $productId, 'quantity' => 1, 'modifiers' => [], 'notes' => 'Reverse lock-order acceptance'],
+                $productIds,
+            ),
+        ];
+        $order = app(PayNowOrder::class)->execute(User::findOrFail($argv[3]), Branch::findOrFail($argv[4]), $payload);
+        verifyUsableConnection();
+        echo json_encode([
+            'status' => 'paid',
+            'order' => $order->id,
+            'number' => $order->order_number,
+            'pid' => DB::selectOne('SELECT pg_backend_pid() AS pid')->pid,
+        ], JSON_THROW_ON_ERROR).PHP_EOL;
+        exit(0);
+    }
+
     DB::selectOne("SELECT set_config('application_name', ?, false)", [$schema.'_'.$argv[3].'_'.$argv[8]]);
     $payload = [...draftPayload($argv[5]), 'idempotency_key' => $argv[6], 'payment_method' => $argv[7]];
     if ($argv[7] === 'split') {
@@ -139,6 +189,114 @@ try {
         verify(in_array($name, $indexes, true), 'Missing index '.$name);
     }
     echo 'SCHEMA PASS: numeric order identity/counter, UUIDs, numeric(14,2), checks, unique keys, restrictive FKs, indexes.'.PHP_EOL;
+
+    $processEnvironment = [
+        'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_URL' => 'null',
+        'DB_HOST' => $connection['host'], 'DB_PORT' => (string) $connection['port'],
+        'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'],
+        'DB_PASSWORD' => $connection['password'], 'DB_SSLMODE' => $connection['sslmode'],
+    ];
+    $cashierRole = Role::query()->where('name', 'cashier')->sole();
+
+    $reservationBranch = Branch::factory()->create();
+    StoreSession::factory()->for($reservationBranch)->create();
+    $reservationCashier = User::factory()->create();
+    $reservationCashier->roles()->attach($cashierRole);
+    $reservationCashier->branches()->attach($reservationBranch, ['is_active' => true]);
+    $processes = [];
+    DB::beginTransaction();
+    Branch::query()->whereKey($reservationBranch->id)->lockForUpdate()->sole();
+    foreach (['dine_in', 'take_out'] as $index => $orderType) {
+        $process = new Process([
+            PHP_BINARY, __FILE__, '--reservation-worker', $schema, (string) $reservationCashier->id,
+            $reservationBranch->id, $orderType, (string) $index,
+        ], dirname(__DIR__), $processEnvironment, timeout: 30);
+        $processes[] = $process;
+        $process->start();
+    }
+    $deadline = hrtime(true) + 10_000_000_000;
+    do {
+        $waiting = $observer->select("SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE ? AND state = 'active' AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0", [$schema.'_reservation_%']);
+        if (count($waiting) === 2) {
+            break;
+        }
+        foreach ($processes as $process) {
+            verify($process->isRunning(), 'Reservation worker exited before overlap: '.$process->getErrorOutput().$process->getOutput());
+        }
+        verify(hrtime(true) < $deadline, 'Reservation workers did not overlap at the branch lock.');
+        usleep(10_000);
+    } while (true);
+    DB::commit();
+    $reservationResults = [];
+    foreach ($processes as $process) {
+        verify($process->wait() === 0, 'Reservation worker failed: '.$process->getErrorOutput().$process->getOutput());
+        $reservationResults[] = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    }
+    verify(count(array_unique(array_column($reservationResults, 'pid'))) === 2, 'Reservation workers must use independent connections.');
+    verify(count(array_unique(array_column($reservationResults, 'order'))) === 1, 'Same-cashier reservation race created duplicate orders.');
+    verify(count(array_unique(array_column($reservationResults, 'number'))) === 1 && $reservationResults[0]['number'] === '1001', 'Same-cashier reservation number was not stable from 1001.');
+    verify(count(array_unique(array_column($reservationResults, 'reference'))) === 1, 'Same-cashier reservation reference changed.');
+    verify(Order::query()->where('branch_id', $reservationBranch->id)->count() === 1, 'Same-cashier reservation race persisted more than one order.');
+    verify((int) DB::table('order_number_counters')->where('branch_id', $reservationBranch->id)->value('next_number') === 1002, 'Reservation race advanced the counter more than once.');
+    $reusedReservation = app(ReservePosOrder::class)->execute($reservationCashier, $reservationBranch, OrderType::DineIn);
+    verify($reusedReservation->id === $reservationResults[0]['order'] && $reusedReservation->order_number === '1001', 'Sequential retry did not reuse the reservation.');
+    verifyUsableConnection();
+    echo 'RESERVATION PASS: overlapping same-cashier Dine In/Take Out requests reuse one stable #1001 reservation and advance the counter once.'.PHP_EOL;
+
+    $multiCashierBranch = Branch::factory()->create();
+    StoreSession::factory()->for($multiCashierBranch)->create();
+    $reservationCashiers = User::factory()->count(2)->create();
+    foreach ($reservationCashiers as $cashier) {
+        $cashier->roles()->attach($cashierRole);
+        $cashier->branches()->attach($multiCashierBranch, ['is_active' => true]);
+    }
+    $processes = [];
+    DB::beginTransaction();
+    Branch::query()->whereKey($multiCashierBranch->id)->lockForUpdate()->sole();
+    foreach ($reservationCashiers as $index => $cashier) {
+        $process = new Process([
+            PHP_BINARY, __FILE__, '--reservation-worker', $schema, (string) $cashier->id,
+            $multiCashierBranch->id, 'take_out', (string) $index,
+        ], dirname(__DIR__), $processEnvironment, timeout: 30);
+        $processes[] = $process;
+        $process->start();
+    }
+    $deadline = hrtime(true) + 10_000_000_000;
+    do {
+        $waiting = $observer->select("SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE ? AND state = 'active' AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0", [$schema.'_reservation_%']);
+        if (count($waiting) === 2) {
+            break;
+        }
+        foreach ($processes as $process) {
+            verify($process->isRunning(), 'Multi-cashier reservation worker exited before overlap: '.$process->getErrorOutput().$process->getOutput());
+        }
+        verify(hrtime(true) < $deadline, 'Multi-cashier reservation workers did not overlap.');
+        usleep(10_000);
+    } while (true);
+    DB::commit();
+    $multiCashierResults = [];
+    foreach ($processes as $process) {
+        verify($process->wait() === 0, 'Multi-cashier reservation worker failed: '.$process->getErrorOutput().$process->getOutput());
+        $multiCashierResults[] = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    }
+    $multiCashierNumbers = array_column($multiCashierResults, 'number');
+    sort($multiCashierNumbers);
+    verify($multiCashierNumbers === ['1001', '1002'], 'Different cashiers did not receive distinct serialized reservations.');
+    verify(count(array_unique(array_column($multiCashierResults, 'order'))) === 2, 'Different cashiers shared a reservation.');
+    verify((int) DB::table('order_number_counters')->where('branch_id', $multiCashierBranch->id)->value('next_number') === 1003, 'Multi-cashier reservation counter is incorrect.');
+    echo 'RESERVATION PASS: overlapping cashiers receive distinct #1001/#1002 reservations.'.PHP_EOL;
+
+    $independentBranches = Branch::factory()->count(2)->create();
+    foreach ($independentBranches as $independentBranch) {
+        StoreSession::factory()->for($independentBranch)->create();
+        $reservationCashier->branches()->attach($independentBranch, ['is_active' => true]);
+    }
+    $branchReservations = $independentBranches->map(
+        fn (Branch $independentBranch): Order => app(ReservePosOrder::class)->execute($reservationCashier, $independentBranch, OrderType::TakeOut),
+    );
+    verify($branchReservations->pluck('order_number')->all() === ['1001', '1001'], 'Independent branches did not each start at #1001.');
+    verify($branchReservations->pluck('reference_number')->unique()->count() === 2, 'Independent branch references collided.');
+    echo 'RESERVATION PASS: two independent branches each start at #1001 with distinct immutable references.'.PHP_EOL;
 
     $events = [];
     foreach ([OrderCommitted::class, KitchenTicketCreated::class] as $event) {
@@ -206,6 +364,53 @@ try {
         verifyUsableConnection();
         echo 'CONCURRENCY PASS: '.$scenario.'; two observed overlapping PostgreSQL workers; one order, stock mutation and ticket; clean reusable connections.'.PHP_EOL;
     }
+
+    $multiProductBranch = Branch::factory()->create();
+    StoreSession::factory()->for($multiProductBranch)->create();
+    $multiProductCashier = User::factory()->create();
+    $multiProductCashier->roles()->attach($cashierRole);
+    $multiProductCashier->branches()->attach($multiProductBranch, ['is_active' => true]);
+    $multiProducts = Product::factory()->count(2)->create(['default_price' => '100.00']);
+    foreach ($multiProducts as $multiProduct) {
+        BranchProduct::factory()->for($multiProductBranch)->for($multiProduct)->create(['tracks_inventory' => true]);
+        BranchInventory::factory()->for($multiProductBranch)->for($multiProduct)->create(['on_hand' => 2, 'version' => 1]);
+    }
+    $processes = [];
+    DB::beginTransaction();
+    Branch::query()->whereKey($multiProductBranch->id)->lockForUpdate()->sole();
+    for ($index = 0; $index < 2; $index++) {
+        $process = new Process([
+            PHP_BINARY, __FILE__, '--multi-product-worker', $schema, (string) $multiProductCashier->id,
+            $multiProductBranch->id, $multiProducts[0]->id, $multiProducts[1]->id, (string) Str::uuid(), (string) $index,
+        ], dirname(__DIR__), $processEnvironment, timeout: 30);
+        $processes[] = $process;
+        $process->start();
+    }
+    $deadline = hrtime(true) + 10_000_000_000;
+    do {
+        $waiting = $observer->select("SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE ? AND state = 'active' AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0", [$schema.'_multi_%']);
+        if (count($waiting) === 2) {
+            break;
+        }
+        foreach ($processes as $process) {
+            verify($process->isRunning(), 'Multi-product worker exited before overlap: '.$process->getErrorOutput().$process->getOutput());
+        }
+        verify(hrtime(true) < $deadline, 'Reversed multi-product workers did not overlap.');
+        usleep(10_000);
+    } while (true);
+    DB::commit();
+    $multiProductResults = [];
+    foreach ($processes as $process) {
+        verify($process->wait() === 0, 'Multi-product worker failed: '.$process->getErrorOutput().$process->getOutput());
+        $multiProductResults[] = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    }
+    verify(count(array_unique(array_column($multiProductResults, 'pid'))) === 2, 'Multi-product workers must use independent connections.');
+    verify(count(array_unique(array_column($multiProductResults, 'order'))) === 2, 'Distinct multi-product attempts did not both commit.');
+    verify($multiProducts->every(fn (Product $multiProduct): bool => BranchInventory::query()->whereBelongsTo($multiProductBranch)->whereBelongsTo($multiProduct)->value('on_hand') === 0), 'Reversed multi-product payments produced the wrong balances.');
+    verify(InventoryMovement::query()->where('branch_id', $multiProductBranch->id)->count() === 4, 'Reversed multi-product payments produced the wrong movement count.');
+    verify(KitchenTicket::query()->where('branch_id', $multiProductBranch->id)->count() === 2, 'Reversed multi-product payments produced the wrong ticket count.');
+    verifyUsableConnection();
+    echo 'CONCURRENCY PASS: reversed two-product carts overlapped on independent connections and committed without deadlock, lost stock, or duplicate effects.'.PHP_EOL;
 
     $otherBranch = Branch::factory()->create();
     StoreSession::factory()->for($otherBranch)->create();

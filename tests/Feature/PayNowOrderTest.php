@@ -449,6 +449,39 @@ test('paid events contain only branch scoped committed projections', function ()
     expect($ticket->broadcastWith())->not->toHaveKeys(['total', 'customer_label', 'payments', 'idempotency_key']);
 });
 
+test('payment product and order item reads remain bounded as the cart grows', function (int $count) {
+    $branch = Branch::factory()->create();
+    $user = User::factory()->create();
+    $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+    $user->branches()->attach($branch, ['is_active' => true]);
+    StoreSession::factory()->for($branch)->create();
+    $products = Product::factory()->count($count)->create(['default_price' => '1.00']);
+    foreach ($products as $product) {
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => false]);
+    }
+    $payload = [
+        'order_type' => 'take_out',
+        'payment_method' => 'cashless',
+        'idempotency_key' => (string) Str::uuid(),
+        'items' => $products->map(fn (Product $product): array => [
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'notes' => '',
+            'modifiers' => [],
+        ])->all(),
+    ];
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    app(PayNowOrder::class)->execute($user, $branch, $payload);
+    $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'));
+    DB::disableQueryLog();
+
+    expect($reads->count())->toBeLessThanOrEqual(34)
+        ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "products"'))->count())->toBeLessThanOrEqual(4)
+        ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "order_items"'))->count())->toBeLessThanOrEqual(2);
+})->with([1, 30, 100]);
+
 test('private operational channels require the appropriate branch and permission', function (string $role, string $channel, bool $allowed) {
     [$branch, $user] = paymentFixture('235.00', $role);
     config(['broadcasting.default' => 'pusher', 'broadcasting.connections.pusher' => [

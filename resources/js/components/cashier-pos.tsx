@@ -154,31 +154,24 @@ export function CashierPos({
         )
             return;
 
-        let active = true;
         reservationSubmitting.current = true;
         setReservationError('');
         reservationRequest.transform(() => ({ order_type: orderType }));
         reservationRequest
             .submit(reserveOrder())
             .then((result) => {
-                if (active && result.order) setReservation(result.order);
+                if (result.order) setReservation(result.order);
             })
             .catch(() => {
-                if (active) {
-                    setReservationError(
-                        'Unable to allocate an order number. Check the store and connection, then try again.',
-                    );
-                    setOrderType(null);
-                    setDialog('type');
-                }
+                setReservationError(
+                    'Unable to allocate an order number. Check the store and connection, then try again.',
+                );
+                setOrderType(null);
+                setDialog('type');
             })
             .finally(() => {
                 reservationSubmitting.current = false;
             });
-
-        return () => {
-            active = false;
-        };
     }, [orderType, reservation, saved]);
 
     function changeType(type: OrderType) {

@@ -187,7 +187,7 @@ Optionally enter a customer/order label and select a table.
 
 ### Take Out
 
-Enter the required customer/order label; optionally select a table.
+Optionally enter a customer/order label and select a table.
 
 Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch. Both Order Information / Pay Later and Pay Now show the active branch table choices for either order type. Changing order type preserves the selected table; clicking the selected table again clears it. No separate No table option is required.
 

@@ -28,6 +28,25 @@ test('a selected table fills the customer label and removes duplicate display te
         '',
     );
     assert.equal(customerDisplayLabel('Table 1', 'Table 1'), 'Table 1');
+    assert.equal(
+        customerLabelAfterTableChange(
+            tables,
+            'table-1',
+            'Custom pickup label',
+            '',
+        ),
+        'Custom pickup label',
+    );
+    assert.equal(
+        customerLabelAfterTableChange(
+            tables,
+            '',
+            'Custom pickup label',
+            'table-2',
+        ),
+        'Table 2',
+    );
+    assert.equal(customerDisplayLabel('', undefined), '');
 });
 
 test('a paid order can reserve the next number while its receipt remains open', () => {

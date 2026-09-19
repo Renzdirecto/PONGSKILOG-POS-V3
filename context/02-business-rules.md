@@ -184,7 +184,7 @@ Supported:
 
 Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
 
-Dine In customer/order label is optional. Take Out customer/order label remains required.
+The customer/order label is optional for both Dine In and Take Out.
 
 ---
 

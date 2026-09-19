@@ -128,26 +128,71 @@ test('draft snapshots survive catalog renaming repricing and disablement', funct
         ->where('order.items.0.modifiers.0.name', 'Original option')->where('order.items.0.modifiers.0.price_delta', '20.00'));
 });
 
-test('dine in accepts only an active table from the current branch', function (string $tableState) {
-    $branch = Branch::factory()->create();
-    $user = posCashier($branch);
+test('both order types accept an optional current branch table', function (string $orderType, string $tableState) {
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();
-    $table = BranchTable::factory()->for($tableState === 'foreign' ? Branch::factory()->create() : $branch)->create(['is_active' => $tableState !== 'inactive']);
+    $table = $tableState === 'active' ? BranchTable::factory()->for($branch)->create() : null;
     $payload = posPayload(Product::factory()->create());
-    $payload['order_type'] = 'dine_in';
-    $payload['customer_label'] = null;
-    $payload['branch_table_id'] = $tableState === 'missing' ? null : $table->id;
-
-    $response = $this->actingAs($user)->post(route('pos.orders.store'), $payload);
-
-    if ($tableState === 'active') {
-        $response->assertRedirectToRoute('workspaces.cashier')->assertInertiaFlash('posDraft.table_name', $table->name);
-        $this->assertDatabaseHas('orders', ['branch_table_id' => $table->id, 'order_type' => 'dine_in']);
-    } else {
-        $response->assertInvalid('branch_table_id');
-        $this->assertDatabaseCount('orders', 0);
+    $payload['order_type'] = $orderType;
+    $payload['customer_label'] = $orderType === 'dine_in' ? null : 'Maria';
+    $payload['branch_table_id'] = $table?->id;
+    if ($tableState === 'omitted') {
+        unset($payload['branch_table_id']);
     }
-})->with(['active', 'foreign', 'inactive', 'missing']);
+
+    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)
+        ->assertRedirectToRoute('workspaces.cashier')
+        ->assertInertiaFlash('posDraft.table_name', $table?->name);
+
+    $this->assertDatabaseHas('orders', [
+        'branch_table_id' => $table?->id, 'order_type' => $orderType,
+        'customer_label' => $payload['customer_label'], 'commercial_status' => 'draft',
+        'payment_status' => 'unpaid', 'kitchen_status' => 'not_sent', 'committed_at' => null,
+    ]);
+    $this->assertDatabaseCount('inventory_movements', 0);
+})->with(['dine_in', 'take_out'])->with(['active', 'null', 'omitted']);
+
+test('direct draft callers can leave the optional table blank', function (string $orderType) {
+    $branch = Branch::factory()->create();
+    StoreSession::factory()->for($branch)->create();
+    $payload = posPayload(Product::factory()->create());
+    $payload['order_type'] = $orderType;
+    $payload['branch_table_id'] = '';
+
+    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, $payload);
+
+    expect($order->branch_table_id)->toBeNull();
+    expect($order->commercial_status)->toBe(CommercialStatus::Draft);
+})->with(['dine_in', 'take_out']);
+
+test('both order types reject inactive or foreign tables without saving a draft', function (string $orderType, string $tableState) {
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
+    StoreSession::factory()->for($branch)->create();
+    $table = BranchTable::factory()->for($tableState === 'foreign' ? Branch::factory()->create(['code' => 'QAVE']) : $branch)
+        ->create(['is_active' => $tableState !== 'inactive']);
+    $payload = posPayload(Product::factory()->create());
+    $payload['order_type'] = $orderType;
+    $payload['branch_table_id'] = $table->id;
+
+    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)
+        ->assertInvalid(['branch_table_id' => 'Choose an active table in this branch.']);
+
+    $this->assertDatabaseCount('orders', 0);
+    $this->assertDatabaseCount('order_items', 0);
+    $this->assertDatabaseCount('inventory_movements', 0);
+})->with(['dine_in', 'take_out'])->with(['foreign', 'inactive']);
+
+test('a take out table does not replace the required customer label', function () {
+    $branch = Branch::factory()->create();
+    StoreSession::factory()->for($branch)->create();
+    $payload = posPayload(Product::factory()->create());
+    $payload['branch_table_id'] = BranchTable::factory()->for($branch)->create()->id;
+    $payload['customer_label'] = null;
+
+    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)->assertInvalid('customer_label');
+
+    $this->assertDatabaseCount('orders', 0);
+});
 
 test('invalid order information and cart values are rejected before persistence', function (string $path, mixed $value) {
     $branch = Branch::factory()->create();
@@ -163,7 +208,8 @@ test('invalid order information and cart values are rejected before persistence'
     'missing type' => ['order_type', null], 'unknown type' => ['order_type', 'delivery'],
     'missing label' => ['customer_label', null], 'blank label' => ['customer_label', '   '],
     'long label' => ['customer_label', str_repeat('x', 151)],
-    'table smuggling' => ['branch_table_id', '11111111-1111-4111-8111-111111111111'],
+    'malformed table' => ['branch_table_id', 'not-a-uuid'],
+    'unknown table' => ['branch_table_id', '11111111-1111-4111-8111-111111111111'],
     'empty cart' => ['items', []], 'zero' => ['items.0.quantity', 0], 'negative' => ['items.0.quantity', -1],
     'fractional' => ['items.0.quantity', 1.5], 'malformed' => ['items.0.quantity', '2 eggs'],
     'boolean' => ['items.0.quantity', true],

@@ -162,17 +162,13 @@
     }
 
     .pos-payment-dialog {
-        max-width: min(520px, calc(100vw - 40px));
+        max-width: min(1020px, calc(100vw - 40px));
     }
 }
 
 @media (min-width: 900px) {
     .pos-product-dialog {
         max-width: min(860px, calc(100vw - 40px));
-    }
-
-    .pos-payment-dialog {
-        max-width: min(1020px, calc(100vw - 40px));
     }
 }
 

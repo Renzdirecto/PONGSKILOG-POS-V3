@@ -10,6 +10,22 @@ export function pesos(value: bigint | string): string {
     return `₱${(amount / 100n).toLocaleString('en-PH')}.${(amount % 100n).toString().padStart(2, '0')}`;
 }
 
+export function exactCash(total: bigint, cashless: bigint): string {
+    const due = total > cashless ? total - cashless : 0n;
+
+    return `${due / 100n}.${String(due % 100n).padStart(2, '0')}`;
+}
+
+export function paymentTotals(total: bigint, cash: bigint, cashless: bigint) {
+    const received = cash + cashless;
+
+    return {
+        received,
+        remaining: total > received ? total - received : 0n,
+        change: received > total ? received - total : 0n,
+    };
+}
+
 export function selectedOptions(line: CartLine) {
     return (line.product.modifier_groups ?? []).flatMap((group) =>
         group.options.filter((option) =>

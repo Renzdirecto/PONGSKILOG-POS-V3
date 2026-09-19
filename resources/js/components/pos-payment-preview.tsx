@@ -7,9 +7,17 @@ import {
     ShoppingBag,
 } from 'lucide-react';
 import { useState } from 'react';
+import { PosTableSelection } from '@/components/pos-table-selection';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cents, lineCents, pesos, selectedOptions } from '@/lib/pos-money';
+import {
+    cents,
+    exactCash,
+    lineCents,
+    paymentTotals,
+    pesos,
+    selectedOptions,
+} from '@/lib/pos-money';
 import type {
     BranchTable,
     CartLine,
@@ -45,9 +53,11 @@ export function PosPaymentPreview({
         : lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const cashAmount = method === 'cashless' ? 0n : cents(cash || '0');
     const cashlessAmount = method === 'cash' ? 0n : cents(cashless || '0');
-    const received = cashAmount + cashlessAmount;
-    const remaining = total > received ? total - received : 0n;
-    const change = received > total ? received - total : 0n;
+    const { received, remaining, change } = paymentTotals(
+        total,
+        cashAmount,
+        cashlessAmount,
+    );
     const rows =
         saved?.items.map((item) => ({
             ...item,
@@ -70,9 +80,9 @@ export function PosPaymentPreview({
     }
 
     return (
-        <div className="grid min-h-0 flex-1 overflow-y-auto min-[900px]:grid-cols-2 min-[900px]:overflow-hidden">
-            <section className="flex min-w-0 flex-col gap-3.5 border-b border-neutral-200 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto min-[900px]:border-r min-[900px]:border-b-0">
-                <div className="text-center">
+        <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden">
+            <section className="flex min-w-0 flex-col gap-3 border-b border-neutral-200 p-4 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
+                <div className="space-y-1">
                     <p className="text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
                         {saved ? 'Order number' : 'New order'}
                     </p>
@@ -119,74 +129,53 @@ export function PosPaymentPreview({
                                 placeholder="Customer name or order label"
                             />
                         </div>
-                        {orderType === 'dine_in' && (
-                            <fieldset>
-                                <legend className="mb-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                                    Table selection · required
-                                </legend>
-                                <div className="flex flex-wrap gap-2">
-                                    {tables.map((table) => (
-                                        <label
-                                            key={table.id}
-                                            className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-xs font-semibold ${tableId === table.id ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200'}`}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="payment-table"
-                                                value={table.id}
-                                                checked={tableId === table.id}
-                                                onChange={() =>
-                                                    onTableChange(table.id)
-                                                }
-                                            />
-                                            {table.name}
-                                        </label>
-                                    ))}
-                                </div>
-                                {tables.length === 0 && (
-                                    <p className="text-xs text-red-700">
-                                        No active tables are available for this
-                                        branch.
-                                    </p>
-                                )}
-                            </fieldset>
-                        )}
+                        <PosTableSelection
+                            tables={tables}
+                            tableId={tableId}
+                            onChange={onTableChange}
+                        />
                     </>
                 )}
                 <h3 className="border-t border-neutral-200 pt-3 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
                     Order summary
                 </h3>
-                <ul className="space-y-3">
+                <div
+                    className="shrink-0 overflow-hidden rounded-xl border border-neutral-200"
+                    aria-label="Order summary items"
+                >
                     {rows.map((row) => (
-                        <li key={row.id}>
-                            <div className="flex gap-2 text-[13px]">
-                                <span className="font-bold text-red-700">
-                                    {row.quantity}×
-                                </span>
-                                <span className="min-w-0 flex-1 font-semibold wrap-anywhere">
+                        <div
+                            key={row.id}
+                            className="flex items-start gap-2.5 border-b border-neutral-100 px-3 py-2.5 last:border-b-0"
+                        >
+                            <span className="shrink-0 text-xs font-bold text-red-700">
+                                {row.quantity}×
+                            </span>
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                                <p className="text-[12.5px] leading-[1.35] font-semibold wrap-anywhere text-neutral-950">
                                     {row.name}
-                                </span>
-                                <span className="shrink-0 font-bold text-red-700">
-                                    {row.amount}
-                                </span>
+                                </p>
+                                {row.modifiers.map((modifier) => (
+                                    <p
+                                        key={modifier.id}
+                                        className="text-[10.5px] leading-[1.45] wrap-anywhere text-neutral-500"
+                                    >
+                                        {modifier.name} (+
+                                        {pesos(modifier.price_delta)})
+                                    </p>
+                                ))}
+                                {row.notes && (
+                                    <p className="text-[10.5px] leading-[1.45] wrap-anywhere whitespace-pre-wrap text-amber-800">
+                                        {row.notes}
+                                    </p>
+                                )}
                             </div>
-                            {row.modifiers.map((modifier) => (
-                                <p
-                                    key={modifier.id}
-                                    className="mt-1 text-[11.5px] text-amber-800"
-                                >
-                                    {modifier.name} (+
-                                    {pesos(modifier.price_delta)})
-                                </p>
-                            ))}
-                            {row.notes && (
-                                <p className="mt-1 text-[11px] wrap-anywhere whitespace-pre-wrap text-amber-800">
-                                    {row.notes}
-                                </p>
-                            )}
-                        </li>
+                            <span className="shrink-0 text-[12.5px] font-bold text-red-700 tabular-nums">
+                                {row.amount}
+                            </span>
+                        </div>
                     ))}
-                </ul>
+                </div>
                 <div className="mt-auto flex items-baseline justify-between border-t border-neutral-200 pt-3">
                     <span className="text-[15px] font-semibold">Total</span>
                     <span className="text-[27px] font-bold text-red-700">
@@ -194,7 +183,10 @@ export function PosPaymentPreview({
                     </span>
                 </div>
             </section>
-            <section className="flex min-w-0 flex-col gap-3.5 p-4 min-[900px]:min-h-0 min-[900px]:overflow-y-auto">
+            <section
+                aria-label="Payment entry"
+                className="flex min-w-0 flex-col gap-2.5 p-3.5 md:overflow-visible"
+            >
                 <div
                     aria-label="Payment method"
                     className="flex gap-[3px] rounded-xl bg-neutral-100 p-[3px]"
@@ -226,33 +218,71 @@ export function PosPaymentPreview({
                         </button>
                     ))}
                 </div>
-                <p className="text-[11px] text-neutral-500">Payment preview</p>
-                {(['cash', 'cashless'] as const)
-                    .filter((field) => method === 'split' || method === field)
-                    .map((field) => (
-                        <div key={field} className="space-y-2">
-                            <Label
-                                htmlFor={`payment-${field}`}
-                                className="text-[10px] tracking-wider text-neutral-500 uppercase"
+                <div
+                    className={`grid gap-2.5 ${method === 'split' ? 'grid-cols-2' : 'grid-cols-1'}`}
+                >
+                    {(['cash', 'cashless'] as const)
+                        .filter(
+                            (field) => method === 'split' || method === field,
+                        )
+                        .map((field) => (
+                            <div key={field} className="min-w-0 space-y-1.5">
+                                <Label
+                                    htmlFor={`payment-${field}`}
+                                    className="text-[10px] tracking-wider text-neutral-500 uppercase"
+                                >
+                                    {field === 'cash'
+                                        ? 'Cash received'
+                                        : 'Cashless amount'}
+                                </Label>
+                                <Input
+                                    id={`payment-${field}`}
+                                    inputMode="decimal"
+                                    value={field === 'cash' ? cash : cashless}
+                                    onFocus={() => setActiveInput(field)}
+                                    onChange={(event) =>
+                                        enter(event.target.value, field)
+                                    }
+                                    placeholder="0.00"
+                                    className="h-[48px] rounded-xl text-right text-[24px] font-bold md:text-[24px]"
+                                />
+                            </div>
+                        ))}
+                </div>
+                {method !== 'cashless' && (
+                    <div
+                        className="flex flex-wrap gap-1.5"
+                        aria-label="Quick cash amounts"
+                    >
+                        {[
+                            { label: 'Exact', amount: null },
+                            { label: '₱50', amount: '50.00' },
+                            { label: '₱100', amount: '100.00' },
+                            { label: '₱500', amount: '500.00' },
+                            { label: '₱1,000', amount: '1000.00' },
+                        ].map(({ label, amount }) => (
+                            <button
+                                key={label}
+                                type="button"
+                                className="h-9 min-w-14 flex-1 rounded-full border border-neutral-300 px-2 text-[11px] font-semibold whitespace-nowrap hover:bg-neutral-50"
+                                onClick={() => {
+                                    const other =
+                                        method === 'split'
+                                            ? cashlessAmount
+                                            : 0n;
+                                    enter(
+                                        amount ?? exactCash(total, other),
+                                        'cash',
+                                    );
+                                    setActiveInput('cash');
+                                }}
                             >
-                                {field === 'cash'
-                                    ? 'Cash received'
-                                    : 'Cashless amount'}
-                            </Label>
-                            <Input
-                                id={`payment-${field}`}
-                                inputMode="decimal"
-                                value={field === 'cash' ? cash : cashless}
-                                onFocus={() => setActiveInput(field)}
-                                onChange={(event) =>
-                                    enter(event.target.value, field)
-                                }
-                                placeholder="0.00"
-                                className="h-[54px] rounded-xl text-right text-[24px] font-bold md:text-[24px]"
-                            />
-                        </div>
-                    ))}
-                <div className="grid grid-cols-3 gap-2">
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <div className="grid grid-cols-3 gap-1.5">
                     {[
                         '1',
                         '2',
@@ -274,7 +304,7 @@ export function PosPaymentPreview({
                                     ? 'Delete payment digit'
                                     : `Enter ${key}`
                             }
-                            className="flex h-12 items-center justify-center rounded-[10px] border border-neutral-200 bg-white text-[18px] font-semibold hover:bg-neutral-50"
+                            className="flex h-[42px] items-center justify-center rounded-[10px] border border-neutral-200 bg-white text-[18px] font-semibold hover:bg-neutral-50"
                             onClick={() => {
                                 const current =
                                     activeInput === 'cash' ? cash : cashless;
@@ -293,55 +323,45 @@ export function PosPaymentPreview({
                         </button>
                     ))}
                 </div>
-                <button
-                    className="min-h-11 rounded-xl border border-neutral-200 text-[12.5px] font-semibold"
-                    onClick={() => {
-                        const other =
-                            method === 'split'
-                                ? activeInput === 'cash'
-                                    ? cashlessAmount
-                                    : cashAmount
-                                : 0n;
-                        const due = total > other ? total - other : 0n;
-                        enter(
-                            `${due / 100n}.${String(due % 100n).padStart(2, '0')}`,
-                        );
-                    }}
-                >
-                    Exact amount
-                </button>
-                <dl
-                    className="space-y-2 rounded-xl bg-neutral-50 p-3 text-[12px]"
+                <div
+                    className="grid grid-cols-2 gap-2"
                     aria-live="polite"
+                    aria-label="Payment totals"
                 >
-                    <div className="flex justify-between">
-                        <dt>Total received</dt>
-                        <dd className="font-semibold">{pesos(received)}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                        <dt>Remaining</dt>
-                        <dd className="font-semibold text-red-700">
-                            {pesos(remaining)}
-                        </dd>
-                    </div>
-                    <div className="flex justify-between">
-                        <dt>Change preview</dt>
-                        <dd className="font-semibold text-green-700">
+                    <dl className="flex flex-col justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2.5 text-[11px] tabular-nums">
+                        <div className="flex flex-wrap justify-between gap-x-2">
+                            <dt>Total</dt>
+                            <dd className="font-semibold">{pesos(total)}</dd>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-x-2">
+                            <dt>Received</dt>
+                            <dd className="font-semibold">{pesos(received)}</dd>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-x-2 font-bold text-red-700">
+                            <dt>Remaining</dt>
+                            <dd className="text-[14px]">{pesos(remaining)}</dd>
+                        </div>
+                    </dl>
+                    <dl className="flex flex-col justify-center gap-1 rounded-xl bg-neutral-950 px-3 py-2.5 text-white">
+                        <dt className="text-[10px] font-semibold tracking-wider uppercase">
+                            Change
+                        </dt>
+                        <dd className="text-[28px] leading-tight font-bold tracking-tight wrap-anywhere tabular-nums">
                             {pesos(change)}
                         </dd>
-                    </div>
-                </dl>
+                    </dl>
+                </div>
                 <div className="mt-auto space-y-2">
                     <p
                         id="payment-disabled-reason"
                         className="text-center text-[11px] text-neutral-500"
                     >
-                        Payment confirmation is enabled in Phase 6.
+                        Payment confirmation will be enabled in Phase 6.
                     </p>
                     <button
                         disabled
                         aria-describedby="payment-disabled-reason"
-                        className="h-12 w-full rounded-xl bg-green-700 text-[14px] font-semibold text-white opacity-50"
+                        className="h-11 w-full rounded-xl bg-neutral-950 text-[14px] font-semibold text-white opacity-50"
                     >
                         Confirm payment
                     </button>

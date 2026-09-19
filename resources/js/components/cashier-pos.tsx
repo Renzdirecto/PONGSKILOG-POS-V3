@@ -8,6 +8,7 @@ import {
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { CashierCatalog } from '@/components/cashier-catalog';
+import { PosTableSelection } from '@/components/pos-table-selection';
 import { PosPaymentPreview } from '@/components/pos-payment-preview';
 import { PosCart } from '@/components/pos-cart';
 import {
@@ -86,7 +87,6 @@ export function CashierPos({
         setOrderType(type);
         form.setData((data) => ({
             ...data,
-            branch_table_id: '',
             customer_label: '',
         }));
         form.clearErrors();
@@ -108,8 +108,7 @@ export function CashierPos({
         form.transform((data) => ({
             ...data,
             order_type: orderType,
-            branch_table_id:
-                orderType === 'dine_in' ? data.branch_table_id : null,
+            branch_table_id: data.branch_table_id || null,
             items: lines.map((line) => ({
                 product_id: line.product.id,
                 quantity: line.quantity,
@@ -134,10 +133,13 @@ export function CashierPos({
     }
     const customer = saved
         ? [saved.customer_label, saved.table_name].filter(Boolean).join(' / ')
-        : orderType === 'dine_in'
-          ? (tables.find((table) => table.id === form.data.branch_table_id)
-                ?.name ?? '')
-          : form.data.customer_label;
+        : [
+              form.data.customer_label,
+              tables.find((table) => table.id === form.data.branch_table_id)
+                  ?.name,
+          ]
+              .filter(Boolean)
+              .join(' / ');
     const cart = (
         <PosCart
             lines={lines}
@@ -362,7 +364,7 @@ export function CashierPos({
                             </div>
                         ) : (
                             <>
-                                <div className="shrink-0 border-b border-neutral-200 px-4 py-5 pr-14">
+                                <div className="shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14">
                                     <DialogTitle className="text-[15px] font-bold">
                                         {dialog === 'cart'
                                             ? 'Your cart'
@@ -584,69 +586,22 @@ export function CashierPos({
                                                             placeholder="e.g. Alex Johnson"
                                                         />
                                                     </div>
-                                                    {orderType ===
-                                                        'dine_in' && (
-                                                        <fieldset className="space-y-2">
-                                                            <legend className="mb-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                                                                Table selection
-                                                                · required
-                                                            </legend>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {tables.map(
-                                                                    (table) => (
-                                                                        <label
-                                                                            key={
-                                                                                table.id
-                                                                            }
-                                                                            className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-xs font-semibold ${form.data.branch_table_id === table.id ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200'}`}
-                                                                        >
-                                                                            <input
-                                                                                type="radio"
-                                                                                name="pos-table"
-                                                                                value={
-                                                                                    table.id
-                                                                                }
-                                                                                required
-                                                                                checked={
-                                                                                    form
-                                                                                        .data
-                                                                                        .branch_table_id ===
-                                                                                    table.id
-                                                                                }
-                                                                                disabled={
-                                                                                    form.processing
-                                                                                }
-                                                                                onChange={() =>
-                                                                                    form.setData(
-                                                                                        'branch_table_id',
-                                                                                        table.id,
-                                                                                    )
-                                                                                }
-                                                                                className="accent-neutral-500"
-                                                                            />
-                                                                            {
-                                                                                table.name
-                                                                            }
-                                                                        </label>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                            {tables.length ===
-                                                                0 && (
-                                                                <p className="text-xs text-red-700">
-                                                                    No active
-                                                                    tables are
-                                                                    available.
-                                                                    Ask your
-                                                                    manager to
-                                                                    configure
-                                                                    this
-                                                                    branch's
-                                                                    tables.
-                                                                </p>
-                                                            )}
-                                                        </fieldset>
-                                                    )}
+                                                    <PosTableSelection
+                                                        tables={tables}
+                                                        tableId={
+                                                            form.data
+                                                                .branch_table_id
+                                                        }
+                                                        disabled={
+                                                            form.processing
+                                                        }
+                                                        onChange={(value) =>
+                                                            form.setData(
+                                                                'branch_table_id',
+                                                                value,
+                                                            )
+                                                        }
+                                                    />
                                                 </>
                                             )}
                                             <div className="space-y-1.5 rounded-xl bg-neutral-50 p-3 text-xs">
@@ -683,7 +638,7 @@ export function CashierPos({
                                         <footer className="flex shrink-0 flex-col gap-2 border-t border-neutral-200 px-3.5 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
                                             <p className="text-center text-[11px] text-neutral-500">
                                                 Pay Later activation will be
-                                                enabled in the payment phase.
+                                                enabled in Phase 7.
                                             </p>
                                             {saved ? (
                                                 <Button
@@ -697,12 +652,7 @@ export function CashierPos({
                                                 <Button
                                                     type="submit"
                                                     className="min-h-12 rounded-xl bg-neutral-950 text-white hover:bg-black"
-                                                    disabled={
-                                                        form.processing ||
-                                                        (orderType ===
-                                                            'dine_in' &&
-                                                            tables.length === 0)
-                                                    }
+                                                    disabled={form.processing}
                                                 >
                                                     <Check className="size-4" />
                                                     {form.processing

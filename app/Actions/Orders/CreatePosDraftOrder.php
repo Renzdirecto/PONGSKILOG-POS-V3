@@ -42,7 +42,8 @@ class CreatePosDraftOrder
             /** @var array{order_type: string, branch_table_id?: string|null, customer_label?: string|null, items: list<array{product_id: string, quantity: int, notes?: string|null, modifiers: list<array{group_id: string, option_id: string}>}>} $data */
             $data = Validator::make($input, StorePosDraftOrderRequest::draftRules())->validate();
             $type = OrderType::from($data['order_type']);
-            if ($type === OrderType::DineIn && ! $branch->tables()->whereKey($data['branch_table_id'] ?? null)->where('is_active', true)->exists()) {
+            $tableId = ($data['branch_table_id'] ?? null) ?: null;
+            if ($tableId !== null && ! $branch->tables()->whereKey($tableId)->where('is_active', true)->exists()) {
                 throw ValidationException::withMessages(['branch_table_id' => 'Choose an active table in this branch.']);
             }
             $label = trim($data['customer_label'] ?? '');
@@ -107,7 +108,7 @@ class CreatePosDraftOrder
 
             $order = $this->createOrder([
                 'id' => $orderId, 'branch_id' => $branch->id, 'source' => OrderSource::Pos,
-                'order_type' => $type, 'branch_table_id' => $type === OrderType::DineIn ? ($data['branch_table_id'] ?? null) : null,
+                'order_type' => $type, 'branch_table_id' => $tableId,
                 'customer_label' => $label === '' ? null : $label, 'commercial_status' => CommercialStatus::Draft,
                 'payment_status' => PaymentStatus::Unpaid, 'kitchen_status' => KitchenStatus::NotSent,
                 'subtotal' => ExactMoney::decimal($subtotal), 'total' => ExactMoney::decimal($subtotal),

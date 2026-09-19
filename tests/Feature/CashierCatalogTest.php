@@ -46,6 +46,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
                 'products' => [[
                     'id' => $product->id,
                     'name' => 'Tapsilog',
+                    'description' => null,
                     'category_id' => $category->id,
                     'category_name' => 'Silog',
                     'effective_price' => '99.25',
@@ -207,7 +208,7 @@ test('catalog signs only returned card variants and exposes no image internals',
             ->missing('catalog.products.0.detail_url')
             ->has('catalog.products.0', fn (Assert $item) => $item
                 ->where('id', $product->id)
-                ->where('name', $product->name)
+                ->where('name', $product->name)->where('description', $product->description)
                 ->where('category_id', $product->category_id)
                 ->where('category_name', $product->category->name)
                 ->where('effective_price', '0.00')

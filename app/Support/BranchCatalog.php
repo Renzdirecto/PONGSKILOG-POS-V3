@@ -16,7 +16,7 @@ class BranchCatalog
     /**
      * @return array{
      *     categories: list<array{id: string, name: string}>,
-     *     products: list<array{id: string, name: string, category_id: string, category_name: string, effective_price: string, is_available: bool, stock_status: string, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
+     *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, stock_status: string, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
      * }
      */
     public function browse(Branch $branch, bool $customization = false): array
@@ -26,7 +26,7 @@ class BranchCatalog
             ->whereHas('products', fn ($query) => $query->where('is_active', true))
             ->orderBy('sort_order')->orderBy('name')->orderBy('id')
             ->with(['products' => fn ($query) => $query
-                ->select(['id', 'category_id', 'name', 'default_price', 'image_path', 'is_active'])
+                ->select(['id', 'category_id', 'name', 'description', 'default_price', 'image_path', 'is_active'])
                 ->when($customization, fn ($query) => $query->with($this->modifierRelations()))
                 ->where('is_active', true)
                 ->orderBy('name')->orderBy('id')
@@ -50,6 +50,7 @@ class BranchCatalog
                 $products[] = [
                     'id' => $product->id,
                     'name' => $product->name,
+                    'description' => $product->description,
                     'category_id' => $category->id,
                     'category_name' => $category->name,
                     'effective_price' => $state['effective_price'],

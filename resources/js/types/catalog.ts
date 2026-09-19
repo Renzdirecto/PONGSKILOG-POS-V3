@@ -6,6 +6,7 @@ export type CashierCatalog = {
     products: {
         id: string;
         name: string;
+        description?: string | null;
         category_id: string;
         category_name: string;
         effective_price: string;

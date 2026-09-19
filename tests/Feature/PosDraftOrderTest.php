@@ -51,7 +51,7 @@ test('assigned cashier roles save exact priced drafts and receive persisted summ
     $branch = Branch::factory()->create();
     $user = posCashier($branch, $role);
     $session = StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create(['name' => 'Tapsilog', 'default_price' => '95.00']);
+    $product = Product::factory()->create(['name' => 'Tapsilog', 'description' => 'Garlic rice and egg', 'default_price' => '95.00']);
     BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
     $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 4, 'version' => 3]);
     $group = ModifierGroup::factory()->create(['name' => 'Extras', 'min_select' => 1, 'max_select' => 1]);
@@ -70,7 +70,14 @@ test('assigned cashier roles save exact priced drafts and receive persisted summ
     $response = $this->actingAs($user)->post(route('pos.orders.store'), $payload);
 
     $order = Order::query()->sole();
-    $response->assertRedirectToRoute('pos.orders.show', $order);
+    $response->assertRedirectToRoute('workspaces.cashier')
+        ->assertInertiaFlash('posDraft.id', $order->id)
+        ->assertInertiaFlash('posDraft.total', '230.00')
+        ->assertInertiaFlash('posDraft.items.0.modifiers.0.name', 'Egg');
+    $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
+        ->component('workspaces/show')->where('catalog.products.0.description', 'Garlic rice and egg')->hasFlash('posDraft.order_number', $order->order_number)
+        ->hasFlash('posDraft.items.0.line_total', '230.00'));
+    $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page->missingFlash('posDraft'));
     expect($order->branch_id)->toBe($branch->id);
     expect($order->source)->toBe(OrderSource::Pos);
     expect($order->order_type)->toBe(OrderType::TakeOut);
@@ -134,7 +141,7 @@ test('dine in accepts only an active table from the current branch', function (s
     $response = $this->actingAs($user)->post(route('pos.orders.store'), $payload);
 
     if ($tableState === 'active') {
-        $response->assertRedirectToRoute('pos.orders.show', Order::query()->sole());
+        $response->assertRedirectToRoute('workspaces.cashier')->assertInertiaFlash('posDraft.table_name', $table->name);
         $this->assertDatabaseHas('orders', ['branch_table_id' => $table->id, 'order_type' => 'dine_in']);
     } else {
         $response->assertInvalid('branch_table_id');

@@ -145,3 +145,7 @@
 .pos-surface {
     font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
 }
+
+body:has([data-slot='dialog-content'].pos-surface) [data-slot='dialog-overlay'] {
+    background: rgb(0 0 0 / 40%);
+}

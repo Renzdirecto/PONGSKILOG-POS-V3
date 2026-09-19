@@ -1,4 +1,11 @@
-import { Pencil, ShoppingBag, Trash2, UtensilsCrossed } from 'lucide-react';
+import {
+    Minus,
+    Plus,
+    Pencil,
+    ShoppingBag,
+    Trash2,
+    UtensilsCrossed,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PosProductMedia } from '@/components/pos-product-media';
 import { lineCents, pesos, selectedOptions } from '@/lib/pos-money';
@@ -12,7 +19,8 @@ export function PosCart({
     onTypeChange,
     onEdit,
     onRemove,
-    onReview,
+    onQuantityChange,
+    onCheckout,
     onClear,
 }: {
     lines: CartLine[];
@@ -22,7 +30,8 @@ export function PosCart({
     onTypeChange: (type: OrderType) => void;
     onEdit: (line: CartLine) => void;
     onRemove: (key: string) => void;
-    onReview: () => void;
+    onQuantityChange: (key: string, quantity: number) => void;
+    onCheckout: (flow: 'information' | 'payment') => void;
     onClear: () => void;
 }) {
     const total = saved
@@ -39,9 +48,7 @@ export function PosCart({
                     <h2 className="text-[10px] font-semibold tracking-[.09em] text-neutral-500 uppercase">
                         Current order
                     </h2>
-                    <p
-                        className={`${saved ? 'text-lg' : 'text-[26px]'} font-bold tracking-tight wrap-anywhere`}
-                    >
+                    <p className="text-[16px] font-bold tracking-tight wrap-anywhere">
                         {saved ? `#${saved.order_number}` : 'New order'}
                     </p>
                     {customer && (
@@ -55,7 +62,7 @@ export function PosCart({
                         </p>
                     )}
                 </div>
-                {count > 0 && (
+                {orderType && (
                     <Button
                         variant="outline"
                         className="size-11 shrink-0 rounded-xl text-neutral-500"
@@ -80,7 +87,7 @@ export function PosCart({
                         <p className="max-w-56 text-xs leading-5 text-neutral-500">
                             {orderType
                                 ? 'Tap a product to add it to your order.'
-                                : 'Start a new order and select Dine in or Take out.'}
+                                : 'Select Dine in or Take out to begin.'}
                         </p>
                     </div>
                 ) : (
@@ -109,7 +116,7 @@ export function PosCart({
                         ).map((row) => (
                             <li
                                 key={row.key}
-                                className="border-b border-neutral-100 px-3 py-3"
+                                className="flex flex-col gap-[9px] border-b border-neutral-100 px-[13px] py-[11px]"
                             >
                                 <div className="flex items-start gap-2">
                                     <span className="flex size-[42px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-neutral-100 bg-[#f7f7f7]">
@@ -123,17 +130,27 @@ export function PosCart({
                                     </span>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex gap-1.5 text-sm font-semibold">
-                                            <span className="text-red-700">
+                                            <span className="shrink-0 text-[13px] font-bold text-red-700">
                                                 {row.quantity}&times;
                                             </span>
                                             <span className="wrap-anywhere">
-                                                {row.name}
+                                                {/^(SMALL|MEDIUM|LARGE) /.test(
+                                                    row.name,
+                                                ) && (
+                                                    <span className="mr-1 inline-block rounded border border-amber-200 bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
+                                                        {row.name.split(' ')[0]}
+                                                    </span>
+                                                )}
+                                                {row.name.replace(
+                                                    /^(SMALL|MEDIUM|LARGE) /,
+                                                    '',
+                                                )}
                                             </span>
                                         </div>
                                         {row.modifiers.map((option) => (
                                             <p
                                                 key={option.id}
-                                                className="mt-1 text-[11px] leading-4 text-amber-800"
+                                                className="mt-1 text-[11.5px] leading-4 text-amber-800"
                                             >
                                                 {option.name} (+
                                                 {pesos(option.price_delta)})
@@ -150,24 +167,60 @@ export function PosCart({
                                     </span>
                                 </div>
                                 {row.line && (
-                                    <div className="flex justify-end gap-1">
-                                        <button
-                                            className="flex min-h-11 items-center gap-1 px-3 text-xs text-neutral-500"
-                                            onClick={() => {
-                                                if (row.line) onEdit(row.line);
-                                            }}
-                                            aria-label={`Edit ${row.name}`}
-                                        >
-                                            <Pencil className="size-3.5" />
-                                            Edit
-                                        </button>
-                                        <button
-                                            className="flex size-11 items-center justify-center text-red-700"
-                                            onClick={() => onRemove(row.key)}
-                                            aria-label={`Remove ${row.name}`}
-                                        >
-                                            <Trash2 className="size-4" />
-                                        </button>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex shrink-0 overflow-hidden rounded-[10px] border border-neutral-300">
+                                            <button
+                                                className="flex size-[46px] items-center justify-center hover:bg-neutral-100 disabled:opacity-40"
+                                                aria-label={`Decrease ${row.name} quantity`}
+                                                disabled={row.quantity <= 1}
+                                                onClick={() =>
+                                                    onQuantityChange(
+                                                        row.key,
+                                                        row.quantity - 1,
+                                                    )
+                                                }
+                                            >
+                                                <Minus className="size-4" />
+                                            </button>
+                                            <span className="flex h-[46px] w-[42px] items-center justify-center border-x border-neutral-200 text-[15px] font-bold">
+                                                {row.quantity}
+                                            </span>
+                                            <button
+                                                className="flex size-[46px] items-center justify-center hover:bg-neutral-100 disabled:opacity-40"
+                                                aria-label={`Increase ${row.name} quantity`}
+                                                disabled={row.quantity >= 999}
+                                                onClick={() =>
+                                                    onQuantityChange(
+                                                        row.key,
+                                                        row.quantity + 1,
+                                                    )
+                                                }
+                                            >
+                                                <Plus className="size-4" />
+                                            </button>
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                            <button
+                                                className="flex h-[46px] items-center gap-1 rounded-[10px] border border-neutral-200 px-3 text-[12.5px] font-semibold"
+                                                onClick={() => {
+                                                    if (row.line)
+                                                        onEdit(row.line);
+                                                }}
+                                                aria-label={`Edit ${row.name}`}
+                                            >
+                                                <Pencil className="size-3.5" />
+                                                Edit
+                                            </button>
+                                            <button
+                                                className="flex size-[46px] items-center justify-center rounded-[10px] border border-neutral-200 text-red-700"
+                                                onClick={() =>
+                                                    onRemove(row.key)
+                                                }
+                                                aria-label={`Remove ${row.name}`}
+                                            >
+                                                <Trash2 className="size-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </li>
@@ -178,15 +231,20 @@ export function PosCart({
             <footer className="flex shrink-0 flex-col gap-3 border-t border-neutral-200 p-3.5">
                 <div
                     aria-label="Order type"
-                    className="flex rounded-xl bg-neutral-100 p-1"
+                    className="flex gap-[3px] rounded-[11px] bg-[#f2f2f2] p-[3px]"
                 >
                     {(['dine_in', 'take_out'] as const).map((type) => (
                         <button
                             key={type}
                             aria-pressed={orderType === type}
-                            disabled={!!saved}
+                            disabled={!!saved && lines.length === 0}
+                            title={
+                                saved && lines.length === 0
+                                    ? 'This recovered snapshot is read-only. Clear it to start another order.'
+                                    : undefined
+                            }
                             onClick={() => onTypeChange(type)}
-                            className={`flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-[9px] text-xs font-semibold ${orderType === type ? (type === 'dine_in' ? 'bg-green-700 text-white shadow-sm' : 'bg-sky-700 text-white shadow-sm') : 'text-neutral-500'}`}
+                            className={`flex h-[42px] min-w-0 flex-1 items-center justify-center gap-2 rounded-[9px] text-[13px] font-semibold ${orderType === type ? (type === 'dine_in' ? 'bg-green-700 text-white shadow-sm' : 'bg-sky-700 text-white shadow-sm') : 'text-neutral-500'}`}
                         >
                             {type === 'dine_in' ? (
                                 <UtensilsCrossed className="size-4" />
@@ -197,7 +255,7 @@ export function PosCart({
                         </button>
                     ))}
                 </div>
-                <div className="flex justify-between text-[11px] text-neutral-500">
+                <div className="flex justify-between text-[12.5px] text-neutral-500">
                     <span>
                         {count} {count === 1 ? 'item' : 'items'}
                     </span>
@@ -206,44 +264,27 @@ export function PosCart({
                     </span>
                 </div>
                 <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-semibold">Total</span>
-                    <span className="text-[28px] font-bold tracking-tight text-red-700">
+                    <span className="text-[15px] font-semibold">Total</span>
+                    <span className="text-[27px] font-bold tracking-tight text-red-700">
                         {total}
                     </span>
                 </div>
-                <Button
-                    variant="outline"
-                    className="min-h-11 rounded-xl text-xs"
-                    disabled={count === 0}
-                    onClick={onReview}
-                >
-                    {saved ? 'View order information' : 'Order information'}
-                </Button>
                 <div className="flex gap-2">
                     <button
-                        disabled
-                        aria-describedby="pos-payment-hint"
-                        className="min-h-12 shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 opacity-50"
+                        disabled={!orderType || count === 0}
+                        onClick={() => onCheckout('information')}
+                        className="h-12 shrink-0 rounded-xl border border-amber-400 bg-amber-50 px-3.5 text-[13.5px] font-semibold text-amber-800 disabled:opacity-50"
                     >
-                        Save · pay later
+                        Save &middot; pay later
                     </button>
                     <button
-                        disabled
-                        aria-describedby="pos-payment-hint"
-                        className="min-h-12 min-w-0 flex-1 rounded-xl bg-green-700 px-3 text-sm font-semibold text-white opacity-50"
+                        disabled={!orderType || count === 0}
+                        onClick={() => onCheckout('payment')}
+                        className="h-12 min-w-0 flex-1 rounded-xl bg-green-700 px-3 text-[15.5px] font-semibold text-white disabled:opacity-50"
                     >
                         Pay now
                     </button>
                 </div>
-                <p
-                    id="pos-payment-hint"
-                    className="text-center text-[10px] leading-4 text-neutral-500"
-                >
-                    Payment and Pay Later are not available yet.{' '}
-                    {saved
-                        ? 'Start a new order to make changes.'
-                        : 'Order information saves a draft only.'}
-                </p>
             </footer>
         </div>
     );

@@ -40,7 +40,7 @@ export function CashierCatalog({
                                 key={category.id}
                                 aria-pressed={categoryId === category.id}
                                 onClick={() => setCategoryId(category.id)}
-                                className={`flex min-h-11 shrink-0 items-center gap-2 rounded-[11px] border px-3 text-xs font-semibold ${categoryId === category.id ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-500'}`}
+                                className={`flex h-[46px] shrink-0 items-center gap-[7px] rounded-[11px] border px-3.5 text-[13.5px] font-semibold ${categoryId === category.id ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-500'}`}
                             >
                                 {!category.id && <Grid2X2 className="size-4" />}
                                 {category.name}
@@ -60,7 +60,7 @@ export function CashierCatalog({
                         ),
                     )}
                 </nav>
-                <div className="flex h-[46px] min-w-0 shrink-0 items-center gap-2 rounded-[11px] border border-neutral-200 bg-[#f7f7f7] pl-3 min-[1300px]:w-[270px] lg:w-[210px]">
+                <div className="flex h-[46px] min-w-0 shrink-0 items-center gap-2 rounded-[11px] border border-neutral-200 bg-[#f7f7f7] pl-3 min-[1024px]:w-[210px] min-[1300px]:w-[270px]">
                     <Search className="size-4 shrink-0 text-neutral-500" />
                     <input
                         aria-label="Search products"
@@ -87,7 +87,7 @@ export function CashierCatalog({
                     {products.length} products
                 </p>
                 {products.length ? (
-                    <div className="grid grid-cols-2 gap-2 min-[1400px]:grid-cols-[repeat(auto-fill,minmax(168px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] md:gap-2.5 lg:grid-cols-[repeat(auto-fill,minmax(156px,1fr))]">
+                    <div className="grid grid-cols-2 gap-2 min-[768px]:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] min-[1024px]:grid-cols-[repeat(auto-fill,minmax(156px,1fr))] min-[1400px]:grid-cols-[repeat(auto-fill,minmax(168px,1fr))] md:gap-2.5">
                         {products.map((product) => {
                             const count = lines
                                 .filter(

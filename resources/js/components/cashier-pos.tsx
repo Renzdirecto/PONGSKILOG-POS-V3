@@ -1,16 +1,14 @@
-import { useForm, usePage } from '@inertiajs/react';
+import { useForm, usePage, useRemember } from '@inertiajs/react';
 import {
     Check,
     ChevronRight,
-    Plus,
     ShoppingBag,
     UtensilsCrossed,
 } from 'lucide-react';
-import { useContext, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { PosToolbarContext } from '@/layouts/workspace-layout';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { CashierCatalog } from '@/components/cashier-catalog';
+import { PosPaymentPreview } from '@/components/pos-payment-preview';
 import { PosCart } from '@/components/pos-cart';
 import {
     PosProductDialog,
@@ -38,6 +36,7 @@ import type {
 } from '@/types/pos';
 
 export function CashierPos({
+    branch,
     catalog,
     tables,
 }: {
@@ -45,25 +44,30 @@ export function CashierPos({
     catalog: Catalog;
     tables: BranchTable[];
 }) {
-    const toolbar = useContext(PosToolbarContext);
+    const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
     const initialDraft = usePage().flash.posDraft as OrderSummary | undefined;
-    const [orderType, setOrderType] = useState<OrderType | null>(
+    const [orderType, setOrderType] = useRemember<OrderType | null>(
         initialDraft?.order_type ?? null,
+        `${rememberKey}:type`,
     );
-    const [lines, setLines] = useState<CartLine[]>([]);
-    const [saved, setSaved] = useState<OrderSummary | null>(
+    const [lines, setLines] = useRemember<CartLine[]>(
+        [],
+        `${rememberKey}:lines`,
+    );
+    const [saved, setSaved] = useRemember<OrderSummary | null>(
         initialDraft ?? null,
+        `${rememberKey}:saved`,
     );
     const [dialog, setDialog] = useState<
-        'type' | 'cart' | 'information' | 'discard' | null
-    >(initialDraft ? 'information' : null);
+        'type' | 'cart' | 'information' | 'payment' | 'discard' | null
+    >(initialDraft ? 'information' : orderType ? null : 'type');
     const [pendingType, setPendingType] = useState<OrderType | null>(null);
     const [editing, setEditing] = useState<{
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
     const submitting = useRef(false);
-    const form = useForm({
+    const form = useForm(`${rememberKey}:details`, {
         order_type: '',
         branch_table_id: '',
         customer_label: '',
@@ -77,7 +81,8 @@ export function CashierPos({
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
 
     function changeType(type: OrderType) {
-        if (saved) return;
+        if (type === orderType || (saved && lines.length === 0)) return;
+        setSaved(null);
         setOrderType(type);
         form.setData((data) => ({
             ...data,
@@ -149,9 +154,16 @@ export function CashierPos({
                     current.filter((line) => line.key !== key),
                 )
             }
-            onReview={() => {
+            onQuantityChange={(key, quantity) =>
+                setLines((current) =>
+                    current.map((line) =>
+                        line.key === key ? { ...line, quantity } : line,
+                    ),
+                )
+            }
+            onCheckout={(flow) => {
                 form.clearErrors();
-                setDialog('information');
+                setDialog(flow);
             }}
             onClear={() => {
                 setPendingType(null);
@@ -166,24 +178,6 @@ export function CashierPos({
 
     return (
         <div className="pos-surface flex min-h-0 min-w-0 flex-1 flex-col text-[13px]">
-            {toolbar &&
-                createPortal(
-                    <div className="flex items-center gap-3">
-                        <span className="hidden items-center gap-1.5 text-[10px] font-semibold text-green-700 lg:flex">
-                            <span className="size-1.5 rounded-full bg-green-600" />
-                            STORE IS OPEN
-                        </span>
-                        <Button
-                            aria-label="New order"
-                            className="min-h-11 rounded-xl bg-neutral-950 px-3 text-xs text-white hover:bg-black"
-                            onClick={() => setDialog('type')}
-                        >
-                            <Plus className="size-4" />
-                            <span className="hidden sm:inline">New order</span>
-                        </Button>
-                    </div>,
-                    toolbar,
-                )}
             <div className="flex min-h-0 min-w-0 flex-1">
                 <CashierCatalog
                     catalog={catalog}
@@ -204,7 +198,7 @@ export function CashierPos({
             </div>
             <div className="fixed right-3 bottom-[88px] left-3 z-30 md:hidden">
                 <Button
-                    className="min-h-14 w-full justify-between rounded-xl bg-neutral-950 px-4 text-white shadow-lg hover:bg-black"
+                    className="h-12 w-full justify-between rounded-xl bg-neutral-950 px-4 text-white shadow-lg hover:bg-black"
                     onClick={() => setDialog('cart')}
                 >
                     <span className="flex items-center gap-2">
@@ -250,7 +244,8 @@ export function CashierPos({
                 <Dialog
                     open
                     onOpenChange={(open) => {
-                        if (!open && !form.processing) setDialog(null);
+                        if (!open && !form.processing && dialog !== 'type')
+                            setDialog(null);
                     }}
                 >
                     <DialogContent
@@ -260,26 +255,33 @@ export function CashierPos({
                                 : undefined
                         }
                         className={
-                            dialog === 'cart'
-                                ? `${posDialogClass} sm:max-w-[480px]`
-                                : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
+                            dialog === 'payment'
+                                ? `${posDialogClass} pos-payment-dialog`
+                                : dialog === 'cart'
+                                  ? `${posDialogClass} sm:max-w-[480px]`
+                                  : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
                         }
                         onInteractOutside={(event) => {
-                            if (form.processing) event.preventDefault();
+                            if (form.processing || dialog === 'type')
+                                event.preventDefault();
                         }}
                         onEscapeKeyDown={(event) => {
-                            if (form.processing) event.preventDefault();
+                            if (form.processing || dialog === 'type')
+                                event.preventDefault();
                         }}
                     >
                         {dialog === 'type' ? (
-                            <div className="flex flex-col items-center gap-2 overflow-y-auto px-[22px] py-[26px]">
+                            <div
+                                data-order-type-gate
+                                className="flex flex-col items-center gap-2 overflow-y-auto px-[22px] py-[26px]"
+                            >
                                 <span className="mb-1 flex size-[52px] items-center justify-center rounded-2xl bg-neutral-950 text-white">
                                     <UtensilsCrossed className="size-6" />
                                 </span>
                                 <DialogTitle className="text-center text-[21px] font-bold tracking-tight">
                                     Select order type
                                 </DialogTitle>
-                                <DialogDescription className="max-w-64 text-center text-xs leading-5 text-neutral-500">
+                                <DialogDescription className="max-w-64 text-center text-[12.5px] leading-5 text-neutral-500">
                                     How would you like to enjoy your Pongskilog
                                     today?
                                 </DialogDescription>
@@ -323,6 +325,40 @@ export function CashierPos({
                                         ),
                                     )}
                                 </div>
+                                <div className="mt-[18px] flex w-full flex-col gap-[9px] border-t border-neutral-200 pt-4">
+                                    <p className="text-[9.5px] font-semibold tracking-widest text-neutral-400 uppercase">
+                                        Kitchen status
+                                    </p>
+                                    <div className="flex gap-[9px]">
+                                        {(['dine_in', 'take_out'] as const).map(
+                                            (type) => (
+                                                <div
+                                                    key={type}
+                                                    className="flex min-w-0 flex-1 items-center gap-[9px] rounded-[11px] bg-[#f7f7f7] px-[11px] py-[9px]"
+                                                >
+                                                    {type === 'dine_in' ? (
+                                                        <UtensilsCrossed className="size-4 text-neutral-500" />
+                                                    ) : (
+                                                        <ShoppingBag className="size-4 text-neutral-500" />
+                                                    )}
+                                                    <div>
+                                                        <p className="text-[9px] font-semibold tracking-wide text-neutral-400 uppercase">
+                                                            {type === 'dine_in'
+                                                                ? 'Dine in'
+                                                                : 'Take out'}
+                                                        </p>
+                                                        <p
+                                                            aria-label="Not yet available"
+                                                            className="text-[15px] font-bold"
+                                                        >
+                                                            &mdash;
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ),
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         ) : (
                             <>
@@ -330,9 +366,11 @@ export function CashierPos({
                                     <DialogTitle className="text-[15px] font-bold">
                                         {dialog === 'cart'
                                             ? 'Your cart'
-                                            : dialog === 'discard'
-                                              ? 'Clear this order?'
-                                              : 'Order information'}
+                                            : dialog === 'payment'
+                                              ? 'Payment'
+                                              : dialog === 'discard'
+                                                ? 'Clear this order?'
+                                                : 'Order information'}
                                     </DialogTitle>
                                     <DialogDescription className="sr-only">
                                         {dialog === 'discard'
@@ -370,6 +408,28 @@ export function CashierPos({
                                             </Button>
                                         </div>
                                     </div>
+                                )}
+                                {dialog === 'payment' && orderType && (
+                                    <PosPaymentPreview
+                                        orderType={orderType}
+                                        lines={lines}
+                                        saved={saved}
+                                        tables={tables}
+                                        customerLabel={form.data.customer_label}
+                                        tableId={form.data.branch_table_id}
+                                        onCustomerChange={(value) =>
+                                            form.setData(
+                                                'customer_label',
+                                                value,
+                                            )
+                                        }
+                                        onTableChange={(value) =>
+                                            form.setData(
+                                                'branch_table_id',
+                                                value,
+                                            )
+                                        }
+                                    />
                                 )}
                                 {dialog === 'information' && (
                                     <form
@@ -597,7 +657,7 @@ export function CashierPos({
                                                 </p>
                                                 <p className="leading-5 text-neutral-500">
                                                     {saved
-                                                        ? 'Stock has not been reserved. Payment, Pay Later and sending orders to the kitchen are not available yet.'
+                                                        ? 'Stock has not been reserved. This is an uncommitted draft.'
                                                         : 'Proceed saves a draft and checks current prices and availability. No payment, stock deduction or kitchen ticket.'}
                                                 </p>
                                             </div>
@@ -621,15 +681,17 @@ export function CashierPos({
                                             )}
                                         </div>
                                         <footer className="flex shrink-0 flex-col gap-2 border-t border-neutral-200 px-3.5 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
+                                            <p className="text-center text-[11px] text-neutral-500">
+                                                Pay Later activation will be
+                                                enabled in the payment phase.
+                                            </p>
                                             {saved ? (
                                                 <Button
                                                     type="button"
-                                                    className="min-h-12 rounded-xl bg-neutral-950 text-white"
-                                                    onClick={() =>
-                                                        setDialog(null)
-                                                    }
+                                                    disabled
+                                                    className="h-12 rounded-xl bg-amber-50 text-amber-800"
                                                 >
-                                                    Back to POS
+                                                    Activate Pay Later
                                                 </Button>
                                             ) : (
                                                 <Button
@@ -652,13 +714,11 @@ export function CashierPos({
                                                 type="button"
                                                 className="min-h-11 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
                                                 disabled={form.processing}
-                                                onClick={() =>
-                                                    saved
-                                                        ? setDialog('type')
-                                                        : setDialog(null)
-                                                }
+                                                onClick={() => setDialog(null)}
                                             >
-                                                {saved ? 'New order' : 'Cancel'}
+                                                {saved
+                                                    ? 'Back to POS'
+                                                    : 'Cancel'}
                                             </button>
                                         </footer>
                                     </form>

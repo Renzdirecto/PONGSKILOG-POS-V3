@@ -419,6 +419,33 @@ test('POS customization exposes only active assigned groups and active option fi
         ->missing('catalog.products.0.modifier_groups.0.pivot'));
 });
 
+test('POS modal entry receives real profile store catalog and branch table data without creating an order', function (?string $description) {
+    $branch = Branch::factory()->create();
+    $user = posCashier($branch);
+    StoreSession::factory()->for($branch)->create();
+    $table = BranchTable::factory()->for($branch)->create();
+    BranchTable::factory()->for($branch)->create(['is_active' => false]);
+    BranchTable::factory()->create();
+    $product = Product::factory()->create(['description' => $description, 'default_price' => '125.50']);
+    BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true]);
+    $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 8, 'version' => 2]);
+    $originalBalance = $balance->refresh()->getAttributes();
+
+    $this->actingAs($user)->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
+        ->component('workspaces/show')
+        ->where('auth.user.name', $user->name)
+        ->where('auth.roles', ['cashier'])
+        ->where('storeContext.isOpen', true)
+        ->where('store.branchStatus', 'active')
+        ->where('tables', [['id' => $table->id, 'name' => $table->name]])
+        ->where('catalog.products.0.description', $description)
+        ->where('catalog.products.0.effective_price', '125.50'));
+
+    expect($balance->fresh()->getAttributes())->toBe($originalBalance);
+    $this->assertDatabaseCount('orders', 0);
+    $this->assertDatabaseCount('inventory_movements', 0);
+})->with([null, 'Freshly prepared with rice.']);
+
 test('summary is isolated by branch source and draft state', function (string $state) {
     $branch = Branch::factory()->create();
     $order = Order::factory()->for($state === 'branch' ? Branch::factory()->create() : $branch)->create([

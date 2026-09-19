@@ -62,7 +62,7 @@ export function PosProductDialog({
                 if (!open) onClose();
             }}
         >
-            <DialogContent className={`${posDialogClass} sm:max-w-[860px]`}>
+            <DialogContent className={`${posDialogClass} pos-product-dialog`}>
                 <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-3 py-2.5 pr-14">
                     <button
                         aria-label="Back"
@@ -99,11 +99,9 @@ export function PosProductDialog({
                                     : 'Unavailable'}
                             </span>
                         </div>
-                        {product.description && (
-                            <p className="text-xs leading-5 text-neutral-500">
-                                {product.description}
-                            </p>
-                        )}
+                        <p className="text-[12.5px] leading-[1.6] text-neutral-500">
+                            {product.description || 'No description available.'}
+                        </p>
                     </div>
                     <div className="flex min-w-0 flex-col gap-[18px] p-4">
                         <div className="space-y-2">

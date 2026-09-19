@@ -1,4 +1,3 @@
-import { createContext, useState } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import {
     LayoutDashboard,
@@ -7,16 +6,16 @@ import {
     ReceiptText,
     UtensilsCrossed,
 } from 'lucide-react';
+import { PosProfileControls } from '@/components/pos-profile-controls';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { cashier } from '@/routes/workspaces';
 import { logout } from '@/routes';
-import type { Auth, BranchContext } from '@/types';
-
-export const PosToolbarContext = createContext<HTMLDivElement | null>(null);
+import type { Auth, BranchContext, StoreContext } from '@/types';
 
 type SharedProps = {
     auth: Auth;
     branchContext: BranchContext;
+    storeContext: StoreContext;
 };
 
 function roleLabel(role?: string): string {
@@ -35,7 +34,6 @@ export default function WorkspaceLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
     const page = usePage<SharedProps>();
     const { auth, branchContext } = page.props;
     const isPos =
@@ -76,6 +74,8 @@ export default function WorkspaceLayout({
                                 <Link
                                     key={label}
                                     href={cashier()}
+                                    preserveState
+                                    preserveScroll
                                     aria-current="page"
                                     className="flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] bg-white px-1 text-center text-[10px] font-semibold"
                                 >
@@ -112,44 +112,32 @@ export default function WorkspaceLayout({
                                 {branchContext.current?.name}
                             </p>
                         </div>
-                        <div ref={setToolbar} className="shrink-0" />
+                        <span
+                            aria-label={
+                                page.props.storeContext?.isOpen
+                                    ? 'Store open'
+                                    : 'Store closed'
+                            }
+                            className={`inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-semibold md:px-[11px] md:text-[11.5px] ${page.props.storeContext?.isOpen ? 'border-green-200 bg-green-50 text-green-700' : 'border-neutral-200 bg-neutral-50 text-neutral-500'}`}
+                        >
+                            <span
+                                className={`size-[7px] rounded-full ${page.props.storeContext?.isOpen ? 'bg-green-700' : 'bg-neutral-400'}`}
+                            />
+                            <span className="hidden sm:inline">STORE</span>{' '}
+                            {page.props.storeContext?.isOpen
+                                ? 'OPEN'
+                                : 'CLOSED'}
+                        </span>
                         {branchContext.selectableBranches.length > 1 && (
                             <BranchSwitcher
                                 branchContext={branchContext}
                                 compact
                             />
                         )}
-                        <div className="hidden text-right min-[900px]:block">
-                            <p className="text-xs font-semibold">
-                                {auth.user?.name}
-                            </p>
-                            <p className="text-[10px] text-neutral-500">
-                                {roleLabel(auth.roles[0])}
-                            </p>
-                        </div>
-                        <span
-                            title={auth.user?.name}
-                            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold"
-                        >
-                            {auth.user?.name
-                                .split(' ')
-                                .map((part) => part[0])
-                                .slice(0, 2)
-                                .join('')}
-                        </span>
-                        <Link
-                            href={logout()}
-                            as="button"
-                            aria-label="Log out"
-                            className="flex size-11 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100"
-                        >
-                            <LogOut className="size-4" />
-                        </Link>
+                        <PosProfileControls auth={auth} />
                     </header>
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
-                        <PosToolbarContext.Provider value={toolbar}>
-                            {children}
-                        </PosToolbarContext.Provider>
+                        {children}
                     </main>
                     <nav
                         aria-label="Mobile cashier navigation"
@@ -160,6 +148,8 @@ export default function WorkspaceLayout({
                                 <Link
                                     key={label}
                                     href={cashier()}
+                                    preserveState
+                                    preserveScroll
                                     aria-current="page"
                                     className="flex flex-col items-center justify-center gap-1 rounded-xl bg-white text-center text-[10px] font-semibold"
                                 >

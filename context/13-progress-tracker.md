@@ -284,6 +284,52 @@ Phase 5 standalone parity correction (2026-09-19):
 
 ---
 
+### Phase 5 POS UX and sizing correction (2026-09-19)
+
+This evidence supersedes the earlier New Order / separate Order Information cart step and disabled entry-button exceptions. **Phase 5 FINAL ACCEPTANCE remains pending user manual QA and the separate final QA. Phase 6 and Phase 7 have not started.**
+
+- Re-extracted the standalone's `__bundler/template` JSON into a temporary file outside the repository before editing. Audited its markup and responsive style calculations against React. Recorded the permanent standalone source-of-truth and phase-boundary rule through Boost in `.ai/rules/js.md`. No standalone artifact, dependency, backend action, route, schema, or financial workflow was changed.
+- Automatic Select order type gate appears on operational POS entry with no local context. Products remain disabled until an explicit choice. Clear/cancel returns to the gate. User/branch-keyed Inertia remembered state and preserved POS navigation retain existing carts; MAIN → CLOSED QAVE → MAIN also retained the local MAIN cart during browser QA. The gate contains neutral em-dash Kitchen status placeholders, with no Kitchen query or invented counts.
+- Removed the top New Order button and the extra Order Information cart button/helper. Added a compact real StoreSession status pill, empty Notifications popover with no badge, and standalone-style profile control using the real user's name/initials/role and existing logout route. No employee ID, Settings action, notification infrastructure, or fake records were introduced.
+- Cart uses compact metadata, 42px media, red quantity/amount, configured product-name size tags, amber modifiers/notes, and working quantity/edit/remove controls. Dine/Take changes clear incompatible table/label fields. Changing type after saving a snapshot returns to the retained local cart; the existing persisted snapshot stays immutable and the next Proceed revalidates a new draft.
+- Save · pay later opens Order information in place. Proceed calls only the existing Phase 5 draft endpoint, including active branch table, Take Out label, availability, stock, modifier, exact-money and snapshot validation. The resulting modal explicitly disables Activate Pay Later. Pay now opens the standalone-shaped Payment modal with customer/table/summary on the left and Cash/Cashless/Split, editable preview values, keypad, exact amount, and reconciliation on the right. Confirm payment is disabled and has no submission handler. Neither entry navigates to a summary/payment page.
+- Product descriptions use the real description or “No description available.” Payment previews use integer cents locally. Real server totals remain authoritative for persisted drafts.
+
+Exact sizing audit (pixels unless stated):
+
+| Element | Decoded standalone | Before correction | After correction |
+| --- | --- | --- | --- |
+| App / rail / top bar | 100dvh / 94 / 60 mobile, 66 tablet+ | Same | Retained |
+| Toolbar padding / gap | 10 vertical, 12 horizontal / 10 | Same | Retained |
+| Category height / font / horizontal padding | 46 / 13.5 / 14 | 44 / 12 / 12 | 46 / 13.5 / 14 |
+| Search surface height / font | 46 / 16 | 46 / 16 | Retained; 44px clear target |
+| Search width at 1024 / 1300+ | 210 / 270 | Mixed breakpoint units caused 210 at 1440 | 210 / 270 using consistently ordered px breakpoints |
+| Product minimum width | Mobile two columns; 150 below 1024, 156 below 1400, 168 above | Intended same, mixed breakpoint units | Same values with consistent breakpoint ordering |
+| Grid gap / card padding / name and price / media ratio | 8 mobile, 10 tablet+ / 10 / 14 / 3:2 | Same | Retained |
+| Cart width | 336 below 1300, 382 above | Same | Retained and measured |
+| Cart context heading | 26 for mock short order number | 26 for “New order” | 16 for compact real context; deliberate no-giant-heading override |
+| Cart thumbnail / row padding / row gap | 42 square / 11 vertical, 13 horizontal / 9 | 42 / 12 each side / no explicit row gap | 42 / 11,13 / 9 |
+| Quantity / name / modifiers / note / line amount | 13 / 14 / 11.5 / 11 / 14 | 14 / 14 / 11 / 11 / 14 | 13 / 14 / 11.5 / 11 / 14 |
+| Quantity controls / value | Desktop 44 square, mobile 46; value 40/42 wide | Missing in cart | 46 square; value 42×46, all widths |
+| Edit / remove | 44 desktop, 46 mobile | 44 | 46 |
+| Dine/Take wrapper / segment height / font | 3 padding and gap / 42 / 13 | 4 padding, no gap / 44 / 12 | 3 / 42 / 13 |
+| Count and subtotal / Total label / Total amount | 12.5 / 15 / 27 | 11 / 14 / 28 | 12.5 / 15 / 27; total remains red |
+| Save / Pay height and font | 48 and 13.5 / 48 and 15.5 | 48 and 12 / 48 and 14; disabled | 48 and 13.5 / 48 and 15.5; open their modals |
+| Notification button / radius | 44 square / 12 | Absent | 44 / 12 |
+| Profile button / avatar / popover avatar | 44 high / 32 / 44 | Noninteractive 36px avatar | 44 / 32 / 44; dark circles, real initials |
+| Product modal width, 768–899 / 900+ | 460 / 860 | 860 at both, potentially wider than viewport | 460 / 860, constrained to viewport minus 40; mobile fullscreen |
+| Product name / price / description | 22 / 20 / 12.5, line-height 1.6 | 22 / 20 / optional 12, line-height 20px | 22 / 20 / 12.5, line-height 1.6, fallback included |
+| Payment modal width, 768–899 / 900+ | 520 / 1020 | Absent | 520 / 1020, constrained to viewport minus 40; mobile fullscreen |
+| Product/payment modal maximum height, tablet+ | min(92dvh,940px) | 92dvh | min(92dvh,940px) |
+
+- Live Chrome QA covered 820×1180 and 1024×768 tablets, 390×844 and 430×932 mobile, and 1440×900 desktop. Verified compact two-column tablet-820 / three-column tablet-1024 / five-column desktop products, 336/382px carts, 46px cart controls, compact top bar, no horizontal document overflow, mobile floating cart/fullscreen sheets, product descriptions/fallbacks, gate/reset, quantity changes, editing/removal, type changes, profile/notification popovers, both modal entry flows, local Cashless/Split preview reconciliation and disabled commits. The tablet-820 product modal now measures 460px rather than the previous viewport-wide single-column dialog. Temporary viewport override was reset after QA.
+- CLOSED QAVE shows Browse/Open Store, read-only products, real CLOSED pill, and no operational gate. MAIN restored afterward. The local catalog now contains 53 products, allowing populated-grid checks; unconfigured prices/images remain real stored data/fallbacks. No live modifier setup or inventory configuration was fabricated.
+- Retained exactly one new QA draft from this correction: `260919-X0DKFUUF`, Dine In / Table 2, PHP 20.00, label `Phase 5 density QA - draft only`. Read-only verification found `draft / unpaid / not_sent`, null payment term and commit timestamp. Inventory remained quantity 0, version 4, updated `2026-09-19 08:06:16`; the four existing inventory movements were unchanged. No Payment or Kitchen implementation was added.
+- Automated checks: focused POS/order foundation **100 passed / 512 assertions**; selected Store/Catalog/Inventory regressions **222 passed / 1671 assertions**; full `php -d memory_limit=1G artisan test --compact -d memory_limit=1G` **908 passed / 5155 assertions**. Added two meaningful description-present/null response-contract cases for real profile/store/table/catalog props and no order/inventory side effects. Existing security, validation, snapshots and no-operational-effects cases remain passing. Pint, PHPStan `--memory-limit=1G`, frontend lint, TypeScript, production build and diff whitespace checks passed. Existing optional fontaine/plugin-timing build notices remain.
+- Intentional differences: real UUID-backed order context and server snapshots replace mock numbers; saved snapshots remain immutable; operational payment/Pay Later, Kitchen data, notification data, and future navigation stay unavailable. Touch controls use the mobile 46px sizes on tablet/desktop too; the cart context heading is intentionally compact and total stays red. No global zoom/transform sizing was introduced. Independent final QA still owns live modifier/stale-stock/store stress, long-content stress, PostgreSQL order-number concurrency and user acceptance.
+
+---
+
 ## Phase 6 — Pay Now
 
 - [ ] Cash

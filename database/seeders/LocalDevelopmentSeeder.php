@@ -61,6 +61,8 @@ class LocalDevelopmentSeeder extends Seeder
                 $user->roles()->sync([$role->id]);
                 $user->branches()->syncWithPivotValues($branchIds, ['is_active' => true]);
             }
+
+            $this->call(LocalMenuCatalogSeeder::class);
         });
     }
 }

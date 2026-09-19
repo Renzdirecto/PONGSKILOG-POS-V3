@@ -13,6 +13,7 @@ import type { BranchContext, BranchSummary } from '@/types';
 
 type Props = {
     branchContext: BranchContext;
+    compact?: boolean;
 };
 
 function BranchOption({
@@ -55,7 +56,7 @@ function BranchOption({
     );
 }
 
-export function BranchSwitcher({ branchContext }: Props) {
+export function BranchSwitcher({ branchContext, compact = false }: Props) {
     const canSwitch =
         branchContext.businessWide ||
         branchContext.selectableBranches.length > 1;
@@ -84,14 +85,23 @@ export function BranchSwitcher({ branchContext }: Props) {
             <DropdownMenuTrigger asChild>
                 <button
                     type="button"
-                    className="flex min-h-11 max-w-64 items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-neutral-300 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none"
+                    aria-label={
+                        compact ? `Switch branch: ${currentLabel}` : undefined
+                    }
+                    className={`${compact ? 'w-11 justify-center sm:w-auto' : ''} flex min-h-11 max-w-64 items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-neutral-300 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none`}
                 >
                     {branchContext.current ? (
                         <Building2 className="size-4 shrink-0 text-neutral-500" />
                     ) : (
                         <Globe2 className="size-4 shrink-0 text-neutral-500" />
                     )}
-                    <span className="min-w-0 flex-1">
+                    <span
+                        className={
+                            compact
+                                ? 'hidden min-w-0 flex-1 sm:block'
+                                : 'min-w-0 flex-1'
+                        }
+                    >
                         <span className="block text-[0.62rem] font-semibold tracking-[0.14em] text-neutral-400 uppercase">
                             Business · branch
                         </span>
@@ -99,7 +109,9 @@ export function BranchSwitcher({ branchContext }: Props) {
                             {currentLabel}
                         </span>
                     </span>
-                    <ChevronDown className="size-4 shrink-0 text-neutral-400" />
+                    <ChevronDown
+                        className={`size-4 shrink-0 text-neutral-400 ${compact ? 'hidden sm:block' : ''}`}
+                    />
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent

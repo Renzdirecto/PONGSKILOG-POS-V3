@@ -113,8 +113,8 @@ Required states/screens:
 - Product customization
 - Cart
 - Empty cart
-- Order Information
-- Pay Now
+- Order Information (optional table choices for Dine In and Take Out)
+- Pay Now (same optional table choices)
 - Save / Pay Later
 - Payment success
 - Pay Later saved success
@@ -123,6 +123,10 @@ Required states/screens:
 ---
 
 ## 2.4 Payment
+
+Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
+
+Pay Now and Order Information expose selected/deselected table chips for both order types. Pay Now uses compact bordered summary rows, grouped cash shortcuts and a prominent Change surface; tablet payment controls do not scroll independently.
 
 Contexts:
 
@@ -398,7 +402,7 @@ Required:
 Required:
 
 - Dine In / Take Out
-- Branch-valid table where required
+- Optional active current-branch table for Dine In and Take Out
 - Submit
 - Duplicate submission protection
 

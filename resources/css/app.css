@@ -141,3 +141,38 @@
         @apply bg-background text-foreground;
     }
 }
+
+.pos-surface {
+    font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+}
+
+.pos-product-dialog,
+.pos-payment-dialog {
+    max-width: 100%;
+}
+
+@media (min-width: 768px) {
+    .pos-product-dialog,
+    .pos-payment-dialog {
+        max-height: min(92dvh, 940px);
+    }
+
+    .pos-product-dialog {
+        max-width: min(460px, calc(100vw - 40px));
+    }
+
+    .pos-payment-dialog {
+        max-width: min(1020px, calc(100vw - 40px));
+    }
+}
+
+@media (min-width: 900px) {
+    .pos-product-dialog {
+        max-width: min(860px, calc(100vw - 40px));
+    }
+}
+
+body:has([data-slot='dialog-content'].pos-surface)
+    [data-slot='dialog-overlay'] {
+    background: rgb(0 0 0 / 40%);
+}

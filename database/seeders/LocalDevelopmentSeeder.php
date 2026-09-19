@@ -33,6 +33,14 @@ class LocalDevelopmentSeeder extends Seeder
                 'status' => BranchStatus::Active,
             ]);
 
+            foreach ([$main, $quezon] as $branch) {
+                foreach (range(1, $branch->code === 'MAIN' ? 3 : 2) as $number) {
+                    $branch->tables()->firstOrCreate(['name' => 'Table '.$number], [
+                        'sort_order' => $number, 'is_active' => true,
+                    ]);
+                }
+            }
+
             $accounts = [
                 ['Super Admin Tester', 'superadmin@gmail.com', 'super_admin', []],
                 ['Owner Tester', 'owner@gmail.com', 'owner', []],
@@ -53,6 +61,8 @@ class LocalDevelopmentSeeder extends Seeder
                 $user->roles()->sync([$role->id]);
                 $user->branches()->syncWithPivotValues($branchIds, ['is_active' => true]);
             }
+
+            $this->call(LocalMenuCatalogSeeder::class);
         });
     }
 }

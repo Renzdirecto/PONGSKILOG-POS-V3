@@ -33,6 +33,18 @@ class Branch extends Model
         ];
     }
 
+    /** @return HasMany<BranchTable, $this> */
+    public function tables(): HasMany
+    {
+        return $this->hasMany(BranchTable::class);
+    }
+
+    /** @return HasMany<Order, $this> */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
     /** @return HasMany<BranchInventory, $this> */
     public function inventoryBalances(): HasMany
     {

@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\Category;
+use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\LocalDevelopmentSeeder;
@@ -39,9 +41,25 @@ test('development seeding can be repeated without duplicating records or resetti
 
     expect(User::query()->count())->toBe(5);
     expect(Branch::query()->count())->toBe(2);
+    expect(Category::query()->orderBy('sort_order')->pluck('name')->all())->toBe(['Menu', 'Silog', 'Lemon']);
     expect(Hash::check('changed-password', $owner->fresh()->password))->toBeTrue();
+    $this->assertDatabaseCount('branch_tables', 5);
+    $this->assertDatabaseCount('categories', 3);
+    $this->assertDatabaseCount('products', 52);
+    $this->assertDatabaseCount('orders', 0);
     $this->assertDatabaseCount('user_roles', 5);
     $this->assertDatabaseCount('user_branch_assignments', 4);
+});
+
+test('development seeding creates menu metadata without attaching images', function () {
+    $this->seed(LocalDevelopmentSeeder::class);
+
+    expect(Category::query()->where('name', 'Silog')->sole()->products()->count())->toBe(17);
+    expect(Category::query()->where('name', 'Lemon')->sole()->products()->count())->toBe(4);
+    expect(Product::query()->whereNull('image_path')->count())->toBe(52);
+    expect(Product::query()->where('default_price', '0')->count())->toBe(52);
+    expect(Product::query()->where('is_active', false)->count())->toBe(0);
+    expect(Product::query()->whereIn('name', ['Lemon Menu', 'Pongskilog Menu', 'Silog'])->count())->toBe(0);
 });
 
 test('development seeding refuses production before creating data', function () {
@@ -53,6 +71,7 @@ test('development seeding refuses production before creating data', function () 
     $this->assertDatabaseCount('users', 0);
     $this->assertDatabaseCount('branches', 0);
     $this->assertDatabaseCount('roles', 0);
+    $this->assertDatabaseCount('branch_tables', 0);
 });
 
 test('development accounts have the intended roles and active branch assignments with stores closed', function () {

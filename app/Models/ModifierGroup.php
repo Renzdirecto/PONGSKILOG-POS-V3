@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/** @property ModifierSelectionType $selection_type */
 #[Fillable(['name', 'selection_type', 'min_select', 'max_select', 'is_active'])]
 class ModifierGroup extends Model
 {

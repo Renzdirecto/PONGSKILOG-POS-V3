@@ -182,9 +182,9 @@ Supported:
 - Dine In
 - Take Out
 
-Dine In uses branch-valid tables.
+Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
 
-Take Out uses customer/order label.
+Dine In customer/order label is optional. Take Out customer/order label remains required.
 
 ---
 

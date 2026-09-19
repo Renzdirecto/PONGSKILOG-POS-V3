@@ -1,7 +1,9 @@
 import { useForm } from '@inertiajs/react';
-import { ArrowLeft, CheckCircle2, Eye, LockKeyhole, Store } from 'lucide-react';
+import { ArrowLeft, Eye, LockKeyhole, Store } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { CashierPos } from '@/components/cashier-pos';
+import type { BranchTable } from '@/types/pos';
 import { CashierCatalog } from '@/components/cashier-catalog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,16 +23,22 @@ export function CashierStore({
     store,
     storeContext,
     catalog,
+    tables,
 }: {
     branch: BranchSummary;
     store: CashierStoreState;
     storeContext: StoreContext;
     catalog: CashierCatalogData;
+    tables: BranchTable[];
 }) {
     const [view, setView] = useState<'store' | 'browse' | 'opening'>('store');
     const isOpen = storeContext.isOpen;
     const isAvailable = store.branchStatus === 'active';
     const buttonClass = 'min-h-12 rounded-xl px-6';
+
+    if (isOpen && isAvailable) {
+        return <CashierPos branch={branch} catalog={catalog} tables={tables} />;
+    }
 
     return (
         <div
@@ -104,26 +112,6 @@ export function CashierStore({
                             Browse catalog
                         </h2>
                         <CashierCatalog catalog={catalog} />
-                    </div>
-                ) : isOpen ? (
-                    <div className="flex flex-col gap-4" role="status">
-                        <span className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                            <CheckCircle2 className="size-7" />
-                        </span>
-                        <h2 id="store-heading" className="text-2xl font-bold">
-                            Store is open
-                        </h2>
-                        <p className="text-sm leading-6 text-neutral-600">
-                            Browse this branch’s products and prices in
-                            read-only mode.
-                        </p>
-                        <Button
-                            variant="outline"
-                            className={`${buttonClass} w-fit border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950`}
-                            onClick={() => setView('browse')}
-                        >
-                            <Eye /> Browse
-                        </Button>
                     </div>
                 ) : view === 'opening' && store.canOpen ? (
                     <OpenStoreForm

@@ -40,6 +40,8 @@ test('development seeding can be repeated without duplicating records or resetti
     expect(User::query()->count())->toBe(5);
     expect(Branch::query()->count())->toBe(2);
     expect(Hash::check('changed-password', $owner->fresh()->password))->toBeTrue();
+    $this->assertDatabaseCount('branch_tables', 5);
+    $this->assertDatabaseCount('orders', 0);
     $this->assertDatabaseCount('user_roles', 5);
     $this->assertDatabaseCount('user_branch_assignments', 4);
 });
@@ -53,6 +55,7 @@ test('development seeding refuses production before creating data', function () 
     $this->assertDatabaseCount('users', 0);
     $this->assertDatabaseCount('branches', 0);
     $this->assertDatabaseCount('roles', 0);
+    $this->assertDatabaseCount('branch_tables', 0);
 });
 
 test('development accounts have the intended roles and active branch assignments with stores closed', function () {

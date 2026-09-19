@@ -34,8 +34,9 @@ class CashierWorkspaceController extends Controller
             'eyebrow' => 'Branch Operations',
             'description' => 'Branch-scoped cashier and point-of-sale workspace.',
             'catalog' => fn () => $branch->status === BranchStatus::Active
-                ? $catalog->browse($branch)
+                ? $catalog->browse($branch, customization: true)
                 : ['categories' => [], 'products' => []],
+            'tables' => fn () => $branch->tables()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'store' => [
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active

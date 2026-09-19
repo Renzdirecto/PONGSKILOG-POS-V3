@@ -25,7 +25,14 @@ export default function WorkspaceLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const { auth, branchContext } = usePage<SharedProps>().props;
+    const page = usePage<SharedProps>();
+    const { auth, branchContext } = page.props;
+    const isPos =
+        page.component === 'workspaces/order-summary' ||
+        (page.component === 'workspaces/show' &&
+            auth.roles.some(
+                (role) => role === 'cashier' || role === 'cashier_kitchen',
+            ));
 
     return (
         <div className="min-h-svh bg-[#f4f4f3] text-neutral-950">
@@ -76,7 +83,9 @@ export default function WorkspaceLayout({
                 </div>
             </header>
 
-            <main className="mx-auto w-full max-w-[96rem] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+            <main
+                className={`mx-auto w-full max-w-[96rem] ${isPos ? 'px-3 py-4 sm:px-4' : 'px-4 py-8 sm:px-6 lg:px-8 lg:py-12'}`}
+            >
                 {children}
             </main>
         </div>

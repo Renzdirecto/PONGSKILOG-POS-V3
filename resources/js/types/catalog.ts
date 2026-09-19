@@ -13,6 +13,19 @@ export type CashierCatalog = {
         stock_status: StockStatus;
         image_url: string | null;
         has_modifiers: boolean;
+        modifier_groups?: {
+            id: string;
+            name: string;
+            selection_type: 'single' | 'multiple';
+            min_select: number;
+            max_select: number;
+            options: {
+                id: string;
+                name: string;
+                price_delta: string;
+                sort_order: number;
+            }[];
+        }[];
     }[];
 };
 export type Category = CatalogChoice & {

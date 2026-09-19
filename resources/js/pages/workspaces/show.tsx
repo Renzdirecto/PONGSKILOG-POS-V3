@@ -8,12 +8,15 @@ import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
 
+import type { BranchTable } from '@/types/pos';
+
 type Props = {
     workspace: string;
     eyebrow: string;
     description: string;
     store?: CashierStoreState;
     catalog?: CashierCatalog;
+    tables?: BranchTable[];
 };
 
 type SharedProps = {
@@ -28,6 +31,7 @@ export default function Workspace({
     description,
     store,
     catalog,
+    tables = [],
 }: Props) {
     const { auth, branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
@@ -42,6 +46,7 @@ export default function Workspace({
                     store={store}
                     storeContext={storeContext}
                     catalog={catalog}
+                    tables={tables}
                 />
             </>
         );

@@ -240,18 +240,32 @@ Phase 4C final verification (2026-09-19):
 
 ## Phase 5 — Core POS Order Flow
 
-- [ ] Dine In / Take Out
-- [ ] Product browser
-- [ ] Search / categories
-- [ ] Product customization
-- [ ] Modifier handling
-- [ ] Cart
-- [ ] Notes
-- [ ] Branch-valid table handling
-- [ ] Order Information
-- [ ] Order numbering
-- [ ] Server-side total calculation
-- [ ] Historical order snapshots
+- [x] Dine In / Take Out
+- [x] Product browser
+- [x] Search / categories
+- [x] Product customization
+- [x] Modifier handling
+- [x] Cart
+- [x] Notes
+- [x] Branch-valid table handling
+- [x] Order Information
+- [x] Order numbering
+- [x] Server-side total calculation
+- [x] Historical order snapshots
+
+Phase 5 implementation verification (2026-09-19):
+
+- These checks record implemented behavior and passing automated verification. **Final Phase 5 acceptance remains pending the separate final QA/audit.** Phase 6 and later checklists are unchanged; no PR is opened by this implementation.
+- Added the frozen UUID `branch_tables`, `orders`, `order_items`, and `order_item_modifiers` foundation, typed enums/models/factories, exact decimal casts, branch/order uniqueness, lookup indexes, nonnegative money/positive quantity/version constraints, restrictive historical-parent foreign keys, and nullable catalog references that retain snapshots after catalog deletion. The guarded, idempotent local/testing seeder adds MAIN/QAVE tables without seeding orders; its production guard remains covered.
+- `CreatePosDraftOrder` reloads and authorizes the persisted cashier/combined role, active assignment, permission, and active branch; locks the branch and checks/locks an OPEN Store Session inside the transaction. It validates current-branch active Dine In tables or a nonblank Take Out label, active products/categories/branch availability, assigned active modifier groups/options, duplicate selections, single/min/max selection rules, notes, and strict positive integer quantities. Failed validation or insertion rolls back all draft rows.
+- Server-authoritative pricing uses current branch overrides and integer cents with numeric(14,2) overflow guards; line totals include modifier deltas per product quantity. Historical product/group/option names, base prices, deltas, quantities, notes, and totals are persisted. Order numbers use `YYMMDD-` plus eight random uppercase characters, protected by branch-scoped uniqueness and at most five retries of only the expected order-number conflict; nested transactions provide a PostgreSQL savepoint. Collision/exhaustion tests pass on SQLite; a PostgreSQL order-collision concurrency audit remains for final QA.
+- Stock is freshly read and quantities are aggregated across configurations of the same product. Missing/zero/insufficient tracked stock rejects drafts; untracked products stay independent of balances. Drafts remain `draft` / `unpaid` / `not_sent`, with null payment term, Store Session ownership, and commitment timestamp. No deduction, reservation, inventory movement, payment, Kitchen ticket, broadcast, or operational session mutation is added. Future commitment must revalidate stock.
+- Reviewed the decoded standalone `context/design/pos.html` template and aligned the Phase 5 UI with Poppins, compact product cards, near-black headers/actions, red prices/quantities, Dine In/Take Out colors, orange notes, desktop side cart, mobile floating cart, and full-height mobile customization. Reused the existing catalog search/categories/images, dialogs, and Wayfinder/Inertia forms. Cart add/edit/remove, empty state, order information, processing protection, preserved-cart validation errors, and persisted summary are implemented; payment controls are visibly disabled.
+- Focused Phase 5 tests: **98 passed / 410 assertions**. Store/catalog/inventory regression selection: **173 passed / 1168 assertions**. Full `php -d memory_limit=1G artisan test --compact -d memory_limit=1G`: **905 passed / 5042 assertions**, up from 807/4624. Coverage includes authorization, branch isolation, stale state, exact totals/overflow, historical snapshots, schema constraints, bounded collisions, transactional rollback, and repeated drafts without stock reservation. At 1/30/100 products, customization catalog reads stay at most six queries and draft SELECTs at most eighteen; the existing non-customization catalog stays at most four queries.
+- Pint (`--dirty --format agent`), PHPStan (`--memory-limit=1G`), frontend lint (85 files), TypeScript, and production build passed. Existing optional fontaine and build-plugin timing warnings remain non-blocking. No dependency or Supabase change.
+- Local PostgreSQL 18.4 additive migration passed. Metadata confirmed all five numeric(14,2) columns, fourteen CHECK constraints, eight restrictive and two null-on-delete foreign keys, unique keys, and expected indexes. SQLite in-memory fresh migrations passed with `DB_URL=null`. The existing isolated PostgreSQL harness migrated every table, passed its inventory concurrency regressions, removed its random schema, and left normal local data intact; no normal-database reset occurred.
+- Live Chrome QA passed CLOSED QAVE read-only Browse/no order start; OPEN MAIN order-type requirement, search/category filtering, quantity/notes, add/edit/remove/empty cart, MAIN-only active table choices, Dine In Table 3 draft at PHP 60.00, Take Out required-label validation and draft at PHP 20.00, snapshot-based summaries, and disabled payment controls. Both clearly labeled QA drafts remain locally. Read-only database checks confirmed draft defaults and unchanged Rice inventory quantity/version/timestamp/movement history. POS visual/overflow checks passed at 360px, 390px, 430px, 820px tablet, and 1440px desktop; the temporary viewport override was reset.
+- Remaining manual QA: required/multiple modifier interactions and modifier summary rendering, unavailable/out-of-stock product clicks, stale stock/store changes while a cart is open, and broad populated-catalog/long-content visual checks. The local catalog has only one untracked product without modifiers; automated server cases pass, but these live scenarios are not claimed. Browser URL policy blocked directly rendering the standalone local `pos.html`; source-based reference comparison and live application visual checks were completed, not a rendered side-by-side comparison. Final QA must independently review these gaps and acceptance.
 
 ---
 

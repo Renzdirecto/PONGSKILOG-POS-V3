@@ -1,0 +1,83 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\CommercialStatus;
+use App\Enums\KitchenStatus;
+use App\Enums\OrderSource;
+use App\Enums\OrderType;
+use App\Enums\PaymentStatus;
+use App\Enums\PaymentTerm;
+use Database\Factories\OrderFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+/**
+ * @property OrderSource $source
+ * @property OrderType $order_type
+ * @property CommercialStatus $commercial_status
+ * @property PaymentStatus $payment_status
+ * @property PaymentTerm $payment_term
+ * @property KitchenStatus $kitchen_status
+ */
+#[Fillable(['branch_id', 'store_session_id', 'order_number', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'version'])]
+class Order extends Model
+{
+    /** @use HasFactory<OrderFactory> */
+    use HasFactory, HasUuids;
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return [
+            'source' => OrderSource::class,
+            'order_type' => OrderType::class,
+            'commercial_status' => CommercialStatus::class,
+            'payment_status' => PaymentStatus::class,
+            'payment_term' => PaymentTerm::class,
+            'kitchen_status' => KitchenStatus::class,
+            'subtotal' => 'decimal:2',
+            'total' => 'decimal:2',
+            'version' => 'integer',
+            'submitted_at' => 'datetime',
+            'archived_at' => 'datetime',
+            'committed_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'voided_at' => 'datetime',
+        ];
+    }
+
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /** @return BelongsTo<StoreSession, $this> */
+    public function storeSession(): BelongsTo
+    {
+        return $this->belongsTo(StoreSession::class);
+    }
+
+    /** @return BelongsTo<BranchTable, $this> */
+    public function branchTable(): BelongsTo
+    {
+        return $this->belongsTo(BranchTable::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /** @return HasMany<OrderItem, $this> */
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+}

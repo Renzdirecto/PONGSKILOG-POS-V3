@@ -53,6 +53,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
                     'stock_status' => 'not_tracked',
                     'image_url' => null,
                     'has_modifiers' => false,
+                    'modifier_groups' => [],
                 ]],
             ]));
 })->with(['cashier', 'cashier_kitchen']);
@@ -213,12 +214,13 @@ test('catalog signs only returned card variants and exposes no image internals',
                 ->where('is_available', false)
                 ->where('stock_status', 'out_of_stock')
                 ->where('image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
-                ->where('has_modifiers', true)));
+                ->where('has_modifiers', true)
+                ->has('modifier_groups', 1)));
 
     expect($signedPaths)->toBe([$directory.'/card.webp']);
 });
 
-test('only active assigned modifier groups set the summary without exposing groups or options', function (bool $active, bool $assigned, bool $expected) {
+test('only active assigned modifier groups and active options are exposed for customization', function (bool $active, bool $assigned, bool $expected) {
     $branch = Branch::factory()->create();
     $product = Product::factory()->create();
     $group = ModifierGroup::factory()->create(['is_active' => $active]);
@@ -230,7 +232,7 @@ test('only active assigned modifier groups set the summary without exposing grou
     $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('catalog.products.0.has_modifiers', $expected)
-            ->missing('catalog.products.0.modifier_groups')
+            ->has('catalog.products.0.modifier_groups', $expected ? 1 : 0)
             ->missing('catalog.products.0.modifier_options'));
 })->with([
     'active assigned' => [true, true, true],

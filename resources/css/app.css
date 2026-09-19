@@ -141,3 +141,7 @@
         @apply bg-background text-foreground;
     }
 }
+
+.pos-surface {
+    font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+}

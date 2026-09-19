@@ -433,7 +433,10 @@ export function BranchPriceForm({
                         aria-invalid={!!form.errors.low_stock_threshold}
                         aria-describedby={`branch-inventory-help-${branch.branch_id}`}
                         onChange={(event) =>
-                            form.setData('low_stock_threshold', event.target.value)
+                            form.setData(
+                                'low_stock_threshold',
+                                event.target.value,
+                            )
                         }
                     />
                 </Field>
@@ -441,8 +444,8 @@ export function BranchPriceForm({
                     id={`branch-inventory-help-${branch.branch_id}`}
                     className="text-xs text-neutral-500"
                 >
-                    Configuration only. Actual stock quantities are handled in
-                    Phase 4. Turning tracking off clears the threshold.
+                    Manage stock levels and adjustments in Inventory. Turning
+                    tracking off clears the threshold.
                 </p>
             </fieldset>
             {(!product.is_active || !product.category_active) && (

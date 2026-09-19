@@ -84,10 +84,17 @@ export function CashierCatalog({ catalog }: { catalog: CashierCatalogData }) {
                                 <span
                                     className={`rounded-full px-2.5 py-1 text-xs font-semibold ${product.is_available ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}
                                 >
-                                    {product.is_available
-                                        ? 'Available'
-                                        : 'Unavailable'}
+                                    {product.stock_status === 'out_of_stock'
+                                        ? 'OUT OF STOCK'
+                                        : product.is_available
+                                          ? 'Available'
+                                          : 'Unavailable'}
                                 </span>
+                                {product.stock_status === 'low_stock' && (
+                                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                                        Low stock
+                                    </span>
+                                )}
                                 {product.has_modifiers && (
                                     <p className="text-xs text-neutral-500">
                                         Options available

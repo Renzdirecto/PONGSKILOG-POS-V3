@@ -50,6 +50,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
                     'category_name' => 'Silog',
                     'effective_price' => '99.25',
                     'is_available' => true,
+                    'stock_status' => 'not_tracked',
                     'image_url' => null,
                     'has_modifiers' => false,
                 ]],
@@ -209,7 +210,8 @@ test('catalog signs only returned card variants and exposes no image internals',
                 ->where('category_id', $product->category_id)
                 ->where('category_name', $product->category->name)
                 ->where('effective_price', '0.00')
-                ->where('is_available', true)
+                ->where('is_available', false)
+                ->where('stock_status', 'out_of_stock')
                 ->where('image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
                 ->where('has_modifiers', true)));
 
@@ -251,7 +253,7 @@ test('closed and open store catalog reads never write operational data', functio
         ->assertInertia(fn (Assert $page) => $page
             ->where('storeContext.isOpen', $open)
             ->has('catalog.products', 1)
-            ->where('catalog.products.0.is_available', true));
+            ->where('catalog.products.0.is_available', false));
 
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
@@ -286,7 +288,7 @@ test('catalog query count stays bounded with products categories overrides and m
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
     expect($catalog['products'])->toHaveCount($count);
-    expect(count($queries))->toBeLessThanOrEqual(3);
+    expect(count($queries))->toBeLessThanOrEqual(4);
     expect($signedPaths)->toHaveCount($count);
     expect(collect($catalog['products'])->every(fn (array $product): bool => str_ends_with($product['image_url'], '/card.webp')
         && $product['is_available'] && $product['has_modifiers']))->toBeTrue();

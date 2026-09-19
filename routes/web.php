@@ -7,6 +7,7 @@ use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerQrController;
+use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
@@ -26,6 +27,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('branches/select', BranchSelectionController::class)->name('branches.select');
     Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
+    Route::middleware('can:inventory.manage')->group(function () {
+        Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
+        Route::get('inventory/{branch}/{product}/movements', [InventoryController::class, 'movements'])->name('inventory.movements.index');
+        Route::post('inventory/{branch}/{product}/adjustments', [InventoryController::class, 'store'])->name('inventory.adjustments.store');
+    });
     Route::middleware('can:products.manage')->group(function () {
         Route::resource('products', ProductController::class)->only(['index', 'store', 'update']);
         Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);

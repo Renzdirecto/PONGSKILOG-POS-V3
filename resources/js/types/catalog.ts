@@ -1,3 +1,5 @@
+import type { StockStatus } from './inventory';
+
 export type CatalogChoice = { id: string; name: string; is_active: boolean };
 export type CashierCatalog = {
     categories: { id: string; name: string }[];
@@ -8,6 +10,7 @@ export type CashierCatalog = {
         category_name: string;
         effective_price: string;
         is_available: boolean;
+        stock_status: StockStatus;
         image_url: string | null;
         has_modifiers: boolean;
     }[];

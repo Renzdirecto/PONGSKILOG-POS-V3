@@ -124,6 +124,8 @@ test('draft snapshots survive catalog renaming repricing and disablement', funct
     $this->actingAs($user)->get(route('pos.orders.show', $order))->assertInertia(fn (Assert $page) => $page
         ->where('order.order_number', $number)->where('order.total', '230.00')
         ->where('order.items.0.name', 'Original product')->where('order.items.0.unit_price', '95.00')
+        ->where('order.subtotal', '230.00')->where('order.items.0.line_total', '230.00')
+        ->where('order.items.0.notes', 'Less rice')
         ->where('order.items.0.modifiers.0.group_name', 'Original group')
         ->where('order.items.0.modifiers.0.name', 'Original option')->where('order.items.0.modifiers.0.price_delta', '20.00'));
 });
@@ -563,6 +565,12 @@ test('catalog customization and draft reads remain bounded as cart and catalog g
         BranchInventory::factory()->for($branch)->for($product)->create();
     }
     DB::enableQueryLog();
+    DB::flushQueryLog();
+
+    $plain = app(BranchCatalog::class)->browse($branch);
+
+    expect(count(DB::getQueryLog()))->toBe(4);
+    expect($plain['products'])->toHaveCount($count);
     DB::flushQueryLog();
 
     $catalog = app(BranchCatalog::class)->browse($branch, true);

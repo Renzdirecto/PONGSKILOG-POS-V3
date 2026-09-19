@@ -287,7 +287,7 @@ Avoid creating duplicate payment screens for QR.
 
 Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
 
-Both Order Information / Pay Later and Pay Now display the same optional table chips for both order types, with a selected highlight and No table / deselection. Switching order type does not clear the table. Take Out still requires a customer/order label; Dine In does not.
+Both Order Information / Pay Later and Pay Now display the same optional table chips for both order types, with a selected highlight; clicking the selected table again clears it. No separate No table option is required. Switching order type does not clear the table. Take Out still requires a customer/order label; Dine In does not.
 
 Pay Now follows the standalone compact bordered Order Summary rows, with red quantity/amount, black product names, and compact modifier/note details. Group Exact / PHP50 / PHP100 / PHP500 / PHP1,000 together; shortcuts always set Cash received, and Split Exact uses the remaining cash due after Cashless. Hide cash shortcuts for Cashless-only. Use exact integer-cent previews.
 

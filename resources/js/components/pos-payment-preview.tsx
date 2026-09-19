@@ -101,7 +101,7 @@ export function PosPaymentPreview({
                     {orderType === 'dine_in' ? 'Dine in' : 'Take out'}
                 </div>
                 {saved ? (
-                    <p className="text-center text-[13px] font-semibold text-red-700">
+                    <p className="text-center text-[13px] font-semibold wrap-anywhere text-red-700">
                         {[saved.customer_label, saved.table_name]
                             .filter(Boolean)
                             .join(' / ')}

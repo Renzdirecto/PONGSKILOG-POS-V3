@@ -184,7 +184,7 @@ Supported:
 
 Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
 
-Dine In customer/order label is optional. Take Out customer/order label remains required.
+The customer/order label is optional for both Dine In and Take Out.
 
 ---
 
@@ -234,6 +234,12 @@ On successful new-order payment:
 - Branch Kitchen ticket is created
 - Realtime broadcast occurs after commit
 
+The POS reserves the real operational order identity when a new order type is selected so the same numeric order number is visible in the cart, Payment modal, paid-success state, and receipt. Allocation is server-owned, branch-serialized, and may contain gaps when an abandoned reservation is never paid. Clients cannot choose or replace either identifier.
+
+- `order_number` is the short numeric operational number used by staff and customers, such as `1043` / `#1043`.
+- `reference_number` is the immutable full audit reference, such as `MAIN-260919-1043`.
+- Existing legacy orders retain their historical order numbers and may have no reference number.
+
 Failed payment does not deduct inventory or create a Kitchen ticket.
 
 ---
@@ -264,6 +270,7 @@ Rules:
 - Manual confirmation
 - No provider reference required in MVP
 - No automatic provider verification assumed
+- The Phase 6 invoice field is an explicit placeholder only. Invoice capture and management belong to Transaction History & Editing in Phase 12.
 
 ---
 

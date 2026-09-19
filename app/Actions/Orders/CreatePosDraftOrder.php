@@ -19,7 +19,6 @@ use App\Support\BranchCatalog;
 use App\Support\ExactMoney;
 use App\Support\OrderNumber;
 use App\Support\PosAccess;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -30,9 +29,9 @@ class CreatePosDraftOrder
     public function __construct(private BranchCatalog $catalog, private PosAccess $access, private OrderNumber $numbers) {}
 
     /** @param array<string, mixed> $input */
-    public function execute(User $user, Branch $branch, array $input): Order
+    public function execute(User $user, Branch $branch, array $input, ?Order $reservedOrder = null): Order
     {
-        return DB::transaction(function () use ($user, $branch, $input): Order {
+        return DB::transaction(function () use ($user, $branch, $input, $reservedOrder): Order {
             $branch = Branch::query()->whereKey($branch->getKey())->lockForUpdate()->firstOrFail();
             $user = $this->access->authorize($user, $branch);
             if (! $branch->storeSessions()->where('status', StoreSessionStatus::Open)->lockForUpdate()->first()) {
@@ -41,15 +40,23 @@ class CreatePosDraftOrder
 
             /** @var array{order_type: string, branch_table_id?: string|null, customer_label?: string|null, items: list<array{product_id: string, quantity: int, notes?: string|null, modifiers: list<array{group_id: string, option_id: string}>}>} $data */
             $data = Validator::make($input, StorePosDraftOrderRequest::draftRules())->validate();
+            if ($reservedOrder !== null) {
+                $reservedOrder = Order::query()->where('branch_id', $branch->id)->whereKey($reservedOrder->id)->lockForUpdate()->firstOrFail();
+                abort_unless($reservedOrder->created_by_user_id === $user->id
+                    && $reservedOrder->source === OrderSource::Pos
+                    && $reservedOrder->commercial_status === CommercialStatus::Draft
+                    && $reservedOrder->payment_status === PaymentStatus::Unpaid
+                    && $reservedOrder->payment_term === null
+                    && $reservedOrder->kitchen_status === KitchenStatus::NotSent
+                    && $reservedOrder->committed_at === null
+                    && $reservedOrder->items()->doesntExist(), 404);
+            }
             $type = OrderType::from($data['order_type']);
             $tableId = ($data['branch_table_id'] ?? null) ?: null;
             if ($tableId !== null && ! $branch->tables()->whereKey($tableId)->where('is_active', true)->exists()) {
                 throw ValidationException::withMessages(['branch_table_id' => 'Choose an active table in this branch.']);
             }
             $label = trim($data['customer_label'] ?? '');
-            if ($type === OrderType::TakeOut && $label === '') {
-                throw ValidationException::withMessages(['customer_label' => 'Enter a customer name or order label.']);
-            }
 
             $products = $this->catalog->productsForOrder($branch, array_values(array_unique(array_column($data['items'], 'product_id'))))->keyBy('id');
             $requested = [];
@@ -59,14 +66,18 @@ class CreatePosDraftOrder
             $items = [];
             $modifiers = [];
             $subtotal = 0;
-            $orderId = (string) Str::uuid();
+            $orderId = $reservedOrder === null ? (string) Str::uuid() : $reservedOrder->id;
             foreach ($data['items'] as $index => $line) {
                 $product = $products->get($line['product_id']);
-                if ($product === null || ! ($state = $this->catalog->resolveLoaded($product))['is_available']) {
+                if ($product === null) {
                     throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
                 }
+                $state = $this->catalog->resolveLoaded($product);
                 if ($state['tracked'] && $requested[$product->id] > $state['on_hand']) {
                     throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock for {$product->name}. Reduce the total quantity in the cart."]);
+                }
+                if (! $state['is_available']) {
+                    throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
                 }
                 $itemId = (string) Str::uuid();
                 $base = ExactMoney::cents($state['effective_price']);
@@ -106,14 +117,26 @@ class CreatePosDraftOrder
                 ];
             }
 
-            $order = $this->createOrder([
+            $attributes = [
                 'id' => $orderId, 'branch_id' => $branch->id, 'source' => OrderSource::Pos,
                 'order_type' => $type, 'branch_table_id' => $tableId,
                 'customer_label' => $label === '' ? null : $label, 'commercial_status' => CommercialStatus::Draft,
                 'payment_status' => PaymentStatus::Unpaid, 'kitchen_status' => KitchenStatus::NotSent,
                 'subtotal' => ExactMoney::decimal($subtotal), 'total' => ExactMoney::decimal($subtotal),
                 'created_by_user_id' => $user->id,
-            ]);
+            ];
+            if ($reservedOrder === null) {
+                $createdAt = now();
+                $order = $this->createOrder([...$attributes, ...$this->numbers->allocate($branch, $createdAt),
+                    'created_at' => $createdAt, 'updated_at' => $createdAt]);
+            } else {
+                $reservedOrder->fill([
+                    'order_type' => $type, 'branch_table_id' => $tableId,
+                    'customer_label' => $label === '' ? null : $label,
+                    'subtotal' => ExactMoney::decimal($subtotal), 'total' => ExactMoney::decimal($subtotal),
+                ])->save();
+                $order = $reservedOrder;
+            }
             OrderItem::query()->insert($items);
             foreach (array_chunk($modifiers, 500) as $chunk) {
                 OrderItemModifier::query()->insert($chunk);
@@ -126,26 +149,10 @@ class CreatePosDraftOrder
     /** @param array<string, mixed> $attributes */
     private function createOrder(array $attributes): Order
     {
-        for ($attempt = 0; $attempt < 5; $attempt++) {
-            try {
-                /** A savepoint keeps PostgreSQL usable after the expected unique conflict. */
-                return DB::transaction(function () use ($attributes): Order {
-                    $order = new Order;
-                    $order->forceFill([...$attributes, 'order_number' => $this->numbers->generate()]);
-                    $order->save();
+        $order = new Order;
+        $order->forceFill($attributes);
+        $order->save();
 
-                    return $order;
-                });
-            } catch (UniqueConstraintViolationException $exception) {
-                $detail = $exception->errorInfo[2] ?? '';
-                $expected = (($exception->errorInfo[0] ?? '') === '23505' && str_contains($detail, '"orders_branch_id_order_number_unique"'))
-                    || (DB::getDriverName() === 'sqlite' && str_contains($detail, 'UNIQUE constraint failed: orders.branch_id, orders.order_number'));
-                if (! $expected || $attempt === 4) {
-                    throw $exception;
-                }
-            }
-        }
-
-        throw new \LogicException('Order number retry exhausted.');
+        return $order;
     }
 }

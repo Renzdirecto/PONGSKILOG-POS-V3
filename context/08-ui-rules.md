@@ -245,6 +245,9 @@ Show:
 - Quantity
 - Notes
 - Price impact
+- Exact active-branch on-hand quantity when the product tracks inventory, using `In stock`, `Low stock`, or `Out of stock` wording
+
+Untracked products show availability without a numeric quantity. The Cashier projection must not expose inventory version, threshold, movement history, or another branch's balance.
 
 Drink size should appear in visible item name where configured.
 
@@ -287,11 +290,17 @@ Avoid creating duplicate payment screens for QR.
 
 Branch table selection is optional for both Dine In and Take Out. If selected, the table must be active and belong to the current branch.
 
-Both Order Information / Pay Later and Pay Now display the same optional table chips for both order types, with a selected highlight; clicking the selected table again clears it. No separate No table option is required. Switching order type does not clear the table. Take Out still requires a customer/order label; Dine In does not.
+Both Order Information / Pay Later and Pay Now display the same optional table chips for both order types, with a selected highlight; clicking the selected table again clears it. No separate No table option is required. Switching order type does not clear the table. The customer/order label is optional for both order types.
 
 Pay Now follows the standalone compact bordered Order Summary rows, with red quantity/amount, black product names, and compact modifier/note details. Group Exact / PHP50 / PHP100 / PHP500 / PHP1,000 together; shortcuts always set Cash received, and Split Exact uses the remaining cash due after Cashless. Hide cash shortcuts for Cashless-only. Use exact integer-cent previews.
 
 Show Total, Received, Remaining and a prominent dark Change surface (including zero). Omit the redundant Payment preview heading. At 820px and 1024px, use a two-column modal with a non-scrolling right payment panel; long left content may scroll. Mobile may scroll without horizontal overflow. Phase 5 Confirm Payment remains disabled: "Payment confirmation will be enabled in Phase 6." Pay Later activation remains disabled until Phase 7.
+
+Once the order type is selected, show the server-reserved numeric operational number consistently as `#number` in Cart, Payment, paid-success, and receipt. Show the longer immutable reference as secondary audit metadata, never as the primary display number.
+
+For Cashless and Split, show `Invoice: —` as a deliberate placeholder. Capturing or editing an invoice is Phase 12 work.
+
+The Phase 6 receipt follows an 80mm thermal hierarchy: its own top Back action, branch identity and contact, prominent order number and PAID state, secondary full reference, order/customer metadata, item/modifier/note detail, subtotal/total, payment breakdown, received/change where applicable, and footer. Print styling removes application chrome, colors, shadows, and controls. `Show QR` opens a clearly labelled placeholder surface only; real receipt QR links/tokens belong to Phase 10 and must not be fabricated.
 
 ---
 

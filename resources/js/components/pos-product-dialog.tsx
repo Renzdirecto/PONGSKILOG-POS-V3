@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import { stockAvailabilityLabel } from '@/lib/pos-order';
 import type { CartLine, PosProduct } from '@/types/pos';
 
 export const posDialogClass =
@@ -37,6 +38,7 @@ export function PosProductDialog({
         Number(quantity) >= 1 &&
         Number(quantity) <= 999;
     const groups = product.modifier_groups ?? [];
+    const stockLabel = stockAvailabilityLabel(product);
     const validModifiers = groups.every((group) => {
         const count = modifiers.filter(
             (selection) => selection.group_id === group.id,
@@ -91,12 +93,10 @@ export function PosProductDialog({
                             <span className="text-xl font-bold text-red-700">
                                 {pesos(product.effective_price)}
                             </span>
-                            <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700">
-                                {product.is_available
-                                    ? product.stock_status === 'low_stock'
-                                        ? 'Low stock'
-                                        : 'Available'
-                                    : 'Unavailable'}
+                            <span
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${product.on_hand === 0 ? 'bg-neutral-100 text-neutral-600' : product.stock_status === 'low_stock' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}
+                            >
+                                {stockLabel}
                             </span>
                         </div>
                         <p className="text-[12.5px] leading-[1.6] text-neutral-500">

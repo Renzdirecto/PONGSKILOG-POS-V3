@@ -12,6 +12,8 @@ export type CashierCatalog = {
         effective_price: string;
         is_available: boolean;
         stock_status: StockStatus;
+        tracks_inventory: boolean;
+        on_hand: number | null;
         image_url: string | null;
         has_modifiers: boolean;
         modifier_groups?: {

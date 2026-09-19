@@ -16,10 +16,8 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
-use App\Support\OrderNumber;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Process;
@@ -79,12 +77,13 @@ if ($worker) {
     DB::selectOne("SELECT set_config('application_name', ?, false)", [$schema.'_'.$argv[3]]);
     $user = User::query()->findOrFail($argv[3]);
     $branch = Branch::query()->findOrFail($argv[4]);
-    $numbers = [];
+    $orders = [];
     for ($index = 0; $index < 5; $index++) {
-        $numbers[] = app(CreatePosDraftOrder::class)->execute($user, $branch, draftPayload($argv[5]))->order_number;
+        $order = app(CreatePosDraftOrder::class)->execute($user, $branch, draftPayload($argv[5]));
+        $orders[] = ['number' => $order->order_number, 'reference' => $order->reference_number];
         verifyUsableConnection();
     }
-    echo json_encode(['pid' => DB::selectOne('SELECT pg_backend_pid() AS pid')->pid, 'numbers' => $numbers], JSON_THROW_ON_ERROR).PHP_EOL;
+    echo json_encode(['pid' => DB::selectOne('SELECT pg_backend_pid() AS pid')->pid, 'orders' => $orders], JSON_THROW_ON_ERROR).PHP_EOL;
     exit(0);
 }
 
@@ -109,8 +108,13 @@ try {
         }
     }
     verify(in_array($columns->first(fn ($column): bool => $column->table_name === 'orders' && $column->column_name === 'version')->column_default, ['1', "'1'::bigint"], true), 'Version default must be 1.');
+    verify($columns->contains(fn ($column): bool => $column->table_name === 'orders' && $column->column_name === 'reference_number'), 'Missing orders.reference_number.');
+    verify($columns->contains(fn ($column): bool => $column->table_name === 'order_number_counters' && $column->column_name === 'next_number' && $column->data_type === 'bigint'), 'Missing bigint order counter.');
     $constraints = collect(DB::select('SELECT c.conname, c.contype, c.confdeltype, pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = ?', [$schema]))->keyBy('conname');
     verify(str_contains($constraints['orders_branch_id_order_number_unique']->definition, 'UNIQUE (branch_id, order_number)'), 'Missing branch/order uniqueness.');
+    verify($constraints['orders_reference_number_unique']->contype === 'u', 'Missing global reference uniqueness.');
+    verify($constraints['order_number_counters_branch_id_foreign']->confdeltype === 'r', 'Counter branch FK must restrict deletion.');
+    verify($constraints['order_number_counters_next_number_check']->contype === 'c', 'Missing positive counter CHECK.');
     foreach (['orders_subtotal_check', 'orders_total_check', 'orders_version_check', 'order_items_quantity_check', 'order_items_unit_price_check', 'order_items_line_total_check', 'order_item_modifiers_quantity_check', 'order_item_modifiers_price_delta_snapshot_check'] as $name) {
         verify(isset($constraints[$name]) && $constraints[$name]->contype === 'c', 'Missing CHECK '.$name);
     }
@@ -124,7 +128,7 @@ try {
     foreach (['orders_order_number_index', 'orders_branch_id_created_at_index', 'orders_branch_id_commercial_status_created_at_index', 'orders_branch_id_payment_status_created_at_index', 'orders_branch_id_kitchen_status_created_at_index', 'orders_branch_id_archived_at_index', 'order_items_order_id_index', 'order_item_modifiers_order_item_id_index'] as $index) {
         verify(in_array($index, $indexes, true), 'Missing index '.$index);
     }
-    echo 'SCHEMA PASS: UUID, numeric(14,2), CHECKs, unique, indexes, FK delete rules, version default.'.PHP_EOL;
+    echo 'SCHEMA PASS: identifiers, counter, UUID, numeric(14,2), CHECKs, unique, indexes, FK delete rules, version default.'.PHP_EOL;
 
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
@@ -169,49 +173,23 @@ try {
     }
     verify(count(array_unique(array_column($results, 'pid'))) === 4, 'Workers must use independent connections.');
     verify(Order::query()->count() === 20 && Order::query()->distinct()->count('order_number') === 20, 'Concurrent drafts must persist unique numbers.');
-    echo 'CONCURRENCY PASS: 4 observed overlapping connections, 20 unique persisted drafts, all worker connections reusable.'.PHP_EOL;
+    $numbers = Order::query()->where('branch_id', $branch->id)->pluck('order_number')->map(fn (string $number): int => (int) $number)->sort()->values()->all();
+    verify($numbers === range(1001, 1020), 'Concurrent allocation must produce the serialized numeric range.');
+    verify(Order::query()->where('branch_id', $branch->id)->whereNull('reference_number')->doesntExist(), 'New drafts require references.');
+    verify(Order::query()->where('branch_id', $branch->id)->get()->every(fn (Order $order): bool => preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-'.$order->order_number.'\z/', (string) $order->reference_number) === 1), 'Reference format must bind branch, business date and number.');
+    verify((int) DB::table('order_number_counters')->where('branch_id', $branch->id)->value('next_number') === 1021, 'Counter did not advance exactly once per order.');
+    echo 'CONCURRENCY PASS: 4 observed overlapping connections allocated numeric 1001-1020 with unique immutable references; all worker connections reusable.'.PHP_EOL;
 
-    $existing = Order::query()->firstOrFail();
-    $generator = Mockery::mock(OrderNumber::class);
-    $generator->shouldReceive('generate')->once()->ordered()->andReturn($existing->order_number);
-    $generator->shouldReceive('generate')->once()->ordered()->andReturn('TEST-RETRY-SUCCESS');
-    app()->instance(OrderNumber::class, $generator);
-    $retried = app(CreatePosDraftOrder::class)->execute($cashiers->first(), $branch, draftPayload($product->id));
-    verify($retried->order_number === 'TEST-RETRY-SUCCESS' && Order::query()->count() === 21, 'Expected collision retry failed.');
+    DB::table('order_number_counters')->where('branch_id', $branch->id)->update(['next_number' => 2000]);
+    Order::factory()->for($branch)->create(['order_number' => '2000', 'reference_number' => null]);
+    $skipped = app(CreatePosDraftOrder::class)->execute($cashiers->first(), $branch, draftPayload($product->id));
+    verify($skipped->order_number === '2001' && (int) DB::table('order_number_counters')->where('branch_id', $branch->id)->value('next_number') === 2002, 'Historical numeric collision was not skipped.');
+    verify(Order::query()->where('order_number', '2000')->whereNull('reference_number')->exists(), 'Legacy identity was rewritten.');
     verifyUsableConnection();
-    Mockery::close();
-    echo 'COLLISION PASS: real 23505 followed by successful savepoint retry and usable connection.'.PHP_EOL;
-
-    foreach (['unique', 'check'] as $failure) {
-        $generator = Mockery::mock(OrderNumber::class);
-        $generator->shouldReceive('generate')->once()->andReturn('TEST-UNRELATED');
-        app()->instance(OrderNumber::class, $generator);
-        if ($failure === 'unique') {
-            DB::statement('CREATE UNIQUE INDEX phase5_unrelated_unique ON orders (order_number) WHERE order_number = \'TEST-UNRELATED\'');
-            Order::factory()->for(Branch::factory()->create())->create(['order_number' => 'TEST-UNRELATED']);
-        } else {
-            DB::statement("ALTER TABLE orders ADD CONSTRAINT phase5_unrelated_check CHECK (order_number <> 'TEST-UNRELATED')");
-        }
-        $before = Order::query()->count();
-        try {
-            app(CreatePosDraftOrder::class)->execute($cashiers->first(), $branch, draftPayload($product->id));
-            throw new RuntimeException('Unrelated database failure was swallowed.');
-        } catch (QueryException $exception) {
-            verify($exception->errorInfo[0] === ($failure === 'unique' ? '23505' : '23514'), 'Unexpected SQLSTATE.');
-        } finally {
-            DB::statement($failure === 'unique' ? 'DROP INDEX phase5_unrelated_unique' : 'ALTER TABLE orders DROP CONSTRAINT phase5_unrelated_check');
-        }
-        verify(Order::query()->count() === $before, 'Failed action left a partial order.');
-        verifyUsableConnection();
-        Mockery::close();
-        if ($failure === 'unique') {
-            DB::table('orders')->where('order_number', 'TEST-UNRELATED')->delete();
-        }
-    }
-    echo 'UNRELATED ERRORS PASS: unique 23505 and CHECK 23514 propagate after one generator call; connections recover.'.PHP_EOL;
+    echo 'LEGACY PASS: historical numeric collision skipped without rewriting the legacy row.'.PHP_EOL;
     verify($balance->fresh()->getAttributes() === $originalBalance, 'Drafts changed inventory or version.');
     verify(DB::table('inventory_movements')->count() === 0, 'Drafts created inventory movements.');
-    verify(Order::query()->where('source', 'pos')->where('commercial_status', 'draft')->where('payment_status', 'unpaid')->where('kitchen_status', 'not_sent')->whereNull('payment_term')->whereNull('committed_at')->whereNull('store_session_id')->count() === 21, 'Draft state boundary changed.');
+    verify(Order::query()->where('source', 'pos')->where('commercial_status', 'draft')->where('payment_status', 'unpaid')->where('kitchen_status', 'not_sent')->whereNull('payment_term')->whereNull('committed_at')->whereNull('store_session_id')->count() === 22, 'Draft state boundary changed.');
     verify(DB::table('order_items')->count() === 21, 'Partial or missing item rows.');
     echo 'PASS: PostgreSQL Phase 5 acceptance; no inventory or operational side effects.'.PHP_EOL;
 } finally {
@@ -229,5 +207,4 @@ try {
         verify($observer->selectOne('SELECT count(*) AS count FROM pg_namespace WHERE nspname = ?', [$schema])->count === 0, 'Temporary schema was not removed.');
         echo 'CLEANUP PASS '.$schema.PHP_EOL;
     }
-    Mockery::close();
 }

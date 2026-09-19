@@ -176,3 +176,53 @@ body:has([data-slot='dialog-content'].pos-surface)
     [data-slot='dialog-overlay'] {
     background: rgb(0 0 0 / 40%);
 }
+
+@media print {
+    @page {
+        size: 80mm auto;
+        margin: 4mm;
+    }
+
+    body:has([data-pos-receipt]) > * {
+        display: none !important;
+    }
+    body:has([data-pos-receipt]) > [data-radix-portal],
+    body:has([data-pos-receipt]) > [role='dialog'] {
+        display: block !important;
+    }
+    [role='dialog']:has([data-pos-receipt]) {
+        position: static !important;
+        transform: none !important;
+        max-height: none !important;
+        width: 80mm !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+    [role='dialog']:has([data-pos-receipt]) > :not([data-pos-receipt]) {
+        display: none !important;
+    }
+    [data-pos-receipt] {
+        width: 72mm !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #000 !important;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+        font-size: 10px !important;
+        overflow: visible !important;
+    }
+
+    [data-pos-receipt] article {
+        width: 100% !important;
+        max-width: none !important;
+        padding: 0 !important;
+        border: 0 !important;
+        color: #000 !important;
+    }
+
+    [data-pos-receipt] * {
+        color: #000 !important;
+        box-shadow: none !important;
+    }
+}

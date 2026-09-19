@@ -432,6 +432,13 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 
 ---
 
+### Pre-Phase 7 local POS QA preparation — 2026-09-20
+
+- Local-only menu seed data now uses non-zero deterministic QA prices, configures seeded Products for tracked inventory in MAIN/QAVE, and initializes missing balances through manual-adjustment ledger movements at MAIN 50 / QAVE 30 without refilling existing balances on repeat runs.
+- The existing Open Store opening Cash/Cashless form was reverified without a production UI redesign. Local Store Sessions were prepared CLOSED for manual Open Store QA; Phase 15 reconciliation and every Phase 7 item remain untouched.
+
+---
+
 ## Phase 7 — Pay Later
 
 - [ ] Save as UNPAID / PAY LATER

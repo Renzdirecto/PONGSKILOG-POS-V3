@@ -25,7 +25,10 @@ class PosDraftOrderController extends Controller
         abort_unless($user instanceof User, 401);
         $branch = $context->current($user);
         abort_if($branch === null, 403);
-        $order = $create->execute($user, $branch, $request->validated());
+        $reservedOrder = $request->filled('reserved_order_id')
+            ? Order::query()->whereKey($request->validated('reserved_order_id'))->firstOrFail()
+            : null;
+        $order = $create->execute($user, $branch, $request->validated(), $reservedOrder);
 
         Inertia::flash('posDraft', $this->summary($order));
 
@@ -53,7 +56,7 @@ class PosDraftOrderController extends Controller
         $order->load('items.modifiers', 'branchTable');
 
         return [
-            'id' => $order->id, 'order_number' => $order->order_number,
+            'id' => $order->id, 'order_number' => $order->order_number, 'reference_number' => $order->reference_number,
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->branchTable?->name, 'subtotal' => $order->subtotal, 'total' => $order->total,
             'items' => $order->items->map(fn (OrderItem $item): array => [

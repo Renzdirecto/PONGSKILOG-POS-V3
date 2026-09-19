@@ -32,6 +32,7 @@ export function PosPaymentPreview({
     orderType,
     lines,
     saved,
+    orderNumber,
     tables,
     customerLabel,
     tableId,
@@ -49,6 +50,7 @@ export function PosPaymentPreview({
     orderType: OrderType;
     lines: CartLine[];
     saved: OrderSummary | null;
+    orderNumber: string;
     tables: BranchTable[];
     customerLabel: string;
     tableId: string;
@@ -110,10 +112,10 @@ export function PosPaymentPreview({
             <section className="flex min-w-0 flex-col gap-3 border-b border-neutral-200 p-4 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
                 <div className="space-y-1">
                     <p className="text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                        {saved ? 'Order number' : 'New order'}
+                        Order number
                     </p>
                     <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
-                        {saved ? `#${saved.order_number}` : 'Draft'}
+                        #{orderNumber}
                     </p>
                 </div>
                 <div
@@ -262,6 +264,9 @@ export function PosPaymentPreview({
                                 Confirm only after payment is received
                                 externally.
                             </p>
+                            <p className="mt-2 text-[11px] font-semibold text-sky-800">
+                                Invoice: —
+                            </p>
                         </div>
                     ) : (
                         (['cash', 'cashless'] as const)
@@ -300,6 +305,12 @@ export function PosPaymentPreview({
                             ))
                     )}
                 </div>
+                {method === 'split' && (
+                    <div className="flex items-center justify-between rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-[11px] text-neutral-500">
+                        <span>Cashless invoice</span>
+                        <span className="font-semibold text-neutral-700">—</span>
+                    </div>
+                )}
                 {method !== 'cashless' && (
                     <div
                         className="flex flex-wrap gap-1.5"

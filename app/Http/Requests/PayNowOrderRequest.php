@@ -20,6 +20,7 @@ class PayNowOrderRequest extends StorePosDraftOrderRequest
         return [
             ...($existingDraft ? [] : self::draftRules()),
             'draft_order_id' => ['nullable', 'uuid'],
+            'reserved_order_id' => ['nullable', 'uuid'],
             'idempotency_key' => ['required', 'uuid'],
             'payment_method' => ['required', Rule::in(['cash', 'cashless', 'split'])],
             'cash_received' => ['required_if:payment_method,cash,split', ...$money],

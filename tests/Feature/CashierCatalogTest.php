@@ -52,6 +52,8 @@ test('authorized cashier roles receive the lean real catalog with default prices
                     'effective_price' => '99.25',
                     'is_available' => true,
                     'stock_status' => 'not_tracked',
+                    'tracks_inventory' => false,
+                    'on_hand' => null,
                     'image_url' => null,
                     'has_modifiers' => false,
                     'modifier_groups' => [],
@@ -214,6 +216,8 @@ test('catalog signs only returned card variants and exposes no image internals',
                 ->where('effective_price', '0.00')
                 ->where('is_available', false)
                 ->where('stock_status', 'out_of_stock')
+                ->where('tracks_inventory', true)
+                ->where('on_hand', 0)
                 ->where('image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
                 ->where('has_modifiers', true)
                 ->has('modifier_groups', 1)));

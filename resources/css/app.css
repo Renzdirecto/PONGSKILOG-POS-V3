@@ -178,6 +178,11 @@ body:has([data-slot='dialog-content'].pos-surface)
 }
 
 @media print {
+    @page {
+        size: 80mm auto;
+        margin: 4mm;
+    }
+
     body:has([data-pos-receipt]) > * {
         display: none !important;
     }
@@ -191,6 +196,7 @@ body:has([data-slot='dialog-content'].pos-surface)
         max-height: none !important;
         width: 80mm !important;
         max-width: 100% !important;
+        padding: 0 !important;
         border: 0 !important;
         box-shadow: none !important;
     }
@@ -198,6 +204,25 @@ body:has([data-slot='dialog-content'].pos-surface)
         display: none !important;
     }
     [data-pos-receipt] {
+        width: 72mm !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #000 !important;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+        font-size: 10px !important;
         overflow: visible !important;
+    }
+
+    [data-pos-receipt] article {
+        width: 100% !important;
+        max-width: none !important;
+        padding: 0 !important;
+        border: 0 !important;
+        color: #000 !important;
+    }
+
+    [data-pos-receipt] * {
+        color: #000 !important;
+        box-shadow: none !important;
     }
 }

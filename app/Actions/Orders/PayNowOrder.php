@@ -38,6 +38,9 @@ class PayNowOrder
     public function execute(User $user, Branch $branch, array $input): Order
     {
         $data = Validator::make($input, PayNowOrderRequest::paymentRules(! empty($input['draft_order_id'])))->validate();
+        if (! empty($data['draft_order_id']) && ! empty($data['reserved_order_id'])) {
+            throw ValidationException::withMessages(['reserved_order_id' => 'Choose either a saved draft or a reserved order, not both.']);
+        }
         $data['idempotency_key'] = strtolower($data['idempotency_key']);
 
         try {
@@ -56,9 +59,14 @@ class PayNowOrder
                 if ($session === null) {
                     throw ValidationException::withMessages(['store' => 'Store is closed. Open the store before confirming payment.']);
                 }
-                $order = ! empty($data['draft_order_id'])
-                    ? Order::query()->where('branch_id', $branch->id)->whereKey($data['draft_order_id'])->lockForUpdate()->firstOrFail()
-                    : $this->drafts->execute($user, $branch, $data);
+                if (! empty($data['draft_order_id'])) {
+                    $order = Order::query()->where('branch_id', $branch->id)->whereKey($data['draft_order_id'])->lockForUpdate()->firstOrFail();
+                } elseif (! empty($data['reserved_order_id'])) {
+                    $reservedOrder = Order::query()->where('branch_id', $branch->id)->whereKey($data['reserved_order_id'])->lockForUpdate()->firstOrFail();
+                    $order = $this->drafts->execute($user, $branch, $data, $reservedOrder);
+                } else {
+                    $order = $this->drafts->execute($user, $branch, $data);
+                }
                 $order = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
                 if ($order->payment_status === PaymentStatus::Paid) {
                     throw ValidationException::withMessages(['order' => 'Order has already been paid.']);
@@ -169,6 +177,7 @@ class PayNowOrder
         $first = $payments->first();
         if ($first->branch_id !== $branch->id || $first->created_by_user_id !== $user->id
             || (! empty($data['draft_order_id']) && $first->order_id !== $data['draft_order_id'])
+            || (! empty($data['reserved_order_id']) && $first->order_id !== $data['reserved_order_id'])
             || $payments->contains(fn (Payment $payment): bool => $payment->order_id !== $first->order_id)) {
             abort(409, 'This payment attempt belongs to another order or cashier.');
         }

@@ -11,6 +11,7 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\BranchTable;
+use App\Models\Category;
 use App\Models\ModifierGroup;
 use App\Models\ModifierOption;
 use App\Models\Order;
@@ -20,7 +21,7 @@ use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
-use App\Support\OrderNumber;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -101,6 +102,33 @@ test('assigned cashier roles save exact priced drafts and receive persisted summ
         ->where('order.items.0.line_total', '230.00')->where('order.items.0.notes', 'Less rice')
         ->where('order.items.0.modifiers.0.name', 'Egg')->where('order.items.0.modifiers.0.price_delta', '20.00'));
 })->with(['cashier', 'cashier_kitchen']);
+
+test('saving order information fills the early reservation without changing its identifiers', function () {
+    $branch = Branch::factory()->create();
+    $user = posCashier($branch);
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create(['default_price' => '95.00']);
+
+    $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'take_out',
+    ])->assertOk()->json('order');
+
+    $this->post(route('pos.orders.store'), [
+        ...posPayload($product),
+        'reserved_order_id' => $reservation['id'],
+    ])->assertRedirectToRoute('workspaces.cashier')
+        ->assertInertiaFlash('posDraft.id', $reservation['id'])
+        ->assertInertiaFlash('posDraft.order_number', $reservation['order_number'])
+        ->assertInertiaFlash('posDraft.reference_number', $reservation['reference_number']);
+
+    $this->assertDatabaseCount('orders', 1);
+    $this->assertDatabaseHas('orders', [
+        'id' => $reservation['id'],
+        'order_number' => $reservation['order_number'],
+        'reference_number' => $reservation['reference_number'],
+        'subtotal' => '190.00',
+    ]);
+});
 
 test('draft snapshots survive catalog renaming repricing and disablement', function () {
     $branch = Branch::factory()->create();
@@ -477,6 +505,7 @@ test('POS modal entry receives real profile store catalog and branch table data 
     $product = Product::factory()->create(['description' => $description, 'default_price' => '125.50']);
     BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true]);
     $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 8, 'version' => 2]);
+    BranchInventory::factory()->for(Branch::factory()->create())->for($product)->create(['on_hand' => 4, 'version' => 99]);
     $originalBalance = $balance->refresh()->getAttributes();
 
     $this->actingAs($user)->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
@@ -487,12 +516,36 @@ test('POS modal entry receives real profile store catalog and branch table data 
         ->where('store.branchStatus', 'active')
         ->where('tables', [['id' => $table->id, 'name' => $table->name]])
         ->where('catalog.products.0.description', $description)
-        ->where('catalog.products.0.effective_price', '125.50'));
+        ->where('catalog.products.0.effective_price', '125.50')
+        ->where('catalog.products.0.tracks_inventory', true)
+        ->where('catalog.products.0.on_hand', 8)
+        ->missing('catalog.products.0.version'));
 
     expect($balance->fresh()->getAttributes())->toBe($originalBalance);
     $this->assertDatabaseCount('orders', 0);
     $this->assertDatabaseCount('inventory_movements', 0);
 })->with([null, 'Freshly prepared with rice.']);
+
+test('POS customization exposes zero for tracked stock and no quantity for untracked products', function () {
+    $branch = Branch::factory()->create();
+    $category = Category::factory()->create();
+    $tracked = Product::factory()->for($category)->create(['name' => 'A tracked']);
+    $untracked = Product::factory()->for($category)->create(['name' => 'B untracked']);
+    BranchProduct::factory()->for($branch)->for($tracked)->create(['tracks_inventory' => true]);
+    BranchProduct::factory()->for($branch)->for($untracked)->create(['tracks_inventory' => false]);
+    BranchInventory::factory()->for($branch)->for($tracked)->create(['on_hand' => 0]);
+    BranchInventory::factory()->for($branch)->for($untracked)->create(['on_hand' => 91]);
+
+    $this->actingAs(posCashier($branch))->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
+        ->where('catalog.products.0.name', 'A tracked')
+        ->where('catalog.products.0.stock_status', 'out_of_stock')
+        ->where('catalog.products.0.tracks_inventory', true)
+        ->where('catalog.products.0.on_hand', 0)
+        ->where('catalog.products.1.name', 'B untracked')
+        ->where('catalog.products.1.stock_status', 'not_tracked')
+        ->where('catalog.products.1.tracks_inventory', false)
+        ->where('catalog.products.1.on_hand', null));
+});
 
 test('summary is isolated by branch source and draft state', function (string $state) {
     $branch = Branch::factory()->create();
@@ -522,34 +575,39 @@ test('order creation rolls back all rows on snapshot insertion failure', functio
     $this->assertDatabaseCount('inventory_movements', 0);
 });
 
-test('order number collision retries only the expected unique constraint', function () {
-    $branch = Branch::factory()->create();
+test('numeric order allocation skips historical collisions and uses the Manila creation date', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 16:30:00 UTC'));
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();
-    Order::factory()->for($branch)->create(['order_number' => '260919-DUPLICAT']);
-    $this->mock(OrderNumber::class, function ($mock) {
-        $mock->shouldReceive('generate')->once()->ordered()->andReturn('260919-DUPLICAT');
-        $mock->shouldReceive('generate')->once()->ordered()->andReturn('260919-UNIQUE01');
-    });
+    $legacy = Order::factory()->for($branch)->create(['order_number' => '1001', 'reference_number' => null]);
 
     $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->create()));
 
-    expect($order->order_number)->toBe('260919-UNIQUE01');
+    expect($legacy->fresh()->order_number)->toBe('1001')
+        ->and($legacy->fresh()->reference_number)->toBeNull()
+        ->and($order->order_number)->toBe('1002')
+        ->and($order->order_number)->toMatch('/\A[0-9]+\z/')
+        ->and($order->reference_number)->toBe('MAIN-260920-1002')
+        ->and(DB::table('order_number_counters')->where('branch_id', $branch->id)->value('next_number'))->toBe(1003);
     $this->assertDatabaseCount('orders', 2);
     $this->assertDatabaseCount('order_items', 1);
 });
 
-test('persistent order number conflicts exhaust a bounded retry without partial rows', function () {
-    $branch = Branch::factory()->create();
+test('order number and reference remain immutable after allocation', function () {
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();
-    Order::factory()->for($branch)->create(['order_number' => '260919-DUPLICAT']);
-    $this->mock(OrderNumber::class, fn ($mock) => $mock->shouldReceive('generate')->times(5)->andReturn('260919-DUPLICAT'));
-    $user = posCashier($branch);
-    $payload = posPayload(Product::factory()->create());
+    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->create()));
+    $number = $order->order_number;
+    $reference = $order->reference_number;
 
-    expect(fn () => app(CreatePosDraftOrder::class)->execute($user, $branch, $payload))->toThrow(QueryException::class);
+    $order->order_number = '9999';
+    expect(fn () => $order->save())->toThrow(LogicException::class, 'Order identifiers are immutable.');
+    $order->refresh();
+    $order->reference_number = 'MAIN-260919-9999';
+    expect(fn () => $order->save())->toThrow(LogicException::class, 'Order identifiers are immutable.');
 
-    $this->assertDatabaseCount('orders', 1);
-    $this->assertDatabaseCount('order_items', 0);
+    expect($order->fresh()->order_number)->toBe($number)
+        ->and($order->fresh()->reference_number)->toBe($reference);
 });
 
 test('catalog customization and draft reads remain bounded as cart and catalog grow', function (int $count) {

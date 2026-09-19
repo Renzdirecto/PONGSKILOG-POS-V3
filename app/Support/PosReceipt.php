@@ -15,7 +15,7 @@ class PosReceipt
         $order->load('items.modifiers', 'branchTable', 'payments.createdBy', 'branch', 'storeSession');
 
         return [
-            'id' => $order->id, 'order_number' => $order->order_number,
+            'id' => $order->id, 'order_number' => $order->order_number, 'reference_number' => $order->reference_number,
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->branchTable?->name, 'subtotal' => $order->subtotal, 'total' => $order->total,
             'payment_status' => $order->payment_status->value,

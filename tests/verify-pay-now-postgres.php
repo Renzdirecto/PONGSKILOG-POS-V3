@@ -92,7 +92,7 @@ if ($worker) {
     }
     try {
         $order = app(PayNowOrder::class)->execute(User::findOrFail($argv[3]), Branch::findOrFail($argv[4]), $payload);
-        $result = ['status' => 'paid', 'order' => $order->id];
+        $result = ['status' => 'paid', 'order' => $order->id, 'number' => $order->order_number, 'reference' => $order->reference_number];
     } catch (HttpException $exception) {
         $result = ['status' => 'conflict', 'code' => $exception->getStatusCode()];
     } catch (ValidationException $exception) {
@@ -120,13 +120,17 @@ try {
         $column = $columns->first(fn ($column): bool => $column->table_name === 'payments' && $column->column_name === $name);
         verify($column->data_type === 'numeric' && $column->numeric_precision === 14 && $column->numeric_scale === 2, 'Exact money required.');
     }
+    verify($columns->contains(fn ($column): bool => $column->table_name === 'orders' && $column->column_name === 'reference_number'), 'Missing orders.reference_number.');
+    verify($columns->contains(fn ($column): bool => $column->table_name === 'order_number_counters' && $column->column_name === 'next_number' && $column->data_type === 'bigint'), 'Missing bigint order counter.');
     $constraints = collect(DB::select('SELECT c.conname, c.contype, c.confdeltype, pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = ?', [$schema]))->keyBy('conname');
     foreach (['payments_amount_check', 'payments_amount_received_check', 'payments_change_amount_check', 'payments_method_check', 'kitchen_tickets_status_check'] as $name) {
         verify(isset($constraints[$name]) && $constraints[$name]->contype === 'c', 'Missing CHECK '.$name);
     }
-    foreach (['payments_idempotency_key_unique', 'kitchen_tickets_order_id_unique'] as $name) {
+    foreach (['payments_idempotency_key_unique', 'kitchen_tickets_order_id_unique', 'orders_reference_number_unique'] as $name) {
         verify($constraints[$name]->contype === 'u', 'Missing UNIQUE '.$name);
     }
+    verify($constraints['order_number_counters_next_number_check']->contype === 'c', 'Missing positive counter CHECK.');
+    verify($constraints['order_number_counters_branch_id_foreign']->confdeltype === 'r', 'Counter branch FK must restrict deletion.');
     foreach (['payments_branch_id_foreign', 'payments_order_id_foreign', 'payments_store_session_id_foreign', 'payments_created_by_user_id_foreign', 'kitchen_tickets_branch_id_foreign', 'kitchen_tickets_order_id_foreign'] as $name) {
         verify($constraints[$name]->confdeltype === 'r', 'Historical FK must restrict deletion: '.$name);
     }
@@ -134,7 +138,7 @@ try {
     foreach (['payments_order_id_index', 'payments_branch_id_paid_at_index', 'payments_store_session_id_index', 'kitchen_tickets_branch_id_status_index'] as $name) {
         verify(in_array($name, $indexes, true), 'Missing index '.$name);
     }
-    echo 'SCHEMA PASS: UUIDs, numeric(14,2), checks, unique keys, restrictive FKs, indexes.'.PHP_EOL;
+    echo 'SCHEMA PASS: numeric order identity/counter, UUIDs, numeric(14,2), checks, unique keys, restrictive FKs, indexes.'.PHP_EOL;
 
     $events = [];
     foreach ([OrderCommitted::class, KitchenTicketCreated::class] as $event) {
@@ -189,6 +193,8 @@ try {
         $successes = array_values(array_filter($results, fn (array $result): bool => $result['status'] === 'paid'));
         verify(count($successes) === ($scenario === 'last unit' ? 1 : 2), 'Wrong outcome count.');
         verify(count(array_unique(array_column($successes, 'order'))) === 1, 'Duplicate orders committed.');
+        verify(count(array_unique(array_column($successes, 'number'))) === 1 && ctype_digit($successes[0]['number']), 'Operational number must be stable and numeric.');
+        verify(count(array_unique(array_column($successes, 'reference'))) === 1 && preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-'.$successes[0]['number'].'\z/', $successes[0]['reference']) === 1, 'Full reference must be stable and correctly formatted.');
         if ($scenario === 'last unit') {
             verify(str_contains(json_encode($results), 'Insufficient stock'), 'Loser must report insufficient stock.');
         }
@@ -239,6 +245,8 @@ try {
     sort($statuses);
     verify($statuses === ['conflict', 'paid'], 'Root key was reused across branches/methods.');
     verify(Order::count() === $beforeOrders + 1 && Payment::count() === $beforePayments + 1, 'Root conflict left duplicate effects.');
+    $crossBranchSuccess = collect($results)->firstWhere('status', 'paid');
+    verify(ctype_digit($crossBranchSuccess['number']) && is_string($crossBranchSuccess['reference']), 'Cross-branch winner must retain numeric identity and reference.');
     echo 'ROOT SCOPE PASS: concurrent cross-branch Cash/Cashless reuse has one winner and one 409 conflict.'.PHP_EOL;
 
     $payload = [...draftPayload($product->id), 'idempotency_key' => (string) Str::uuid()];

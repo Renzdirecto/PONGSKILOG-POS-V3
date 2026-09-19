@@ -58,7 +58,7 @@ function paymentPayload(Product $product, string $method = 'cash', ?string $cash
 test('cashier payment commits authoritative totals stock kitchen session and receipt exactly once', function (string $role, string $method, ?string $cash, ?string $cashless, string $change, int $count) {
     [$branch, $user, $product, $balance, $session] = paymentFixture('235.00', $role);
     $payload = paymentPayload($product, $method, $cash, $cashless);
-    $payload += ['total' => '0.01', 'amount' => '0.01', 'branch_id' => (string) Str::uuid(), 'store_session_id' => (string) Str::uuid(), 'kitchen_status' => 'done'];
+    $payload += ['total' => '0.01', 'amount' => '0.01', 'branch_id' => (string) Str::uuid(), 'store_session_id' => (string) Str::uuid(), 'kitchen_status' => 'done', 'order_number' => 'FORGED', 'reference_number' => 'FORGED'];
     $payload['items'][0]['unit_price'] = '0.01';
 
     $response = $this->actingAs($user)->postJson(route('pos.payments.store'), $payload);
@@ -68,6 +68,10 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
         ->assertJsonPath('receipt.payment_status', 'paid')->assertJsonPath('receipt.branch.name', $branch->name)
         ->assertJsonPath('receipt.cashier', $user->name)->assertJsonPath('receipt.items.0.notes', 'Less salt')
         ->assertJsonMissingPath('receipt.payments.0.idempotency_key');
+    expect($order->order_number)->toMatch('/\A[0-9]+\z/')
+        ->and($order->reference_number)->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('ymd').'-'.$order->order_number)
+        ->and($order->order_number)->not->toBe('FORGED')
+        ->and($order->reference_number)->not->toBe('FORGED');
     expect($order->commercial_status)->toBe(CommercialStatus::Active);
     expect($order->payment_status)->toBe(PaymentStatus::Paid);
     expect($order->payment_term)->toBe(PaymentTerm::Immediate);
@@ -104,6 +108,37 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
     'split exact' => ['split', '135.00', '100.00', '0.00', 2],
     'split change' => ['split', '500.00', '100.00', '365.00', 2],
 ]);
+
+test('reserved order keeps the same numeric identifier from early POS context through receipt', function () {
+    [$branch, $user, $product] = paymentFixture();
+    $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'take_out',
+        'order_number' => '9999',
+        'reference_number' => 'FORGED',
+    ])->assertOk()->json('order');
+
+    expect($reservation['order_number'])->toMatch('/\A[0-9]+\z/')
+        ->and($reservation['reference_number'])->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('ymd').'-'.$reservation['order_number']);
+
+    $payload = paymentPayload($product, 'cashless', null);
+    $payload['reserved_order_id'] = $reservation['id'];
+    $payload['order_number'] = '9999';
+    $payload['reference_number'] = 'FORGED';
+
+    $this->postJson(route('pos.payments.store'), $payload)
+        ->assertOk()
+        ->assertJsonPath('receipt.id', $reservation['id'])
+        ->assertJsonPath('receipt.order_number', $reservation['order_number'])
+        ->assertJsonPath('receipt.reference_number', $reservation['reference_number']);
+
+    $this->assertDatabaseCount('orders', 1);
+    $this->assertDatabaseHas('orders', [
+        'id' => $reservation['id'],
+        'order_number' => $reservation['order_number'],
+        'reference_number' => $reservation['reference_number'],
+        'payment_status' => 'paid',
+    ]);
+});
 
 test('split 500 total applies 200 cashless and 300 cash with exact tender or change', function (string $received, string $change) {
     [$branch, $user, $product] = paymentFixture('500.00');

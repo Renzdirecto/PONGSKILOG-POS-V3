@@ -27,11 +27,20 @@ use Illuminate\Support\Carbon;
  * @property PaymentTerm|null $payment_term
  * @property KitchenStatus $kitchen_status
  */
-#[Fillable(['branch_id', 'store_session_id', 'order_number', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'version'])]
+#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'version'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
     use HasFactory, HasUuids;
+
+    protected static function booted(): void
+    {
+        static::updating(function (Order $order): void {
+            if ($order->isDirty(['order_number', 'reference_number'])) {
+                throw new \LogicException('Order identifiers are immutable.');
+            }
+        });
+    }
 
     /** @return array<string, string> */
     protected function casts(): array

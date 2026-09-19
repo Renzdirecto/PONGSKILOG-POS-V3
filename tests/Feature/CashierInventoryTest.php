@@ -41,16 +41,17 @@ test('cashier stock state controls availability without exposing inventory inter
         BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => $onHand]);
     }
 
-    $this->actingAs($user)->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
-        ->has('catalog.products', 1)
-        ->where('catalog.products.0.id', $product->id)
-        ->where('catalog.products.0.is_available', $expectedAvailable)
-        ->where('catalog.products.0.stock_status', $status)
-        ->missing('catalog.products.0.on_hand')
-        ->missing('catalog.products.0.low_stock_threshold')
-        ->missing('catalog.products.0.tracks_inventory')
-        ->missing('catalog.products.0.version')
-        ->missing('catalog.products.0.movements'));
+    $this->actingAs($user)->get(route('workspaces.cashier'))->assertInertia(function (Assert $page) use ($expectedAvailable, $onHand, $product, $status, $tracked): void {
+        $page->has('catalog.products', 1)
+            ->where('catalog.products.0.id', $product->id)
+            ->where('catalog.products.0.is_available', $expectedAvailable)
+            ->where('catalog.products.0.stock_status', $status)
+            ->where('catalog.products.0.tracks_inventory', $tracked)
+            ->where('catalog.products.0.on_hand', $tracked ? ($onHand ?? 0) : null)
+            ->missing('catalog.products.0.low_stock_threshold')
+            ->missing('catalog.products.0.version')
+            ->missing('catalog.products.0.movements');
+    });
 
     expect(app(BranchCatalog::class)->isAvailable($product, $branch))->toBe($expectedAvailable);
 })->with([
@@ -80,12 +81,14 @@ test('cashier branch switching isolates stock and ignores forged stock and branc
         ->get(route('workspaces.cashier', ['branch_id' => $qave->id, 'on_hand' => 100, 'is_available' => true]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('catalog.products.0.is_available', false)
-            ->where('catalog.products.0.stock_status', 'out_of_stock'));
+            ->where('catalog.products.0.stock_status', 'out_of_stock')
+            ->where('catalog.products.0.on_hand', 0));
     $this->put(route('branch-context.update', $qave))->assertRedirectToRoute('workspace');
     $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
         ->where('branchContext.current.id', $qave->id)
         ->where('catalog.products.0.is_available', true)
-        ->where('catalog.products.0.stock_status', 'in_stock'));
+        ->where('catalog.products.0.stock_status', 'in_stock')
+        ->where('catalog.products.0.on_hand', 3));
 });
 
 test('open and closed cashier stock browsing never writes inventory or grants adjustment access', function (bool $open) {

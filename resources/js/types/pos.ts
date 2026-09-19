@@ -3,6 +3,12 @@ import type { CashierCatalog } from './catalog';
 export type PosProduct = CashierCatalog['products'][number];
 export type OrderType = 'dine_in' | 'take_out';
 export type BranchTable = { id: string; name: string };
+export type OrderReservation = {
+    id: string;
+    order_number: string;
+    reference_number: string;
+    order_type: OrderType;
+};
 export type CartLine = {
     key: string;
     product: PosProduct;
@@ -13,6 +19,7 @@ export type CartLine = {
 export type OrderSummary = {
     id: string;
     order_number: string;
+    reference_number: string | null;
     order_type: OrderType;
     table_name: string | null;
     customer_label: string | null;
@@ -43,6 +50,7 @@ export type PaymentInput = {
 export type PaymentAttempt = PaymentInput & {
     idempotency_key: string;
     draft_order_id?: string;
+    reserved_order_id?: string;
     order_type?: OrderType;
     customer_label?: string;
     branch_table_id?: string | null;

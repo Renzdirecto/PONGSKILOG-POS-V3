@@ -16,7 +16,7 @@ class BranchCatalog
     /**
      * @return array{
      *     categories: list<array{id: string, name: string}>,
-     *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, stock_status: string, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
+     *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, stock_status: string, tracks_inventory: bool, on_hand: int|null, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
      * }
      */
     public function browse(Branch $branch, bool $customization = false): array
@@ -56,6 +56,8 @@ class BranchCatalog
                     'effective_price' => $state['effective_price'],
                     'is_available' => $state['is_available'],
                     'stock_status' => $state['stock_status'],
+                    'tracks_inventory' => $state['tracked'],
+                    'on_hand' => $state['tracked'] ? $state['on_hand'] : null,
                     'image_url' => $this->images->cardUrl($product),
                     'has_modifiers' => (bool) $product->getAttribute('has_modifiers'),
                     ...($customization ? ['modifier_groups' => $this->modifiers($product)] : []),

@@ -9,12 +9,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { PosProductMedia } from '@/components/pos-product-media';
 import { lineCents, pesos, selectedOptions } from '@/lib/pos-money';
+import { orderNumberLabel } from '@/lib/pos-order';
 import type { CartLine, OrderSummary, OrderType } from '@/types/pos';
 
 export function PosCart({
     lines,
     orderType,
     saved,
+    orderNumber,
     customer,
     onTypeChange,
     onEdit,
@@ -26,6 +28,7 @@ export function PosCart({
     lines: CartLine[];
     orderType: OrderType | null;
     saved: OrderSummary | null;
+    orderNumber: string | null;
     customer: string;
     onTypeChange: (type: OrderType) => void;
     onEdit: (line: CartLine) => void;
@@ -49,7 +52,7 @@ export function PosCart({
                         Current order
                     </h2>
                     <p className="text-[16px] font-bold tracking-tight wrap-anywhere">
-                        {saved ? `#${saved.order_number}` : 'New order'}
+                        {orderNumberLabel(orderNumber)}
                     </p>
                     {customer && (
                         <p className="text-sm font-bold wrap-anywhere text-red-700">
@@ -271,14 +274,14 @@ export function PosCart({
                 </div>
                 <div className="flex gap-2">
                     <button
-                        disabled={!orderType || count === 0}
+                        disabled={!orderType || count === 0 || !orderNumber}
                         onClick={() => onCheckout('information')}
                         className="h-12 shrink-0 rounded-xl border border-amber-400 bg-amber-50 px-3.5 text-[13.5px] font-semibold text-amber-800 disabled:opacity-50"
                     >
                         Save &middot; pay later
                     </button>
                     <button
-                        disabled={!orderType || count === 0}
+                        disabled={!orderType || count === 0 || !orderNumber}
                         onClick={() => onCheckout('payment')}
                         className="h-12 min-w-0 flex-1 rounded-xl bg-green-700 px-3 text-[15.5px] font-semibold text-white disabled:opacity-50"
                     >

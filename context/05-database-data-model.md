@@ -252,6 +252,7 @@ Maps products to modifier groups.
 - `branch_id`
 - `store_session_id` nullable until operational commit
 - `order_number`
+- `reference_number` nullable for legacy rows
 - `source`
 - `order_type`
 - `customer_label` nullable
@@ -323,6 +324,16 @@ Pay Later:
 Order number unique scope:
 
 `(branch_id, order_number)`
+
+New POS orders use a numeric `order_number` allocated from a per-branch locked counter. `reference_number` is a globally unique immutable audit identifier composed from the branch code, Asia/Manila business date, and numeric order number. Existing legacy numbers are not rewritten, and legacy rows may retain a null reference.
+
+### `order_number_counters`
+
+- `branch_id` primary/restrictive foreign key
+- `next_number` positive bigint, default 1001
+- timestamps
+
+Allocation locks the persisted branch and its counter row. It does not derive the next number with `MAX(...) + 1`; historical numeric collisions are skipped without changing historical rows. Gaps are allowed when an early POS reservation is abandoned.
 
 ---
 

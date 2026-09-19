@@ -10,6 +10,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property InventoryMovementType $movement_type
+ */
 #[Fillable(['branch_id', 'product_id', 'movement_type', 'quantity_delta', 'reason', 'created_by_user_id', 'order_id', 'store_session_expense_id', 'stock_transfer_id'])]
 class InventoryMovement extends Model
 {

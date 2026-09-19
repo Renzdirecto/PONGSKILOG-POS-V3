@@ -189,14 +189,14 @@ Phase 3F final verification (2026-09-18):
 ## Phase 4 — Inventory Foundation
 
 - [x] Phase 4A — Inventory foundation + core mutation rules
-- [ ] Phase 4B — Inventory operations UI + stock state integration
+- [x] Phase 4B — Inventory operations UI + stock state integration
 - [ ] Phase 4C — Concurrency / security / final verification
 
 - [x] Branch inventory balance
 - [x] Inventory movement ledger
-- [ ] Low-stock state
-- [ ] Out-of-stock state
-- [ ] Manual adjustment
+- [x] Low-stock state
+- [x] Out-of-stock state
+- [x] Manual adjustment
 - [x] Negative stock protection
 - [ ] Concurrency-safe stock updates
 - [ ] Inventory branch-isolation tests
@@ -208,6 +208,20 @@ Phase 4A verification (2026-09-19):
 - Phase 4A tests: 47 passed / 200 assertions, including schema constraints, enum/relationships, first-row initialization, MAIN/QAVE and product isolation, stale tracking configuration, retained ledger history, negative/last-unit stock, rollback fault injection, future references, and integer limits. Relevant Phase 3 catalog tests: 395 passed / 2265 assertions. Full `php artisan test --compact`: 727 passed / 3816 assertions. Pint and PHPStan passed; PHPStan used process-only `--memory-limit=1G`.
 - Local PostgreSQL at `127.0.0.1:5432` accepted only the additive inventory migration. Read-only metadata verified UUID/BIGINT types/defaults, unique branch/product constraint, four CHECK constraints, five `ON DELETE RESTRICT` foreign keys, and all expected indexes. Isolated SQLite in-memory fresh migration smoke passed with process-only `DB_URL=null` explicitly clearing the URL. The normal local database was not reset; Supabase was untouched.
 - No frontend, routes/controllers, manual adjustment flow, stock-state integration, orders/payments, purchases, or transfers were added. Low/out-of-stock state, manual adjustment, final concurrency, and inventory branch-isolation completion remain unchecked. Independent-process PostgreSQL race verification remains Phase 4C; the sequential/transactional tests do not claim that verification. Phase 4B was not started.
+
+---
+
+Phase 4B implementation and verification (2026-09-19):
+
+- Added a read-only `InventoryState` resolver: untracked balances are non-authoritative with null on-hand; missing tracked balances read as zero without creating rows; zero/below is out of stock; positive stock at/below the branch-product threshold is low stock. Threshold configuration remains solely in `branch_products`.
+- Added `AdjustInventory`, authorized by the existing `inventory.manage` permission with persisted active-user/permission checks, and protected list/history/adjustment endpoints. Signed nonzero integer deltas and a required reason of at most 1000 characters delegate to `ApplyInventoryMovement`; actor, reason, and manual-adjustment type are appended atomically. Overdraw and unauthorized requests leave balances/history unchanged.
+- Inventory management provides an explicit branch selector (including retained branches), search/status filters, 24-product pagination, optimized lazy card images/fallback, adjustment preview/validation, and on-demand history with 30-movement pagination, newest first, readable movement labels, actor, and reason. Current business-wide branch context supplies the default. Product management retains inventory configuration ownership.
+- Cashier Browse receives only `stock_status` in addition to its existing safe projection. Server-side operational availability combines catalog rules with positive stock for tracked products. Low stock stays available; out-of-stock products remain visible with an explicit label. CLOSED/OPEN Browse remains read-only, and Cashier receives no inventory-management rights or exact balance, threshold, version, or history.
+- Final targeted Phase 4A + 4B and Cashier/catalog regression run: 168 passed / 1274 assertions. Catalog queries remain at most four at 1, 30, and 100 products; management query counts remain constant with pagination and no per-card history query. Image URLs are generated only for the current page. Full `php artisan test --compact -d memory_limit=1G`: 804 passed / 4609 assertions. The first default-memory run passed 797/798 before an existing image-storage failure test reached the 128 MB process memory guard; the process-only increase resolved it, without changing application/test logic or machine configuration.
+- Pint (`--dirty --format agent`), PHPStan (process-only `--memory-limit=1G`), frontend lint, TypeScript, production build, and whitespace checks passed. The existing optional `fontaine` warning and build plugin timing diagnostics remain non-blocking. No migration, dependency, or Supabase change.
+- Live local Chrome QA passed Owner inventory/search/filter/branch flows, +10 persistence after refresh, -3 deduction, overdraw rejection, ledger ordering/user/reason, low/out-of-stock states, and MAIN/QAVE independence. Cashier checks passed low-stock availability, visible OUT OF STOCK, unaffected untracked products, OPEN MAIN/CLOSED QAVE Browse, branch switching, and direct inventory access returning 403. Visual checks passed at approximately 390px, tablet, and desktop without horizontal overflow. Intermittent browser-control failures were recovered with a fresh tab; no failed interaction was counted as a pass.
+- Local QA cleanup restored Rice in MAIN to its original untracked behavior with no threshold and zero stock. Four clearly labeled QA movements remain in the append-only ledger; QAVE configuration, balances, and history were untouched.
+- Phase 4B is complete. Phase 4C, final concurrency-safe-stock and inventory branch-isolation completion boxes remain unchecked for independent PostgreSQL race/security verification. Phase 4 is not complete; no order/payment/edit/void/purchase/transfer inventory workflow or Phase 5 work was started.
 
 ---
 

@@ -3,6 +3,7 @@ import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
 import { CashierStore } from '@/components/cashier-store';
 import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
+import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
@@ -85,6 +86,14 @@ export default function Workspace({
                         className="mr-3 mb-6 inline-flex min-h-11 items-center rounded-xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800"
                     >
                         Product management
+                    </Link>
+                )}
+                {auth.permissions.includes('inventory.manage') && (
+                    <Link
+                        href={inventoryIndex()}
+                        className="mr-3 mb-6 inline-flex min-h-11 items-center rounded-xl bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800"
+                    >
+                        Inventory
                     </Link>
                 )}
                 {branchContext.businessWide &&

@@ -12,4 +12,18 @@ enum InventoryMovementType: string
     case StorePurchaseRestock = 'store_purchase_restock';
     case TransferOut = 'transfer_out';
     case TransferIn = 'transfer_in';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Sale => 'Sale',
+            self::PayLaterCommit => 'Pay Later',
+            self::OrderEditDelta => 'Order Edit',
+            self::VoidRestore => 'Void Restore',
+            self::ManualAdjustment => 'Manual Adjustment',
+            self::StorePurchaseRestock => 'Store Purchase Restock',
+            self::TransferOut => 'Transfer Out',
+            self::TransferIn => 'Transfer In',
+        };
+    }
 }

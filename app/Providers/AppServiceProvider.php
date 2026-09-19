@@ -32,6 +32,12 @@ class AppServiceProvider extends ServiceProvider
 
             return $user !== null && $user->is_active && $user->hasPermission('products.manage');
         });
+
+        Gate::define('inventory.manage', function (User $user): bool {
+            $user = $user->exists ? User::query()->whereKey($user->getKey())->first() : null;
+
+            return $user !== null && $user->is_active && $user->hasPermission('inventory.manage');
+        });
     }
 
     /**

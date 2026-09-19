@@ -9,7 +9,13 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $opened_at
+ * @property string $opening_cash_amount
+ * @property string $opening_cashless_amount
+ */
 #[Fillable([
     'branch_id', 'status', 'opened_by_user_id', 'opened_at',
     'opening_cash_amount', 'opening_cashless_amount',

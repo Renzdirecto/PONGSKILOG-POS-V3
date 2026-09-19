@@ -437,6 +437,11 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 - Local-only menu seed data now uses non-zero deterministic QA prices, configures seeded Products for tracked inventory in MAIN/QAVE, and initializes missing balances through manual-adjustment ledger movements at MAIN 50 / QAVE 30 without refilling existing balances on repeat runs.
 - The existing Open Store opening Cash/Cashless form was reverified without a production UI redesign. Local Store Sessions were prepared CLOSED for manual Open Store QA; Phase 15 reconciliation and every Phase 7 item remain untouched.
 
+### Pre-Phase 7 Store Session and invoice placeholder refinement — 2026-09-20
+
+- The STORE OPEN indicator now exposes authorized, read-only current opening details through an on-demand, branch-scoped endpoint; opening balances remain absent from shared `storeContext` and realtime events.
+- The paid-success screen for Cashless and the Cashless leg of Split now shows a standalone-aligned, explicitly deferred Invoice camera control beside View receipt; Cash does not show it. Actual camera/upload/storage/viewing is deferred to Phase 12; Phase 7 remains untouched.
+
 ---
 
 ## Phase 7 — Pay Later
@@ -533,6 +538,13 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 - [ ] Receipt actions
 - [ ] Edit audit trail
 - [ ] Kitchen update after relevant edit
+- [ ] Cashless / Split invoice proof capture
+- [ ] Camera / image upload for invoice proof
+- [ ] Persist invoice proof against payment/transaction
+- [ ] View invoice proof in transaction detail
+- [ ] Replace/remove invoice proof with authorization
+
+Phase 6 provides the post-payment visual placeholder only. Actual Cashless/Split proof capture, private storage and authorized viewing are deferred to Phase 12. The proof attaches to the Cashless Payment leg: Cash-only payments have none, while Split attaches it only to the Cashless leg. Phase 12 must support camera or file upload, keep images private, require authorization to view or change them, and treat them as manual proof rather than payment-gateway verification; no fake provider confirmation is permitted.
 
 ---
 

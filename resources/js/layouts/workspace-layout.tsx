@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, useHttp, usePage } from '@inertiajs/react';
 import {
     LayoutDashboard,
     LogOut,
@@ -8,9 +8,18 @@ import {
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { BranchSwitcher } from '@/components/branch-switcher';
+import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { cashier } from '@/routes/workspaces';
 import { logout } from '@/routes';
-import type { Auth, BranchContext, StoreContext } from '@/types';
+import { current as currentStoreSession } from '@/routes/store-sessions';
+import { openStoreSessionDialogState } from '@/lib/store-session';
+import type {
+    Auth,
+    BranchContext,
+    CurrentStoreSession,
+    StoreContext,
+} from '@/types';
+import { useState } from 'react';
 
 type SharedProps = {
     auth: Auth;
@@ -36,6 +45,15 @@ export default function WorkspaceLayout({
 }) {
     const page = usePage<SharedProps>();
     const { auth, branchContext } = page.props;
+    const storeSessionRequest = useHttp<
+        Record<string, never>,
+        CurrentStoreSession
+    >({});
+    const [storeSessionDialogOpen, setStoreSessionDialogOpen] = useState(false);
+    const [storeSession, setStoreSession] =
+        useState<CurrentStoreSession | null>(null);
+    const [storeSessionUnavailable, setStoreSessionUnavailable] =
+        useState(false);
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
@@ -45,6 +63,26 @@ export default function WorkspaceLayout({
             ));
 
     if (isPos) {
+        const openStoreSessionDetails = async () => {
+            const openingState = openStoreSessionDialogState();
+            setStoreSessionDialogOpen(openingState.open);
+            setStoreSession(openingState.session);
+            setStoreSessionUnavailable(openingState.unavailable);
+
+            try {
+                const detail = await storeSessionRequest.submit(
+                    currentStoreSession(),
+                    {
+                        onHttpException: () => true,
+                        onNetworkError: () => true,
+                    },
+                );
+                setStoreSession(detail);
+            } catch {
+                setStoreSessionUnavailable(true);
+            }
+        };
+
         const navigation = [
             { label: 'Dashboard', icon: LayoutDashboard, available: false },
             { label: 'POS / Order', icon: UtensilsCrossed, available: true },
@@ -112,22 +150,28 @@ export default function WorkspaceLayout({
                                 {branchContext.current?.name}
                             </p>
                         </div>
-                        <span
-                            aria-label={
-                                page.props.storeContext?.isOpen
-                                    ? 'Store open'
-                                    : 'Store closed'
-                            }
-                            className={`inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-semibold md:px-[11px] md:text-[11.5px] ${page.props.storeContext?.isOpen ? 'border-green-200 bg-green-50 text-green-700' : 'border-neutral-200 bg-neutral-50 text-neutral-500'}`}
-                        >
+                        {page.props.storeContext?.isOpen ? (
+                            <button
+                                type="button"
+                                aria-label="View current Store Session details"
+                                title="View current Store Session details"
+                                onClick={openStoreSessionDetails}
+                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2 text-[9px] font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100 focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:outline-none md:px-[11px] md:text-[11.5px]"
+                            >
+                                <span className="size-[7px] rounded-full bg-green-700" />
+                                <span className="hidden sm:inline">STORE</span>{' '}
+                                OPEN
+                            </button>
+                        ) : (
                             <span
-                                className={`size-[7px] rounded-full ${page.props.storeContext?.isOpen ? 'bg-green-700' : 'bg-neutral-400'}`}
-                            />
-                            <span className="hidden sm:inline">STORE</span>{' '}
-                            {page.props.storeContext?.isOpen
-                                ? 'OPEN'
-                                : 'CLOSED'}
-                        </span>
+                                aria-label="Store closed"
+                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2 text-[9px] font-semibold text-neutral-500 md:px-[11px] md:text-[11.5px]"
+                            >
+                                <span className="size-[7px] rounded-full bg-neutral-400" />
+                                <span className="hidden sm:inline">STORE</span>{' '}
+                                CLOSED
+                            </span>
+                        )}
                         {branchContext.selectableBranches.length > 1 && (
                             <BranchSwitcher
                                 branchContext={branchContext}
@@ -136,6 +180,13 @@ export default function WorkspaceLayout({
                         )}
                         <PosProfileControls auth={auth} />
                     </header>
+                    <StoreSessionDetailsDialog
+                        open={storeSessionDialogOpen}
+                        onOpenChange={setStoreSessionDialogOpen}
+                        session={storeSession}
+                        loading={storeSessionRequest.processing}
+                        unavailable={storeSessionUnavailable}
+                    />
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
                         {children}
                     </main>

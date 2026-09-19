@@ -6,6 +6,7 @@ use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierGroupController;
@@ -75,6 +76,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('store-sessions/open', OpenStoreSessionController::class)
         ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
         ->name('store-sessions.open');
+    Route::get('store-sessions/current', CurrentStoreSessionController::class)
+        ->middleware('permission:pos.access')
+        ->name('store-sessions.current');
 
     Route::inertia('workspaces/kitchen', 'workspaces/show', [
         'workspace' => 'Kitchen',

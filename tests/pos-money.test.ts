@@ -4,6 +4,7 @@ import {
     cents,
     exactCash,
     paymentTotals,
+    validPayment,
 } from '../resources/js/lib/pos-money.ts';
 
 test('cash exact and denominations reconcile the requested 235 peso examples', () => {
@@ -59,4 +60,17 @@ test('fractional and large amounts retain exact cents without floating point dri
         remaining: 0n,
         change: 26499n,
     });
+});
+
+test('confirmation validates exact tender, split boundaries, and zero-total payments', () => {
+    assert.equal(validPayment(23500n, 'cash', '235.00', ''), true);
+    assert.equal(validPayment(23500n, 'cash', '100.00', ''), false);
+    assert.equal(validPayment(23500n, 'cashless', '', ''), true);
+    assert.equal(validPayment(50000n, 'split', '500.00', '200.00'), true);
+    assert.equal(validPayment(50000n, 'split', '299.99', '200.00'), false);
+    for (const portion of ['0', '500', '501', '', '1e2']) assert.equal(validPayment(50000n, 'split', '500', portion), false);
+    for (const cash of ['', '.', '1.001', '-1', '1000000000000']) assert.equal(validPayment(0n, 'cash', cash, ''), false);
+    assert.equal(validPayment(0n, 'cash', '0.00', ''), true);
+    assert.equal(validPayment(0n, 'cashless', '', ''), true);
+    assert.equal(validPayment(0n, 'split', '0', '0'), false);
 });

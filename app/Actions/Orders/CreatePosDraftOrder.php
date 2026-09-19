@@ -62,11 +62,15 @@ class CreatePosDraftOrder
             $orderId = (string) Str::uuid();
             foreach ($data['items'] as $index => $line) {
                 $product = $products->get($line['product_id']);
-                if ($product === null || ! ($state = $this->catalog->resolveLoaded($product))['is_available']) {
+                if ($product === null) {
                     throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
                 }
+                $state = $this->catalog->resolveLoaded($product);
                 if ($state['tracked'] && $requested[$product->id] > $state['on_hand']) {
                     throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock for {$product->name}. Reduce the total quantity in the cart."]);
+                }
+                if (! $state['is_available']) {
+                    throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
                 }
                 $itemId = (string) Str::uuid();
                 $base = ExactMoney::cents($state['effective_price']);

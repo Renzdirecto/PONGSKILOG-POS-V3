@@ -46,3 +46,18 @@ export function lineCents(line: CartLine): bigint {
         ) * BigInt(line.quantity)
     );
 }
+
+export function validPayment(
+    total: bigint,
+    method: 'cash' | 'cashless' | 'split',
+    cash: string,
+    cashless: string,
+): boolean {
+    const money = /^\d{1,12}(?:\.\d{1,2})?$/;
+    if (method === 'cashless') return true;
+    if (!money.test(cash)) return false;
+    if (method === 'cash') return cents(cash) >= total;
+    if (!money.test(cashless)) return false;
+    const portion = cents(cashless);
+    return portion > 0n && portion < total && cents(cash) >= total - portion;
+}

@@ -17,12 +17,15 @@ import {
     paymentTotals,
     pesos,
     selectedOptions,
+    validPayment,
 } from '@/lib/pos-money';
 import type {
     BranchTable,
     CartLine,
     OrderSummary,
     OrderType,
+    PaymentInput,
+    PaymentAttempt,
 } from '@/types/pos';
 
 export function PosPaymentPreview({
@@ -34,7 +37,15 @@ export function PosPaymentPreview({
     tableId,
     onCustomerChange,
     onTableChange,
+    onConfirm,
+    processing,
+    error,
+    attempt,
 }: {
+    onConfirm: (payment: PaymentInput) => void;
+    processing: boolean;
+    error: string;
+    attempt: PaymentAttempt | null;
     orderType: OrderType;
     lines: CartLine[];
     saved: OrderSummary | null;
@@ -44,15 +55,22 @@ export function PosPaymentPreview({
     onCustomerChange: (value: string) => void;
     onTableChange: (value: string) => void;
 }) {
-    const [method, setMethod] = useState<'cash' | 'cashless' | 'split'>('cash');
-    const [cash, setCash] = useState('');
-    const [cashless, setCashless] = useState('');
+    const [method, setMethod] = useState<'cash' | 'cashless' | 'split'>(
+        attempt?.payment_method ?? 'cash',
+    );
+    const [cash, setCash] = useState(attempt?.cash_received ?? '');
+    const [cashless, setCashless] = useState(attempt?.cashless_amount ?? '');
     const [activeInput, setActiveInput] = useState<'cash' | 'cashless'>('cash');
     const total = saved
         ? cents(saved.total)
         : lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const cashAmount = method === 'cashless' ? 0n : cents(cash || '0');
-    const cashlessAmount = method === 'cash' ? 0n : cents(cashless || '0');
+    const cashlessAmount =
+        method === 'cashless'
+            ? total
+            : method === 'cash'
+              ? 0n
+              : cents(cashless || '0');
     const { received, remaining, change } = paymentTotals(
         total,
         cashAmount,
@@ -72,7 +90,15 @@ export function PosPaymentPreview({
             amount: pesos(lineCents(line)),
         }));
 
+    const locked = processing || attempt !== null;
+    const valid =
+        validPayment(total, method, cash, cashless) &&
+        (saved !== null ||
+            orderType === 'dine_in' ||
+            customerLabel.trim() !== '');
+
     function enter(value: string, field = activeInput) {
+        if (locked) return;
         if (/^\d{0,12}(\.\d{0,2})?$/.test(value)) {
             if (field === 'cash') setCash(value);
             else setCashless(value);
@@ -119,6 +145,7 @@ export function PosPaymentPreview({
                                     : '(required)'}
                             </Label>
                             <Input
+                                disabled={locked}
                                 id="payment-customer"
                                 value={customerLabel}
                                 onChange={(event) =>
@@ -130,6 +157,7 @@ export function PosPaymentPreview({
                             />
                         </div>
                         <PosTableSelection
+                            disabled={locked}
                             tables={tables}
                             tableId={tableId}
                             onChange={onTableChange}
@@ -204,6 +232,7 @@ export function PosPaymentPreview({
                     ).map(({ key, label, icon: Icon }) => (
                         <button
                             key={key}
+                            disabled={locked}
                             aria-pressed={method === key}
                             onClick={() => {
                                 setMethod(key);
@@ -221,33 +250,55 @@ export function PosPaymentPreview({
                 <div
                     className={`grid gap-2.5 ${method === 'split' ? 'grid-cols-2' : 'grid-cols-1'}`}
                 >
-                    {(['cash', 'cashless'] as const)
-                        .filter(
-                            (field) => method === 'split' || method === field,
-                        )
-                        .map((field) => (
-                            <div key={field} className="min-w-0 space-y-1.5">
-                                <Label
-                                    htmlFor={`payment-${field}`}
-                                    className="text-[10px] tracking-wider text-neutral-500 uppercase"
+                    {method === 'cashless' ? (
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-center">
+                            <p className="text-xs font-semibold text-sky-800">
+                                Cashless due
+                            </p>
+                            <p className="mt-2 text-3xl font-bold">
+                                {pesos(total)}
+                            </p>
+                            <p className="mt-3 text-xs text-sky-800">
+                                Confirm only after payment is received
+                                externally.
+                            </p>
+                        </div>
+                    ) : (
+                        (['cash', 'cashless'] as const)
+                            .filter(
+                                (field) =>
+                                    method === 'split' || method === field,
+                            )
+                            .map((field) => (
+                                <div
+                                    key={field}
+                                    className="min-w-0 space-y-1.5"
                                 >
-                                    {field === 'cash'
-                                        ? 'Cash received'
-                                        : 'Cashless amount'}
-                                </Label>
-                                <Input
-                                    id={`payment-${field}`}
-                                    inputMode="decimal"
-                                    value={field === 'cash' ? cash : cashless}
-                                    onFocus={() => setActiveInput(field)}
-                                    onChange={(event) =>
-                                        enter(event.target.value, field)
-                                    }
-                                    placeholder="0.00"
-                                    className="h-[48px] rounded-xl text-right text-[24px] font-bold md:text-[24px]"
-                                />
-                            </div>
-                        ))}
+                                    <Label
+                                        htmlFor={`payment-${field}`}
+                                        className="text-[10px] tracking-wider text-neutral-500 uppercase"
+                                    >
+                                        {field === 'cash'
+                                            ? 'Cash received'
+                                            : 'Cashless amount'}
+                                    </Label>
+                                    <Input
+                                        disabled={locked}
+                                        id={`payment-${field}`}
+                                        inputMode="decimal"
+                                        value={
+                                            field === 'cash' ? cash : cashless
+                                        }
+                                        onFocus={() => setActiveInput(field)}
+                                        onChange={(event) =>
+                                            enter(event.target.value, field)
+                                        }
+                                        placeholder="0.00"
+                                        className="h-[48px] rounded-xl text-right text-[24px] font-bold md:text-[24px]"
+                                    />
+                                </div>
+                            ))
+                    )}
                 </div>
                 {method !== 'cashless' && (
                     <div
@@ -264,6 +315,7 @@ export function PosPaymentPreview({
                             <button
                                 key={label}
                                 type="button"
+                                disabled={locked}
                                 className="h-9 min-w-14 flex-1 rounded-full border border-neutral-300 px-2 text-[11px] font-semibold whitespace-nowrap hover:bg-neutral-50"
                                 onClick={() => {
                                     const other =
@@ -282,47 +334,52 @@ export function PosPaymentPreview({
                         ))}
                     </div>
                 )}
-                <div className="grid grid-cols-3 gap-1.5">
-                    {[
-                        '1',
-                        '2',
-                        '3',
-                        '4',
-                        '5',
-                        '6',
-                        '7',
-                        '8',
-                        '9',
-                        '.',
-                        '0',
-                        'delete',
-                    ].map((key) => (
-                        <button
-                            key={key}
-                            aria-label={
-                                key === 'delete'
-                                    ? 'Delete payment digit'
-                                    : `Enter ${key}`
-                            }
-                            className="flex h-[42px] items-center justify-center rounded-[10px] border border-neutral-200 bg-white text-[18px] font-semibold hover:bg-neutral-50"
-                            onClick={() => {
-                                const current =
-                                    activeInput === 'cash' ? cash : cashless;
-                                enter(
+                {method !== 'cashless' && (
+                    <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                            '1',
+                            '2',
+                            '3',
+                            '4',
+                            '5',
+                            '6',
+                            '7',
+                            '8',
+                            '9',
+                            '.',
+                            '0',
+                            'delete',
+                        ].map((key) => (
+                            <button
+                                key={key}
+                                disabled={locked}
+                                aria-label={
                                     key === 'delete'
-                                        ? current.slice(0, -1)
-                                        : current + key,
-                                );
-                            }}
-                        >
-                            {key === 'delete' ? (
-                                <Delete className="size-5" />
-                            ) : (
-                                key
-                            )}
-                        </button>
-                    ))}
-                </div>
+                                        ? 'Delete payment digit'
+                                        : `Enter ${key}`
+                                }
+                                className="flex h-[42px] items-center justify-center rounded-[10px] border border-neutral-200 bg-white text-[18px] font-semibold hover:bg-neutral-50"
+                                onClick={() => {
+                                    const current =
+                                        activeInput === 'cash'
+                                            ? cash
+                                            : cashless;
+                                    enter(
+                                        key === 'delete'
+                                            ? current.slice(0, -1)
+                                            : current + key,
+                                    );
+                                }}
+                            >
+                                {key === 'delete' ? (
+                                    <Delete className="size-5" />
+                                ) : (
+                                    key
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <div
                     className="grid grid-cols-2 gap-2"
                     aria-live="polite"
@@ -353,17 +410,36 @@ export function PosPaymentPreview({
                 </div>
                 <div className="mt-auto space-y-2">
                     <p
-                        id="payment-disabled-reason"
-                        className="text-center text-[11px] text-neutral-500"
+                        id="payment-message"
+                        role={error ? 'alert' : undefined}
+                        className={`text-center text-[11px] ${error ? 'text-red-700' : 'text-neutral-500'}`}
                     >
-                        Payment confirmation will be enabled in Phase 6.
+                        {error ||
+                            (method === 'split'
+                                ? 'Cashless must be above zero and below the total.'
+                                : method === 'cash'
+                                  ? 'Enter cash received to confirm payment.'
+                                  : 'Confirming records the Cashless payment.')}
                     </p>
                     <button
-                        disabled
-                        aria-describedby="payment-disabled-reason"
-                        className="h-11 w-full rounded-xl bg-neutral-950 text-[14px] font-semibold text-white opacity-50"
+                        disabled={processing || (!attempt && !valid)}
+                        aria-describedby="payment-message"
+                        onClick={() =>
+                            onConfirm({
+                                payment_method: method,
+                                cash_received:
+                                    method === 'cashless' ? null : cash,
+                                cashless_amount:
+                                    method === 'split' ? cashless : null,
+                            })
+                        }
+                        className="h-11 w-full rounded-xl bg-neutral-950 text-[14px] font-semibold text-white disabled:opacity-50"
                     >
-                        Confirm payment
+                        {processing
+                            ? 'Processing payment...'
+                            : attempt
+                              ? 'Retry same payment'
+                              : 'Confirm payment'}
                     </button>
                 </div>
             </section>

@@ -371,19 +371,38 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 
 ## Phase 6 — Pay Now
 
-- [ ] Cash
-- [ ] Cashless
-- [ ] Split
-- [ ] Payment modal
-- [ ] Amount received / change
-- [ ] Underpayment validation
-- [ ] Payment idempotency
-- [ ] Atomic payment transaction
-- [ ] Inventory deduction
-- [ ] Kitchen ticket creation
-- [ ] Payment success state
-- [ ] Receipt
-- [ ] Duplicate-submit tests
+- [x] Cash
+- [x] Cashless
+- [x] Split
+- [x] Payment modal
+- [x] Amount received / change
+- [x] Underpayment validation
+- [x] Payment idempotency
+- [x] Atomic payment transaction
+- [x] Inventory deduction
+- [x] Kitchen ticket creation
+- [x] Payment success state
+- [x] Receipt
+- [x] Duplicate-submit tests
+
+### Phase 6 implementation verification — 2026-09-19
+
+**Implementation checks pass. User manual QA and the separate FINAL Phase 6 QA/AUDIT remain pending. This is not final Phase 6 acceptance.** This section supersedes earlier historical notes that Phase 6 has not started. Phase 7 remains untouched; no PR is created.
+
+- Added UUID Payments and Kitchen tickets, exact `numeric(14,2)` money checks, deterministic unique payment leg keys, unique Kitchen order, indexes and restrictive historical FKs. Lean models/factories reuse the existing Kitchen status enum; Split persists cash + cashless, never a third method.
+- `PayNowOrder` owns the outer transaction: serialize the root key, lock/re-authorize the branch, recover an authorized replay, lock the OPEN Store Session and existing draft or reuse Phase 5 draft creation, validate exact tender, insert Payment legs, revalidate current availability, aggregate/sort tracked products, apply existing Sale inventory movements, create the Kitchen ticket and transition the Order to active/paid/immediate/kitchen with committed timestamp and incremented version. Existing draft prices remain snapshots. No completed state, reservation subsystem or Pay Later operation was added.
+- Stable UUID attempt plus immutable retry payload on ambiguous responses; replay checks branch/cashier/order/cart/tender and never repeats operational effects. PostgreSQL root advisory locking also prevents a cross-branch Cash/Cashless race from claiming separate legs under one root. Only the expected Payment unique-key exception is recovered after rollback; unrelated failures propagate.
+- Cash 235/235 gives zero change; 235/500 gives 265 change; underpayment rejects. Cashless applies the total with null received/change. Split applies only the exact remaining Cash due, with excess tender returned as change. Legitimate zero-total Cash/Cashless operations retain one traceable zero Payment and normal operational effects; zero-valued Split legs reject.
+- Direct route coverage verifies Cashier and Cashier + Kitchen authorization, current active branch assignment, OPEN session, revoked/inactive/management-only/guest denial, foreign branch/order/table rejection, forged monetary/state inputs and immutable snapshots. Receipt data is returned through the authorized payment response with `Cache-Control: no-store`; no public receipt endpoint or Receipt table exists.
+- `order.committed` and `kitchen.ticket_created` use the frozen private branch channels and dispatch after commit. Event rollback/replay behavior and channel authorization pass; KDS realtime consumption remains Phase 8.
+- Focused Pay Now tests: **81 passed / 657 assertions**. Full suite including Phase 5, Store Session, catalog, inventory, authorization, branch isolation and exact money: **999 passed / 5,877 assertions**. Frontend exact-money tests: **4 passed**. Pint, PHPStan (zero errors), frontend lint (90 files), TypeScript and production build pass. Build retains the existing optional fontaine notice; no dependencies changed.
+- Normal local PostgreSQL received only the additive migration. Metadata checks verified UUIDs, `numeric(14,2)`, nullable money checks, method/status checks, unique constraints, indexes and restrictive FKs. Isolated PostgreSQL fresh migrations and SQLite `:memory:` migrations with `DB_URL=null` pass. Supabase was not accessed; normal local data was not reset.
+- Real PostgreSQL independent-process harness proves overlapping workers for Cash duplicate, Split duplicate and last-unit races: one operational commit, exact Payment row count, stock/movement/ticket once, same duplicate result, and one insufficient-stock loser with no orphan draft. Cross-branch root reuse produces one winner and one conflict. A real Kitchen CHECK failure rolls back new draft, Payments, inventory and ticket. Worker connections remain usable at transaction level zero; temporary schemas are removed.
+- Inventory test verifies tracked quantity 10 → 8 and version 3 → 4 across two lines of the same product, one Sale movement with delta -2, Order/actor association, and no movement for untracked products. Each paid Order creates exactly one initial `kitchen` ticket; replay creates none.
+- Real browser QA used a clearly labelled isolated PostgreSQL fixture: exact Cash, Cash with change, disabled underpayment, Cashless Take Out, Split, success, receipt and New Order. A test-only middleware returned 503 after a successful Split commit: the cart stayed intact, fields locked, Retry sent the identical key/payload and recovered the original paid Order. Final fixture state: **5 paid Orders, 6 Payment rows, 5 Kitchen tickets, 5 Sale movements, stock 100 → 92**; the fixture schema was removed without changing normal inventory history.
+- Responsive checks at **820, 1024, 390, 430 and 1440px** found no horizontal overflow. Normal tablet Payment right panel had equal client/scroll height, visible quick values, compact keypad, prominent Change and reachable Confirm; mobile uses vertical scrolling. Receipt wraps the real order number and displays persisted branch/date/cashier/items/tender.
+- Decoded and served the unmodified `context/design/pos.html` and compared rendered Payment and paid-success states. Preserved the manually approved Phase 5 Payment dimensions and black/red summary; paid state follows the checkmark, red order number, black PAID pill, bordered summary rows and New order/View receipt controls. Real order numbers, persisted data and Split breakdown differ from the mock. This is close structural/flow parity, not a pixel-perfect 1:1 claim.
+- Lightweight 80mm print CSS and Print receipt action are present. Browser print invocation was exercised, but native print-preview contents and physical printer output could not be inspected by the browser tool and remain manual QA. No PDF package, gateway, history workspace or KDS UI was added.
 
 ---
 

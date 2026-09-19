@@ -12,6 +12,7 @@ use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\PosDraftOrderController;
+use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\WorkspaceController;
@@ -61,6 +62,8 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
         ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier');
+
+    Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware('permission:pos.access')->name('pos.payments.store');
 
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');

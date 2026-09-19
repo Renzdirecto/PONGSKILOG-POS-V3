@@ -1,4 +1,10 @@
-import { useForm, usePage, useRemember } from '@inertiajs/react';
+import {
+    router,
+    useForm,
+    useHttp,
+    usePage,
+    useRemember,
+} from '@inertiajs/react';
 import {
     Check,
     ChevronRight,
@@ -9,6 +15,8 @@ import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { CashierCatalog } from '@/components/cashier-catalog';
 import { PosTableSelection } from '@/components/pos-table-selection';
+import { PosPaid } from '@/components/pos-paid';
+import { store as payNow } from '@/routes/pos/payments';
 import { PosPaymentPreview } from '@/components/pos-payment-preview';
 import { PosCart } from '@/components/pos-cart';
 import {
@@ -34,6 +42,9 @@ import type {
     OrderSummary,
     OrderType,
     PosProduct,
+    PaymentInput,
+    PaymentAttempt,
+    PaidReceipt,
 } from '@/types/pos';
 
 export function CashierPos({
@@ -59,9 +70,42 @@ export function CashierPos({
         initialDraft ?? null,
         `${rememberKey}:saved`,
     );
+    const [attempt, setAttempt] = useRemember<PaymentAttempt | null>(
+        null,
+        `${rememberKey}:payment-attempt`,
+    );
+    const [receipt, setReceipt] = useRemember<PaidReceipt | null>(
+        null,
+        `${rememberKey}:receipt`,
+    );
+    const payment = useHttp<PaymentAttempt, { receipt: PaidReceipt }>({
+        idempotency_key: '',
+        payment_method: 'cash',
+        cash_received: null,
+        cashless_amount: null,
+    });
+    const [paymentError, setPaymentError] = useState('');
+    const paymentSubmitting = useRef(false);
     const [dialog, setDialog] = useState<
-        'type' | 'cart' | 'information' | 'payment' | 'discard' | null
-    >(initialDraft ? 'information' : orderType ? null : 'type');
+        | 'type'
+        | 'cart'
+        | 'information'
+        | 'payment'
+        | 'paid'
+        | 'receipt'
+        | 'discard'
+        | null
+    >(
+        attempt
+            ? 'payment'
+            : receipt
+              ? 'paid'
+              : initialDraft
+                ? 'information'
+                : orderType
+                  ? null
+                  : 'type',
+    );
     const [pendingType, setPendingType] = useState<OrderType | null>(null);
     const [editing, setEditing] = useState<{
         product: PosProduct;
@@ -92,6 +136,9 @@ export function CashierPos({
         form.clearErrors();
     }
     function beginOrder(type: OrderType | null) {
+        setReceipt(null);
+        setAttempt(null);
+        setPaymentError('');
         setLines([]);
         setSaved(null);
         setOrderType(type);
@@ -130,6 +177,87 @@ export function CashierPos({
                 submitting.current = false;
             },
         });
+    }
+    async function confirmPayment(input: PaymentInput) {
+        if (paymentSubmitting.current || !orderType) return;
+        if (!navigator.onLine) {
+            setPaymentError(
+                'You are offline. Reconnect before confirming payment.',
+            );
+            return;
+        }
+        const payload: PaymentAttempt = attempt ?? {
+            ...input,
+            idempotency_key: crypto.randomUUID(),
+            ...(saved
+                ? { draft_order_id: saved.id }
+                : {
+                      order_type: orderType,
+                      customer_label: form.data.customer_label,
+                      branch_table_id: form.data.branch_table_id || null,
+                      items: lines.map((line) => ({
+                          product_id: line.product.id,
+                          quantity: line.quantity,
+                          notes: line.notes,
+                          modifiers: line.modifiers,
+                      })),
+                  }),
+        };
+        paymentSubmitting.current = true;
+        setAttempt(payload);
+        setPaymentError('');
+        payment.transform(() => payload);
+        try {
+            const result = await payment.submit(payNow());
+            if (result.receipt?.payment_status !== 'paid')
+                throw new Error('Unconfirmed payment');
+            setReceipt(result.receipt);
+            setAttempt(null);
+            setLines([]);
+            setSaved(null);
+            form.reset();
+            form.clearErrors();
+            setDialog('paid');
+            router.reload({ only: ['catalog', 'storeSession'] });
+        } catch (error: unknown) {
+            const response =
+                error && typeof error === 'object' && 'response' in error
+                    ? (error.response as {
+                          status: number;
+                          data?: {
+                              message?: string;
+                              errors?: Record<string, string[]>;
+                          };
+                      })
+                    : null;
+            if (
+                response &&
+                [401, 403, 404, 409, 419, 422].includes(response.status)
+            ) {
+                setAttempt(null);
+                const messages = Object.values(
+                    response.data?.errors ?? {},
+                ).flat();
+                setPaymentError(
+                    messages.join(' ') ||
+                        ({
+                            401: 'Your session expired. Sign in again before paying.',
+                            403: 'Your cashier or branch access is no longer available.',
+                            404: 'This order is unavailable in the current branch.',
+                            409: 'This payment attempt has already been used. Check the order before proceeding.',
+                            419: 'Your session expired. Refresh and sign in again.',
+                            422: 'Check the payment and order details.',
+                        }[response.status] ??
+                            'Payment was rejected.'),
+                );
+            } else {
+                setPaymentError(
+                    'Payment result is unconfirmed. Retry the same payment to safely recover the result.',
+                );
+            }
+        } finally {
+            paymentSubmitting.current = false;
+        }
     }
     const customer = saved
         ? [saved.customer_label, saved.table_name].filter(Boolean).join(' / ')
@@ -246,7 +374,13 @@ export function CashierPos({
                 <Dialog
                     open
                     onOpenChange={(open) => {
-                        if (!open && !form.processing && dialog !== 'type')
+                        if (
+                            !open &&
+                            !form.processing &&
+                            !payment.processing &&
+                            !attempt &&
+                            dialog !== 'type'
+                        )
                             setDialog(null);
                     }}
                 >
@@ -264,11 +398,21 @@ export function CashierPos({
                                   : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
                         }
                         onInteractOutside={(event) => {
-                            if (form.processing || dialog === 'type')
+                            if (
+                                form.processing ||
+                                payment.processing ||
+                                attempt ||
+                                dialog === 'type'
+                            )
                                 event.preventDefault();
                         }}
                         onEscapeKeyDown={(event) => {
-                            if (form.processing || dialog === 'type')
+                            if (
+                                form.processing ||
+                                payment.processing ||
+                                attempt ||
+                                dialog === 'type'
+                            )
                                 event.preventDefault();
                         }}
                     >
@@ -364,15 +508,25 @@ export function CashierPos({
                             </div>
                         ) : (
                             <>
-                                <div className="shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14">
+                                <div
+                                    className={
+                                        dialog === 'paid'
+                                            ? 'sr-only'
+                                            : 'shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14'
+                                    }
+                                >
                                     <DialogTitle className="text-[15px] font-bold">
                                         {dialog === 'cart'
                                             ? 'Your cart'
                                             : dialog === 'payment'
                                               ? 'Payment'
-                                              : dialog === 'discard'
-                                                ? 'Clear this order?'
-                                                : 'Order information'}
+                                              : dialog === 'paid'
+                                                ? 'Payment successful'
+                                                : dialog === 'receipt'
+                                                  ? 'Receipt'
+                                                  : dialog === 'discard'
+                                                    ? 'Clear this order?'
+                                                    : 'Order information'}
                                     </DialogTitle>
                                     <DialogDescription className="sr-only">
                                         {dialog === 'discard'
@@ -411,8 +565,24 @@ export function CashierPos({
                                         </div>
                                     </div>
                                 )}
+                                {(dialog === 'paid' || dialog === 'receipt') &&
+                                    receipt && (
+                                        <PosPaid
+                                            receipt={receipt}
+                                            showReceipt={dialog === 'receipt'}
+                                            onReceipt={() =>
+                                                setDialog('receipt')
+                                            }
+                                            onBack={() => setDialog('paid')}
+                                            onNewOrder={() => beginOrder(null)}
+                                        />
+                                    )}
                                 {dialog === 'payment' && orderType && (
                                     <PosPaymentPreview
+                                        attempt={attempt}
+                                        processing={payment.processing}
+                                        error={paymentError}
+                                        onConfirm={confirmPayment}
                                         orderType={orderType}
                                         lines={lines}
                                         saved={saved}

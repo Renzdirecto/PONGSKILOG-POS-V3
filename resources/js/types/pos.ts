@@ -34,3 +34,40 @@ export type OrderSummary = {
         }[];
     }[];
 };
+
+export type PaymentInput = {
+    payment_method: 'cash' | 'cashless' | 'split';
+    cash_received: string | null;
+    cashless_amount: string | null;
+};
+export type PaymentAttempt = PaymentInput & {
+    idempotency_key: string;
+    draft_order_id?: string;
+    order_type?: OrderType;
+    customer_label?: string;
+    branch_table_id?: string | null;
+    items?: {
+        product_id: string;
+        quantity: number;
+        notes: string;
+        modifiers: CartLine['modifiers'];
+    }[];
+};
+export type PaidReceipt = OrderSummary & {
+    payment_status: 'paid';
+    store_session_id: string;
+    paid_at: string;
+    cashier: string;
+    branch: {
+        name: string;
+        code: string;
+        address: string | null;
+        contact: string | null;
+    };
+    payments: {
+        method: 'cash' | 'cashless';
+        amount: string;
+        amount_received: string | null;
+        change_amount: string | null;
+    }[];
+};

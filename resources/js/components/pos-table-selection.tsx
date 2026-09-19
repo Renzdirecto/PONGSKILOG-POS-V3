@@ -17,7 +17,7 @@ export function PosTableSelection({
                 Table selection · optional
             </legend>
             <div className="flex flex-wrap gap-[7px]">
-                {[{ id: '', name: 'No table' }, ...tables].map((table) => (
+                {tables.map((table) => (
                     <button
                         key={table.id}
                         type="button"

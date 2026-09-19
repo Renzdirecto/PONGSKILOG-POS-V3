@@ -29,6 +29,32 @@ class ReservePosOrder
                 throw ValidationException::withMessages(['store' => 'Store is closed. Open the store before starting an order.']);
             }
 
+            $reservation = Order::query()
+                ->where('branch_id', $branch->id)
+                ->where('created_by_user_id', $user->id)
+                ->where('source', OrderSource::Pos)
+                ->where('commercial_status', CommercialStatus::Draft)
+                ->where('payment_status', PaymentStatus::Unpaid)
+                ->whereNull('payment_term')
+                ->where('kitchen_status', KitchenStatus::NotSent)
+                ->whereNull('committed_at')
+                ->where('subtotal', '0.00')
+                ->where('total', '0.00')
+                ->whereDoesntHave('items')
+                ->latest('created_at')
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($reservation !== null) {
+                if ($reservation->order_type !== $orderType) {
+                    $reservation->order_type = $orderType;
+                    $reservation->save();
+                }
+
+                return $reservation;
+            }
+
             $createdAt = now();
             $identifiers = $this->numbers->allocate($branch, $createdAt);
             $order = new Order;

@@ -57,9 +57,6 @@ class CreatePosDraftOrder
                 throw ValidationException::withMessages(['branch_table_id' => 'Choose an active table in this branch.']);
             }
             $label = trim($data['customer_label'] ?? '');
-            if ($type === OrderType::TakeOut && $label === '') {
-                throw ValidationException::withMessages(['customer_label' => 'Enter a customer name or order label.']);
-            }
 
             $products = $this->catalog->productsForOrder($branch, array_values(array_unique(array_column($data['items'], 'product_id'))))->keyBy('id');
             $requested = [];

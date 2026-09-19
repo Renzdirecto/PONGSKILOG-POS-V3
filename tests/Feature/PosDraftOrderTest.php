@@ -212,17 +212,24 @@ test('both order types reject inactive or foreign tables without saving a draft'
     $this->assertDatabaseCount('inventory_movements', 0);
 })->with(['dine_in', 'take_out'])->with(['foreign', 'inactive']);
 
-test('a take out table does not replace the required customer label', function () {
+test('both order types accept a null or blank customer label', function (string $orderType, ?string $customerLabel) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
     $payload = posPayload(Product::factory()->create());
-    $payload['branch_table_id'] = BranchTable::factory()->for($branch)->create()->id;
-    $payload['customer_label'] = null;
+    $payload['order_type'] = $orderType;
+    $payload['customer_label'] = $customerLabel;
 
-    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)->assertInvalid('customer_label');
+    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)
+        ->assertRedirectToRoute('workspaces.cashier');
 
-    $this->assertDatabaseCount('orders', 0);
-});
+    $this->assertDatabaseHas('orders', [
+        'order_type' => $orderType,
+        'customer_label' => null,
+    ]);
+})->with(['dine_in', 'take_out'])->with([
+    'null' => null,
+    'blank' => '   ',
+]);
 
 test('invalid order information and cart values are rejected before persistence', function (string $path, mixed $value) {
     $branch = Branch::factory()->create();
@@ -236,7 +243,6 @@ test('invalid order information and cart values are rejected before persistence'
     $this->assertDatabaseCount('order_items', 0);
 })->with([
     'missing type' => ['order_type', null], 'unknown type' => ['order_type', 'delivery'],
-    'missing label' => ['customer_label', null], 'blank label' => ['customer_label', '   '],
     'long label' => ['customer_label', str_repeat('x', 151)],
     'malformed table' => ['branch_table_id', 'not-a-uuid'],
     'unknown table' => ['branch_table_id', '11111111-1111-4111-8111-111111111111'],

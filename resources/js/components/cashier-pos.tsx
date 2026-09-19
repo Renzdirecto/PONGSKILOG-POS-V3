@@ -34,6 +34,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import {
+    customerDisplayLabel,
+    customerLabelAfterTableChange,
+    needsOrderReservation,
+} from '@/lib/pos-order';
 import { store } from '@/routes/pos/orders';
 import type { BranchSummary } from '@/types';
 import type { CashierCatalog as Catalog } from '@/types/catalog';
@@ -140,11 +145,12 @@ export function CashierPos({
 
     useEffect(() => {
         if (
-            !orderType ||
-            saved ||
-            receipt ||
-            reservation ||
-            reservationSubmitting.current
+            !needsOrderReservation(
+                orderType,
+                saved !== null,
+                reservation !== null,
+                reservationSubmitting.current,
+            )
         )
             return;
 
@@ -173,7 +179,7 @@ export function CashierPos({
         return () => {
             active = false;
         };
-    }, [orderType, receipt, reservation, saved]);
+    }, [orderType, reservation, saved]);
 
     function changeType(type: OrderType) {
         if (type === orderType || (saved && lines.length === 0)) return;
@@ -191,7 +197,6 @@ export function CashierPos({
         setPaymentError('');
         setLines([]);
         setSaved(null);
-        setReservation(null);
         setReservationError('');
         setOrderType(type);
         setPendingType(null);
@@ -324,14 +329,24 @@ export function CashierPos({
         }
     }
     const customer = saved
-        ? [saved.customer_label, saved.table_name].filter(Boolean).join(' / ')
-        : [
+        ? customerDisplayLabel(saved.customer_label, saved.table_name)
+        : customerDisplayLabel(
               form.data.customer_label,
               tables.find((table) => table.id === form.data.branch_table_id)
                   ?.name,
-          ]
-              .filter(Boolean)
-              .join(' / ');
+          );
+    function changeTable(value: string) {
+        form.setData((data) => ({
+            ...data,
+            customer_label: customerLabelAfterTableChange(
+                tables,
+                data.branch_table_id,
+                data.customer_label,
+                value,
+            ),
+            branch_table_id: value,
+        }));
+    }
     const cart = (
         <PosCart
             lines={lines}
@@ -674,12 +689,7 @@ export function CashierPos({
                                                     value,
                                                 )
                                             }
-                                            onTableChange={(value) =>
-                                                form.setData(
-                                                    'branch_table_id',
-                                                    value,
-                                                )
-                                            }
+                                            onTableChange={changeTable}
                                         />
                                     )}
                                 {dialog === 'information' && (
@@ -803,17 +813,10 @@ export function CashierPos({
                                                         >
                                                             Customer name /
                                                             order label{' '}
-                                                            {orderType ===
-                                                            'dine_in'
-                                                                ? '(optional)'
-                                                                : ''}
+                                                            (optional)
                                                         </Label>
                                                         <Input
                                                             id="pos-customer"
-                                                            required={
-                                                                orderType ===
-                                                                'take_out'
-                                                            }
                                                             maxLength={150}
                                                             value={
                                                                 form.data
@@ -842,12 +845,7 @@ export function CashierPos({
                                                         disabled={
                                                             form.processing
                                                         }
-                                                        onChange={(value) =>
-                                                            form.setData(
-                                                                'branch_table_id',
-                                                                value,
-                                                            )
-                                                        }
+                                                        onChange={changeTable}
                                                     />
                                                 </>
                                             )}

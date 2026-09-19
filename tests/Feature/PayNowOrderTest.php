@@ -140,6 +140,63 @@ test('reserved order keeps the same numeric identifier from early POS context th
     ]);
 });
 
+test('repeated reservation requests reuse the same unused order number', function () {
+    [$branch, $user] = paymentFixture();
+
+    $first = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'take_out',
+    ])->assertOk()->json('order');
+    $second = $this->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'dine_in',
+    ])->assertOk()->json('order');
+
+    expect($second['id'])->toBe($first['id'])
+        ->and($second['order_number'])->toBe($first['order_number'])
+        ->and($second['reference_number'])->toBe($first['reference_number'])
+        ->and($second['order_type'])->toBe('dine_in');
+    $this->assertDatabaseCount('orders', 1);
+    $this->assertDatabaseHas('orders', [
+        'id' => $first['id'],
+        'order_number' => $first['order_number'],
+        'reference_number' => $first['reference_number'],
+        'order_type' => 'dine_in',
+    ]);
+    $this->assertDatabaseHas('order_number_counters', [
+        'branch_id' => $branch->id,
+        'next_number' => 1002,
+    ]);
+});
+
+test('a paid reservation is not reused for the next order', function () {
+    [, $user, $product] = paymentFixture();
+    $first = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'take_out',
+    ])->assertOk()->json('order');
+    $payload = paymentPayload($product, 'cashless', null);
+    $payload['reserved_order_id'] = $first['id'];
+    $this->postJson(route('pos.payments.store'), $payload)->assertOk();
+
+    $next = $this->postJson(route('pos.orders.reservations.store'), [
+        'order_type' => 'take_out',
+    ])->assertOk()->json('order');
+
+    expect($next['id'])->not->toBe($first['id'])
+        ->and($next['order_number'])->toBe('1002');
+    $this->assertDatabaseCount('orders', 2);
+});
+
+test('cashier can pay either order type without a customer label', function (string $orderType) {
+    [, $user, $product] = paymentFixture();
+    $payload = paymentPayload($product, 'cashless', null);
+    $payload['order_type'] = $orderType;
+    $payload['customer_label'] = null;
+
+    $this->actingAs($user)->postJson(route('pos.payments.store'), $payload)
+        ->assertOk()
+        ->assertJsonPath('receipt.order_type', $orderType)
+        ->assertJsonPath('receipt.customer_label', null);
+})->with(['dine_in', 'take_out']);
+
 test('split 500 total applies 200 cashless and 300 cash with exact tender or change', function (string $received, string $change) {
     [$branch, $user, $product] = paymentFixture('500.00');
     $this->actingAs($user)->postJson(route('pos.payments.store'), paymentPayload($product, 'split', $received, '200.00'))->assertOk();

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+    customerDisplayLabel,
+    customerLabelAfterTableChange,
+    needsOrderReservation,
     orderNumberLabel,
     stockAvailabilityLabel,
 } from '../resources/js/lib/pos-order.ts';
@@ -8,6 +11,28 @@ import {
 test('fresh POS ordering context presents the allocated numeric order number', () => {
     assert.equal(orderNumberLabel('1043'), '#1043');
     assert.equal(orderNumberLabel(null), 'Preparing order…');
+});
+
+test('a selected table fills the customer label and removes duplicate display text', () => {
+    const tables = [
+        { id: 'table-1', name: 'Table 1' },
+        { id: 'table-2', name: 'Table 2' },
+    ];
+
+    assert.equal(
+        customerLabelAfterTableChange(tables, '', '', 'table-1'),
+        'Table 1',
+    );
+    assert.equal(
+        customerLabelAfterTableChange(tables, 'table-1', 'Table 1', ''),
+        '',
+    );
+    assert.equal(customerDisplayLabel('Table 1', 'Table 1'), 'Table 1');
+});
+
+test('a paid order can reserve the next number while its receipt remains open', () => {
+    assert.equal(needsOrderReservation('take_out', false, false, false), true);
+    assert.equal(needsOrderReservation('take_out', false, true, false), false);
 });
 
 test('product customization distinguishes tracked quantities from untracked availability', () => {

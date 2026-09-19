@@ -1,7 +1,41 @@
-import type { PosProduct } from '@/types/pos';
+import type { BranchTable, OrderType, PosProduct } from '@/types/pos';
 
 export function orderNumberLabel(orderNumber: string | null): string {
     return orderNumber ? `#${orderNumber}` : 'Preparing order…';
+}
+
+export function needsOrderReservation(
+    orderType: OrderType | null,
+    hasSavedOrder: boolean,
+    hasReservation: boolean,
+    isSubmitting: boolean,
+): boolean {
+    return Boolean(
+        orderType && !hasSavedOrder && !hasReservation && !isSubmitting,
+    );
+}
+
+export function customerLabelAfterTableChange(
+    tables: BranchTable[],
+    currentTableId: string,
+    currentCustomerLabel: string,
+    nextTableId: string,
+): string {
+    const nextTable = tables.find((table) => table.id === nextTableId);
+    if (nextTable) return nextTable.name;
+
+    const currentTable = tables.find((table) => table.id === currentTableId);
+
+    return currentCustomerLabel === currentTable?.name
+        ? ''
+        : currentCustomerLabel;
+}
+
+export function customerDisplayLabel(
+    customerLabel: string | null | undefined,
+    tableName: string | null | undefined,
+): string {
+    return [...new Set([customerLabel, tableName].filter(Boolean))].join(' / ');
 }
 
 export function stockAvailabilityLabel(

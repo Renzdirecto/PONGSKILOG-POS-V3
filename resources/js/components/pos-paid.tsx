@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { pesos } from '@/lib/pos-money';
+import { customerDisplayLabel } from '@/lib/pos-order';
 import type { PaidReceipt } from '@/types/pos';
 
 export function PosPaid({
@@ -35,9 +36,10 @@ export function PosPaid({
             : cash
               ? 'Cash'
               : 'Cashless';
-    const customer = [receipt.customer_label, receipt.table_name]
-        .filter(Boolean)
-        .join(' / ');
+    const customer = customerDisplayLabel(
+        receipt.customer_label,
+        receipt.table_name,
+    );
     const paidAt = new Date(receipt.paid_at).toLocaleString('en-PH', {
         timeZone: 'Asia/Manila',
     });

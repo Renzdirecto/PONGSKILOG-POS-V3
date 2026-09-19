@@ -31,7 +31,7 @@ class StorePosDraftOrderRequest extends FormRequest
             'reserved_order_id' => ['nullable', 'uuid'],
             'order_type' => ['required', Rule::enum(OrderType::class)],
             'branch_table_id' => ['nullable', 'uuid'],
-            'customer_label' => ['nullable', 'required_if:order_type,take_out', 'string', 'max:150'],
+            'customer_label' => ['nullable', 'string', 'max:150'],
             'items' => ['required', 'array', 'list', 'min:1', 'max:100'],
             'items.*.product_id' => ['required', 'uuid'],
             'items.*.quantity' => ['required', 'integer:strict', 'min:1', 'max:999'],

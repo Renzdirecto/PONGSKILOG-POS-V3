@@ -19,6 +19,7 @@ import {
     selectedOptions,
     validPayment,
 } from '@/lib/pos-money';
+import { customerDisplayLabel } from '@/lib/pos-order';
 import type {
     BranchTable,
     CartLine,
@@ -93,11 +94,7 @@ export function PosPaymentPreview({
         }));
 
     const locked = processing || attempt !== null;
-    const valid =
-        validPayment(total, method, cash, cashless) &&
-        (saved !== null ||
-            orderType === 'dine_in' ||
-            customerLabel.trim() !== '');
+    const valid = validPayment(total, method, cash, cashless);
 
     function enter(value: string, field = activeInput) {
         if (locked) return;
@@ -130,9 +127,10 @@ export function PosPaymentPreview({
                 </div>
                 {saved ? (
                     <p className="text-center text-[13px] font-semibold wrap-anywhere text-red-700">
-                        {[saved.customer_label, saved.table_name]
-                            .filter(Boolean)
-                            .join(' / ')}
+                        {customerDisplayLabel(
+                            saved.customer_label,
+                            saved.table_name,
+                        )}
                     </p>
                 ) : (
                     <>
@@ -141,10 +139,7 @@ export function PosPaymentPreview({
                                 htmlFor="payment-customer"
                                 className="text-[10px] tracking-wider text-neutral-500 uppercase"
                             >
-                                Customer name / order label{' '}
-                                {orderType === 'dine_in'
-                                    ? '(optional)'
-                                    : '(required)'}
+                                Customer name / order label (optional)
                             </Label>
                             <Input
                                 disabled={locked}

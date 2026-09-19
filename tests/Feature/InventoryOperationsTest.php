@@ -393,3 +393,20 @@ test('history labels preserve the frozen movement types and allow missing actors
     [InventoryMovementType::TransferOut, 'Transfer Out'],
     [InventoryMovementType::TransferIn, 'Transfer In'],
 ]);
+
+test('inventory history cannot be updated or deleted through direct management requests', function (string $method) {
+    $user = inventoryManager();
+    $configuration = BranchProduct::factory()->create(['tracks_inventory' => true]);
+    $movement = app(AdjustInventory::class)->execute($user, $configuration->branch, $configuration->product, 5, 'Opening count');
+    $originalMovement = $movement->refresh()->getAttributes();
+    $originalBalance = BranchInventory::query()->sole()->getAttributes();
+    $history = route('inventory.movements.index', [$configuration->branch, $configuration->product]);
+    $adjustment = route('inventory.adjustments.store', [$configuration->branch, $configuration->product]);
+
+    $this->actingAs($user)->json($method, $history, ['quantity_delta' => 999, 'reason' => 'Rewrite'])->assertMethodNotAllowed();
+    $this->json($method, $history.'/'.$movement->id, ['quantity_delta' => 999])->assertNotFound();
+    $this->json($method, $adjustment, ['quantity_delta' => 999, 'reason' => 'Rewrite'])->assertMethodNotAllowed();
+
+    expect(InventoryMovement::query()->sole()->getAttributes())->toBe($originalMovement);
+    expect(BranchInventory::query()->sole()->getAttributes())->toBe($originalBalance);
+})->with(['PUT', 'PATCH', 'DELETE']);

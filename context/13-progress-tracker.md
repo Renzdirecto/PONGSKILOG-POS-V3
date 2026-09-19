@@ -190,7 +190,7 @@ Phase 3F final verification (2026-09-18):
 
 - [x] Phase 4A — Inventory foundation + core mutation rules
 - [x] Phase 4B — Inventory operations UI + stock state integration
-- [ ] Phase 4C — Concurrency / security / final verification
+- [x] Phase 4C — Concurrency / security / final verification
 
 - [x] Branch inventory balance
 - [x] Inventory movement ledger
@@ -198,8 +198,8 @@ Phase 3F final verification (2026-09-18):
 - [x] Out-of-stock state
 - [x] Manual adjustment
 - [x] Negative stock protection
-- [ ] Concurrency-safe stock updates
-- [ ] Inventory branch-isolation tests
+- [x] Concurrency-safe stock updates
+- [x] Inventory branch-isolation tests
 
 Phase 4A verification (2026-09-19):
 
@@ -222,6 +222,19 @@ Phase 4B implementation and verification (2026-09-19):
 - Live local Chrome QA passed Owner inventory/search/filter/branch flows, +10 persistence after refresh, -3 deduction, overdraw rejection, ledger ordering/user/reason, low/out-of-stock states, and MAIN/QAVE independence. Cashier checks passed low-stock availability, visible OUT OF STOCK, unaffected untracked products, OPEN MAIN/CLOSED QAVE Browse, branch switching, and direct inventory access returning 403. Visual checks passed at approximately 390px, tablet, and desktop without horizontal overflow. Intermittent browser-control failures were recovered with a fresh tab; no failed interaction was counted as a pass.
 - Local QA cleanup restored Rice in MAIN to its original untracked behavior with no threshold and zero stock. Four clearly labeled QA movements remain in the append-only ledger; QAVE configuration, balances, and history were untouched.
 - Phase 4B is complete. Phase 4C, final concurrency-safe-stock and inventory branch-isolation completion boxes remain unchecked for independent PostgreSQL race/security verification. Phase 4 is not complete; no order/payment/edit/void/purchase/transfer inventory workflow or Phase 5 work was started.
+
+Phase 4C final verification (2026-09-19):
+
+- Pre-flight confirmed clean `feature/inventory-foundation` at `90bd60702cb6eb670a47d64e9f8acfe12e3c9374`, containing Phase 4B and two commits ahead of both `dev` and freshly fetched `origin/dev`. Reviewed the full Phase 4 diff, mutation paths, authorization, query scope, UI source, and secret/artifact patterns. No production defect or production-code change; added the opt-in PostgreSQL harness and three direct ledger-mutation regression cases only.
+- `php tests/verify-inventory-postgres.php` passed on local PostgreSQL 18.4 using an isolated random schema and explicitly cleared `DB_URL`. Two independent application/database processes were observed in PostgreSQL lock waits before release: one at the stock row and one at its branch-product configuration lock. Starting at stock 1/version 1, exactly one deduction committed and one returned insufficient stock; final stock 0/version 2, one new deduction, two total movements including initialization, and the original movement unchanged. Every worker proved a usable connection, Laravel transaction level zero, and no PDO transaction.
+- Concurrent first-balance creation started with no balance and two overlapping configuration-lock requests. Both +5/+3 actions committed through the existing configuration lock, `insertOrIgnore`, unique pair, and balance lock: exactly one balance, stock 8/version 2, two movements, no unique-constraint leak. This verifies the real serialized action flow, not simultaneous insert execution after bypassing its configuration lock.
+- Local PostgreSQL branch isolation passed: MAIN 10/QAVE 4 became MAIN 7/QAVE 4 after MAIN -3, with versions 2/1 and movement counts 2/1. A further QAVE +3 committed while an independent MAIN -1 process remained blocked on MAIN stock; after release the final MAIN/QAVE balances were 6/7, versions 3/2, and movement counts 3/2. Ledger sums and actor/reason/timestamp traceability matched every balance.
+- Existing `ApplyInventoryMovementTest`/`InventoryOperationsTest` coverage reverified stock 2 rejecting -3 with unchanged balance/version/history, ledger-insertion failure rollback for new/existing balances, balance-write failure, and outer-transaction rollback. No duplicate fault tests were added. Source/route review found no ledger update/delete action or UI control; new PUT/PATCH/DELETE requests reject collection/item history and adjustment replacement while preserving the original ledger/balance.
+- Authorization passed on inventory GET, history GET, and adjustment POST: active Owner/Super Admin allowed; Cashier, Kitchen, combined role, inactive user, revoked permission, and guest denied. Manual adjustments preserve authenticated actor, reason, branch, product, signed delta, and prior history. `CashierInventoryTest`, `CashierCatalogTest`, and `InventoryStateTest` passed branch switching, forged/stale-state protection, exact safe projection, untracked/missing/zero/threshold boundaries, and catalog-plus-stock availability. Low stock remains available; exact balances/thresholds/versions/history stay private; CLOSED and OPEN Browse remain read-only.
+- Query regressions passed at 1/30/100 products with at most four Cashier catalog queries. Management remains bounded with eager-loaded category/configuration/balance, 24-product pages, 30-movement history pages, no per-card history queries, and card URLs generated only for returned products. UI source review confirms functional controls, explicit tracked/low/out states, adjustment submission/error protection, and responsive layouts. Accepted Phase 4B browser QA stands; no user-facing behavior changed or repeat browser pass is claimed.
+- Read-only normal-local-PostgreSQL metadata confirmed UUID/BIGINT types, zero balance/version defaults, unique branch/product balance, four CHECK constraints, five restrictive foreign keys, and expected indexes. Fresh isolated PostgreSQL migrations and SQLite in-memory `migrate:fresh --database=sqlite --no-interaction` passed with `DB_URL=null`. Harness cleanup confirmed every created schema was removed, and a separate metadata query found no remaining `phase4c_*` schemas. Normal developer data was not reset or mutated; Supabase was untouched.
+- Final targeted Phase 4/Cashier/catalog tests: **171 passed / 1289 assertions**. Full `php -d memory_limit=1G artisan test --compact -d memory_limit=1G`: **807 passed / 4624 assertions** (baseline 804/4609). The initially requested command with `-d` only before Artisan hit the already documented image-processing memory guard (806/807 passed); Collision launches a separate Pest process without inheriting that CLI setting. Passing `-d memory_limit=1G` to Pest resolved it without code/configuration changes. Pint, PHPStan `--memory-limit=1G`, frontend lint (79 files), TypeScript, production build, and whitespace/secret checks passed. Existing optional `fontaine` and plugin-timing warnings remain non-blocking.
+- All seven Phase 4 exit criteria are verified by the evidence above: branch independence; traceable movement per mutation; safe concurrent last-unit deduction; negative-stock protection; authorized/traceable manual adjustment; server-derived low/out-of-stock state; and Cashier availability respecting tracked stock. **Phase 4 is COMPLETE.** No Phase 5 or later workflow/checklist was started. No Phase 4 blocker remains; verification is local, with accepted prior browser QA and no claim of hosted-environment or live-network performance testing.
 
 ---
 

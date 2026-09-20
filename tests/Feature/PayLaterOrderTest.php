@@ -123,6 +123,44 @@ test('repeated product lines aggregate into one movement and untracked products 
     $this->assertDatabaseCount('payments', 0);
 });
 
+test('Pay Later inventory reads stay bounded as repeated cart lines grow', function () {
+    $readCounts = [];
+
+    foreach ([1, 30, 100] as $lineCount) {
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+        $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+        $user->branches()->attach($branch, ['is_active' => true]);
+        StoreSession::factory()->for($branch)->create();
+        $product = Product::factory()->create();
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true]);
+        $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 200]);
+        $line = ['product_id' => $product->id, 'quantity' => 1, 'modifiers' => []];
+        $order = app(CreatePosDraftOrder::class)->execute($user, $branch, [
+            'order_type' => 'take_out',
+            'items' => array_fill(0, $lineCount, $line),
+        ]);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        app(CommitPayLaterOrder::class)->execute($user, $branch, $order, ['idempotency_key' => (string) Str::uuid()]);
+        $readCounts[] = collect(DB::getQueryLog())
+            ->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'))
+            ->count();
+        DB::disableQueryLog();
+
+        expect($balance->fresh()->on_hand)->toBe(200 - $lineCount);
+        $this->assertDatabaseHas('inventory_movements', [
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity_delta' => -$lineCount,
+        ]);
+        expect($order->inventoryMovements()->count())->toBe(1);
+    }
+
+    expect(array_unique($readCounts))->toHaveCount(1);
+});
+
 test('a different key after commit and a reused key on another order are rejected without duplicate effects', function () {
     [$branch, $user, $product, $balance, , $order] = payLaterFixture();
     $key = (string) Str::uuid();
@@ -298,6 +336,47 @@ test('one Pay Later request converts the current reservation and preserves its i
     $again = $this->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out'])->assertOk()->json('order');
     expect($again['id'])->toBe($next['id'])->and($again['order_number'])->toBe($next['order_number']);
 });
+
+test('a one-step Pay Later replay rejects changed cart details without repeating operational effects', function (string $change) {
+    $branch = Branch::factory()->create();
+    $user = User::factory()->create();
+    $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+    $user->branches()->attach($branch, ['is_active' => true]);
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create();
+    $otherProduct = Product::factory()->create();
+    foreach ([$product, $otherProduct] as $availableProduct) {
+        BranchProduct::factory()->for($branch)->for($availableProduct)->create(['tracks_inventory' => true]);
+        BranchInventory::factory()->for($branch)->for($availableProduct)->create(['on_hand' => 5]);
+    }
+    $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out'])
+        ->assertOk()->json('order');
+    $payload = [
+        'idempotency_key' => (string) Str::uuid(),
+        'order_type' => 'take_out',
+        'customer_label' => 'Alex',
+        'items' => [['product_id' => $product->id, 'quantity' => 1, 'notes' => '', 'modifiers' => []]],
+    ];
+    $this->postJson(route('pos.orders.pay-later.store', $reservation['id']), $payload)->assertOk();
+
+    match ($change) {
+        'quantity' => $payload['items'][0]['quantity'] = 2,
+        'product' => $payload['items'][0]['product_id'] = $otherProduct->id,
+        'customer' => $payload['customer_label'] = 'Blake',
+        'order type' => $payload['order_type'] = 'dine_in',
+    };
+
+    $this->postJson(route('pos.orders.pay-later.store', $reservation['id']), $payload)->assertConflict();
+
+    $order = Order::query()->findOrFail($reservation['id']);
+    expect($order->commercial_status)->toBe(CommercialStatus::Active)
+        ->and($order->items()->sole()->product_id)->toBe($product->id)
+        ->and($order->items()->sole()->quantity)->toBe(1)
+        ->and($order->customer_label)->toBe('Alex');
+    $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseCount('kitchen_tickets', 1);
+    $this->assertDatabaseCount('payments', 0);
+})->with(['quantity', 'product', 'customer', 'order type']);
 
 test('a failed one-step Pay Later commit keeps the reservation and rolls back cart persistence', function () {
     $branch = Branch::factory()->create();

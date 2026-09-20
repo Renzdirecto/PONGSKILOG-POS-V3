@@ -7,7 +7,9 @@
 
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
+use App\Actions\Orders\ReservePosOrder;
 use App\Actions\Orders\SettlePayLaterOrder;
+use App\Enums\OrderType;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Models\Branch;
@@ -242,6 +244,22 @@ try {
     echo 'CONCURRENCY PASS: same order + same activation key commits stock/ticket once and replays once.'.PHP_EOL;
 
     [$branch, $user, $product, $balance] = phase7Fixture();
+    $order = app(ReservePosOrder::class)->execute($user, $branch, OrderType::TakeOut);
+    $payload = [...phase7CommitPayload($product->id), 'idempotency_key' => (string) Str::uuid()];
+    app(CommitPayLaterOrder::class)->execute($user, $branch, $order, $payload);
+    app(CommitPayLaterOrder::class)->execute($user, $branch, $order, $payload);
+    $payload['items'][0]['quantity'] = 2;
+    try {
+        app(CommitPayLaterOrder::class)->execute($user, $branch, $order, $payload);
+        throw new RuntimeException('Changed activation payload was accepted.');
+    } catch (HttpException $exception) {
+        phase7Verify($exception->getStatusCode() === 409, 'Changed activation payload did not return a conflict.');
+    }
+    phase7Verify($balance->fresh()->on_hand === 9 && InventoryMovement::where('order_id', $order->id)->count() === 1, 'Activation replay changed stock.');
+    phase7Verify(KitchenTicket::where('order_id', $order->id)->count() === 1 && Payment::where('order_id', $order->id)->count() === 0, 'Activation replay changed ticket/payment effects.');
+    echo 'REPLAY PASS: exact local-cart activation recovers and changed payload is rejected.'.PHP_EOL;
+
+    [$branch, $user, $product, $balance] = phase7Fixture();
     $order = phase7Draft($user, $branch, phase7CommitPayload($product->id)['items']);
     $results = phase7Overlap('--commit-worker', $schema, $connection, $observer, $user, $branch, [$order, $order], [(string) Str::uuid(), (string) Str::uuid()]);
     $statuses = array_column($results, 'status');
@@ -301,7 +319,7 @@ try {
     phase7UsableConnection();
     echo 'ROLLBACK PASS: kitchen failure leaves draft, stock, payments and ticket unchanged.'.PHP_EOL;
 
-    foreach (['cash', 'split'] as $method) {
+    foreach (['cash', 'cashless', 'split'] as $method) {
         [$branch, $user, $product, $balance] = phase7Fixture();
         $order = phase7Draft($user, $branch, phase7CommitPayload($product->id)['items']);
         app(CommitPayLaterOrder::class)->execute($user, $branch, $order, ['idempotency_key' => (string) Str::uuid()]);
@@ -312,6 +330,22 @@ try {
         phase7Verify($balance->fresh()->on_hand === 9 && InventoryMovement::where('order_id', $order->id)->count() === 1 && KitchenTicket::where('order_id', $order->id)->count() === 1, 'Settlement repeated inventory or kitchen.');
         echo 'SETTLEMENT PASS: concurrent duplicate '.$method.' creates exact payment legs with no stock/kitchen repeat.'.PHP_EOL;
     }
+
+    [$branch, $user, $product, $balance] = phase7Fixture();
+    $order = phase7Draft($user, $branch, phase7CommitPayload($product->id)['items']);
+    app(CommitPayLaterOrder::class)->execute($user, $branch, $order, ['idempotency_key' => (string) Str::uuid()]);
+    $payload = ['idempotency_key' => (string) Str::uuid(), 'payment_method' => 'split', 'cash_received' => '500.00', 'cashless_amount' => '200.00'];
+    app(SettlePayLaterOrder::class)->execute($user, $branch, $order, $payload);
+    $payload['cashless_amount'] = '250.00';
+    try {
+        app(SettlePayLaterOrder::class)->execute($user, $branch, $order, $payload);
+        throw new RuntimeException('Changed settlement payload was accepted.');
+    } catch (HttpException $exception) {
+        phase7Verify($exception->getStatusCode() === 409, 'Changed settlement payload did not return a conflict.');
+    }
+    phase7Verify(Payment::where('order_id', $order->id)->count() === 2, 'Changed settlement replay added payment legs.');
+    phase7Verify($balance->fresh()->on_hand === 9 && InventoryMovement::where('order_id', $order->id)->count() === 1 && KitchenTicket::where('order_id', $order->id)->count() === 1, 'Changed settlement replay repeated operational effects.');
+    echo 'SETTLEMENT PASS: changed financial payload is rejected with no repeated effects.'.PHP_EOL;
 
     $events = [];
     foreach ([OrderCommitted::class, KitchenTicketCreated::class] as $eventClass) {

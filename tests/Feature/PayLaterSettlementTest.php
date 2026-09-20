@@ -130,6 +130,21 @@ test('different key after payment and a reused settlement root on another order 
     $this->assertDatabaseCount('kitchen_tickets', 2);
 });
 
+test('a settlement replay rejects changed financial details without adding payment legs', function () {
+    [, $user, , $balance, , $order] = settlementFixture();
+    $payload = settlementPayload('split', '500.00', '200.00');
+    $this->actingAs($user)->postJson(route('pos.orders.settlements.store', $order), $payload)->assertOk();
+
+    $payload['cashless_amount'] = '250.00';
+
+    $this->postJson(route('pos.orders.settlements.store', $order), $payload)->assertConflict();
+    expect($order->fresh()->payment_status)->toBe(PaymentStatus::Paid)
+        ->and($balance->fresh()->on_hand)->toBe(4);
+    $this->assertDatabaseCount('payments', 2);
+    $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseCount('kitchen_tickets', 1);
+});
+
 test('settlement requires the original currently open store session', function (string $state) {
     [$branch, $user, , $balance, $session, $order] = settlementFixture();
     $session->update(['status' => 'closed']);

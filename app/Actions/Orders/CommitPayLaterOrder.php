@@ -15,6 +15,7 @@ use App\Http\Requests\CommitPayLaterOrderRequest;
 use App\Models\Branch;
 use App\Models\KitchenTicket;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\User;
 use App\Support\PosAccess;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +50,7 @@ class CommitPayLaterOrder
                     abort(409, 'This Pay Later attempt belongs to another order.');
                 }
 
-                return $this->replay($claimed);
+                return $this->replay($claimed, $data, $hasLocalCart);
             }
 
             $session = $branch->storeSessions()
@@ -70,7 +71,7 @@ class CommitPayLaterOrder
                     abort(409, 'This order has already been committed with another Pay Later attempt.');
                 }
 
-                return $this->replay($order);
+                return $this->replay($order, $data, $hasLocalCart);
             }
             if ($hasLocalCart) {
                 $order = $this->drafts->execute($user, $branch, $data, $order);
@@ -115,7 +116,8 @@ class CommitPayLaterOrder
         });
     }
 
-    private function replay(Order $order): Order
+    /** @param array<string, mixed> $data */
+    private function replay(Order $order, array $data, bool $hasLocalCart): Order
     {
         if ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Active
             || $order->payment_status !== PaymentStatus::Unpaid || $order->payment_term !== PaymentTerm::PayLater
@@ -123,7 +125,38 @@ class CommitPayLaterOrder
             || $order->store_session_id === null || $order->kitchenTicket()->doesntExist()) {
             abort(409, 'This Pay Later attempt is not in a recoverable committed state.');
         }
+        if ($hasLocalCart && ! $this->matchesCart($order, $data)) {
+            abort(409, 'This Pay Later attempt has already been used with different order details.');
+        }
 
         return $order;
+    }
+
+    /**
+     * Compare identity and selections against committed snapshots, never current catalog prices.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function matchesCart(Order $order, array $data): bool
+    {
+        if ($order->order_type->value !== $data['order_type'] || ($order->customer_label ?? '') !== trim($data['customer_label'] ?? '')
+            || $order->branch_table_id !== (($data['branch_table_id'] ?? null) ?: null)) {
+            return false;
+        }
+
+        $order->load('items.modifiers');
+        $actual = $order->items->map(fn (OrderItem $item): array => [
+            $item->product_id, $item->quantity, $item->notes ?? '', $item->modifiers->pluck('modifier_option_id')->sort()->values()->all(),
+        ])->all();
+        $expected = array_map(function (array $line): array {
+            $options = array_column($line['modifiers'], 'option_id');
+            sort($options);
+
+            return [$line['product_id'], $line['quantity'], $line['notes'] ?? '', $options];
+        }, $data['items']);
+        sort($actual);
+        sort($expected);
+
+        return $actual === $expected;
     }
 }

@@ -13,3 +13,6 @@ Pay Later activation owns the order state transition, PayLaterCommit inventory m
 
 ## Pay Later commits reservations or drafts atomically
 CommitPayLaterOrder must accept either the current empty POS reservation plus local cart details or an existing persisted draft. Cart hydration, inventory deduction, the single Kitchen ticket, Store Session attachment, and the active/unpaid/pay_later transition belong to one outer transaction while preserving order identity and the activation key.
+
+## Pay Later replay validates the original intent
+An exact-key Pay Later replay may recover only when any supplied local cart still matches the committed snapshot (order type, customer/table, products, quantities, notes, and option IDs). Reject changed payloads with HTTP 409, and never compare current catalog prices when replaying a saved draft.

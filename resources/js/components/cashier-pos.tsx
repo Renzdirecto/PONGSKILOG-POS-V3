@@ -14,7 +14,6 @@ import {
     UtensilsCrossed,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
 import { CashierCatalog } from '@/components/cashier-catalog';
 import { PosTableSelection } from '@/components/pos-table-selection';
 import { PosPaid } from '@/components/pos-paid';
@@ -39,7 +38,6 @@ import { lineCents, pesos } from '@/lib/pos-money';
 import {
     confirmedPayLaterState,
     payLaterAttemptForOrder,
-    type PayLaterAttemptIdentity,
 } from '@/lib/pos-pay-later';
 import {
     customerDisplayLabel,
@@ -47,7 +45,6 @@ import {
     freshOrderDetails,
     needsOrderReservation,
 } from '@/lib/pos-order';
-import { store } from '@/routes/pos/orders';
 import { store as commitPayLater } from '@/routes/pos/orders/pay-later';
 import type { BranchSummary } from '@/types';
 import type { CashierCatalog as Catalog } from '@/types/catalog';
@@ -57,6 +54,8 @@ import type {
     OrderSummary,
     OrderReservation,
     OrderType,
+    PayLaterAttempt,
+    PayLaterInput,
     PayLaterOrder,
     PosProduct,
     PaymentInput,
@@ -100,7 +99,7 @@ export function CashierPos({
         `${rememberKey}:receipt`,
     );
     const [payLaterAttempt, setPayLaterAttempt] =
-        useRemember<PayLaterAttemptIdentity | null>(
+        useRemember<PayLaterAttempt | null>(
             null,
             `${rememberKey}:pay-later-attempt`,
         );
@@ -120,7 +119,7 @@ export function CashierPos({
         { order: OrderReservation }
     >({ order_type: 'take_out' });
     const payLater = useHttp<
-        { idempotency_key: string },
+        PayLaterInput,
         { order: PayLaterOrder }
     >({ idempotency_key: '' });
     const reservationSubmitting = useRef(false);
@@ -157,7 +156,6 @@ export function CashierPos({
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
-    const submitting = useRef(false);
     const form = useForm(`${rememberKey}:details`, freshOrderDetails());
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber = saved?.order_number ?? reservation?.order_number ?? null;
@@ -219,39 +217,6 @@ export function CashierPos({
         form.setData(freshOrderDetails());
         form.clearErrors();
         setDialog(type ? null : 'type');
-    }
-    function submit(event: FormEvent) {
-        event.preventDefault();
-        if (submitting.current || saved || !orderType || lines.length === 0)
-            return;
-        submitting.current = true;
-        form.transform((data) => ({
-            ...data,
-            reserved_order_id: reservation?.id,
-            order_type: orderType,
-            branch_table_id: data.branch_table_id || null,
-            items: lines.map((line) => ({
-                product_id: line.product.id,
-                quantity: line.quantity,
-                notes: line.notes,
-                modifiers: line.modifiers,
-            })),
-        }));
-        form.submit(store(), {
-            preserveScroll: true,
-            preserveState: true,
-            onFlash: (flash) => {
-                const draft = flash.posDraft as OrderSummary | undefined;
-                if (draft) {
-                    setSaved(draft);
-                    setReservation(null);
-                    setDialog('information');
-                }
-            },
-            onFinish: () => {
-                submitting.current = false;
-            },
-        });
     }
     async function confirmPayment(input: PaymentInput) {
         if (paymentSubmitting.current || !orderType) return;
@@ -345,27 +310,50 @@ export function CashierPos({
             paymentSubmitting.current = false;
         }
     }
-    async function activatePayLater() {
-        if (payLaterSubmitting.current || !saved) return;
+    async function savePayLater() {
+        if (payLaterSubmitting.current || !orderType) return;
+        const targetOrder = saved ?? reservation;
+        if (!targetOrder) {
+            setPayLaterError(
+                reservationError ||
+                    'Wait for the order number before saving this Pay Later order.',
+            );
+            return;
+        }
         if (!navigator.onLine) {
             setPayLaterError(
-                'You are offline. Reconnect before activating Pay Later.',
+                'You are offline. Reconnect before saving this Pay Later order.',
             );
             return;
         }
 
         const activation = payLaterAttemptForOrder(
             payLaterAttempt,
-            saved.id,
+            {
+                order_id: targetOrder.id,
+                ...(saved
+                    ? {}
+                    : {
+                          order_type: orderType,
+                          customer_label: form.data.customer_label,
+                          branch_table_id:
+                              form.data.branch_table_id || null,
+                          items: lines.map((line) => ({
+                              product_id: line.product.id,
+                              quantity: line.quantity,
+                              notes: line.notes,
+                              modifiers: line.modifiers,
+                          })),
+                      }),
+            },
         );
         payLaterSubmitting.current = true;
         setPayLaterAttempt(activation);
         setPayLaterError('');
-        payLater.transform(() => ({
-            idempotency_key: activation.idempotency_key,
-        }));
+        const { order_id: orderId, ...payload } = activation;
+        payLater.transform(() => payload);
         try {
-            const result = await payLater.submit(commitPayLater(saved.id));
+            const result = await payLater.submit(commitPayLater(orderId));
             if (!result.order || !confirmedPayLaterState(result.order)) {
                 throw new Error('Unconfirmed Pay Later result');
             }
@@ -402,14 +390,14 @@ export function CashierPos({
                     messages.join(' ') ||
                         response.data?.message ||
                         ({
-                            401: 'Your session expired. Sign in again before activating Pay Later.',
+                            401: 'Your session expired. Sign in again before saving this Pay Later order.',
                             403: 'Your cashier or branch access is no longer available.',
                             404: 'This order is unavailable in the current branch.',
                             409: 'This order was already committed by another Pay Later attempt.',
                             419: 'Your session expired. Refresh and sign in again.',
                             422: 'Check the order details and current stock before trying again.',
                         }[response.status] ??
-                            'Pay Later was rejected.'),
+                            'The Pay Later order was rejected.'),
                 );
             } else {
                 setPayLaterError(
@@ -548,7 +536,6 @@ export function CashierPos({
                     onOpenChange={(open) => {
                         if (
                             !open &&
-                            !form.processing &&
                             !payment.processing &&
                             !payLater.processing &&
                             !attempt &&
@@ -573,7 +560,6 @@ export function CashierPos({
                         }
                         onInteractOutside={(event) => {
                             if (
-                                form.processing ||
                                 payment.processing ||
                                 payLater.processing ||
                                 attempt ||
@@ -584,7 +570,6 @@ export function CashierPos({
                         }}
                         onEscapeKeyDown={(event) => {
                             if (
-                                form.processing ||
                                 payment.processing ||
                                 payLater.processing ||
                                 attempt ||
@@ -712,7 +697,7 @@ export function CashierPos({
                                               : dialog === 'paid'
                                               ? 'Payment successful'
                                               : dialog === 'payLaterSuccess'
-                                                ? 'Pay Later activated'
+                                                ? 'Saved as Pay Later'
                                                 : dialog === 'receipt'
                                                   ? 'Receipt'
                                                   : dialog === 'discard'
@@ -954,8 +939,11 @@ export function CashierPos({
                                     )}
                                 {dialog === 'information' && (
                                     <form
-                                        onSubmit={submit}
-                                        aria-busy={form.processing}
+                                        onSubmit={(event) => {
+                                            event.preventDefault();
+                                            void savePayLater();
+                                        }}
+                                        aria-busy={payLater.processing}
                                         className="flex min-h-0 flex-col"
                                     >
                                         <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 py-[18px]">
@@ -1090,7 +1078,9 @@ export function CashierPos({
                                                                 )
                                                             }
                                                             disabled={
-                                                                form.processing
+                                                                payLater.processing ||
+                                                                payLaterAttempt !==
+                                                                    null
                                                             }
                                                             className="h-[52px] rounded-xl text-base"
                                                             placeholder="e.g. Alex Johnson"
@@ -1103,7 +1093,8 @@ export function CashierPos({
                                                                 .branch_table_id
                                                         }
                                                         disabled={
-                                                            form.processing
+                                                            payLater.processing ||
+                                                            payLaterAttempt !== null
                                                         }
                                                         onChange={changeTable}
                                                     />
@@ -1112,33 +1103,16 @@ export function CashierPos({
                                             <div className="space-y-1.5 rounded-xl bg-neutral-50 p-3 text-xs">
                                                 <p className="font-semibold">
                                                     {saved
-                                                        ? 'Ready for Pay Later'
+                                                        ? `${saved.items.reduce((sum, item) => sum + item.quantity, 0)} items · ${pesos(saved.total)}`
                                                         : `${lines.reduce((sum, line) => sum + line.quantity, 0)} items · ${pesos(total)} preview`}
                                                 </p>
                                                 <p className="leading-5 text-neutral-500">
-                                                    {saved
-                                                        ? 'Activating Pay Later deducts stock immediately and sends this order to the kitchen. Payment remains unpaid.'
-                                                        : 'Proceed saves a draft and checks current prices and availability. No payment, stock deduction or kitchen ticket.'}
+                                                    Proceed deducts stock
+                                                    immediately and sends this
+                                                    order to the kitchen. Payment
+                                                    remains unpaid.
                                                 </p>
                                             </div>
-                                            {Object.keys(form.errors).length >
-                                                0 && (
-                                                <div
-                                                    role="alert"
-                                                    className="space-y-1 rounded-xl bg-red-50 p-3 text-xs text-red-800"
-                                                >
-                                                    {Object.entries(
-                                                        form.errors,
-                                                    ).map(([key, error]) => (
-                                                        <p key={key}>{error}</p>
-                                                    ))}
-                                                    <p>
-                                                        Your cart is kept.
-                                                        Review the items and try
-                                                        again.
-                                                    </p>
-                                                </div>
-                                            )}
                                             {payLaterError && (
                                                 <div
                                                     role="alert"
@@ -1146,55 +1120,37 @@ export function CashierPos({
                                                 >
                                                     <p>{payLaterError}</p>
                                                     <p>
-                                                        This order is kept. Fix
-                                                        the issue, then retry
-                                                        safely.
+                                                        Your cart and order
+                                                        details are kept. Fix the
+                                                        issue, then retry safely.
                                                     </p>
                                                 </div>
                                             )}
                                         </div>
                                         <footer className="flex shrink-0 flex-col gap-2 border-t border-neutral-200 px-3.5 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
-                                            {saved ? (
-                                                <Button
-                                                    type="button"
-                                                    disabled={
-                                                        payLater.processing
-                                                    }
-                                                    className="h-12 rounded-xl border border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100"
-                                                    onClick={activatePayLater}
-                                                >
-                                                    <Clock3 className="size-4" />
-                                                    {payLater.processing
-                                                        ? 'Activating Pay Later…'
-                                                        : 'Activate Pay Later'}
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    type="submit"
-                                                    className="min-h-12 rounded-xl bg-neutral-950 text-white hover:bg-black"
-                                                    disabled={form.processing}
-                                                >
-                                                    <Check className="size-4" />
-                                                    {form.processing
-                                                        ? 'Checking order…'
-                                                        : 'Proceed'}
-                                                </Button>
-                                            )}
+                                            <Button
+                                                type="submit"
+                                                className="min-h-12 rounded-xl bg-neutral-950 text-white hover:bg-black"
+                                                disabled={payLater.processing}
+                                            >
+                                                <Check className="size-4" />
+                                                {payLater.processing
+                                                    ? 'Saving as Pay Later…'
+                                                    : 'Proceed'}
+                                            </Button>
                                             <button
                                                 type="button"
                                                 className="min-h-11 text-xs font-semibold tracking-wide text-neutral-500 uppercase"
                                                 disabled={
-                                                    form.processing ||
-                                                    payLater.processing
+                                                    payLater.processing ||
+                                                    payLaterAttempt !== null
                                                 }
                                                 onClick={() => {
                                                     setPayLaterError('');
                                                     setDialog(null);
                                                 }}
                                             >
-                                                {saved
-                                                    ? 'Back to POS'
-                                                    : 'Cancel'}
+                                                Cancel
                                             </button>
                                         </footer>
                                     </form>

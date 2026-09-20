@@ -5,12 +5,35 @@ import {
     payLaterAttemptForOrder,
 } from '../resources/js/lib/pos-pay-later.ts';
 
-test('Pay Later retries keep one stable key for the same saved order', () => {
-    const first = payLaterAttemptForOrder(null, 'order-1043', () => 'key-1');
-    const retry = payLaterAttemptForOrder(first, 'order-1043', () => 'key-2');
-    const other = payLaterAttemptForOrder(first, 'order-1044', () => 'key-3');
+test('Pay Later retries keep one stable key and local-cart payload', () => {
+    const details = {
+        order_id: 'order-1043',
+        order_type: 'take_out' as const,
+        customer_label: 'Alex',
+        branch_table_id: null,
+        items: [
+            {
+                product_id: 'product-1',
+                quantity: 2,
+                notes: '',
+                modifiers: [],
+            },
+        ],
+    };
+    const first = payLaterAttemptForOrder(null, details, () => 'key-1');
+    const retry = payLaterAttemptForOrder(
+        first,
+        { ...details, customer_label: 'Changed after submit' },
+        () => 'key-2',
+    );
+    const other = payLaterAttemptForOrder(
+        first,
+        { order_id: 'order-1044' },
+        () => 'key-3',
+    );
 
     assert.equal(retry, first);
+    assert.equal(retry.customer_label, 'Alex');
     assert.deepEqual(other, {
         order_id: 'order-1044',
         idempotency_key: 'key-3',

@@ -463,6 +463,11 @@ Phase 7 implementation verification (2026-09-20):
 - Frontend verification passed 13 Node tests, frontend lint, TypeScript, PHPStan with a 1 GB process limit, Pint, and the production build. Browser QA passed Take Out with no label/table, Dine In with table only, Take Out with a custom label, tracked-stock refresh, clean New order state, and responsive widths 390 / 430 / 820 / 1024 / 1440 with no horizontal overflow or browser console errors.
 - This checkpoint does not add the Phase 8 KDS or the Phase 12 Transaction History interface. User manual acceptance and the separate final implementation audit remain pending; this note is not a production-readiness approval.
 
+Phase 7 manual-QA flow-parity correction (2026-09-20):
+
+- Manual QA found and corrected a standalone flow-parity issue: Pay Later now requires one cashier confirmation, `Order Information → Proceed → committed Pay Later success`. Proceed commits the current reserved cart atomically instead of first exposing a saved-draft activation step.
+- Existing draft and recovery support remains safely committable through the backend, but is no longer presented as an extra cashier-facing activation step. Phase 7 final acceptance remains pending; Phase 8 is not started.
+
 ---
 
 ## Phase 8 — Kitchen / KDS

@@ -10,3 +10,6 @@ PayNowOrder owns one outer transaction for new draft or existing snapshot, payme
 
 ## Keep Pay Later activation and settlement effects separate
 Pay Later activation owns the order state transition, PayLaterCommit inventory movements, and the single kitchen ticket in one transaction, keyed by the order-level activation idempotency key. Later settlement may only create exact payment legs and mark the order paid; it must never reapply inventory or kitchen effects, and an exact replay produces no new effects or events.
+
+## Pay Later commits reservations or drafts atomically
+CommitPayLaterOrder must accept either the current empty POS reservation plus local cart details or an existing persisted draft. Cart hydration, inventory deduction, the single Kitchen ticket, Store Session attachment, and the active/unpaid/pay_later transition belong to one outer transaction while preserving order identity and the activation key.

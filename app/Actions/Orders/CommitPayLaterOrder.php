@@ -23,15 +23,20 @@ use Illuminate\Validation\ValidationException;
 
 class CommitPayLaterOrder
 {
-    public function __construct(private ApplyOrderInventory $inventory, private PosAccess $access) {}
+    public function __construct(
+        private CreatePosDraftOrder $drafts,
+        private ApplyOrderInventory $inventory,
+        private PosAccess $access,
+    ) {}
 
     /** @param array<string, mixed> $input */
     public function execute(User $user, Branch $branch, Order $requestedOrder, array $input): Order
     {
-        $data = Validator::make($input, (new CommitPayLaterOrderRequest)->rules())->validate();
+        $hasLocalCart = CommitPayLaterOrderRequest::hasCartData($input);
+        $data = Validator::make($input, CommitPayLaterOrderRequest::commitRules($hasLocalCart))->validate();
         $key = strtolower($data['idempotency_key']);
 
-        return DB::transaction(function () use ($user, $branch, $requestedOrder, $key): Order {
+        return DB::transaction(function () use ($user, $branch, $requestedOrder, $data, $hasLocalCart, $key): Order {
             if (DB::getDriverName() === 'pgsql') {
                 DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ['pay-later:'.$key]);
             }
@@ -52,7 +57,7 @@ class CommitPayLaterOrder
                 ->lockForUpdate()
                 ->first();
             if ($session === null) {
-                throw ValidationException::withMessages(['store' => 'Store is closed. Open the store before activating Pay Later.']);
+                throw ValidationException::withMessages(['store' => 'Store is closed. Open the store before saving this Pay Later order.']);
             }
 
             $order = Order::query()
@@ -67,10 +72,14 @@ class CommitPayLaterOrder
 
                 return $this->replay($order);
             }
+            if ($hasLocalCart) {
+                $order = $this->drafts->execute($user, $branch, $data, $order);
+                $order = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            }
             if ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Draft
                 || $order->payment_status !== PaymentStatus::Unpaid || $order->payment_term !== null
                 || $order->kitchen_status !== KitchenStatus::NotSent || $order->committed_at !== null) {
-                throw ValidationException::withMessages(['order' => 'Only an unpaid, uncommitted POS draft can be activated as Pay Later.']);
+                throw ValidationException::withMessages(['order' => 'Only an unpaid, uncommitted POS order can be saved as Pay Later.']);
             }
             if ($order->branch_table_id !== null && ! $branch->tables()->whereKey($order->branch_table_id)->where('is_active', true)->exists()) {
                 throw ValidationException::withMessages(['table' => 'The selected table is no longer active in this branch.']);

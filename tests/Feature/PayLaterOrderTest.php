@@ -245,7 +245,7 @@ test('forged server owned pay later fields are rejected', function (string $fiel
     expect($order->fresh()->commercial_status)->toBe(CommercialStatus::Draft);
 })->with(['branch_id', 'store_session_id', 'subtotal', 'total', 'stock_amount', 'line_price', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'order_number', 'reference_number']);
 
-test('pay later commit keeps reservation identity and the next reservation advances once', function () {
+test('one Pay Later request converts the current reservation and preserves its identity', function () {
     $branch = Branch::factory()->create();
     $user = User::factory()->create();
     $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
@@ -253,20 +253,81 @@ test('pay later commit keeps reservation identity and the next reservation advan
     StoreSession::factory()->for($branch)->create();
     $product = Product::factory()->create();
     BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true]);
-    BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 5]);
+    $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 5]);
     $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out'])
         ->assertOk()->json('order');
-    $draft = app(CreatePosDraftOrder::class)->execute($user, $branch, [
+    $orderCount = Order::query()->count();
+    $key = (string) Str::uuid();
+    $payload = [
+        'idempotency_key' => $key,
         'order_type' => 'take_out',
+        'customer_label' => 'Alex',
         'items' => [['product_id' => $product->id, 'quantity' => 1, 'modifiers' => []]],
-    ], Order::query()->findOrFail($reservation['id']));
-    $this->postJson(route('pos.orders.pay-later.store', $draft), ['idempotency_key' => (string) Str::uuid()])
+    ];
+
+    $response = $this->postJson(route('pos.orders.pay-later.store', $reservation['id']), $payload)
         ->assertOk()
+        ->assertJsonPath('order.id', $reservation['id'])
         ->assertJsonPath('order.order_number', $reservation['order_number'])
-        ->assertJsonPath('order.reference_number', $reservation['reference_number']);
+        ->assertJsonPath('order.reference_number', $reservation['reference_number'])
+        ->assertJsonPath('order.commercial_status', 'active')
+        ->assertJsonPath('order.payment_status', 'unpaid')
+        ->assertJsonPath('order.payment_term', 'pay_later')
+        ->assertJsonPath('order.kitchen_status', 'kitchen')
+        ->assertJsonPath('order.customer_label', 'Alex');
+
+    $order = Order::query()->findOrFail($reservation['id']);
+    expect(Order::query()->count())->toBe($orderCount)
+        ->and($order->commercial_status)->toBe(CommercialStatus::Active)
+        ->and($order->store_session_id)->not->toBeNull()
+        ->and($order->committed_at)->not->toBeNull()
+        ->and($balance->fresh()->on_hand)->toBe(4);
+    $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseCount('kitchen_tickets', 1);
+    $this->assertDatabaseCount('payments', 0);
+
+    $this->postJson(route('pos.orders.pay-later.store', $reservation['id']), $payload)
+        ->assertExactJson($response->json());
+    expect($balance->fresh()->on_hand)->toBe(4);
+    $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseCount('kitchen_tickets', 1);
+    $this->assertDatabaseCount('payments', 0);
 
     $next = $this->postJson(route('pos.orders.reservations.store'), ['order_type' => 'dine_in'])->assertOk()->json('order');
     expect($next['order_number'])->toBe((string) ((int) $reservation['order_number'] + 1));
     $again = $this->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out'])->assertOk()->json('order');
     expect($again['id'])->toBe($next['id'])->and($again['order_number'])->toBe($next['order_number']);
+});
+
+test('a failed one-step Pay Later commit keeps the reservation and rolls back cart persistence', function () {
+    $branch = Branch::factory()->create();
+    $user = User::factory()->create();
+    $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+    $user->branches()->attach($branch, ['is_active' => true]);
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create();
+    BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true]);
+    $balance = BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => 2]);
+    $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), ['order_type' => 'dine_in'])
+        ->assertOk()->json('order');
+    DB::unprepared("CREATE TRIGGER fail_one_step_pay_later_ticket BEFORE INSERT ON kitchen_tickets BEGIN SELECT RAISE(ABORT, 'injected ticket failure'); END");
+
+    try {
+        $this->postJson(route('pos.orders.pay-later.store', $reservation['id']), [
+            'idempotency_key' => (string) Str::uuid(),
+            'order_type' => 'dine_in',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'modifiers' => []]],
+        ])->assertServerError();
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_one_step_pay_later_ticket');
+    }
+
+    $order = Order::query()->findOrFail($reservation['id']);
+    expect($order->commercial_status)->toBe(CommercialStatus::Draft)
+        ->and($order->committed_at)->toBeNull()
+        ->and($order->items()->count())->toBe(0)
+        ->and($balance->fresh()->on_hand)->toBe(2);
+    $this->assertDatabaseCount('inventory_movements', 0);
+    $this->assertDatabaseCount('kitchen_tickets', 0);
+    $this->assertDatabaseCount('payments', 0);
 });

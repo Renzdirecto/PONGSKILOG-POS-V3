@@ -4,10 +4,12 @@ namespace App\Http\Requests;
 
 use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Foundation\Http\FormRequest;
 
-class CommitPayLaterOrderRequest extends FormRequest
+class CommitPayLaterOrderRequest extends StorePosDraftOrderRequest
 {
+    /** @var list<string> */
+    private const CART_FIELDS = ['order_type', 'branch_table_id', 'customer_label', 'items'];
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -25,7 +27,26 @@ class CommitPayLaterOrderRequest extends FormRequest
      */
     public function rules(): array
     {
+        return self::commitRules(self::hasCartData($this->all()));
+    }
+
+    /** @param array<string, mixed> $input */
+    public static function hasCartData(array $input): bool
+    {
+        return array_intersect(self::CART_FIELDS, array_keys($input)) !== [];
+    }
+
+    /** @return array<string, array<mixed>> */
+    public static function commitRules(bool $localCart): array
+    {
         return [
+            ...($localCart ? self::draftRules() : [
+                'order_type' => ['prohibited'],
+                'branch_table_id' => ['prohibited'],
+                'customer_label' => ['prohibited'],
+                'items' => ['prohibited'],
+            ]),
+            'reserved_order_id' => ['prohibited'],
             'idempotency_key' => ['required', 'uuid'],
             'branch_id' => ['prohibited'],
             'store_session_id' => ['prohibited'],

@@ -52,6 +52,22 @@ export type PayLaterOrder = OrderSummary & {
     cashier: string;
 };
 
+export type PayLaterAttempt = {
+    order_id: string;
+    idempotency_key: string;
+    order_type?: OrderType;
+    customer_label?: string;
+    branch_table_id?: string | null;
+    items?: {
+        product_id: string;
+        quantity: number;
+        notes: string;
+        modifiers: CartLine['modifiers'];
+    }[];
+};
+
+export type PayLaterInput = Omit<PayLaterAttempt, 'order_id'>;
+
 export type PaymentInput = {
     payment_method: 'cash' | 'cashless' | 'split';
     cash_received: string | null;

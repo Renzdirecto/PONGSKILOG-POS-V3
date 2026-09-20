@@ -1,16 +1,13 @@
-export type PayLaterAttemptIdentity = {
-    order_id: string;
-    idempotency_key: string;
-};
+import type { PayLaterAttempt } from '@/types/pos';
 
 export function payLaterAttemptForOrder(
-    current: PayLaterAttemptIdentity | null,
-    orderId: string,
+    current: PayLaterAttempt | null,
+    details: Omit<PayLaterAttempt, 'idempotency_key'>,
     createUuid: () => string = () => crypto.randomUUID(),
-): PayLaterAttemptIdentity {
-    if (current?.order_id === orderId) return current;
+): PayLaterAttempt {
+    if (current?.order_id === details.order_id) return current;
 
-    return { order_id: orderId, idempotency_key: createUuid() };
+    return { ...details, idempotency_key: createUuid() };
 }
 
 export function confirmedPayLaterState(order: {

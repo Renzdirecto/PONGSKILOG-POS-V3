@@ -29,6 +29,17 @@ export type StoreContext = {
     branchId: string | null;
 };
 
+export type CurrentStoreSession = {
+    id: string;
+    opened_at: string;
+    opening_cash_amount: string;
+    opening_cashless_amount: string;
+    opened_by: {
+        name: string;
+    };
+    branch: BranchSummary;
+};
+
 export type TwoFactorSetupData = {
     svg: string;
     url: string;

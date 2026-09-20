@@ -3,10 +3,20 @@ import { test } from 'node:test';
 import {
     customerDisplayLabel,
     customerLabelAfterTableChange,
+    freshOrderDetails,
     needsOrderReservation,
     orderNumberLabel,
     stockAvailabilityLabel,
 } from '../resources/js/lib/pos-order.ts';
+
+test('a new order starts without remembered customer or table details', () => {
+    assert.deepEqual(freshOrderDetails(), {
+        order_type: '',
+        branch_table_id: '',
+        customer_label: '',
+        items: [],
+    });
+});
 
 test('fresh POS ordering context presents the allocated numeric order number', () => {
     assert.equal(orderNumberLabel('1043'), '#1043');

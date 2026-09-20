@@ -9,3 +9,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/components/cashier-pos.tsx | .ai/rules/components.md |
 | resources/js/** | .ai/rules/js.md |
 | app/Actions/Orders/** | .ai/rules/orders.md |
+| database/seeders/Local*Seeder.php | .ai/rules/seeders.md |

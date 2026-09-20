@@ -6,6 +6,7 @@ use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\ModifierGroupController;
@@ -13,6 +14,8 @@ use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
+use App\Http\Controllers\PosPayLaterController;
+use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
@@ -69,12 +72,17 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
         Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
+        Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
+        Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
     });
 
     Route::post('store-sessions/open', OpenStoreSessionController::class)
         ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
         ->name('store-sessions.open');
+    Route::get('store-sessions/current', CurrentStoreSessionController::class)
+        ->middleware('permission:pos.access')
+        ->name('store-sessions.current');
 
     Route::inertia('workspaces/kitchen', 'workspaces/show', [
         'workspace' => 'Kitchen',

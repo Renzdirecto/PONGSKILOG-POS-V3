@@ -432,16 +432,55 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 
 ---
 
+### Pre-Phase 7 local POS QA preparation — 2026-09-20
+
+- Local-only menu seed data now uses non-zero deterministic QA prices, configures seeded Products for tracked inventory in MAIN/QAVE, and initializes missing balances through manual-adjustment ledger movements at MAIN 50 / QAVE 30 without refilling existing balances on repeat runs.
+- The existing Open Store opening Cash/Cashless form was reverified without a production UI redesign. Local Store Sessions were prepared CLOSED for manual Open Store QA; Phase 15 reconciliation and every Phase 7 item remain untouched.
+
+### Pre-Phase 7 Store Session and invoice placeholder refinement — 2026-09-20
+
+- The STORE OPEN indicator now exposes authorized, read-only current opening details through an on-demand, branch-scoped endpoint; opening balances remain absent from shared `storeContext` and realtime events.
+- The paid-success screen for Cashless and the Cashless leg of Split now shows a standalone-aligned, explicitly deferred Invoice camera control beside View receipt; Cash does not show it. Actual camera/upload/storage/viewing is deferred to Phase 12; Phase 7 remains untouched.
+
+---
+
 ## Phase 7 — Pay Later
 
-- [ ] Save as UNPAID / PAY LATER
-- [ ] Immediate inventory deduction
-- [ ] Immediate Kitchen ticket
-- [ ] Transaction History entry
-- [ ] Later payment settlement
-- [ ] Prevent second inventory deduction
-- [ ] Prevent duplicate Kitchen ticket
-- [ ] Pay Later idempotency tests
+- [x] Save as UNPAID / PAY LATER
+- [x] Immediate inventory deduction
+- [x] Immediate Kitchen ticket
+- [x] Transaction History entry
+- [x] Later payment settlement
+- [x] Prevent second inventory deduction
+- [x] Prevent duplicate Kitchen ticket
+- [x] Pay Later idempotency tests
+
+Phase 7 implementation verification (2026-09-20):
+
+- Added an idempotent Pay Later activation boundary that atomically commits the existing POS draft as `UNPAID / PAY LATER`, applies one aggregated `pay_later_commit` movement per tracked product, creates one Kitchen ticket, and emits the existing order/Kitchen events only after commit. Later settlement is a separate idempotent backend operation that writes exact Cash, Cashless, or Split payment legs and marks the order paid without repeating inventory or Kitchen effects.
+- Authorization, persisted active-user/branch access, current OPEN Store Session, branch/order/table ownership, draft eligibility, server-owned fields, current product/category/branch availability, tracked stock, snapshot prices, replay identity, and rollback behavior are covered. The additive UUID activation key migration passed local PostgreSQL and isolated SQLite fresh migration checks.
+- Focused order/payment/inventory/session coverage passed at 364 tests / 2,532 assertions. The full suite passed at 1,081 tests / 6,553 assertions. The isolated PostgreSQL harness passed same-key replay, competing activation keys, last-unit stock, repeated-line aggregation, reversed product ordering, Kitchen rollback, duplicate Cash/Split settlement, after-commit event replay, and schema cleanup.
+- Frontend verification passed 13 Node tests, frontend lint, TypeScript, PHPStan with a 1 GB process limit, Pint, and the production build. Browser QA passed Take Out with no label/table, Dine In with table only, Take Out with a custom label, tracked-stock refresh, clean New order state, and responsive widths 390 / 430 / 820 / 1024 / 1440 with no horizontal overflow or browser console errors.
+- This checkpoint does not add the Phase 8 KDS or the Phase 12 Transaction History interface. User manual acceptance and the separate final implementation audit remain pending; this note is not a production-readiness approval.
+
+Phase 7 manual-QA flow-parity correction (2026-09-20):
+
+- Manual QA found and corrected a standalone flow-parity issue: Pay Later now requires one cashier confirmation, `Order Information → Proceed → committed Pay Later success`. Proceed commits the current reserved cart atomically instead of first exposing a saved-draft activation step.
+- Existing draft and recovery support remains safely committable through the backend, but is no longer presented as an extra cashier-facing activation step. Phase 7 final acceptance remains pending; Phase 8 is not started.
+
+### Phase 7 final independent acceptance — 2026-09-20
+
+**Phase 7 is COMPLETE.** The complete `origin/dev...HEAD` branch is accepted as PR ready. Phase 8 and the Phase 12 Transaction History UI have not started, and no PR was created.
+
+- The independent audit found and fixed one blocking retry defect: an already committed Pay Later activation accepted a reused idempotency key even when the supplied local-cart payload changed. Exact-key recovery now compares the committed snapshots against order type, normalized customer/table, products, quantities, notes, and modifier option IDs; changed intent returns HTTP 409 without repeating inventory, Kitchen, payment, or event effects. Existing draft recovery remains snapshot-priced and does not compare against mutable catalog prices.
+- Manual application QA passed the standalone-aligned single confirmation flow, `Save Pay Later → Order Information → Proceed → Saved as Pay Later`, with optional customer and table. The committed local order retained numeric `#1022` and immutable `MAIN-260920-1022`, persisted `active / unpaid / pay_later / kitchen`, created zero Payments, one Kitchen ticket, and one `pay_later_commit` inventory movement; tracked Tapsilog stock changed exactly once from 47 to 45 for quantity two. Automatic reservation then produced sequential `#1023`; the 20-item stress cart was not committed.
+- The decoded standalone reference was rendered and compared directly. It confirms the same one-step confirmation and success-state structure; the production UI intentionally improves operational truth with explicit `UNPAID` and `PAY LATER` badges, the immutable reference, and the project rule that customer/table remain optional.
+- Activation and settlement remain separate atomic boundaries. Pay Later commit reauthorizes current persisted access and OPEN Store Session, validates current availability and stock, preserves historical item/modifier/price snapshots, aggregates and sorts tracked products, deducts inventory once, creates exactly one Kitchen ticket, commits without a Payment, and dispatches branch-scoped order/Kitchen events only after commit. Settlement accepts only eligible Pay Later orders, remains bound to the original Store Session, writes exact Cash, Cashless, or two-leg Split Payments, and never repeats inventory or Kitchen effects.
+- SQLite fresh migration and every isolated PostgreSQL harness passed. Independent overlapping processes verified stable reservation identity, per-branch numbering, duplicate activation replay, competing-key rejection, changed-payload rejection, last-unit single-winner behavior, repeated-line aggregation, reversed product ordering without deadlock, controlled Kitchen rollback without partial effects, duplicate Cash/Cashless/Split settlement, changed financial-payload rejection, after-commit-only events, branch isolation, and complete random-schema cleanup.
+- Pay Now regression remains accepted: Cash, Cashless, Split, last-unit contention, duplicate submission, reverse-order locking, cross-branch root-key conflict, rollback, immutable order identity, exact Payment legs, single inventory/Kitchen effects, and after-commit events all passed. Transaction History data is ready through persisted Orders, item/modifier snapshots, Payments, creator, Store Session, statuses, timestamps, and immutable reference; only the Phase 12 History interface remains deferred.
+- Authorization and privacy checks cover Cashier and combined-role success; guest, inactive user, revoked permission, management-only role, foreign branch/order/table, stale session, invalid state, and forged server-owned fields remain denied. Kitchen events retain operational data only and expose no tender amounts or other financial payload.
+- Query regressions remain bounded at 1/30/100 cart lines, with repeated products aggregated into one movement. Responsive live-application and standalone checks passed at 390, 430, 820, 1024, and 1440px with no document/dialog horizontal overflow; the 20-item, long-customer-label, long-note stress case kept the final Proceed action reachable. The read-only Store Open details modal and Cashless/Split invoice placeholder behavior also passed, while Cash and Pay Later correctly show no invoice control.
+- Final verification passed: focused Laravel matrix **413 tests / 2,565 assertions**; frontend helpers **13 tests**; full `php -d memory_limit=1G artisan test --compact -d memory_limit=1G` **1,088 tests / 6,638 assertions**. Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, fresh migrations, browser logs, whitespace, and secret/artifact review passed. The existing optional `fontaine`, build timing, and Node experimental type-stripping notices remain non-blocking; no dependency, production reset, Supabase, KDS, Close Store, or Phase 12 UI change was made.
 
 ---
 
@@ -526,6 +565,13 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 - [ ] Receipt actions
 - [ ] Edit audit trail
 - [ ] Kitchen update after relevant edit
+- [ ] Cashless / Split invoice proof capture
+- [ ] Camera / image upload for invoice proof
+- [ ] Persist invoice proof against payment/transaction
+- [ ] View invoice proof in transaction detail
+- [ ] Replace/remove invoice proof with authorization
+
+Phase 6 provides the post-payment visual placeholder only. Actual Cashless/Split proof capture, private storage and authorized viewing are deferred to Phase 12. The proof attaches to the Cashless Payment leg: Cash-only payments have none, while Split attaches it only to the Cashless leg. Phase 12 must support camera or file upload, keep images private, require authorization to view or change them, and treat them as manual proof rather than payment-gateway verification; no fake provider confirmation is permitted.
 
 ---
 

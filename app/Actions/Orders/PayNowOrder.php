@@ -2,7 +2,6 @@
 
 namespace App\Actions\Orders;
 
-use App\Actions\Inventory\ApplyInventoryMovement;
 use App\Enums\CommercialStatus;
 use App\Enums\InventoryMovementType;
 use App\Enums\KitchenStatus;
@@ -14,16 +13,12 @@ use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Http\Requests\PayNowOrderRequest;
 use App\Models\Branch;
-use App\Models\BranchProduct;
-use App\Models\Category;
 use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
-use App\Models\Product;
 use App\Models\User;
-use App\Support\BranchCatalog;
-use App\Support\ExactMoney;
+use App\Support\OrderPaymentLegs;
 use App\Support\PosAccess;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +27,12 @@ use Illuminate\Validation\ValidationException;
 
 class PayNowOrder
 {
-    public function __construct(private CreatePosDraftOrder $drafts, private ApplyInventoryMovement $inventory, private PosAccess $access, private BranchCatalog $catalog) {}
+    public function __construct(
+        private CreatePosDraftOrder $drafts,
+        private ApplyOrderInventory $inventory,
+        private OrderPaymentLegs $paymentLegs,
+        private PosAccess $access,
+    ) {}
 
     /** @param array<string, mixed> $input */
     public function execute(User $user, Branch $branch, array $input): Order
@@ -77,7 +77,7 @@ class PayNowOrder
                     throw ValidationException::withMessages(['order' => 'Only an unpaid, uncommitted POS draft can be paid here.']);
                 }
                 $paidAt = now();
-                foreach ($this->legs($order, $data) as $method => $leg) {
+                foreach ($this->paymentLegs->for($order, $data) as $method => $leg) {
                     Payment::query()->create([
                         ...$leg, 'method' => $method, 'branch_id' => $branch->id, 'store_session_id' => $session->id,
                         'order_id' => $order->id, 'created_by_user_id' => $user->id,
@@ -85,35 +85,13 @@ class PayNowOrder
                     ]);
                 }
 
-                $order->load('items');
-                $quantities = [];
-                foreach ($order->items as $item) {
-                    if ($item->product_id === null) {
-                        throw ValidationException::withMessages(['items' => 'A product is no longer available.']);
-                    }
-                    $quantities[$item->product_id] = ($quantities[$item->product_id] ?? 0) + $item->quantity;
-                }
-                if ($quantities === []) {
-                    throw ValidationException::withMessages(['items' => 'The order must contain items.']);
-                }
-                ksort($quantities);
-                $ids = array_keys($quantities);
-                /** Hold current availability stable while committing, without repricing snapshots. */
-                Category::query()->whereIn('id', Product::query()->whereKey($ids)->select('category_id'))->orderBy('id')->sharedLock()->get();
-                Product::query()->whereKey($ids)->orderBy('id')->sharedLock()->get();
-                BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $ids)->orderBy('product_id')->lockForUpdate()->get();
-                $products = $this->catalog->productsForOrder($branch, $ids)->keyBy('id');
-                foreach ($quantities as $id => $quantity) {
-                    $product = $products->get($id);
-                    if ($product === null || ! $product->is_active || ! $product->category->is_active
-                        || $product->branchProducts->first()?->is_available === false) {
-                        throw ValidationException::withMessages(['items' => 'A product is no longer available. Refresh the catalog before trying again.']);
-                    }
-                    if ($this->catalog->resolveLoaded($product)['tracked']) {
-                        $this->inventory->execute($branch, $product, InventoryMovementType::Sale, -$quantity,
-                            'Pay Now order '.$order->order_number, $user, $order->id);
-                    }
-                }
+                $this->inventory->execute(
+                    $order,
+                    $branch,
+                    $user,
+                    InventoryMovementType::Sale,
+                    'Pay Now order '.$order->order_number,
+                );
                 $ticket = KitchenTicket::query()->create(['branch_id' => $branch->id, 'order_id' => $order->id, 'status' => KitchenStatus::Kitchen]);
                 $order->update([
                     'store_session_id' => $session->id, 'commercial_status' => CommercialStatus::Active,
@@ -140,33 +118,6 @@ class PayNowOrder
         }
     }
 
-    /** @param array<string, mixed> $data
-     * @return array<string, array{amount: string, amount_received: string|null, change_amount: string|null}>
-     */
-    private function legs(Order $order, array $data): array
-    {
-        $total = ExactMoney::cents($order->total);
-        $method = $data['payment_method'];
-        $cashless = $method === 'cashless' ? $total : ($method === 'split' ? ExactMoney::cents($data['cashless_amount']) : 0);
-        if ($method === 'split' && ($cashless <= 0 || $cashless >= $total)) {
-            throw ValidationException::withMessages(['cashless_amount' => 'Cashless amount must be greater than zero and less than the order total.']);
-        }
-        $legs = [];
-        if ($method !== 'cashless') {
-            $received = ExactMoney::cents($data['cash_received']);
-            $due = $total - $cashless;
-            if ($received < $due) {
-                throw ValidationException::withMessages(['cash_received' => 'Cash amount is insufficient. Enter at least '.ExactMoney::decimal($due).'.']);
-            }
-            $legs['cash'] = ['amount' => ExactMoney::decimal($due), 'amount_received' => ExactMoney::decimal($received), 'change_amount' => ExactMoney::decimal($received - $due)];
-        }
-        if ($method !== 'cash') {
-            $legs['cashless'] = ['amount' => ExactMoney::decimal($cashless), 'amount_received' => null, 'change_amount' => null];
-        }
-
-        return $legs;
-    }
-
     /** @param array<string, mixed> $data */
     private function replay(User $user, Branch $branch, array $data): ?Order
     {
@@ -185,7 +136,7 @@ class PayNowOrder
         if (empty($data['draft_order_id']) && ! $this->matchesCart($order, $data)) {
             abort(409, 'This payment attempt belongs to another order.');
         }
-        $legs = $this->legs($order, $data);
+        $legs = $this->paymentLegs->for($order, $data);
         if ($order->payment_status !== PaymentStatus::Paid || count($legs) !== $payments->count()) {
             abort(409, 'This payment attempt has already been used with different details.');
         }

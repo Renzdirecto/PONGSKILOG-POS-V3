@@ -1,5 +1,6 @@
 import {
     ArrowLeft,
+    Camera,
     Check,
     Clock3,
     Plus,
@@ -10,6 +11,10 @@ import {
 import { useState } from 'react';
 import { pesos } from '@/lib/pos-money';
 import { customerDisplayLabel } from '@/lib/pos-order';
+import {
+    invoiceProofDeferredLabel,
+    showsInvoiceProof,
+} from '@/lib/pos-payment-proof';
 import type { PaidReceipt } from '@/types/pos';
 
 export function PosPaid({
@@ -30,12 +35,17 @@ export function PosPaid({
     const cashless = receipt.payments.find(
         (payment) => payment.method === 'cashless',
     );
-    const method =
+    const paymentMethod =
         receipt.payments.length === 2
-            ? 'Split · Cash + Cashless'
+            ? 'split'
             : cash
-              ? 'Cash'
-              : 'Cashless';
+              ? 'cash'
+              : 'cashless';
+    const method = {
+        cash: 'Cash',
+        cashless: 'Cashless',
+        split: 'Split · Cash + Cashless',
+    }[paymentMethod];
     const customer = customerDisplayLabel(
         receipt.customer_label,
         receipt.table_name,
@@ -271,7 +281,6 @@ export function PosPaid({
                   ['Change', pesos(cash.change_amount ?? '0.00')],
               ]
             : []),
-        ...(cashless ? [['Invoice', '—']] : []),
     ];
 
     return (
@@ -324,13 +333,34 @@ export function PosPaid({
                     <Plus className="size-[18px]" />
                     New order
                 </button>
-                <button
-                    onClick={onReceipt}
-                    className="flex h-[50px] items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
-                >
-                    <ReceiptText className="size-4" />
-                    View receipt
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={onReceipt}
+                        className="flex h-[50px] min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
+                    >
+                        <ReceiptText className="size-4" />
+                        View receipt
+                    </button>
+                    {showsInvoiceProof(paymentMethod) && (
+                        <button
+                            type="button"
+                            disabled
+                            title={`Invoice proof: ${invoiceProofDeferredLabel}`}
+                            aria-label={`Invoice proof: ${invoiceProofDeferredLabel}`}
+                            className="flex h-[50px] min-w-[106px] shrink-0 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-neutral-50 px-3 text-neutral-500"
+                        >
+                            <Camera className="size-4 shrink-0" />
+                            <span className="flex flex-col items-start leading-none">
+                                <span className="text-[13px] font-semibold text-neutral-700">
+                                    Invoice
+                                </span>
+                                <span className="mt-1 text-[9px] font-medium tracking-wide uppercase">
+                                    Phase 12
+                                </span>
+                            </span>
+                        </button>
+                    )}
+                </div>
             </div>
         </>
     );

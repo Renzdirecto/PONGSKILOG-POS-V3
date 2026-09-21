@@ -19,6 +19,10 @@ import {
 import { InventoryPagination } from '@/components/inventory-ui';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
+import {
+    restoredOwnerViewMode,
+    type OwnerViewMode,
+} from '@/lib/owner-view-preference';
 import { index, store, update } from '@/routes/categories';
 import type { Category, CategoryIconKey } from '@/types/catalog';
 
@@ -32,22 +36,29 @@ type Props = {
     };
     filters: Filters;
 };
-type ViewMode = 'tile' | 'list';
-
 export default function Categories({ categories, filters }: Props) {
     const createRequested = usePage().url.includes('create=category');
     const [editing, setEditing] = useState<Category | null | undefined>(
         createRequested ? null : undefined,
     );
-    const [viewMode, setViewMode] = useState<ViewMode>(() => {
-        if (typeof window === 'undefined') return 'tile';
-        return window.localStorage.getItem('owner-categories-view') === 'list'
-            ? 'list'
-            : 'tile';
-    });
+    const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
 
     useEffect(() => {
-        window.localStorage.setItem('owner-categories-view', viewMode);
+        setViewMode(
+            restoredOwnerViewMode(
+                window.localStorage.getItem('owner-categories-view'),
+            ),
+        );
+    }, []);
+
+    useEffect(() => {
+        const storedViewMode = window.localStorage.getItem(
+            'owner-categories-view',
+        );
+
+        if (storedViewMode !== 'list' || viewMode === 'list') {
+            window.localStorage.setItem('owner-categories-view', viewMode);
+        }
     }, [viewMode]);
 
     return (

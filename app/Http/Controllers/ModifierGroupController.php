@@ -45,9 +45,9 @@ class ModifierGroupController extends Controller
     {
         DB::transaction(function () use ($request, $create, $syncOptions): void {
             $group = $create->execute($request->user(), $request->safe()->only(['name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']));
-            $options = $request->validated('options');
+            $options = $request->options();
 
-            if (is_array($options)) {
+            if ($options !== null) {
                 $syncOptions->execute($request->user(), $group, $options);
             }
         });
@@ -60,9 +60,9 @@ class ModifierGroupController extends Controller
         $wasActive = $modifierGroup->is_active;
         $modifierGroup = DB::transaction(function () use ($request, $modifierGroup, $update, $syncOptions): ModifierGroup {
             $modifierGroup = $update->execute($request->user(), $modifierGroup, $request->safe()->only(['name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']));
-            $options = $request->validated('options');
+            $options = $request->options();
 
-            if (is_array($options)) {
+            if ($options !== null) {
                 $syncOptions->execute($request->user(), $modifierGroup, $options);
             }
 
@@ -79,7 +79,10 @@ class ModifierGroupController extends Controller
             'product_ids' => ['present', 'array', 'list'],
             'product_ids.*' => ['bail', 'required', 'uuid', 'distinct', Rule::exists(Product::class, 'id')],
         ]);
-        $selectedProductIds = collect($validated['product_ids']);
+        $selectedProductIds = collect(array_values(array_filter(
+            $request->array('product_ids'),
+            is_string(...),
+        )));
         $affectedProductIds = $modifierGroup->products()->pluck('products.id')
             ->merge($selectedProductIds)
             ->unique()

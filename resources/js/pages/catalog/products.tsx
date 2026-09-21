@@ -19,6 +19,10 @@ import {
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { ProductEditorForm } from '@/components/product-editor-form';
 import { Button } from '@/components/ui/button';
+import {
+    restoredOwnerViewMode,
+    type OwnerViewMode,
+} from '@/lib/owner-view-preference';
 import { index, update } from '@/routes/products';
 import type { BranchContext } from '@/types';
 import type {
@@ -43,8 +47,6 @@ type Props = {
     filters: Filters;
 };
 
-type ViewMode = 'tile' | 'list';
-
 export default function Products({
     products,
     categories,
@@ -58,14 +60,24 @@ export default function Products({
     const [editing, setEditing] = useState<CatalogProduct | null | undefined>(
         createRequested ? null : undefined,
     );
-    const [viewMode, setViewMode] = useState<ViewMode>(() => {
-        if (typeof window === 'undefined') return 'tile';
-        return window.localStorage.getItem('owner-products-view') === 'list'
-            ? 'list'
-            : 'tile';
-    });
+    const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
+
     useEffect(() => {
-        window.localStorage.setItem('owner-products-view', viewMode);
+        setViewMode(
+            restoredOwnerViewMode(
+                window.localStorage.getItem('owner-products-view'),
+            ),
+        );
+    }, []);
+
+    useEffect(() => {
+        const storedViewMode = window.localStorage.getItem(
+            'owner-products-view',
+        );
+
+        if (storedViewMode !== 'list' || viewMode === 'list') {
+            window.localStorage.setItem('owner-products-view', viewMode);
+        }
     }, [viewMode]);
     const openEditor = (product: CatalogProduct | null) => {
         setEditing(product);

@@ -7,6 +7,8 @@ use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\ModifierGroup;
+use App\Models\ModifierOption;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
@@ -170,6 +172,41 @@ test('branch availability changes schedule only the affected branch events witho
             && $event->broadcastWith()['product_id'] === $product->id
             && $event->broadcastWith()['is_available'] === false
             && $event->broadcastWith()['effective_price'] === '99.00'))->toBeTrue();
+});
+
+test('moving an option refreshes products assigned to both Groups', function () {
+    Event::fake([ProductBranchConfigurationChanged::class]);
+    $user = realtimeUser('owner');
+    Branch::factory()->create();
+    $sourceGroup = ModifierGroup::factory()->create();
+    $destinationGroup = ModifierGroup::factory()->create();
+    $sourceProduct = Product::factory()->create();
+    $destinationProduct = Product::factory()->create();
+    $sourceProduct->modifierGroups()->attach($sourceGroup);
+    $destinationProduct->modifierGroups()->attach($destinationGroup);
+    $option = ModifierOption::factory()->for($sourceGroup)->create();
+
+    $this->actingAs($user)->put(route('modifier-options.update', $option), [
+        'modifier_group_id' => $destinationGroup->id,
+        'name' => $option->name,
+        'price_delta' => $option->price_delta,
+        'sort_order' => $option->sort_order,
+        'is_active' => $option->is_active,
+    ])->assertRedirect(route('modifier-groups.index'));
+
+    $this->assertDatabaseHas('modifier_options', [
+        'id' => $option->id,
+        'modifier_group_id' => $destinationGroup->id,
+    ]);
+    $events = collect(scheduledRealtimeEvents())->filter(
+        fn (object $event): bool => $event instanceof ProductBranchConfigurationChanged,
+    );
+
+    expect($events)->toHaveCount(2)
+        ->and($events->map(
+            fn (ProductBranchConfigurationChanged $event): string => $event->broadcastWith()['product_id'],
+        )->sort()->values()->all())
+        ->toBe(collect([$sourceProduct->id, $destinationProduct->id])->sort()->values()->all());
 });
 
 test('inventory private channels require an active authorized branch user', function (string $role, bool $assigned, bool $allowed) {

@@ -64,4 +64,16 @@ class SaveModifierGroupRequest extends FormRequest
             }
         }];
     }
+
+    /** @return list<array{id?: string|null, name: string, price_delta: string, sort_order: int, is_active: bool}>|null */
+    public function options(): ?array
+    {
+        if (! $this->has('options')) {
+            return null;
+        }
+
+        $options = $this->validated('options');
+
+        return is_array($options) ? array_values($options) : null;
+    }
 }

@@ -19,7 +19,7 @@ class SyncProductModifierGroups
 
         Validator::make(['modifier_group_ids' => $modifierGroupIds], [
             'modifier_group_ids' => ['present', 'array', 'list'],
-            'modifier_group_ids.*' => ['bail', 'required', 'uuid', 'distinct', Rule::exists(ModifierGroup::class, 'id')],
+            'modifier_group_ids.*' => ['bail', 'required', 'uuid', Rule::exists(ModifierGroup::class, 'id')],
         ])->validate();
 
         DB::transaction(function () use ($product, $modifierGroupIds): void {

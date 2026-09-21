@@ -24,7 +24,9 @@ class ModifierOptionController extends Controller
         $products = $modifierOption->modifierGroup->products()->get();
         $wasActive = $modifierOption->is_active;
         $modifierOption = $update->execute($request->user(), $modifierOption, $request->only(['modifier_group_id', 'name', 'price_delta', 'sort_order', 'is_active']));
-        $products = $products->merge($modifierOption->modifierGroup->products()->get())->unique('id');
+        $products = $products->merge(
+            $modifierOption->fresh('modifierGroup.products')->modifierGroup->products,
+        )->unique('id');
         $realtime->productsChanged($products, $wasActive !== $modifierOption->is_active);
 
         return to_route('modifier-groups.index');

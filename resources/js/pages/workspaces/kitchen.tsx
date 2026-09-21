@@ -207,10 +207,10 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                 className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto' : ''}`}
             >
                 <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
-                    <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 min-[1100px]:flex-nowrap md:px-4">
+                    <div className="flex items-center gap-2 overflow-hidden px-3 py-2.5 md:px-4">
                         <nav
                             aria-label="Kitchen status filters"
-                            className="order-1 flex w-full gap-1.5 overflow-x-auto py-px min-[1100px]:min-w-0 min-[1100px]:flex-1"
+                            className="flex min-w-0 flex-1 gap-1 overflow-x-auto py-px"
                         >
                             {TABS.map(({ key, label, icon: Icon }) => (
                                 <button
@@ -218,7 +218,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     type="button"
                                     onClick={() => setTab(key)}
                                     aria-pressed={tab === key}
-                                    className={`flex h-[42px] shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-semibold whitespace-nowrap transition ${tab === key ? tabClass(key) : 'border-[#e5e5e5] bg-white text-[#111] hover:border-[#949494]'}`}
+                                    className={`flex h-[42px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-semibold whitespace-nowrap transition ${tab === key ? tabClass(key) : 'border-[#e5e5e5] bg-white text-[#111] hover:border-[#949494]'}`}
                                 >
                                     <Icon className="size-3.5" />
                                     {label}
@@ -230,8 +230,8 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                 </button>
                             ))}
                         </nav>
-                        {!fullscreen && (
-                            <label className="relative order-2 min-w-0 flex-1 min-[1100px]:w-[220px] min-[1100px]:flex-none min-[1280px]:w-[260px]">
+                        {!fullscreen ? (
+                            <label className="relative w-[180px] shrink-0 min-[1280px]:w-[240px]">
                                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
                                 <span className="sr-only">Search orders</span>
                                 <input
@@ -243,11 +243,15 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     className="h-[42px] w-full rounded-[10px] border border-[#e5e5e5] bg-[#f7f7f7] pr-3 pl-9 text-sm outline-none focus:border-neutral-500"
                                 />
                             </label>
+                        ) : (
+                            <p className="shrink-0 px-2 text-[11px] font-black tracking-[0.16em] whitespace-nowrap text-neutral-800">
+                                KITCHEN DISPLAY
+                            </p>
                         )}
                         <button
                             type="button"
                             onClick={toggleFullscreen}
-                            className="order-3 inline-flex h-[42px] items-center gap-2 rounded-[10px] bg-[#111] px-3 text-[12.5px] font-semibold text-white transition hover:bg-neutral-800 min-[520px]:px-4"
+                            className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[10px] bg-[#111] px-3 text-[12.5px] font-semibold text-white transition hover:bg-neutral-800 min-[520px]:px-4"
                         >
                             {fullscreen ? (
                                 <Shrink className="size-4" />
@@ -341,12 +345,20 @@ function TicketCard({
             className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
             <header
-                className={`flex items-center justify-between gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
+                className={`flex items-center gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
             >
-                <p className="flex min-w-0 items-center gap-1 truncate text-sm font-black tracking-tight">
+                <p className="mr-auto flex min-w-0 items-center gap-1 truncate text-sm font-black tracking-tight">
                     <span>#{ticket.number}</span>
                     <span className="text-red-700">
                         {ticket.customer || 'Walk-in'}
+                    </span>
+                </p>
+                <p className="shrink-0 text-[9px] font-bold whitespace-nowrap tabular-nums">
+                    <span className="text-neutral-500">
+                        {placedTimeLabel(ticket.placed_at)} ·{' '}
+                    </span>
+                    <span className="text-red-700">
+                        {relativePlacedTime(ticket.placed_at, now)}
                     </span>
                 </p>
                 <span
@@ -384,13 +396,6 @@ function TicketCard({
                         </div>
                     </div>
                 ))}
-            </div>
-            <div className="flex items-center justify-between border-t border-neutral-100 bg-neutral-50 px-3 py-2 text-[9px] font-black tracking-[0.14em] text-neutral-400 uppercase">
-                <span>Status</span>
-                <span className="tracking-normal text-red-700 normal-case tabular-nums">
-                    {placedTimeLabel(ticket.placed_at)} ·{' '}
-                    {relativePlacedTime(ticket.placed_at, now)}
-                </span>
             </div>
             <div className="grid grid-cols-4 gap-1 border-t border-neutral-100 bg-neutral-50 p-2">
                 {STATUSES.map((status) => {

@@ -143,6 +143,30 @@ test('KDS audio is local, transition-confirmed, and does not label structured in
     }
 });
 
+test('KDS renders one-row controls and split ticket timing', () => {
+    const kitchenPage = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(
+        kitchenPage,
+        /flex items-center gap-2 overflow-hidden[\s\S]*!fullscreen \? \([\s\S]*Search orders[\s\S]*KITCHEN DISPLAY/,
+    );
+    assert.match(
+        kitchenPage,
+        /text-neutral-500[\s\S]*placedTimeLabel\(ticket\.placed_at\)/,
+    );
+    assert.match(
+        kitchenPage,
+        /text-red-700[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
+    );
+    assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
+});
+
 test('Vite keeps hot assets and generated development font URLs on one fixed server', () => {
     const viteConfig = readFileSync(
         new URL('../vite.config.ts', import.meta.url),

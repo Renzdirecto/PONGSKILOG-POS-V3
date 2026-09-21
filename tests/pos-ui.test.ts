@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
     invoiceProofDeferredLabel,
@@ -14,6 +15,21 @@ import {
     POS_CATALOG_REALTIME_EVENTS,
     shouldRefetchCatalogAfterConnectionChange,
 } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+test('POS product images cover card media while detail images remain contained', () => {
+    const productMedia = readFileSync(
+        new URL(
+            '../resources/js/components/pos-product-media.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(
+        productMedia,
+        /detail \? 'object-contain' : 'object-cover'/,
+    );
+});
 
 test('Store Session detail rows render persisted opening money and Manila time', () => {
     assert.deepEqual(openStoreSessionDialogState(), {

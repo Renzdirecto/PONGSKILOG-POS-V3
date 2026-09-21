@@ -1,5 +1,5 @@
 import { useForm, usePage } from '@inertiajs/react';
-import { Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Check, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -18,21 +18,21 @@ import {
 import { ownerPanelClass } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
 import { store, update } from '@/routes/modifier-groups';
-import {
-    store as storeOption,
-    update as updateOption,
-} from '@/routes/modifier-options';
-import type { ModifierGroup, ModifierOption } from '@/types/catalog';
+import { update as updateGroupProducts } from '@/routes/modifier-groups/products';
+import type { CatalogChoice, ModifierGroup } from '@/types/catalog';
 
-export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
+export default function Modifiers({
+    groups,
+    products,
+}: {
+    groups: ModifierGroup[];
+    products: CatalogChoice[];
+}) {
     const createRequested = usePage().url.includes('create=group');
     const [editing, setEditing] = useState<ModifierGroup | null | undefined>(
         createRequested ? null : undefined,
     );
-    const [optionEditor, setOptionEditor] = useState<{
-        group: ModifierGroup;
-        option: ModifierOption | null;
-    } | null>(null);
+    const [assigning, setAssigning] = useState<ModifierGroup | null>(null);
     return (
         <CatalogPage
             tab="Groups"
@@ -67,24 +67,6 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                                     ? 'Instructions · Optional, multiple choices · Price-neutral'
                                     : `${group.semantic_role === 'size' ? 'Size' : 'Standard options'} · ${group.selection_type === 'single' ? 'One choice' : 'Multiple choices'} · Select ${group.min_select}–${group.max_select}`}
                             </p>
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="outline"
-                                    className={actionClass}
-                                    onClick={() => setEditing(group)}
-                                >
-                                    Edit group
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    className={actionClass}
-                                    onClick={() =>
-                                        setOptionEditor({ group, option: null })
-                                    }
-                                >
-                                    Add option
-                                </Button>
-                            </div>
                             {group.options.length === 0 ? (
                                 <p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500">
                                     No options in this group.
@@ -108,26 +90,26 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                                                 </p>
                                             </div>
                                             <Status active={option.is_active} />
-                                            <Button
-                                                variant="outline"
-                                                className={actionClass}
-                                                onClick={() =>
-                                                    setOptionEditor({
-                                                        group,
-                                                        option,
-                                                    })
-                                                }
-                                            >
-                                                Edit
-                                                <span className="sr-only">
-                                                    {' '}
-                                                    {option.name}
-                                                </span>
-                                            </Button>
                                         </li>
                                     ))}
                                 </ul>
                             )}
+                            <div className="grid grid-cols-2 gap-2">
+                                <Button
+                                    variant="outline"
+                                    className={`${actionClass} w-full`}
+                                    onClick={() => setEditing(group)}
+                                >
+                                    Edit
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className={`${actionClass} w-full`}
+                                    onClick={() => setAssigning(group)}
+                                >
+                                    Assign
+                                </Button>
+                            </div>
                         </section>
                     ))}
                 </div>
@@ -147,16 +129,17 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                 )}
             </CatalogDialog>
             <CatalogDialog
-                open={optionEditor !== null}
-                onClose={() => setOptionEditor(null)}
-                title={optionEditor?.option ? 'Edit option' : 'Add option'}
-                description={`Options for ${optionEditor?.group.name ?? 'this group'}.`}
+                open={assigning !== null}
+                onClose={() => setAssigning(null)}
+                title={`Assign ${assigning?.name ?? 'Group'}`}
+                description="Choose the Products that should use this reusable Group."
             >
-                {optionEditor && (
-                    <OptionForm
-                        key={optionEditor.option?.id ?? optionEditor.group.id}
-                        {...optionEditor}
-                        onSaved={() => setOptionEditor(null)}
+                {assigning && (
+                    <AssignGroupForm
+                        key={assigning.id}
+                        group={assigning}
+                        products={products}
+                        onSaved={() => setAssigning(null)}
                     />
                 )}
             </CatalogDialog>
@@ -503,26 +486,18 @@ function GroupForm({
     );
 }
 
-function OptionForm({
+function AssignGroupForm({
     group,
-    option,
+    products,
     onSaved,
 }: {
     group: ModifierGroup;
-    option: ModifierOption | null;
+    products: CatalogChoice[];
     onSaved: () => void;
 }) {
-    const form = useForm({
-        modifier_group_id: group.id,
-        name: option?.name ?? '',
-        price_delta:
-            group.semantic_role === 'instruction'
-                ? '0.00'
-                : (option?.price_delta ?? '0.00'),
-        sort_order: String(option?.sort_order ?? 0),
-        is_active: option?.is_active ?? true,
-    });
+    const form = useForm({ product_ids: group.product_ids ?? [] });
     const submitting = useRef(false);
+
     return (
         <form
             className="flex flex-col gap-4"
@@ -531,17 +506,10 @@ function OptionForm({
                 event.preventDefault();
                 if (submitting.current) return;
                 submitting.current = true;
-                form.transform((data) => ({
-                    ...data,
-                    price_delta:
-                        group.semantic_role === 'instruction'
-                            ? '0.00'
-                            : data.price_delta,
-                }));
-                form.submit(option ? updateOption(option.id) : storeOption(), {
+                form.submit(updateGroupProducts(group.id), {
                     preserveScroll: true,
                     onSuccess: () => {
-                        toast.success('Option saved');
+                        toast.success('Group assignments saved');
                         onSaved();
                     },
                     onFinish: () => {
@@ -552,47 +520,62 @@ function OptionForm({
         >
             <fieldset
                 disabled={form.processing}
-                className="flex flex-col gap-4"
+                className="grid max-h-[50dvh] gap-2 overflow-y-auto sm:grid-cols-2"
             >
-                <TextField
-                    id="option-name"
-                    label="Name"
-                    value={form.data.name}
-                    onChange={(value) => form.setData('name', value)}
-                    error={form.errors.name}
-                />
-                {group.semantic_role === 'instruction' ? (
-                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                        Instruction options are fixed at ₱0.00 and do not
-                        affect order totals.
-                    </p>
-                ) : (
-                    <TextField
-                        id="option-price"
-                        label="Additional price (₱)"
-                        value={form.data.price_delta}
-                        onChange={(value) => form.setData('price_delta', value)}
-                        error={form.errors.price_delta}
-                    />
-                )}
-                <TextField
-                    id="option-sort"
-                    label="Sort order"
-                    type="number"
-                    value={form.data.sort_order}
-                    onChange={(value) => form.setData('sort_order', value)}
-                    error={form.errors.sort_order}
-                />
-                <ActiveField
-                    value={form.data.is_active}
-                    onChange={(value) => form.setData('is_active', value)}
-                />
+                {products.map((product) => {
+                    const selected = form.data.product_ids.includes(product.id);
+
+                    return (
+                        <label
+                            key={product.id}
+                            className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3 ${selected ? 'border-neutral-950 bg-neutral-50' : 'border-neutral-200 bg-white'}`}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={selected}
+                                className="size-5 shrink-0 accent-neutral-950"
+                                onChange={() =>
+                                    form.setData(
+                                        'product_ids',
+                                        selected
+                                            ? form.data.product_ids.filter(
+                                                  (id) => id !== product.id,
+                                              )
+                                            : [
+                                                  ...form.data.product_ids,
+                                                  product.id,
+                                              ],
+                                    )
+                                }
+                            />
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] font-semibold break-words">
+                                    {product.name}
+                                </span>
+                                {!product.is_active && (
+                                    <span className="block text-[11px] text-neutral-500">
+                                        Inactive
+                                    </span>
+                                )}
+                            </span>
+                        </label>
+                    );
+                })}
             </fieldset>
+            {products.length === 0 && (
+                <p className="rounded-xl border border-dashed border-neutral-300 p-5 text-center text-sm text-neutral-500">
+                    No Products are available to assign.
+                </p>
+            )}
             <FormErrors errors={form.errors} />
-            <SaveButton
-                processing={form.processing}
-                label={option ? 'Save changes' : 'Add option'}
-            />
+            <Button
+                type="submit"
+                disabled={form.processing}
+                className="min-h-12 rounded-xl bg-neutral-950 font-bold text-white hover:bg-neutral-800"
+            >
+                <Check className="size-4" />
+                {form.processing ? 'Saving…' : 'Save assignment'}
+            </Button>
         </form>
     );
 }

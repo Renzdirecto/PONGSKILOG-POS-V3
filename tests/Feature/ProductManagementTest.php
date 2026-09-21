@@ -481,6 +481,62 @@ test('group management creates edits and deactivates groups and options', functi
     $this->assertDatabaseCount('modifier_options', 1);
 });
 
+test('group assignments select multiple products and preserve their other groups', function () {
+    $user = catalogWebManager();
+    $group = ModifierGroup::factory()->create(['name' => 'Instructions']);
+    $otherGroup = ModifierGroup::factory()->create(['name' => 'Sizes']);
+    $products = Product::factory()->count(3)->create();
+
+    $products[0]->modifierGroups()->attach([$group->id, $otherGroup->id]);
+    $products[2]->modifierGroups()->attach($otherGroup);
+
+    $this->actingAs($user)->put(route('modifier-groups.products.update', $group), [
+        'product_ids' => [$products[1]->id, $products[2]->id],
+    ])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
+
+    $this->assertDatabaseMissing('product_modifier_groups', [
+        'product_id' => $products[0]->id,
+        'modifier_group_id' => $group->id,
+    ]);
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $products[0]->id,
+        'modifier_group_id' => $otherGroup->id,
+    ]);
+    foreach ([$products[1], $products[2]] as $product) {
+        $this->assertDatabaseHas('product_modifier_groups', [
+            'product_id' => $product->id,
+            'modifier_group_id' => $group->id,
+        ]);
+    }
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $products[2]->id,
+        'modifier_group_id' => $otherGroup->id,
+    ]);
+    $this->assertDatabaseCount('modifier_groups', 2);
+    $this->get(route('modifier-groups.index'))->assertInertia(fn (Assert $page) => $page
+        ->component('catalog/modifiers')
+        ->has('products', 3)
+        ->where('groups.0.name', 'Instructions')
+        ->has('groups.0.product_ids', 2));
+});
+
+test('group assignment rejects duplicate products without changing assignments', function () {
+    $user = catalogWebManager();
+    $group = ModifierGroup::factory()->create();
+    $product = Product::factory()->create();
+    $product->modifierGroups()->attach($group);
+
+    $this->actingAs($user)->put(route('modifier-groups.products.update', $group), [
+        'product_ids' => [$product->id, $product->id],
+    ])->assertSessionHasErrors('product_ids.1');
+
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $product->id,
+        'modifier_group_id' => $group->id,
+    ]);
+    $this->assertDatabaseCount('product_modifier_groups', 1);
+});
+
 test('group management saves option rows with the group and removes omitted options', function () {
     $user = catalogWebManager();
 
@@ -694,6 +750,7 @@ test('catalog endpoints require active authentication and catalog permission', f
         ['get', 'products.index', []], ['post', 'products.store', []], ['put', 'products.update', $product],
         ['get', 'categories.index', []], ['post', 'categories.store', []], ['put', 'categories.update', $product->category],
         ['get', 'modifier-groups.index', []], ['post', 'modifier-groups.store', []], ['put', 'modifier-groups.update', $group],
+        ['put', 'modifier-groups.products.update', $group],
         ['post', 'modifier-options.store', []], ['put', 'modifier-options.update', $option],
         ['post', 'products.image.store', $product], ['delete', 'products.image.destroy', $product],
         ['put', 'products.branches.update', [$product, $branch]],

@@ -41,6 +41,7 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('can:products.manage')->group(function () {
         Route::resource('products', ProductController::class)->only(['index', 'store', 'update']);
         Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);
+        Route::put('modifier-groups/{modifierGroup}/products', [ModifierGroupController::class, 'updateProducts'])->name('modifier-groups.products.update');
         Route::resource('modifier-groups', ModifierGroupController::class)->only(['index', 'store', 'update']);
         Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
         Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:20,1')->name('products.image.store');

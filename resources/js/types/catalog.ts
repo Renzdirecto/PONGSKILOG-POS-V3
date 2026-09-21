@@ -67,6 +67,7 @@ export type ModifierGroup = CatalogChoice & {
     min_select: number;
     max_select: number;
     options: ModifierOption[];
+    product_ids?: string[];
 };
 export type BranchConfiguration = Pick<BranchPrice, 'branch_id' | 'code' | 'name'>;
 export type BranchPrice = {

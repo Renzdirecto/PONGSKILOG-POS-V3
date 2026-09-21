@@ -1,5 +1,5 @@
 import { useForm, usePage } from '@inertiajs/react';
-import { SlidersHorizontal } from 'lucide-react';
+import { Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -164,6 +164,15 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
     );
 }
 
+type GroupOptionInput = {
+    id: string | null;
+    client_key: string;
+    name: string;
+    price_delta: string;
+    sort_order: number;
+    is_active: boolean;
+};
+
 function GroupForm({
     group,
     onSaved,
@@ -171,15 +180,44 @@ function GroupForm({
     group: ModifierGroup | null;
     onSaved: () => void;
 }) {
-    const form = useForm({
+    const form = useForm<{
+        name: string;
+        semantic_role: 'size' | 'instruction' | null;
+        selection_type: 'single' | 'multiple';
+        min_select: string;
+        max_select: string;
+        is_active: boolean;
+        options: GroupOptionInput[];
+    }>({
         name: group?.name ?? '',
         semantic_role: group?.semantic_role ?? null,
         selection_type: group?.selection_type ?? 'single',
         min_select: String(group?.min_select ?? 0),
         max_select: String(group?.max_select ?? 1),
         is_active: group?.is_active ?? true,
+        options:
+            group?.options.map((option) => ({
+                id: option.id,
+                client_key: option.id,
+                name: option.name,
+                price_delta: option.price_delta,
+                sort_order: option.sort_order,
+                is_active: option.is_active,
+            })) ?? [],
     });
     const submitting = useRef(false);
+    const updateOption = (
+        index: number,
+        option: (typeof form.data.options)[number],
+    ) => {
+        form.setData(
+            'options',
+            form.data.options.map((item, itemIndex) =>
+                itemIndex === index ? option : item,
+            ),
+        );
+    };
+
     return (
         <form
             className="flex flex-col gap-4"
@@ -188,6 +226,17 @@ function GroupForm({
                 event.preventDefault();
                 if (submitting.current) return;
                 submitting.current = true;
+                form.transform((data) => ({
+                    ...data,
+                    options: data.options.map((option, index) => ({
+                        ...option,
+                        price_delta:
+                            data.semantic_role === 'instruction'
+                                ? '0.00'
+                                : option.price_delta,
+                        sort_order: index,
+                    })),
+                }));
                 form.submit(group ? update(group.id) : store(), {
                     preserveScroll: true,
                     onSuccess: () => {
@@ -204,20 +253,20 @@ function GroupForm({
                 disabled={form.processing}
                 className="flex flex-col gap-4"
             >
-                <TextField
-                    id="group-name"
-                    label="Name"
-                    value={form.data.name}
-                    onChange={(value) => form.setData('name', value)}
-                    error={form.errors.name}
-                />
-                <Field
-                    id="group-semantic-role"
-                    label="Behavior"
-                    error={form.errors.semantic_role}
-                >
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_150px]">
+                    <input
+                        id="group-name"
+                        aria-label="Group title"
+                        placeholder="Group title"
+                        className={controlClass}
+                        value={form.data.name}
+                        onChange={(event) =>
+                            form.setData('name', event.target.value)
+                        }
+                    />
                     <select
                         id="group-semantic-role"
+                        aria-label="Group behavior"
                         className={controlClass}
                         value={form.data.semantic_role ?? ''}
                         onChange={(event) => {
@@ -230,6 +279,13 @@ function GroupForm({
                             form.setData((data) => ({
                                 ...data,
                                 semantic_role: role,
+                                options:
+                                    role === 'instruction'
+                                        ? data.options.map((option) => ({
+                                              ...option,
+                                              price_delta: '0.00',
+                                          }))
+                                        : data.options,
                                 ...(role === 'instruction'
                                     ? {
                                           selection_type: 'multiple',
@@ -249,14 +305,9 @@ function GroupForm({
                         <option value="size">Size</option>
                         <option value="instruction">Instructions</option>
                     </select>
-                </Field>
-                <Field
-                    id="group-selection"
-                    label="Selection type"
-                    error={form.errors.selection_type}
-                >
                     <select
                         id="group-selection"
+                        aria-label="Group selection type"
                         className={controlClass}
                         value={form.data.selection_type}
                         disabled={form.data.semantic_role === 'instruction'}
@@ -264,25 +315,32 @@ function GroupForm({
                             const type = event.target.value as
                                 | 'single'
                                 | 'multiple';
-                            form.setData('selection_type', type);
-                            if (type === 'single') {
-                                form.setData('max_select', '1');
-                                form.setData(
-                                    'min_select',
-                                    String(
-                                        Math.min(
-                                            Number(form.data.min_select),
-                                            1,
-                                        ),
-                                    ),
-                                );
-                            }
+                            form.setData((data) => ({
+                                ...data,
+                                selection_type: type,
+                                max_select:
+                                    type === 'single'
+                                        ? '1'
+                                        : data.max_select,
+                                min_select:
+                                    type === 'single'
+                                        ? String(
+                                              Math.min(
+                                                  Number(data.min_select),
+                                                  1,
+                                              ),
+                                          )
+                                        : data.min_select,
+                            }));
                         }}
                     >
                         <option value="single">One choice</option>
                         <option value="multiple">Multiple choices</option>
                     </select>
-                </Field>
+                </div>
+                {form.errors.name && (
+                    <p className="text-xs text-red-700">{form.errors.name}</p>
+                )}
                 {form.data.semantic_role === 'instruction' && (
                     <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                         Instructions are optional preparation choices. They
@@ -290,7 +348,7 @@ function GroupForm({
                         name or price.
                     </p>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {form.data.semantic_role === 'instruction' ? (
                         <Field
                             id="group-min"
@@ -324,11 +382,117 @@ function GroupForm({
                         onChange={(value) => form.setData('max_select', value)}
                         error={form.errors.max_select}
                     />
+                    <div className="col-span-2 space-y-2 sm:col-span-1">
+                        <span className="text-[11px] font-semibold tracking-[0.06em] text-[#777] uppercase">
+                            Status
+                        </span>
+                        <ActiveField
+                            value={form.data.is_active}
+                            onChange={(value) =>
+                                form.setData('is_active', value)
+                            }
+                        />
+                    </div>
                 </div>
-                <ActiveField
-                    value={form.data.is_active}
-                    onChange={(value) => form.setData('is_active', value)}
-                />
+                <div className="space-y-2">
+                    {form.data.options.map((option, index) => (
+                        <div
+                            key={option.client_key}
+                            className="grid grid-cols-[minmax(0,1fr)_64px_44px] gap-2 rounded-xl border border-[#eeeeee] p-2 sm:grid-cols-[minmax(0,1fr)_112px_64px_44px] sm:border-0 sm:p-0"
+                        >
+                            <input
+                                aria-label={`Option ${index + 1} name`}
+                                placeholder="Option name"
+                                className={`${controlClass} col-span-3 sm:col-span-1`}
+                                value={option.name}
+                                onChange={(event) =>
+                                    updateOption(index, {
+                                        ...option,
+                                        name: event.target.value,
+                                    })
+                                }
+                            />
+                            {form.data.semantic_role === 'instruction' ? (
+                                <div
+                                    className={`${controlClass} flex items-center text-xs font-semibold text-neutral-500`}
+                                >
+                                    ₱0.00 fixed
+                                </div>
+                            ) : (
+                                <div className="relative">
+                                    <span className="absolute top-1/2 left-3 -translate-y-1/2 text-xs text-neutral-500">
+                                        ₱
+                                    </span>
+                                    <input
+                                        aria-label={`Option ${index + 1} price adjustment`}
+                                        className={`${controlClass} pl-7`}
+                                        value={option.price_delta}
+                                        onChange={(event) =>
+                                            updateOption(index, {
+                                                ...option,
+                                                price_delta:
+                                                    event.target.value,
+                                            })
+                                        }
+                                    />
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                className={`min-h-11 rounded-xl border text-xs font-bold ${option.is_active ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-300 bg-white text-neutral-500'}`}
+                                onClick={() =>
+                                    updateOption(index, {
+                                        ...option,
+                                        is_active: !option.is_active,
+                                    })
+                                }
+                            >
+                                {option.is_active ? 'On' : 'Off'}
+                            </button>
+                            <button
+                                type="button"
+                                aria-label={`Remove option ${index + 1}`}
+                                className="flex size-11 items-center justify-center rounded-xl border border-red-200 bg-white text-red-700"
+                                onClick={() =>
+                                    form.setData(
+                                        'options',
+                                        form.data.options.filter(
+                                            (_, optionIndex) =>
+                                                optionIndex !== index,
+                                        ),
+                                    )
+                                }
+                            >
+                                <Trash2 className="size-4" />
+                            </button>
+                            {form.errors[`options.${index}.name`] && (
+                                <p className="col-span-full text-xs text-red-700">
+                                    {form.errors[`options.${index}.name`]}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className={`${actionClass} w-full border-dashed`}
+                        onClick={() =>
+                            form.setData('options', [
+                                ...form.data.options,
+                                {
+                                    id: null,
+                                    client_key: crypto.randomUUID(),
+                                    name: '',
+                                    price_delta: '0.00',
+                                    sort_order: form.data.options.length,
+                                    is_active: true,
+                                },
+                            ])
+                        }
+                    >
+                        <Plus className="size-4" /> Add option
+                    </Button>
+                </div>
             </fieldset>
             <FormErrors errors={form.errors} />
             <SaveButton

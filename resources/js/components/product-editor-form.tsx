@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { Check, ImageIcon, Plus, Trash2 } from 'lucide-react';
+import { Check, ImageIcon, Layers3, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -120,13 +120,11 @@ export function ProductEditorForm({
     const [activeSection, setActiveSection] = useState<'product' | 'branch'>(
         'product',
     );
-    const [groupToAttach, setGroupToAttach] = useState('');
+    const [assigningGroups, setAssigningGroups] = useState(false);
+    const [groupAssignment, setGroupAssignment] = useState<string[]>([]);
     const [imageRemoved, setImageRemoved] = useState(false);
     const attachedGroups = groups.filter((group) =>
         form.data.modifier_group_ids.includes(group.id),
-    );
-    const unattachedGroups = groups.filter(
-        (group) => !form.data.modifier_group_ids.includes(group.id),
     );
     const singleBranch = branches.length === 1;
     const busy = form.processing || removal.processing;
@@ -348,7 +346,7 @@ export function ProductEditorForm({
 
                         {activeSection === 'product' && (
                             <section className="space-y-3 border-t border-neutral-200 pt-4">
-                                <div className="flex items-start justify-between gap-3">
+                                <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
                                     <div>
                                         <h3 className="text-sm font-bold">
                                             Options
@@ -358,68 +356,55 @@ export function ProductEditorForm({
                                             when this product is ordered.
                                         </p>
                                     </div>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className={actionClass}
-                                        onClick={() =>
-                                            form.setData('inline_groups', [
-                                                ...form.data.inline_groups,
-                                                newGroup(),
-                                            ])
-                                        }
-                                    >
-                                        <Plus className="size-4" /> Add group
-                                    </Button>
-                                </div>
-
-                                {unattachedGroups.length > 0 && (
-                                    <div className="flex gap-2">
-                                        <select
-                                            aria-label="Reusable Group"
-                                            className={controlClass}
-                                            value={groupToAttach}
-                                            onChange={(event) =>
-                                                setGroupToAttach(
-                                                    event.target.value,
-                                                )
-                                            }
-                                        >
-                                            <option value="">
-                                                Attach an existing Group…
-                                            </option>
-                                            {unattachedGroups.map((group) => (
-                                                <option
-                                                    key={group.id}
-                                                    value={group.id}
-                                                >
-                                                    {group.name}
-                                                    {!group.is_active
-                                                        ? ' (inactive)'
-                                                        : ''}
-                                                </option>
-                                            ))}
-                                        </select>
+                                    <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:justify-end">
                                         <Button
                                             type="button"
                                             variant="outline"
-                                            className={actionClass}
-                                            disabled={!groupToAttach}
+                                            className={`${actionClass} min-w-0 px-2`}
+                                            disabled={groups.length === 0}
                                             onClick={() => {
-                                                form.setData(
-                                                    'modifier_group_ids',
-                                                    [
-                                                        ...form.data
-                                                            .modifier_group_ids,
-                                                        groupToAttach,
-                                                    ],
-                                                );
-                                                setGroupToAttach('');
+                                                setGroupAssignment([
+                                                    ...form.data
+                                                        .modifier_group_ids,
+                                                ]);
+                                                setAssigningGroups(true);
                                             }}
                                         >
-                                            <Check className="size-4" /> Attach
+                                            <Layers3 className="size-4" />
+                                            Assign Group
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            className={`${actionClass} min-w-0 px-2`}
+                                            onClick={() =>
+                                                form.setData('inline_groups', [
+                                                    ...form.data.inline_groups,
+                                                    newGroup(),
+                                                ])
+                                            }
+                                        >
+                                            <Plus className="size-4" /> Add group
                                         </Button>
                                     </div>
+                                </div>
+
+                                {assigningGroups && (
+                                    <AssignGroupPicker
+                                        groups={groups}
+                                        selectedIds={groupAssignment}
+                                        onChange={setGroupAssignment}
+                                        onCancel={() =>
+                                            setAssigningGroups(false)
+                                        }
+                                        onAssign={() => {
+                                            form.setData(
+                                                'modifier_group_ids',
+                                                [...new Set(groupAssignment)],
+                                            );
+                                            setAssigningGroups(false);
+                                        }}
+                                    />
                                 )}
 
                                 {attachedGroups.map((group) => (
@@ -726,6 +711,87 @@ function BranchEditor({
                 </p>
             )}
         </div>
+    );
+}
+
+function AssignGroupPicker({
+    groups,
+    selectedIds,
+    onChange,
+    onCancel,
+    onAssign,
+}: {
+    groups: ModifierGroup[];
+    selectedIds: string[];
+    onChange: (ids: string[]) => void;
+    onCancel: () => void;
+    onAssign: () => void;
+}) {
+    return (
+        <section className="space-y-3 rounded-xl border border-neutral-300 bg-neutral-50 p-3">
+            <div>
+                <h4 className="text-[13px] font-bold">
+                    Assign existing Groups
+                </h4>
+                <p className="text-[11.5px] text-neutral-500">
+                    Select every reusable Group this Product should offer.
+                </p>
+            </div>
+            <div className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2">
+                {groups.map((group) => {
+                    const selected = selectedIds.includes(group.id);
+
+                    return (
+                        <label
+                            key={group.id}
+                            className={`flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border bg-white p-3 ${selected ? 'border-neutral-950' : 'border-neutral-200'}`}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={selected}
+                                className="mt-0.5 size-5 shrink-0 accent-neutral-950"
+                                onChange={() =>
+                                    onChange(
+                                        selected
+                                            ? selectedIds.filter(
+                                                  (id) => id !== group.id,
+                                              )
+                                            : [...selectedIds, group.id],
+                                    )
+                                }
+                            />
+                            <span className="min-w-0">
+                                <span className="block text-[12.5px] font-semibold break-words">
+                                    {group.name}
+                                </span>
+                                <span className="block text-[11px] text-neutral-500">
+                                    {group.options.length} option
+                                    {group.options.length === 1 ? '' : 's'}
+                                    {!group.is_active ? ' · Inactive' : ''}
+                                </span>
+                            </span>
+                        </label>
+                    );
+                })}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                    type="button"
+                    variant="outline"
+                    className={actionClass}
+                    onClick={onCancel}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    type="button"
+                    className="min-h-11 rounded-xl bg-neutral-950 font-bold text-white hover:bg-neutral-800"
+                    onClick={onAssign}
+                >
+                    <Check className="size-4" /> Assign selected
+                </Button>
+            </div>
+        </section>
     );
 }
 

@@ -98,6 +98,29 @@ test('products can create and attach inline groups options and allowed branch co
     ]);
 });
 
+test('products assign multiple reusable groups without duplicate pivots and can unassign them', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $groups = ModifierGroup::factory()->count(3)->create();
+
+    $this->actingAs($user)->post(route('products.store'), catalogProductInput($category, [
+        'modifier_group_ids' => [$groups[0]->id, $groups[1]->id],
+    ]))->assertSessionHasNoErrors();
+
+    $product = Product::query()->sole();
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())
+        ->toEqualCanonicalizing([$groups[0]->id, $groups[1]->id]);
+    $this->assertDatabaseCount('product_modifier_groups', 2);
+
+    $this->put(route('products.update', $product), catalogProductInput($category, [
+        'modifier_group_ids' => [$groups[1]->id, $groups[2]->id],
+    ]))->assertSessionHasNoErrors();
+
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())
+        ->toEqualCanonicalizing([$groups[1]->id, $groups[2]->id]);
+    $this->assertDatabaseCount('product_modifier_groups', 2);
+});
+
 test('the unified product editor updates its allowed branch configuration and image', function () {
     $user = catalogWebManager();
     $branch = Branch::factory()->create(['code' => 'MAIN']);
@@ -456,6 +479,51 @@ test('group management creates edits and deactivates groups and options', functi
     $this->post(route('modifier-options.store'), ['modifier_group_id' => Str::uuid()->toString(), 'name' => 'Bad', 'price_delta' => '-1.00', 'sort_order' => 0, 'is_active' => true])->assertSessionHasErrors(['modifier_group_id', 'price_delta']);
     $this->assertDatabaseCount('modifier_groups', 1);
     $this->assertDatabaseCount('modifier_options', 1);
+});
+
+test('group management saves option rows with the group and removes omitted options', function () {
+    $user = catalogWebManager();
+
+    $this->actingAs($user)->post(route('modifier-groups.store'), [
+        'name' => 'Rice',
+        'semantic_role' => null,
+        'selection_type' => 'single',
+        'min_select' => 0,
+        'max_select' => 1,
+        'is_active' => true,
+        'options' => [
+            ['id' => null, 'name' => 'Plain', 'price_delta' => '0.00', 'sort_order' => 0, 'is_active' => true],
+            ['id' => null, 'name' => 'Garlic', 'price_delta' => '15.00', 'sort_order' => 1, 'is_active' => true],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->with('options')->sole();
+    expect($group->options)->toHaveCount(2);
+    $plain = $group->options->firstWhere('name', 'Plain');
+    $garlic = $group->options->firstWhere('name', 'Garlic');
+
+    $this->put(route('modifier-groups.update', $group), [
+        'name' => 'Rice options',
+        'semantic_role' => null,
+        'selection_type' => 'multiple',
+        'min_select' => 0,
+        'max_select' => 2,
+        'is_active' => true,
+        'options' => [
+            ['id' => $garlic->id, 'name' => 'Garlic rice', 'price_delta' => '20.00', 'sort_order' => 0, 'is_active' => false],
+            ['id' => null, 'name' => 'Java rice', 'price_delta' => '25.00', 'sort_order' => 1, 'is_active' => true],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    expect($group->refresh()->name)->toBe('Rice options')
+        ->and($group->options()->orderBy('sort_order')->pluck('name')->all())
+        ->toBe(['Garlic rice', 'Java rice']);
+    $this->assertDatabaseMissing('modifier_options', ['id' => $plain->id]);
+    $this->assertDatabaseHas('modifier_options', [
+        'id' => $garlic->id,
+        'price_delta' => 20,
+        'is_active' => false,
+    ]);
 });
 
 test('instruction groups persist semantic defaults and reject priced options', function () {

@@ -167,14 +167,10 @@ export function PosPaid({
                                         </p>
                                         <PosModifierDetails
                                             modifiers={item.modifiers}
+                                            notes={item.notes}
                                             standardClassName="pl-3 text-[10.5px] wrap-anywhere text-neutral-500"
                                             instructionClassName="pl-3 text-[10.5px] wrap-anywhere text-amber-800"
                                         />
-                                        {item.notes && (
-                                            <p className="pl-3 text-[10.5px] wrap-anywhere whitespace-pre-wrap text-amber-800">
-                                                Note: {item.notes}
-                                            </p>
-                                        )}
                                     </div>
                                     <p className="shrink-0 font-semibold">
                                         {pesos(item.line_total)}

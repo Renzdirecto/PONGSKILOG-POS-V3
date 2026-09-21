@@ -62,14 +62,10 @@ export default function Summary({ order }: { order: OrderSummary }) {
                             </p>
                             <PosModifierDetails
                                 modifiers={item.modifiers}
+                                notes={item.notes}
                                 standardClassName="text-xs wrap-anywhere text-neutral-600"
                                 instructionClassName="text-xs wrap-anywhere text-amber-800"
                             />
-                            {item.notes && (
-                                <p className="rounded-lg bg-orange-50 p-2 text-sm wrap-anywhere whitespace-pre-wrap text-orange-900">
-                                    {item.notes}
-                                </p>
-                            )}
                         </li>
                     ))}
                 </ul>

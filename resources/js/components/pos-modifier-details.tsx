@@ -1,4 +1,5 @@
 import { pesos } from '@/lib/pos-money';
+import { posItemDescription } from '@/lib/pos-item-description';
 
 type ModifierDetail = {
     id: string;
@@ -9,10 +10,12 @@ type ModifierDetail = {
 
 export function PosModifierDetails({
     modifiers,
+    notes,
     standardClassName,
     instructionClassName,
 }: {
     modifiers: ModifierDetail[];
+    notes?: string | null;
     standardClassName: string;
     instructionClassName: string;
 }) {
@@ -21,9 +24,7 @@ export function PosModifierDetails({
             modifier.semantic_role !== 'size' &&
             modifier.semantic_role !== 'instruction',
     );
-    const instructions = modifiers.filter(
-        (modifier) => modifier.semantic_role === 'instruction',
-    );
+    const description = posItemDescription(modifiers, notes);
 
     return (
         <>
@@ -32,12 +33,9 @@ export function PosModifierDetails({
                     {modifier.name} (+{pesos(modifier.price_delta)})
                 </p>
             ))}
-            {instructions.length > 0 && (
+            {description && (
                 <p className={instructionClassName}>
-                    <span className="font-semibold">Instructions:</span>{' '}
-                    {instructions
-                        .map((instruction) => instruction.name)
-                        .join(', ')}
+                    {description}
                 </p>
             )}
         </>

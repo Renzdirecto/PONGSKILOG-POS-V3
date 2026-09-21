@@ -145,7 +145,15 @@ export default function Products({
                 >
                     {products.data.map((product) => (
                         <ProductCard
-                            key={`${product.id}-${product.is_active}`}
+                            key={JSON.stringify([
+                                product.id,
+                                product.name,
+                                product.description,
+                                product.category_id,
+                                product.default_price,
+                                product.is_active,
+                                product.modifier_group_ids,
+                            ])}
                             product={product}
                             hasInventoryScope={branchContext.current !== null}
                             list={viewMode === 'list'}
@@ -341,13 +349,13 @@ function ProductThumbnail({ product }: { product: CatalogProduct }) {
             src={product.image_url}
             alt={product.name}
             loading="lazy"
-            width={68}
-            height={68}
+            width={144}
+            height={96}
             onError={() => setFailed(true)}
-            className="size-[68px] shrink-0 rounded-xl bg-[#f2f2f2] object-cover"
+            className="h-24 w-36 shrink-0 rounded-xl bg-[#f2f2f2] object-cover"
         />
     ) : (
-        <span className="flex size-[68px] shrink-0 items-center justify-center rounded-xl bg-[#f2f2f2] text-[#b5b5b5]">
+        <span className="flex h-24 w-36 shrink-0 items-center justify-center rounded-xl bg-[#f2f2f2] text-[#b5b5b5]">
             <ImageIcon className="size-5" aria-hidden="true" />
             <span className="sr-only">No image available</span>
         </span>

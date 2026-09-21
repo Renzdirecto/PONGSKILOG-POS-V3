@@ -189,14 +189,6 @@ export function PosProductDialog({
                         {groups.map((group) => {
                             const isInstruction =
                                 group.semantic_role === 'instruction';
-                            const selectedInstructions = isInstruction
-                                ? group.options.filter((option) =>
-                                      modifiers.some(
-                                          (selection) =>
-                                              selection.option_id === option.id,
-                                      ),
-                                  )
-                                : [];
 
                             return (
                                 <fieldset
@@ -278,16 +270,6 @@ export function PosProductDialog({
                                     {group.options.length === 0 && (
                                         <p className="text-xs text-red-700">
                                             No options are currently available.
-                                        </p>
-                                    )}
-                                    {selectedInstructions.length > 0 && (
-                                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] leading-5 text-amber-900">
-                                            <span className="font-semibold">
-                                                Instructions:
-                                            </span>{' '}
-                                            {selectedInstructions
-                                                .map((option) => option.name)
-                                                .join(', ')}
                                         </p>
                                     )}
                                 </fieldset>

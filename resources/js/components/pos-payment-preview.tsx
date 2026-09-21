@@ -188,14 +188,10 @@ export function PosPaymentPreview({
                                 </p>
                                 <PosModifierDetails
                                     modifiers={row.modifiers}
+                                    notes={row.notes}
                                     standardClassName="text-[10.5px] leading-[1.45] wrap-anywhere text-neutral-500"
                                     instructionClassName="text-[10.5px] leading-[1.45] wrap-anywhere text-amber-800"
                                 />
-                                {row.notes && (
-                                    <p className="text-[10.5px] leading-[1.45] wrap-anywhere whitespace-pre-wrap text-amber-800">
-                                        {row.notes}
-                                    </p>
-                                )}
                             </div>
                             <span className="shrink-0 text-[12.5px] font-bold text-red-700 tabular-nums">
                                 {row.amount}

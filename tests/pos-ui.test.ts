@@ -15,6 +15,24 @@ import {
     POS_CATALOG_REALTIME_EVENTS,
     shouldRefetchCatalogAfterConnectionChange,
 } from '../resources/js/lib/pos-catalog-realtime.ts';
+import { posItemDescription } from '../resources/js/lib/pos-item-description.ts';
+
+test('POS displays instruction choices and free-text notes as one description', () => {
+    const modifiers = [
+        { name: 'Scramble', semantic_role: 'instruction' as const },
+        { name: 'Plain Rice', semantic_role: 'instruction' as const },
+        { name: 'Large', semantic_role: 'size' as const },
+    ];
+
+    assert.equal(
+        posItemDescription(modifiers, 'bang'),
+        'Scramble, Plain Rice, bang',
+    );
+    assert.equal(
+        posItemDescription(modifiers, '   '),
+        'Scramble, Plain Rice',
+    );
+});
 
 test('POS product images cover card media while detail images remain contained', () => {
     const productMedia = readFileSync(

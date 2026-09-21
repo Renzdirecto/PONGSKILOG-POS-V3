@@ -444,14 +444,14 @@ function InventoryThumbnail({ product }: { product: InventoryProduct }) {
             src={product.image_url}
             alt=""
             loading="lazy"
-            width={46}
-            height={46}
+            width={144}
+            height={96}
             onError={() => setFailed(true)}
-            className="size-[46px] shrink-0 rounded-[10px] bg-[#f2f2f2] object-cover"
+            className="h-24 w-36 shrink-0 rounded-xl bg-[#f2f2f2] object-cover"
         />
     ) : (
-        <span className="flex size-[46px] shrink-0 items-center justify-center rounded-[10px] bg-[#f2f2f2] text-[#aaa]">
-            <ImageIcon className="size-4" />
+        <span className="flex h-24 w-36 shrink-0 items-center justify-center rounded-xl bg-[#f2f2f2] text-[#aaa]">
+            <ImageIcon className="size-5" />
         </span>
     );
 }
@@ -504,7 +504,7 @@ function InventoryFiltersForm({
         <div aria-busy={loading} className={`${ownerPanelClass} p-3`}>
             <fieldset
                 disabled={loading}
-                className={`grid min-w-0 gap-2 sm:grid-cols-2 ${usesGlobalBranch ? 'xl:grid-cols-[minmax(220px,1fr)_180px_170px]' : 'xl:grid-cols-[180px_minmax(220px,1fr)_180px_170px]'}`}
+                className={`grid min-w-0 gap-2 sm:grid-cols-2 ${usesGlobalBranch ? 'md:grid-cols-[minmax(220px,1fr)_180px_170px]' : 'min-[900px]:grid-cols-[180px_minmax(220px,1fr)_180px_170px]'}`}
             >
                 {!usesGlobalBranch && (
                     <label>

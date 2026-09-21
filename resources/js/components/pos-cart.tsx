@@ -145,14 +145,10 @@ export function PosCart({
                                         </div>
                                         <PosModifierDetails
                                             modifiers={row.modifiers}
+                                            notes={row.notes}
                                             standardClassName="mt-1 text-[11.5px] leading-4 text-amber-800"
                                             instructionClassName="mt-1 rounded-md bg-amber-50 p-1.5 text-[11px] leading-4 text-amber-900"
                                         />
-                                        {row.notes && (
-                                            <p className="mt-1 rounded-md bg-orange-50 p-1.5 text-[11px] wrap-anywhere whitespace-pre-wrap text-amber-800">
-                                                {row.notes}
-                                            </p>
-                                        )}
                                     </div>
                                     <span className="shrink-0 text-sm font-bold text-red-700">
                                         {row.amount}

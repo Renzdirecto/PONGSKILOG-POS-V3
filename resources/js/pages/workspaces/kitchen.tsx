@@ -207,10 +207,10 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                 className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto' : ''}`}
             >
                 <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
-                    <div className="flex items-center gap-2 overflow-hidden px-3 py-2.5 md:px-4">
+                    <div className="flex flex-wrap items-center gap-2 overflow-hidden px-3 py-2.5 sm:flex-nowrap md:px-4">
                         <nav
                             aria-label="Kitchen status filters"
-                            className="flex min-w-0 flex-1 gap-1 overflow-x-auto py-px"
+                            className="order-2 flex min-w-0 basis-full gap-1 overflow-x-auto py-px sm:order-none sm:flex-1 sm:basis-auto"
                         >
                             {TABS.map(({ key, label, icon: Icon }) => (
                                 <button
@@ -231,7 +231,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                             ))}
                         </nav>
                         {!fullscreen ? (
-                            <label className="relative w-[180px] shrink-0 min-[1280px]:w-[240px]">
+                            <label className="relative min-w-0 flex-1 sm:w-[180px] sm:flex-none min-[1280px]:w-[240px]">
                                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
                                 <span className="sr-only">Search orders</span>
                                 <input
@@ -284,7 +284,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                     </div>
                 ) : (
                     <main
-                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'}`}
+                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 min-[1180px]:grid-cols-3'}`}
                     >
                         {tickets.map((ticket) => (
                             <TicketCard

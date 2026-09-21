@@ -154,7 +154,7 @@ test('KDS renders one-row controls and split ticket timing', () => {
 
     assert.match(
         kitchenPage,
-        /flex items-center gap-2 overflow-hidden[\s\S]*!fullscreen \? \([\s\S]*Search orders[\s\S]*KITCHEN DISPLAY/,
+        /flex flex-wrap items-center gap-2 overflow-hidden[\s\S]*sm:flex-nowrap[\s\S]*!fullscreen \? \([\s\S]*Search orders[\s\S]*KITCHEN DISPLAY/,
     );
     assert.match(
         kitchenPage,
@@ -165,6 +165,28 @@ test('KDS renders one-row controls and split ticket timing', () => {
         /text-red-700[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
     );
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
+});
+
+test('operational shell and normal KDS follow the standalone tablet breakpoint', () => {
+    const kitchenPage = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    const workspaceLayout = readFileSync(
+        new URL(
+            '../resources/js/layouts/workspace-layout.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(workspaceLayout, /min-\[1180px\]:flex/);
+    assert.match(workspaceLayout, /min-\[1180px\]:hidden/);
+    assert.match(kitchenPage, /grid-cols-1 min-\[1180px\]:grid-cols-3/);
+    assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });
 
 test('Vite keeps hot assets and generated development font URLs on one fixed server', () => {

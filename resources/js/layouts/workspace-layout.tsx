@@ -138,7 +138,7 @@ export default function WorkspaceLayout({
         ];
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
-                <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
+                <aside className="hidden w-[94px] shrink-0 flex-col min-[1180px]:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
                         <img
                             src="/images/branding/logo.png"
@@ -187,7 +187,7 @@ export default function WorkspaceLayout({
                     </span>
                 </aside>
                 <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#fafafa]">
-                    <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 md:h-[66px] md:px-4">
+                    <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 min-[1180px]:h-[66px] min-[1180px]:px-4">
                         <div className="min-w-0 flex-1">
                             <h1 className="truncate text-[15px] font-bold">
                                 {isKitchen ? 'Kitchen display' : 'POS / Order'}
@@ -248,12 +248,12 @@ export default function WorkspaceLayout({
                         loading={storeSessionRequest.processing}
                         unavailable={storeSessionUnavailable}
                     />
-                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] min-[1180px]:pb-0">
                         {children}
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl min-[1180px]:hidden"
                     >
                         {navigation.map(
                             ({ label, icon: Icon, available, href, active }) =>

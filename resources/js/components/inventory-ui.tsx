@@ -10,16 +10,16 @@ export const stockStatusLabels: Record<StockStatus, string> = {
 };
 
 const stockStatusClasses: Record<StockStatus, string> = {
-    in_stock: 'bg-emerald-50 text-emerald-800',
-    low_stock: 'bg-amber-50 text-amber-900',
-    out_of_stock: 'bg-red-50 text-red-800',
-    not_tracked: 'bg-neutral-100 text-neutral-600',
+    in_stock: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    low_stock: 'border-amber-200 bg-amber-50 text-amber-900',
+    out_of_stock: 'border-red-200 bg-red-50 text-red-800',
+    not_tracked: 'border-neutral-200 bg-neutral-100 text-neutral-600',
 };
 
 export function StockStatusBadge({ status }: { status: StockStatus }) {
     return (
         <span
-            className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${stockStatusClasses[status]}`}
+            className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-[0.045em] uppercase ${stockStatusClasses[status]}`}
         >
             {stockStatusLabels[status]}
         </span>

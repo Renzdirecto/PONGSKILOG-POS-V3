@@ -1,6 +1,9 @@
 <?php
 
+use App\Enums\CategoryIcon;
+use App\Enums\ModifierSemanticRole;
 use App\Models\Branch;
+use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Category;
 use App\Models\ModifierGroup;
@@ -8,6 +11,7 @@ use App\Models\ModifierOption;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +51,117 @@ test('managers can create and edit products with modifier assignments', function
     $this->assertDatabaseMissing('product_modifier_groups', ['product_id' => $product->id]);
     $this->assertDatabaseHas('product_modifier_groups', ['product_id' => $other->id, 'modifier_group_id' => $group->id]);
 })->with(['owner', 'super_admin']);
+
+test('products can create and attach inline groups options and allowed branch configuration atomically', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $existingGroup = ModifierGroup::factory()->create();
+    $branch = Branch::factory()->create();
+
+    $this->actingAs($user)->post(route('products.store'), catalogProductInput($category, [
+        'modifier_group_ids' => [$existingGroup->id],
+        'inline_groups' => [[
+            'name' => 'Size',
+            'semantic_role' => 'size',
+            'selection_type' => 'single',
+            'min_select' => 1,
+            'max_select' => 1,
+            'is_active' => true,
+            'options' => [[
+                'name' => 'Small',
+                'price_delta' => '0.00',
+                'sort_order' => 0,
+                'is_active' => true,
+            ]],
+        ]],
+        'branch_configs' => [[
+            'branch_id' => $branch->id,
+            'price_override' => '105.00',
+            'is_available' => true,
+            'tracks_inventory' => true,
+            'low_stock_threshold' => 5,
+        ]],
+    ]))->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+
+    $product = Product::query()->where('name', 'Tapsilog')->sole();
+    $sizeGroup = ModifierGroup::query()->where('name', 'Size')->sole();
+    expect($sizeGroup->semantic_role)->toBe(ModifierSemanticRole::Size)
+        ->and($sizeGroup->options()->sole()->name)->toBe('Small');
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())
+        ->toEqualCanonicalizing([$existingGroup->id, $sizeGroup->id]);
+    $this->assertDatabaseHas('branch_products', [
+        'branch_id' => $branch->id,
+        'product_id' => $product->id,
+        'price_override' => 105,
+        'tracks_inventory' => true,
+        'low_stock_threshold' => 5,
+    ]);
+});
+
+test('products assign multiple reusable groups without duplicate pivots and can unassign them', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $groups = ModifierGroup::factory()->count(3)->create();
+
+    $this->actingAs($user)->post(route('products.store'), catalogProductInput($category, [
+        'modifier_group_ids' => [$groups[0]->id, $groups[1]->id],
+    ]))->assertSessionHasNoErrors();
+
+    $product = Product::query()->sole();
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())
+        ->toEqualCanonicalizing([$groups[0]->id, $groups[1]->id]);
+    $this->assertDatabaseCount('product_modifier_groups', 2);
+
+    $this->put(route('products.update', $product), catalogProductInput($category, [
+        'modifier_group_ids' => [$groups[1]->id, $groups[2]->id],
+    ]))->assertSessionHasNoErrors();
+
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())
+        ->toEqualCanonicalizing([$groups[1]->id, $groups[2]->id]);
+    $this->assertDatabaseCount('product_modifier_groups', 2);
+});
+
+test('the unified product editor updates its allowed branch configuration and image', function () {
+    $user = catalogWebManager();
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
+    $otherBranch = Branch::factory()->create(['code' => 'QAVE']);
+    $product = Product::factory()->create();
+    $otherConfiguration = BranchProduct::factory()->for($product)->for($otherBranch)->create([
+        'price_override' => '88.00',
+        'is_available' => false,
+    ]);
+    $otherAttributes = $otherConfiguration->fresh()->getAttributes();
+    $disk = Storage::fake('s3');
+
+    $this->actingAs($user)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->from(route('products.index'))
+        ->put(route('products.update', $product), catalogProductInput($product->category, [
+            'name' => 'Unified edit',
+            'branch_configs' => [[
+                'branch_id' => $branch->id,
+                'price_override' => '105.00',
+                'is_available' => true,
+                'tracks_inventory' => true,
+                'low_stock_threshold' => 6,
+            ]],
+            'image' => UploadedFile::fake()->image('meal.jpg'),
+        ]))
+        ->assertRedirectToRoute('products.index')
+        ->assertSessionHasNoErrors();
+
+    expect($product->refresh()->name)->toBe('Unified edit')
+        ->and($product->image_path)->not->toBeNull();
+    $this->assertDatabaseHas('branch_products', [
+        'branch_id' => $branch->id,
+        'product_id' => $product->id,
+        'price_override' => 105,
+        'tracks_inventory' => true,
+        'low_stock_threshold' => 6,
+    ]);
+    expect($otherConfiguration->refresh()->getAttributes())->toBe($otherAttributes);
+    $disk->assertExists(dirname($product->image_path).'/card.webp');
+});
 
 test('invalid modifier assignments roll back the entire product save', function (bool $creating) {
     $user = catalogWebManager();
@@ -113,9 +228,75 @@ test('management listing exposes exact branch prices and safe image urls', funct
             ->where('image_url', 'https://assets.example.test/'.dirname($product->image_path).'/card.webp')
             ->where('has_image', true)
             ->where('modifier_group_ids', [])
+            ->where('modifier_group_count', 0)
+            ->where('inventory', null)
             ->has('branch_prices', 2)));
 
     $this->assertDatabaseCount('branch_products', 1);
+});
+
+test('a selected global branch limits product configuration exposure and writes', function () {
+    $user = catalogWebManager();
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    $qave = Branch::factory()->create(['code' => 'QAVE']);
+    $category = Category::factory()->create();
+    Product::factory()->create();
+
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $main->id])
+        ->get(route('products.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('branchConfigurations', 1)
+            ->where('branchConfigurations.0.branch_id', $main->id)
+            ->has('products.data.0.branch_prices', 1)
+            ->where('products.data.0.branch_prices.0.branch_id', $main->id));
+
+    $this->post(route('products.store'), catalogProductInput($category, [
+        'branch_configs' => [[
+            'branch_id' => $qave->id,
+            'price_override' => null,
+            'is_available' => true,
+            'tracks_inventory' => false,
+            'low_stock_threshold' => null,
+        ]],
+    ]))->assertForbidden();
+
+    $this->assertDatabaseCount('products', 1);
+    $this->assertDatabaseCount('branch_products', 0);
+});
+
+test('product stock presentation and stock filters follow the selected branch', function () {
+    $user = catalogWebManager();
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
+    $otherBranch = Branch::factory()->create(['code' => 'QAVE']);
+    $low = Product::factory()->create(['name' => 'Low meal']);
+    $out = Product::factory()->create(['name' => 'Out meal']);
+    foreach ([$low, $out] as $product) {
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+        BranchProduct::factory()->for($otherBranch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 1]);
+    }
+    BranchInventory::factory()->for($branch)->for($low)->create(['on_hand' => 3]);
+    BranchInventory::factory()->for($branch)->for($out)->create(['on_hand' => 0]);
+    BranchInventory::factory()->for($otherBranch)->for($low)->create(['on_hand' => 20]);
+    BranchInventory::factory()->for($otherBranch)->for($out)->create(['on_hand' => 20]);
+
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->get(route('products.index', ['status' => 'low_stock']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 1)
+            ->where('products.data.0.id', $low->id)
+            ->where('products.data.0.inventory.tracked', true)
+            ->where('products.data.0.inventory.on_hand', 3)
+            ->where('products.data.0.inventory.low_stock_threshold', 5)
+            ->where('products.data.0.inventory.status', 'low_stock'));
+
+    $this->get(route('products.index', ['status' => 'out_of_stock']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 1)
+            ->where('products.data.0.id', $out->id)
+            ->where('products.data.0.inventory.status', 'out_of_stock'));
+
+    $this->withSession([ActiveBranchContext::SESSION_KEY => null])->get(route('products.index', ['status' => 'low_stock']))
+        ->assertInertia(fn (Assert $page) => $page->has('products.data', 0));
 });
 
 test('product search category status and pagination constrain the catalog', function () {
@@ -265,29 +446,216 @@ test('viewing branch inventory defaults does not create overrides', function () 
 });
 
 test('category management creates edits and deactivates categories', function () {
-    $this->actingAs(catalogWebManager())->post(route('categories.store'), ['name' => 'Meals', 'sort_order' => 2, 'is_active' => true])->assertRedirectToRoute('categories.index')->assertSessionHasNoErrors();
+    $this->actingAs(catalogWebManager())->post(route('categories.store'), ['name' => 'Meals', 'icon_key' => 'meal', 'sort_order' => 2, 'is_active' => true])->assertRedirectToRoute('categories.index')->assertSessionHasNoErrors();
     $category = Category::query()->sole();
-    $this->put(route('categories.update', $category), ['name' => 'Rice meals', 'sort_order' => 3, 'is_active' => false])->assertSessionHasNoErrors();
-    expect($category->refresh()->name)->toBe('Rice meals')->and($category->is_active)->toBeFalse()->and($category->sort_order)->toBe(3);
-    $this->get(route('categories.index'))->assertInertia(fn (Assert $page) => $page->component('catalog/categories')->has('categories', 1)->where('categories.0.products_count', 0));
-    $this->post(route('categories.store'), ['name' => '', 'sort_order' => -1, 'is_active' => true])->assertSessionHasErrors(['name', 'sort_order']);
+    $this->put(route('categories.update', $category), ['name' => 'Rice meals', 'icon_key' => 'rice', 'sort_order' => 3, 'is_active' => false])->assertSessionHasNoErrors();
+    expect($category->refresh()->name)->toBe('Rice meals')->and($category->icon_key)->toBe(CategoryIcon::Rice)
+        ->and($category->is_active)->toBeFalse()->and($category->sort_order)->toBe(3);
+    $this->get(route('categories.index'))->assertInertia(fn (Assert $page) => $page->component('catalog/categories')
+        ->has('categories.data', 1)->where('categories.data.0.products_count', 0)->where('categories.data.0.icon_key', 'rice'));
+    $this->get(route('categories.index', ['search' => 'rice', 'status' => 'inactive']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.search', 'rice')->where('filters.status', 'inactive')
+            ->where('categories.total', 1)->where('categories.data.0.id', $category->id));
+    $this->post(route('categories.store'), ['name' => '', 'icon_key' => 'script-tag', 'sort_order' => -1, 'is_active' => true])
+        ->assertSessionHasErrors(['name', 'icon_key', 'sort_order']);
     $this->assertDatabaseCount('categories', 1);
 });
 
-test('modifier management creates edits and deactivates groups and options', function () {
-    $this->actingAs(catalogWebManager())->post(route('modifier-groups.store'), ['name' => 'Extras', 'selection_type' => 'multiple', 'min_select' => 0, 'max_select' => 3, 'is_active' => true])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
+test('group management creates edits and deactivates groups and options', function () {
+    $this->actingAs(catalogWebManager())->post(route('modifier-groups.store'), ['name' => 'Extras', 'semantic_role' => null, 'selection_type' => 'multiple', 'min_select' => 0, 'max_select' => 3, 'is_active' => true])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
     $group = ModifierGroup::query()->sole();
     $this->post(route('modifier-options.store'), ['modifier_group_id' => $group->id, 'name' => 'Egg', 'price_delta' => '15.00', 'sort_order' => 1, 'is_active' => true])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
     $option = ModifierOption::query()->sole();
     $this->put(route('modifier-options.update', $option), ['modifier_group_id' => $group->id, 'name' => 'Extra egg', 'price_delta' => '20.00', 'sort_order' => 2, 'is_active' => false])->assertSessionHasNoErrors();
-    $this->put(route('modifier-groups.update', $group), ['name' => 'Add-ons', 'selection_type' => 'single', 'min_select' => 0, 'max_select' => 1, 'is_active' => false])->assertSessionHasNoErrors();
+    $this->put(route('modifier-groups.update', $group), ['name' => 'Add-ons', 'semantic_role' => 'size', 'selection_type' => 'single', 'min_select' => 0, 'max_select' => 1, 'is_active' => false])->assertSessionHasNoErrors();
     expect($option->refresh()->price_delta)->toBe('20.00')->and($option->name)->toBe('Extra egg')->and($option->is_active)->toBeFalse();
-    expect($group->refresh()->selection_type->value)->toBe('single')->and($group->is_active)->toBeFalse();
-    $this->get(route('modifier-groups.index'))->assertInertia(fn (Assert $page) => $page->component('catalog/modifiers')->where('groups.0.name', 'Add-ons')->where('groups.0.options.0.name', 'Extra egg'));
+    expect($group->refresh()->selection_type->value)->toBe('single')->and($group->semantic_role)->toBe(ModifierSemanticRole::Size)
+        ->and($group->is_active)->toBeFalse();
+    $this->get(route('modifier-groups.index'))->assertInertia(fn (Assert $page) => $page->component('catalog/modifiers')
+        ->where('groups.0.name', 'Add-ons')->where('groups.0.semantic_role', 'size')->where('groups.0.options.0.name', 'Extra egg'));
     $this->post(route('modifier-groups.store'), ['name' => 'Bad', 'selection_type' => 'multiple', 'min_select' => 3, 'max_select' => 1, 'is_active' => true])->assertSessionHasErrors('max_select');
+    $this->post(route('modifier-groups.store'), ['name' => 'Bad', 'semantic_role' => 'unknown', 'selection_type' => 'single', 'min_select' => 0, 'max_select' => 1, 'is_active' => true])->assertSessionHasErrors('semantic_role');
     $this->post(route('modifier-options.store'), ['modifier_group_id' => Str::uuid()->toString(), 'name' => 'Bad', 'price_delta' => '-1.00', 'sort_order' => 0, 'is_active' => true])->assertSessionHasErrors(['modifier_group_id', 'price_delta']);
     $this->assertDatabaseCount('modifier_groups', 1);
     $this->assertDatabaseCount('modifier_options', 1);
+});
+
+test('group assignments select multiple products and preserve their other groups', function () {
+    $user = catalogWebManager();
+    $group = ModifierGroup::factory()->create(['name' => 'Instructions']);
+    $otherGroup = ModifierGroup::factory()->create(['name' => 'Sizes']);
+    $products = Product::factory()->count(3)->create();
+
+    $products[0]->modifierGroups()->attach([$group->id, $otherGroup->id]);
+    $products[2]->modifierGroups()->attach($otherGroup);
+
+    $this->actingAs($user)->put(route('modifier-groups.products.update', $group), [
+        'product_ids' => [$products[1]->id, $products[2]->id],
+    ])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
+
+    $this->assertDatabaseMissing('product_modifier_groups', [
+        'product_id' => $products[0]->id,
+        'modifier_group_id' => $group->id,
+    ]);
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $products[0]->id,
+        'modifier_group_id' => $otherGroup->id,
+    ]);
+    foreach ([$products[1], $products[2]] as $product) {
+        $this->assertDatabaseHas('product_modifier_groups', [
+            'product_id' => $product->id,
+            'modifier_group_id' => $group->id,
+        ]);
+    }
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $products[2]->id,
+        'modifier_group_id' => $otherGroup->id,
+    ]);
+    $this->assertDatabaseCount('modifier_groups', 2);
+    $this->get(route('modifier-groups.index'))->assertInertia(fn (Assert $page) => $page
+        ->component('catalog/modifiers')
+        ->has('products', 3)
+        ->where('groups.0.name', 'Instructions')
+        ->has('groups.0.product_ids', 2));
+});
+
+test('group assignment rejects duplicate products without changing assignments', function () {
+    $user = catalogWebManager();
+    $group = ModifierGroup::factory()->create();
+    $product = Product::factory()->create();
+    $product->modifierGroups()->attach($group);
+
+    $this->actingAs($user)->put(route('modifier-groups.products.update', $group), [
+        'product_ids' => [$product->id, $product->id],
+    ])->assertSessionHasErrors('product_ids.1');
+
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => $product->id,
+        'modifier_group_id' => $group->id,
+    ]);
+    $this->assertDatabaseCount('product_modifier_groups', 1);
+});
+
+test('group management saves option rows with the group and removes omitted options', function () {
+    $user = catalogWebManager();
+
+    $this->actingAs($user)->post(route('modifier-groups.store'), [
+        'name' => 'Rice',
+        'semantic_role' => null,
+        'selection_type' => 'single',
+        'min_select' => 0,
+        'max_select' => 1,
+        'is_active' => true,
+        'options' => [
+            ['id' => null, 'name' => 'Plain', 'price_delta' => '0.00', 'sort_order' => 0, 'is_active' => true],
+            ['id' => null, 'name' => 'Garlic', 'price_delta' => '15.00', 'sort_order' => 1, 'is_active' => true],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->with('options')->sole();
+    expect($group->options)->toHaveCount(2);
+    $plain = $group->options->firstWhere('name', 'Plain');
+    $garlic = $group->options->firstWhere('name', 'Garlic');
+
+    $this->put(route('modifier-groups.update', $group), [
+        'name' => 'Rice options',
+        'semantic_role' => null,
+        'selection_type' => 'multiple',
+        'min_select' => 0,
+        'max_select' => 2,
+        'is_active' => true,
+        'options' => [
+            ['id' => $garlic->id, 'name' => 'Garlic rice', 'price_delta' => '20.00', 'sort_order' => 0, 'is_active' => false],
+            ['id' => null, 'name' => 'Java rice', 'price_delta' => '25.00', 'sort_order' => 1, 'is_active' => true],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    expect($group->refresh()->name)->toBe('Rice options')
+        ->and($group->options()->orderBy('sort_order')->pluck('name')->all())
+        ->toBe(['Garlic rice', 'Java rice']);
+    $this->assertDatabaseMissing('modifier_options', ['id' => $plain->id]);
+    $this->assertDatabaseHas('modifier_options', [
+        'id' => $garlic->id,
+        'price_delta' => 20,
+        'is_active' => false,
+    ]);
+});
+
+test('instruction groups persist semantic defaults and reject priced options', function () {
+    $user = catalogWebManager();
+
+    $this->actingAs($user)->post(route('modifier-groups.store'), [
+        'name' => 'Preparation',
+        'semantic_role' => 'instruction',
+        'selection_type' => 'single',
+        'min_select' => 1,
+        'max_select' => 1,
+        'is_active' => true,
+    ])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->sole();
+    expect($group->semantic_role)->toBe(ModifierSemanticRole::Instruction)
+        ->and($group->selection_type->value)->toBe('multiple')
+        ->and($group->min_select)->toBe(0)
+        ->and($group->max_select)->toBe(2);
+
+    $this->post(route('modifier-options.store'), [
+        'modifier_group_id' => $group->id,
+        'name' => 'Scramble',
+        'price_delta' => '10.00',
+        'sort_order' => 0,
+        'is_active' => true,
+    ])->assertSessionHasErrors(['price_delta' => 'Instruction options cannot change the price.']);
+    $this->assertDatabaseCount('modifier_options', 0);
+
+    $this->post(route('modifier-options.store'), [
+        'modifier_group_id' => $group->id,
+        'name' => 'Scramble',
+        'price_delta' => '0.00',
+        'sort_order' => 0,
+        'is_active' => true,
+    ])->assertSessionHasNoErrors();
+    expect(ModifierOption::query()->sole()->price_delta)->toBe('0.00');
+});
+
+test('inline instruction groups are normalized and cannot contain priced options', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $input = catalogProductInput($category, [
+        'inline_groups' => [[
+            'name' => 'Instructions',
+            'semantic_role' => 'instruction',
+            'selection_type' => 'single',
+            'min_select' => 1,
+            'max_select' => 1,
+            'is_active' => true,
+            'options' => [[
+                'name' => 'Plain Rice',
+                'price_delta' => '5.00',
+                'sort_order' => 0,
+                'is_active' => true,
+            ]],
+        ]],
+    ]);
+
+    $this->actingAs($user)->post(route('products.store'), $input)
+        ->assertSessionHasErrors('inline_groups.0.options.0.price_delta');
+    $this->assertDatabaseCount('products', 0);
+    $this->assertDatabaseCount('modifier_groups', 0);
+
+    data_set($input, 'inline_groups.0.options.0.price_delta', '0.00');
+    $this->post(route('products.store'), $input)->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->sole();
+    expect($group->semantic_role)->toBe(ModifierSemanticRole::Instruction)
+        ->and($group->selection_type->value)->toBe('multiple')
+        ->and($group->min_select)->toBe(0)
+        ->and($group->max_select)->toBe(2);
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => Product::query()->sole()->id,
+        'modifier_group_id' => $group->id,
+    ]);
 });
 
 test('image endpoints upload replace and remove optimized product images', function () {
@@ -382,6 +750,7 @@ test('catalog endpoints require active authentication and catalog permission', f
         ['get', 'products.index', []], ['post', 'products.store', []], ['put', 'products.update', $product],
         ['get', 'categories.index', []], ['post', 'categories.store', []], ['put', 'categories.update', $product->category],
         ['get', 'modifier-groups.index', []], ['post', 'modifier-groups.store', []], ['put', 'modifier-groups.update', $group],
+        ['put', 'modifier-groups.products.update', $group],
         ['post', 'modifier-options.store', []], ['put', 'modifier-options.update', $option],
         ['post', 'products.image.store', $product], ['delete', 'products.image.destroy', $product],
         ['put', 'products.branches.update', [$product, $branch]],

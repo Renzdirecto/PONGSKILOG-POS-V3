@@ -31,7 +31,7 @@ class PayLaterOrderSummary
             'cashier' => $order->createdBy?->name,
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 'id' => $item->id,
-                'name' => $item->product_name_snapshot,
+                ...OperationalItemName::fromOrderItem($item),
                 'unit_price' => $item->unit_price,
                 'quantity' => $item->quantity,
                 'line_total' => $item->line_total,
@@ -39,6 +39,7 @@ class PayLaterOrderSummary
                 'modifiers' => $item->modifiers->map(fn (OrderItemModifier $modifier): array => [
                     'id' => $modifier->id,
                     'group_name' => $modifier->group_name_snapshot,
+                    'semantic_role' => $modifier->semantic_role_snapshot,
                     'name' => $modifier->option_name_snapshot,
                     'price_delta' => $modifier->price_delta_snapshot,
                     'quantity' => $modifier->quantity,

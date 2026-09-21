@@ -1,8 +1,21 @@
 import type { StockStatus } from './inventory';
 
 export type CatalogChoice = { id: string; name: string; is_active: boolean };
+export type CategoryIconKey =
+    | 'utensils'
+    | 'meal'
+    | 'rice'
+    | 'drink'
+    | 'coffee'
+    | 'dessert'
+    | 'snack'
+    | 'chicken'
+    | 'breakfast'
+    | 'add_ons'
+    | 'food';
+export type ModifierSemanticRole = 'size' | 'instruction' | null;
 export type CashierCatalog = {
-    categories: { id: string; name: string }[];
+    categories: { id: string; name: string; icon_key?: CategoryIconKey }[];
     products: {
         id: string;
         name: string;
@@ -11,6 +24,12 @@ export type CashierCatalog = {
         category_name: string;
         effective_price: string;
         is_available: boolean;
+        availability_reason?:
+            | 'product_disabled'
+            | 'category_disabled'
+            | 'branch_unavailable'
+            | 'out_of_stock'
+            | null;
         stock_status: StockStatus;
         tracks_inventory: boolean;
         on_hand: number | null;
@@ -19,6 +38,7 @@ export type CashierCatalog = {
         modifier_groups?: {
             id: string;
             name: string;
+            semantic_role?: ModifierSemanticRole;
             selection_type: 'single' | 'multiple';
             min_select: number;
             max_select: number;
@@ -32,6 +52,7 @@ export type CashierCatalog = {
     }[];
 };
 export type Category = CatalogChoice & {
+    icon_key: CategoryIconKey | null;
     sort_order: number;
     products_count: number;
 };
@@ -41,11 +62,14 @@ export type ModifierOption = CatalogChoice & {
     sort_order: number;
 };
 export type ModifierGroup = CatalogChoice & {
+    semantic_role: ModifierSemanticRole;
     selection_type: 'single' | 'multiple';
     min_select: number;
     max_select: number;
     options: ModifierOption[];
+    product_ids?: string[];
 };
+export type BranchConfiguration = Pick<BranchPrice, 'branch_id' | 'code' | 'name'>;
 export type BranchPrice = {
     branch_id: string;
     code: string;
@@ -66,5 +90,12 @@ export type CatalogProduct = CatalogChoice & {
     image_url: string | null;
     has_image: boolean;
     modifier_group_ids: string[];
+    modifier_group_count: number;
+    inventory: {
+        tracked: boolean;
+        on_hand: number | null;
+        low_stock_threshold: number | null;
+        status: StockStatus;
+    } | null;
     branch_prices: BranchPrice[];
 };

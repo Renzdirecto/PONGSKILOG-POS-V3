@@ -48,6 +48,17 @@ class ProductImages
         return $this->temporaryUrl($this->cardPath($product), $expiresAt);
     }
 
+    public function safeCardUrl(Product $product, ?DateTimeInterface $expiresAt = null): ?string
+    {
+        try {
+            return $this->cardUrl($product, $expiresAt);
+        } catch (RuntimeException $exception) {
+            report($exception);
+
+            return null;
+        }
+    }
+
     public function detailUrl(Product $product, ?DateTimeInterface $expiresAt = null): ?string
     {
         return $this->temporaryUrl($this->detailPath($product), $expiresAt);

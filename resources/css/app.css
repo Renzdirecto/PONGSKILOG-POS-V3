@@ -146,6 +146,33 @@
     font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
 }
 
+.owner-surface {
+    font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+}
+
+.owner-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #c9c9c9 transparent;
+}
+
+.owner-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.owner-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #c9c9c9;
+}
+
+.owner-hide-scrollbar {
+    scrollbar-width: none;
+}
+
+.owner-hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
 .pos-product-dialog,
 .pos-payment-dialog {
     max-width: 100%;
@@ -208,7 +235,8 @@ body:has([data-slot='dialog-content'].pos-surface)
         padding: 0 !important;
         background: #fff !important;
         color: #000 !important;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+        font-family:
+            ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
         font-size: 10px !important;
         overflow: visible !important;
     }

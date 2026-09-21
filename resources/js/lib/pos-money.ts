@@ -28,20 +28,29 @@ export function paymentTotals(total: bigint, cash: bigint, cashless: bigint) {
 
 export function selectedOptions(line: CartLine) {
     return (line.product.modifier_groups ?? []).flatMap((group) =>
-        group.options.filter((option) =>
-            line.modifiers.some(
-                (selected) =>
-                    selected.group_id === group.id &&
-                    selected.option_id === option.id,
-            ),
-        ),
+        group.options
+            .filter((option) =>
+                line.modifiers.some(
+                    (selected) =>
+                        selected.group_id === group.id &&
+                        selected.option_id === option.id,
+                ),
+            )
+            .map((option) => ({
+                ...option,
+                group_name: group.name,
+                semantic_role: group.semantic_role,
+            })),
     );
 }
 
 export function lineCents(line: CartLine): bigint {
     return (
         selectedOptions(line).reduce(
-            (total, option) => total + cents(option.price_delta),
+            (total, option) =>
+                option.semantic_role === 'instruction'
+                    ? total
+                    : total + cents(option.price_delta),
             cents(line.product.effective_price),
         ) * BigInt(line.quantity)
     );

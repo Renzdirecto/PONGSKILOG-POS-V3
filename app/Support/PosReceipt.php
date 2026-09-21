@@ -28,10 +28,11 @@ class PosReceipt
                 'amount_received' => $payment->amount_received, 'change_amount' => $payment->change_amount,
             ])->all(),
             'items' => $order->items->map(fn (OrderItem $item): array => [
-                'id' => $item->id, 'name' => $item->product_name_snapshot, 'unit_price' => $item->unit_price,
+                'id' => $item->id, ...OperationalItemName::fromOrderItem($item), 'unit_price' => $item->unit_price,
                 'quantity' => $item->quantity, 'line_total' => $item->line_total, 'notes' => $item->notes,
                 'modifiers' => $item->modifiers->map(fn (OrderItemModifier $modifier): array => [
                     'id' => $modifier->id, 'group_name' => $modifier->group_name_snapshot,
+                    'semantic_role' => $modifier->semantic_role_snapshot,
                     'name' => $modifier->option_name_snapshot, 'price_delta' => $modifier->price_delta_snapshot,
                     'quantity' => $modifier->quantity,
                 ])->all(),

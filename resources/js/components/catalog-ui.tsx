@@ -1,6 +1,15 @@
 import { Head, Link } from '@inertiajs/react';
+import { FolderPlus, Layers3, PackagePlus } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import {
+    OwnerPage,
+    OwnerStatusBadge,
+    ownerControlClass,
+    ownerPanelClass,
+    ownerPrimaryActionClass,
+    ownerSecondaryActionClass,
+} from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -11,78 +20,108 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { workspace } from '@/routes';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as modifiersIndex } from '@/routes/modifier-groups';
 import { index as productsIndex } from '@/routes/products';
 
-export const controlClass =
-    'h-11 w-full rounded-md border border-neutral-300 bg-white px-3 text-base text-neutral-950 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none';
-export const panelClass =
-    'rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm';
-export const actionClass =
-    'min-h-11 rounded-xl border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950';
-export const primaryActionClass =
-    'min-h-11 rounded-xl bg-neutral-950 text-white hover:bg-neutral-800';
+export const controlClass = `${ownerControlClass} w-full`;
+export const panelClass = `${ownerPanelClass} p-4`;
+export const actionClass = ownerSecondaryActionClass;
+export const primaryActionClass = ownerPrimaryActionClass;
 export const money = (value: string) =>
     `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type CatalogTab = 'Products' | 'Categories' | 'Groups';
 
 export function CatalogPage({
     tab,
     children,
     action,
+    counts,
 }: {
-    tab: 'Products' | 'Categories' | 'Modifiers';
+    tab: CatalogTab;
     children: ReactNode;
-    action: ReactNode;
+    action?: ReactNode;
+    counts?: Partial<Record<CatalogTab, number>>;
 }) {
+    const tabs: {
+        label: CatalogTab;
+        href: ReturnType<typeof productsIndex>;
+    }[] = [
+        { label: 'Products', href: productsIndex() },
+        { label: 'Categories', href: categoriesIndex() },
+        { label: 'Groups', href: modifiersIndex() },
+    ];
+
     return (
         <>
             <Head title={`${tab} · Product management`} />
-            <div className="mx-auto flex max-w-6xl flex-col gap-6">
-                <Link
-                    href={workspace()}
-                    className="w-fit py-2 text-sm font-semibold underline underline-offset-4"
-                >
-                    Back to workspace
-                </Link>
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                    <div className="space-y-2">
-                        <p className="text-xs font-bold tracking-[0.18em] text-[#8c671e] uppercase">
-                            Business Operations
-                        </p>
-                        <h1 className="text-3xl font-bold tracking-tight">
-                            Product management
-                        </h1>
-                        <p className="text-sm text-neutral-600">
-                            One catalog for every branch. Fine-tune prices where
-                            needed.
-                        </p>
-                    </div>
-                    {action}
-                </div>
+            <OwnerPage
+                title="Products"
+                description="Products, categories and the options offered in the POS and customer QR menu."
+                action={<CatalogQuickActions />}
+            >
                 <nav
                     aria-label="Product management"
-                    className="flex gap-2 border-b border-neutral-200 pb-3"
+                    className="owner-hide-scrollbar flex w-fit max-w-full gap-0.5 overflow-x-auto rounded-[11px] bg-[#f2f2f2] p-[3px]"
                 >
-                    {[
-                        { label: 'Products', href: productsIndex() },
-                        { label: 'Categories', href: categoriesIndex() },
-                        { label: 'Modifiers', href: modifiersIndex() },
-                    ].map(({ label, href }) => (
+                    {tabs.map(({ label, href }) => (
                         <Link
                             key={label}
                             href={href}
                             aria-current={label === tab ? 'page' : undefined}
-                            className={`min-h-11 rounded-xl px-4 py-3 text-sm font-semibold ${label === tab ? 'bg-neutral-950 text-white' : 'bg-white text-neutral-600 hover:bg-neutral-100'}`}
+                            className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[9px] px-[15px] text-[13.5px] font-semibold transition focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:outline-none ${label === tab ? 'bg-[#111111] text-white' : 'text-[#666] hover:bg-white/70'}`}
                         >
-                            {label}
+                            <span>{label}</span>
+                            {counts?.[label] !== undefined && (
+                                <span
+                                    className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ${label === tab ? 'bg-white/18 text-white' : 'bg-white text-[#666]'}`}
+                                >
+                                    {counts[label]}
+                                </span>
+                            )}
                         </Link>
                     ))}
                 </nav>
+                {action}
                 {children}
-            </div>
+            </OwnerPage>
         </>
+    );
+}
+
+function CatalogQuickActions() {
+    const actions = [
+        {
+            label: 'Add product',
+            icon: PackagePlus,
+            href: productsIndex({ query: { create: 'product' } }),
+        },
+        {
+            label: 'Add category',
+            icon: FolderPlus,
+            href: categoriesIndex({ query: { create: 'category' } }),
+        },
+        {
+            label: 'Add group',
+            icon: Layers3,
+            href: modifiersIndex({ query: { create: 'group' } }),
+        },
+    ];
+
+    return (
+        <div className="grid w-full grid-cols-3 gap-1.5 md:flex md:w-auto">
+            {actions.map(({ label, icon: Icon, href }, index) => (
+                <Link
+                    key={label}
+                    href={href}
+                    className={`${index === 0 ? ownerPrimaryActionClass : ownerSecondaryActionClass} inline-flex min-w-0 items-center justify-center gap-1.5 px-2 md:px-3`}
+                >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{label}</span>
+                </Link>
+            ))}
+        </div>
     );
 }
 
@@ -92,12 +131,16 @@ export function CatalogDialog({
     title,
     description,
     children,
+    wide = false,
+    standalone = false,
 }: {
     open: boolean;
     onClose: () => void;
     title: string;
     description: string;
     children: ReactNode;
+    wide?: boolean;
+    standalone?: boolean;
 }) {
     return (
         <Dialog
@@ -106,10 +149,18 @@ export function CatalogDialog({
                 if (!value) onClose();
             }}
         >
-            <DialogContent className="max-h-[90svh] overflow-y-auto bg-white text-neutral-950 sm:max-w-xl">
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription className="text-neutral-600">
+            <DialogContent
+                className={`owner-surface top-auto bottom-0 max-h-[96dvh] w-full max-w-none translate-y-0 rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-[#111111] sm:top-1/2 sm:bottom-auto sm:max-h-[92dvh] sm:-translate-y-1/2 sm:rounded-[20px] ${standalone ? 'flex flex-col gap-0 overflow-hidden p-0' : 'gap-4 overflow-y-auto p-4 sm:p-6'} ${wide ? 'sm:max-w-3xl' : 'sm:max-w-xl'} [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center`}
+            >
+                <DialogHeader
+                    className={`pr-12 text-left ${standalone ? 'shrink-0 gap-0.5 border-b border-[#e5e5e5] px-4 py-3' : 'pr-7'}`}
+                >
+                    <DialogTitle className="text-[17px] font-bold">
+                        {title}
+                    </DialogTitle>
+                    <DialogDescription
+                        className={`${standalone ? 'order-first text-[10px] font-semibold tracking-[0.08em] uppercase' : 'text-[12.5px] leading-5'} text-[#666]`}
+                    >
                         {description}
                     </DialogDescription>
                 </DialogHeader>
@@ -132,13 +183,18 @@ export function Field({
 }) {
     return (
         <div className="space-y-2">
-            <Label htmlFor={id}>{label}</Label>
+            <Label
+                htmlFor={id}
+                className="text-[11px] font-semibold tracking-[0.06em] text-[#777] uppercase"
+            >
+                {label}
+            </Label>
             {children}
             {error && (
                 <p
                     id={`${id}-error`}
                     role="alert"
-                    className="text-sm text-red-700"
+                    className="text-xs text-red-700"
                 >
                     {error}
                 </p>
@@ -195,14 +251,14 @@ export function ActiveField({
     label?: string;
 }) {
     return (
-        <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-medium">
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border border-[#e5e5e5] px-3 text-[12.5px] font-medium">
             <input
                 type="checkbox"
                 checked={value}
                 onChange={(event) => onChange(event.target.checked)}
-                className="size-5 accent-neutral-950"
+                className="size-5 accent-[#111111]"
             />
-            {label}
+            <span className="min-w-0 flex-1 break-words">{label}</span>
         </label>
     );
 }
@@ -218,7 +274,7 @@ export function SaveButton({
         <Button
             type="submit"
             disabled={processing}
-            className="min-h-11 rounded-xl bg-neutral-950 text-white hover:bg-neutral-800"
+            className={primaryActionClass}
         >
             {processing ? 'Saving…' : label}
         </Button>
@@ -227,11 +283,9 @@ export function SaveButton({
 
 export function Status({ active }: { active: boolean }) {
     return (
-        <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-600'}`}
-        >
-            {active ? 'Active' : 'Inactive'}
-        </span>
+        <OwnerStatusBadge tone={active ? 'green' : 'outline'}>
+            {active ? 'Active' : 'Disabled'}
+        </OwnerStatusBadge>
     );
 }
 
@@ -246,7 +300,7 @@ export function FormErrors({ errors }: { errors: Record<string, string> }) {
                 ref={summary}
                 tabIndex={-1}
                 role="alert"
-                className="rounded-lg bg-red-50 p-3 text-sm text-red-700"
+                className="rounded-[11px] border border-red-200 bg-red-50 p-3 text-xs text-red-700"
             >
                 {Object.entries(errors).map(([key, message]) => (
                     <p key={key}>{message}</p>

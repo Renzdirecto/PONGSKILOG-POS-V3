@@ -21,7 +21,7 @@ export function PosProductMedia({
             alt={product.name}
             loading="lazy"
             onError={() => setFailed(true)}
-            className="h-full w-full object-contain"
+            className={`h-full w-full ${detail ? 'object-contain' : 'object-cover'}`}
         />
     ) : detail ? (
         <span

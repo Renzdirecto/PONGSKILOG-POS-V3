@@ -1,12 +1,12 @@
 import { useForm } from '@inertiajs/react';
-import { useRef } from 'react';
+import { Check } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
     actionClass,
     controlClass,
     Field,
     FormErrors,
-    primaryActionClass,
 } from '@/components/catalog-ui';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +20,8 @@ import { store } from '@/routes/inventory/adjustments';
 import type { BranchSummary } from '@/types';
 import type { InventoryProduct } from '@/types/inventory';
 
+type AdjustmentMode = 'add' | 'remove' | 'set';
+
 export function InventoryAdjustmentDialog({
     product,
     branch,
@@ -31,11 +33,19 @@ export function InventoryAdjustmentDialog({
 }) {
     const form = useForm({ quantity_delta: '', reason: '' });
     const submitting = useRef(false);
-    const adjustment = form.data.quantity_delta.trim();
-    const quantityDelta = /^[+-]?\d+$/.test(adjustment)
-        ? Number(adjustment)
+    const [mode, setMode] = useState<AdjustmentMode>('add');
+    const quantity = /^\d+$/.test(form.data.quantity_delta.trim())
+        ? Number(form.data.quantity_delta)
         : null;
     const currentOnHand = product.on_hand ?? 0;
+    const quantityDelta =
+        quantity === null
+            ? null
+            : mode === 'add'
+              ? quantity
+              : mode === 'remove'
+                ? -quantity
+                : quantity - currentOnHand;
     const projectedOnHand =
         quantityDelta !== null &&
         Number.isSafeInteger(quantityDelta) &&
@@ -50,30 +60,51 @@ export function InventoryAdjustmentDialog({
                 if (!open && !submitting.current) onClose();
             }}
         >
-            <DialogContent className="max-h-[90svh] overflow-y-auto bg-white p-4 text-neutral-950 sm:max-w-lg sm:p-6 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
-                <DialogHeader className="pr-6 text-left">
-                    <DialogTitle className="text-[17px] font-bold">
+            <DialogContent className="owner-surface top-auto bottom-0 flex max-h-[92dvh] w-full max-w-none translate-y-0 flex-col gap-0 overflow-hidden rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white p-0 text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
+                <DialogHeader className="shrink-0 gap-0.5 border-b border-neutral-200 px-4 py-3 pr-12 text-left">
+                    <DialogDescription className="order-first text-[10px] font-semibold tracking-[0.09em] text-neutral-500 uppercase">
                         Adjust stock
-                    </DialogTitle>
-                    <DialogDescription className="break-words text-neutral-600">
-                        {product.name} · {branch.name} ({branch.code})
                     </DialogDescription>
+                    <DialogTitle className="text-[16px] font-bold">
+                        {product.name}
+                    </DialogTitle>
+                    <p className="text-[11px] text-neutral-500">
+                        {branch.name} · {branch.code}
+                    </p>
                 </DialogHeader>
+
                 <form
-                    className="flex flex-col gap-4"
+                    className="flex min-h-0 flex-1 flex-col"
                     aria-busy={form.processing}
                     onSubmit={(event) => {
                         event.preventDefault();
                         if (submitting.current) return;
                         form.clearErrors();
+
                         if (
-                            quantityDelta === null ||
-                            !Number.isSafeInteger(quantityDelta) ||
-                            quantityDelta === 0
+                            quantity === null ||
+                            !Number.isSafeInteger(quantity) ||
+                            (mode !== 'set' && quantity <= 0)
                         ) {
                             form.setError(
                                 'quantity_delta',
-                                'Enter a non-zero whole number, such as +10 or -3.',
+                                mode === 'set'
+                                    ? 'Enter a non-negative whole-number stock count.'
+                                    : 'Enter a whole-number quantity greater than zero.',
+                            );
+                            return;
+                        }
+                        if (quantityDelta === 0) {
+                            form.setError(
+                                'quantity_delta',
+                                'The resulting stock must be different from the current stock.',
+                            );
+                            return;
+                        }
+                        if (projectedOnHand === null || projectedOnHand < 0) {
+                            form.setError(
+                                'quantity_delta',
+                                'This adjustment would produce a negative stock count.',
                             );
                             return;
                         }
@@ -84,6 +115,7 @@ export function InventoryAdjustmentDialog({
                             );
                             return;
                         }
+
                         form.transform((data) => ({
                             ...data,
                             quantity_delta: quantityDelta,
@@ -105,106 +137,146 @@ export function InventoryAdjustmentDialog({
                         );
                     }}
                 >
-                    <div className="rounded-xl bg-neutral-50 p-3">
-                        <p className="text-xs text-neutral-600">
-                            Current on hand
-                        </p>
-                        <p className="text-lg font-bold tabular-nums">
-                            {currentOnHand.toLocaleString()}
-                        </p>
-                    </div>
-                    <fieldset
-                        disabled={form.processing}
-                        className="flex min-w-0 flex-col gap-4"
-                    >
-                        <Field
-                            id="quantity_delta"
-                            label="Adjustment"
-                            error={form.errors.quantity_delta}
+                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3.5">
+                            <span className="text-xs text-neutral-500">
+                                Current stock
+                            </span>
+                            <span className="text-xl font-bold tabular-nums">
+                                {currentOnHand.toLocaleString()}
+                            </span>
+                        </div>
+
+                        <fieldset
+                            disabled={form.processing}
+                            className="space-y-4"
                         >
-                            <input
+                            <div className="space-y-1.5">
+                                <p className="text-[11px] font-semibold tracking-[0.06em] text-neutral-500 uppercase">
+                                    Adjustment type
+                                </p>
+                                <div
+                                    role="tablist"
+                                    aria-label="Adjustment type"
+                                    className="grid grid-cols-3 gap-[3px] rounded-xl bg-neutral-100 p-[3px]"
+                                >
+                                    {(['add', 'remove', 'set'] as const).map(
+                                        (option) => (
+                                            <button
+                                                key={option}
+                                                type="button"
+                                                role="tab"
+                                                aria-selected={mode === option}
+                                                className={`min-h-11 rounded-[9px] text-[13.5px] font-semibold capitalize transition ${mode === option ? 'bg-neutral-950 text-white' : 'text-neutral-600 hover:bg-white'}`}
+                                                onClick={() => {
+                                                    setMode(option);
+                                                    form.clearErrors(
+                                                        'quantity_delta',
+                                                    );
+                                                }}
+                                            >
+                                                {option}
+                                            </button>
+                                        ),
+                                    )}
+                                </div>
+                            </div>
+
+                            <Field
                                 id="quantity_delta"
-                                name="quantity_delta"
-                                type="text"
-                                required
-                                maxLength={16}
-                                value={form.data.quantity_delta}
-                                placeholder="+10 or -3"
-                                className={controlClass}
-                                aria-invalid={!!form.errors.quantity_delta}
-                                aria-describedby={`adjustment-help${form.errors.quantity_delta ? ' quantity_delta-error' : ''}`}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'quantity_delta',
-                                        event.target.value,
-                                    )
+                                label={
+                                    mode === 'set'
+                                        ? 'New stock count'
+                                        : 'Quantity'
                                 }
-                            />
-                            <p
-                                id="adjustment-help"
-                                className="text-xs text-neutral-600"
+                                error={form.errors.quantity_delta}
                             >
-                                Use a positive number to add stock or a negative
-                                number to remove stock.
-                            </p>
-                        </Field>
-                        <Field
-                            id="reason"
-                            label="Reason"
-                            error={form.errors.reason}
-                        >
-                            <textarea
+                                <input
+                                    id="quantity_delta"
+                                    name="quantity_delta"
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    required
+                                    value={form.data.quantity_delta}
+                                    placeholder="0"
+                                    className={`${controlClass} h-[52px] text-[17px] font-semibold tabular-nums`}
+                                    aria-invalid={!!form.errors.quantity_delta}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'quantity_delta',
+                                            event.target.value,
+                                        )
+                                    }
+                                />
+                            </Field>
+
+                            <Field
                                 id="reason"
-                                name="reason"
-                                required
-                                rows={3}
-                                maxLength={1000}
-                                value={form.data.reason}
-                                placeholder="Opening count, damaged item, or physical count correction"
-                                className={`${controlClass} h-auto min-h-24 py-2`}
-                                aria-invalid={!!form.errors.reason}
-                                aria-describedby={
-                                    form.errors.reason
-                                        ? 'reason-error'
-                                        : undefined
-                                }
-                                onChange={(event) =>
-                                    form.setData('reason', event.target.value)
-                                }
-                            />
-                        </Field>
-                    </fieldset>
-                    <div
-                        className={`rounded-xl border p-3 ${projectedOnHand !== null && projectedOnHand < 0 ? 'border-red-200 bg-red-50 text-red-800' : 'border-neutral-200 text-neutral-700'}`}
-                    >
-                        <p className="text-sm font-semibold" aria-live="polite">
-                            Projected on hand:{' '}
-                            {projectedOnHand?.toLocaleString() ?? '—'}
-                        </p>
-                        <p className="mt-1 text-xs">
-                            {projectedOnHand !== null && projectedOnHand < 0
-                                ? 'This would exceed the displayed stock. Negative stock is not allowed.'
-                                : 'Preview only. Current stock is checked when you save.'}
-                        </p>
+                                label="Reason"
+                                error={form.errors.reason}
+                            >
+                                <textarea
+                                    id="reason"
+                                    name="reason"
+                                    required
+                                    rows={3}
+                                    maxLength={1000}
+                                    value={form.data.reason}
+                                    placeholder="Stock delivery, damaged stock, recount, or another reason"
+                                    className={`${controlClass} h-auto min-h-24 py-3`}
+                                    aria-invalid={!!form.errors.reason}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'reason',
+                                            event.target.value,
+                                        )
+                                    }
+                                />
+                                <p className="text-[11.5px] leading-5 text-neutral-500">
+                                    Every adjustment is recorded with its
+                                    free-text reason. Stock is never overwritten
+                                    silently.
+                                </p>
+                            </Field>
+                        </fieldset>
+
+                        <div
+                            className={`flex items-center justify-between gap-3 rounded-xl border p-3.5 ${projectedOnHand !== null && projectedOnHand < 0 ? 'border-red-300 bg-red-50 text-red-800' : 'border-neutral-950 bg-white'}`}
+                            aria-live="polite"
+                        >
+                            <span className="text-[12.5px] font-semibold">
+                                Resulting stock
+                            </span>
+                            <span className="text-[22px] font-bold tabular-nums">
+                                {projectedOnHand?.toLocaleString() ?? '—'}
+                            </span>
+                        </div>
                     </div>
-                    <FormErrors errors={form.errors} />
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className={actionClass}
-                            disabled={form.processing}
-                            onClick={onClose}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="submit"
-                            className={primaryActionClass}
-                            disabled={form.processing}
-                        >
-                            {form.processing ? 'Saving…' : 'Save adjustment'}
-                        </Button>
+
+                    <div className="shrink-0 border-t border-neutral-200 bg-white px-4 pt-3 pb-[calc(14px+env(safe-area-inset-bottom,0px))]">
+                        <FormErrors errors={form.errors} />
+                        <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className={`${actionClass} min-h-[52px] px-5`}
+                                disabled={form.processing}
+                                onClick={onClose}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                className="min-h-[52px] rounded-xl bg-neutral-950 text-[14.5px] font-semibold text-white hover:bg-neutral-800"
+                                disabled={form.processing}
+                            >
+                                <Check className="size-4" />
+                                {form.processing
+                                    ? 'Saving…'
+                                    : 'Confirm adjustment'}
+                            </Button>
+                        </div>
                     </div>
                 </form>
             </DialogContent>

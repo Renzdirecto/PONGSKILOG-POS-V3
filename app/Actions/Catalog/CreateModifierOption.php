@@ -2,12 +2,16 @@
 
 namespace App\Actions\Catalog;
 
+use App\Enums\ModifierSemanticRole;
 use App\Models\ModifierGroup;
 use App\Models\ModifierOption;
 use App\Models\User;
+use App\Support\ExactMoney;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class CreateModifierOption
 {
@@ -24,6 +28,13 @@ class CreateModifierOption
             'sort_order' => ['required', 'integer', 'min:0', 'max:2147483647'],
         ])->validate();
 
-        return ModifierOption::query()->create($validated);
+        return DB::transaction(function () use ($validated): ModifierOption {
+            $group = ModifierGroup::query()->whereKey($validated['modifier_group_id'])->lockForUpdate()->firstOrFail();
+            if ($group->semantic_role === ModifierSemanticRole::Instruction && ExactMoney::cents($validated['price_delta']) !== 0) {
+                throw ValidationException::withMessages(['price_delta' => 'Instruction options cannot change the price.']);
+            }
+
+            return ModifierOption::query()->create($validated);
+        });
     }
 }

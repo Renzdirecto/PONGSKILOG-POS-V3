@@ -19,6 +19,9 @@ class InventoryIndexRequest extends FormRequest
             'branch_id' => ['nullable', 'uuid', Rule::exists('branches', 'id')],
             'search' => ['nullable', 'string', 'max:255'],
             'stock_status' => ['nullable', Rule::in(['all', 'in_stock', 'low_stock', 'out_of_stock', 'not_tracked'])],
+            'category' => ['nullable', 'uuid', Rule::exists('categories', 'id')],
+            'history_product' => ['nullable', 'uuid', Rule::exists('products', 'id')],
+            'history_page' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

@@ -421,6 +421,27 @@ Payload:
 
 Public QR should not receive raw stock quantity unless explicitly needed.
 
+### `product.branch_configuration_changed`
+
+Audience:
+
+- Authorized same-branch POS and management clients
+
+Payload:
+
+- branch_id
+- product_id
+- is_available
+- effective_price
+- version
+
+### Product and inventory implementation checkpoint — 2026-09-21
+
+- `inventory.changed`, `product.availability_changed`, and `product.branch_configuration_changed` are implemented on the private `branch.{branch}.inventory` channel. Events implement the after-commit contract and contain compact IDs/state only; PostgreSQL remains authoritative.
+- Inventory movements emit exactly one inventory event after their transaction commits. Product, Category, branch configuration, Group/Option, and Product image mutations emit the applicable compact catalog events after their complete mutation boundary succeeds.
+- Active POS clients subscribe through Laravel Echo, coalesce bursts into one authoritative `catalog` partial reload, prevent simultaneous reloads, and perform a fresh catalog reload after reconnect. Cart, order type, payment state, open Product dialog, selected structured options, and manual notes remain local state.
+- Channel authorization rechecks the authenticated active user, branch access, and an operational catalog/inventory permission. A normal branch event never fans out another branch's stock or configuration, and no public QR inventory subscription was added.
+
 ---
 
 ## 16. Void Events

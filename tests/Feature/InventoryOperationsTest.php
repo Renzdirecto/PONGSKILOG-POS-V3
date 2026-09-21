@@ -223,16 +223,17 @@ test('management stock uses only the selected branch configuration and does not 
             ->where('products.data.1.on_hand', null)
             ->where('products.data.1.status', 'not_tracked'));
     $this->get(route('inventory.index', ['branch_id' => $qave->id]))->assertInertia(fn (Assert $page) => $page
-        ->where('selectedBranch.id', $qave->id)
-        ->where('products.data.0.on_hand', 3)
-        ->where('products.data.0.low_stock_threshold', 2)
-        ->where('products.data.0.status', 'in_stock'));
+        ->where('usesGlobalBranch', true)
+        ->where('selectedBranch.id', $main->id)
+        ->where('products.data.0.on_hand', 0)
+        ->where('products.data.0.low_stock_threshold', 5)
+        ->where('products.data.0.status', 'out_of_stock'));
 
     $this->assertDatabaseCount('branch_inventory', 1);
     $this->assertDatabaseCount('inventory_movements', 0);
 });
 
-test('inventory managers can explicitly select or retain the current non-active branch', function (BranchStatus $status, bool $explicit) {
+test('global inventory scope overrides a local query while a retained scope remains selected', function (BranchStatus $status, bool $forgedLocalQuery) {
     $user = inventoryManager();
     $active = Branch::factory()->create(['code' => 'A-ACTIVE']);
     $retained = Branch::factory()->create(['code' => 'B-RETAINED', 'status' => $status]);
@@ -242,13 +243,15 @@ test('inventory managers can explicitly select or retain the current non-active 
     BranchInventory::factory()->for($active)->for($product)->create(['on_hand' => 100]);
     BranchInventory::factory()->for($retained)->for($product)->create(['on_hand' => 7]);
 
-    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $explicit ? $active->id : $retained->id])
-        ->get(route('inventory.index', $explicit ? ['branch_id' => $retained->id] : []))
+    $selected = $forgedLocalQuery ? $active : $retained;
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $selected->id])
+        ->get(route('inventory.index', $forgedLocalQuery ? ['branch_id' => $retained->id] : []))
         ->assertInertia(fn (Assert $page) => $page
             ->has('branches', 2)
             ->where('branches.1.id', $retained->id)
-            ->where('selectedBranch.id', $retained->id)
-            ->where('products.data.0.on_hand', 7));
+            ->where('usesGlobalBranch', true)
+            ->where('selectedBranch.id', $selected->id)
+            ->where('products.data.0.on_hand', $forgedLocalQuery ? 100 : 7));
 })->with([
     'explicit inactive' => [BranchStatus::Inactive, true],
     'current inactive' => [BranchStatus::Inactive, false],
@@ -256,7 +259,7 @@ test('inventory managers can explicitly select or retain the current non-active 
     'current temporarily closed' => [BranchStatus::TemporarilyClosed, false],
 ]);
 
-test('inventory defaults prefer an active branch and fall back to retained branches when none are active', function (bool $hasActiveBranch) {
+test('all branches inventory scope requires an explicit local branch selection', function (bool $hasActiveBranch) {
     $user = inventoryManager();
     $retained = Branch::factory()->create(['code' => 'A-RETAINED', 'status' => BranchStatus::Inactive]);
     $other = Branch::factory()->create(['code' => 'Z-OTHER', 'status' => $hasActiveBranch ? BranchStatus::Active : BranchStatus::TemporarilyClosed]);
@@ -265,8 +268,10 @@ test('inventory defaults prefer an active branch and fall back to retained branc
     $this->actingAs($user)->get(route('inventory.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->has('branches', 2)
-            ->where('selectedBranch.id', $hasActiveBranch ? $other->id : $retained->id)
-            ->has('products.data', 1));
+            ->where('selectedBranch', null)
+            ->where('usesGlobalBranch', false)
+            ->has('products.data', 0)
+            ->where('summary', ['in_stock' => 0, 'low_stock' => 0, 'out_of_stock' => 0, 'not_tracked' => 0]));
 })->with(['active branch available' => true, 'all branches retained' => false]);
 
 test('management stock filters include missing balances and respect threshold boundaries', function (string $status, array $expectedNames) {
@@ -292,6 +297,37 @@ test('management stock filters include missing balances and respect threshold bo
     'out of stock' => ['out_of_stock', ['C empty', 'D missing']],
     'not tracked' => ['not_tracked', ['E untracked']],
 ]);
+
+test('inventory summaries use the full branch dataset and category filters before pagination', function () {
+    $user = inventoryManager();
+    $branch = Branch::factory()->create();
+    $meals = Category::factory()->create(['name' => 'Meals']);
+    $drinks = Category::factory()->create(['name' => 'Drinks']);
+    foreach ([
+        ['A stocked', $meals, 8],
+        ['B low', $meals, 3],
+        ['C empty', $meals, 0],
+        ['D drink', $drinks, 8],
+    ] as [$name, $category, $quantity]) {
+        $product = Product::factory()->for($category)->create(['name' => $name]);
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+        BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => $quantity]);
+    }
+    Product::factory()->for($meals)->count(25)->create()->each(
+        fn (Product $product) => BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => false]),
+    );
+
+    $this->actingAs($user)->get(route('inventory.index', ['branch_id' => $branch->id, 'category' => $meals->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.category', $meals->id)
+            ->has('categories', 2)
+            ->where('summary.in_stock', 1)
+            ->where('summary.low_stock', 1)
+            ->where('summary.out_of_stock', 1)
+            ->where('summary.not_tracked', 25)
+            ->where('products.total', 28)
+            ->has('products.data', 24));
+});
 
 test('management search pagination and image signing operate only on the current page', function () {
     $user = inventoryManager();
@@ -356,6 +392,19 @@ test('history is scoped by branch and product paginated newest first and exposes
     ]);
     InventoryMovement::factory()->for($product)->create(['created_at' => now()->addHour()]);
     InventoryMovement::factory()->for($branch)->create(['created_at' => now()->addHour()]);
+
+    $this->actingAs($user)->get(route('inventory.index', [
+        'branch_id' => $branch->id,
+        'history_product' => $product->id,
+    ]))->assertInertia(fn (Assert $page) => $page
+        ->component('inventory/index')
+        ->where('history.branch.id', $branch->id)
+        ->where('history.product.id', $product->id)
+        ->has('history.movements.data', 30)
+        ->where('history.movements.total', 31)
+        ->where('history.movements.data.0.id', $latest->id)
+        ->where('history.movements.data.0.created_by_name', $user->name)
+        ->missing('history.movements.data.0.order_id'));
 
     $this->actingAs($user)->get(route('inventory.movements.index', [$branch, $product]))
         ->assertInertia(fn (Assert $page) => $page

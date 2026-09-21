@@ -1,5 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { CheckCircle2, Plus } from 'lucide-react';
+import { OperationalItemName } from '@/components/operational-item-name';
+import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { Button } from '@/components/ui/button';
 import { pesos } from '@/lib/pos-money';
 import { cashier } from '@/routes/workspaces';
@@ -41,8 +43,15 @@ export default function Summary({ order }: { order: OrderSummary }) {
                                 <span className="text-red-700">
                                     {item.quantity}×
                                 </span>
-                                <span className="min-w-0 flex-1 wrap-anywhere">
-                                    {item.name}
+                                <span className="min-w-0 flex-1">
+                                    <OperationalItemName
+                                        value={{
+                                            name: item.name,
+                                            sizePrefix: item.size_prefix ?? null,
+                                            displayName:
+                                                item.display_name ?? item.name,
+                                        }}
+                                    />
                                 </span>
                                 <span className="text-red-700">
                                     {pesos(item.line_total)}
@@ -51,20 +60,12 @@ export default function Summary({ order }: { order: OrderSummary }) {
                             <p className="text-xs text-neutral-500">
                                 Base price {pesos(item.unit_price)} each
                             </p>
-                            {item.modifiers.map((modifier) => (
-                                <p
-                                    key={modifier.id}
-                                    className="text-xs wrap-anywhere text-neutral-600"
-                                >
-                                    {modifier.group_name}: {modifier.name} (+
-                                    {pesos(modifier.price_delta)} each)
-                                </p>
-                            ))}
-                            {item.notes && (
-                                <p className="rounded-lg bg-orange-50 p-2 text-sm wrap-anywhere whitespace-pre-wrap text-orange-900">
-                                    {item.notes}
-                                </p>
-                            )}
+                            <PosModifierDetails
+                                modifiers={item.modifiers}
+                                notes={item.notes}
+                                standardClassName="text-xs wrap-anywhere text-neutral-600"
+                                instructionClassName="text-xs wrap-anywhere text-amber-800"
+                            />
                         </li>
                     ))}
                 </ul>

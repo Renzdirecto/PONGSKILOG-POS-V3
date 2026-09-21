@@ -13,6 +13,7 @@ export type InventoryProduct = {
     on_hand: number | null;
     low_stock_threshold: number | null;
     status: StockStatus;
+    last_updated_at: string | null;
 };
 
 export type InventoryMovement = {
@@ -35,4 +36,7 @@ export type InventoryPagination<T> = {
 export type InventoryFilters = {
     search?: string;
     stock_status?: StockStatus | 'all';
+    category?: string;
 };
+
+export type InventorySummary = Record<StockStatus, number>;

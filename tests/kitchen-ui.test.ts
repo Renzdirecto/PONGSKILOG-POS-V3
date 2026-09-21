@@ -1,0 +1,97 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import {
+    canTransitionKitchenStatus,
+    filterKitchenTickets,
+    orderTypeLabel,
+    relativePlacedTime,
+    statusLabel,
+} from '../resources/js/lib/kitchen.ts';
+import type { KitchenTicket } from '../resources/js/types/kitchen.ts';
+
+const tickets: KitchenTicket[] = [
+    {
+        id: 'order-1',
+        number: '1043',
+        customer: 'Maria Santos',
+        order_type: 'dine_in',
+        table: 'Table 2',
+        status: 'kitchen',
+        placed_at: '2026-09-22T10:00:00+08:00',
+        version: 2,
+        items: [],
+    },
+    {
+        id: 'order-2',
+        number: '1044',
+        customer: null,
+        order_type: 'take_out',
+        table: null,
+        status: 'ready',
+        placed_at: '2026-09-22T10:02:00+08:00',
+        version: 4,
+        items: [],
+    },
+    {
+        id: 'order-3',
+        number: '1045',
+        customer: 'Done customer',
+        order_type: 'take_out',
+        table: null,
+        status: 'done',
+        placed_at: '2026-09-22T09:30:00+08:00',
+        version: 5,
+        items: [],
+    },
+];
+
+test('kitchen transitions allow all forward moves and only a one-step rollback', () => {
+    assert.equal(canTransitionKitchenStatus('kitchen', 'done'), true);
+    assert.equal(canTransitionKitchenStatus('ready', 'preparing'), true);
+    assert.equal(canTransitionKitchenStatus('done', 'ready'), true);
+    assert.equal(canTransitionKitchenStatus('done', 'preparing'), false);
+    assert.equal(canTransitionKitchenStatus('ready', 'kitchen'), false);
+    assert.equal(canTransitionKitchenStatus('preparing', 'preparing'), true);
+});
+
+test('all orders excludes done while tabs and search use status order number or customer', () => {
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'all', '').map((ticket) => ticket.id),
+        ['order-1', 'order-2'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'done', '').map((ticket) => ticket.id),
+        ['order-3'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'all', 'maria').map(
+            (ticket) => ticket.id,
+        ),
+        ['order-1'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'all', '#1044').map(
+            (ticket) => ticket.id,
+        ),
+        ['order-2'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'all', '1044').map(
+            (ticket) => ticket.id,
+        ),
+        ['order-2'],
+    );
+});
+
+test('kitchen labels and elapsed time remain presentation-only helpers', () => {
+    assert.equal(statusLabel('preparing'), 'Preparing');
+    assert.equal(orderTypeLabel('dine_in'), 'Dine in');
+    assert.equal(orderTypeLabel('take_out'), 'Take out');
+    assert.equal(
+        relativePlacedTime(
+            '2026-09-22T10:00:00+08:00',
+            new Date('2026-09-22T11:07:00+08:00').getTime(),
+        ),
+        '1 hr 7 min',
+    );
+});

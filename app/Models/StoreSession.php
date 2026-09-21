@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property Carbon $opened_at
+ * @property string $id
  * @property string $opening_cash_amount
  * @property string $opening_cashless_amount
  */

@@ -7,8 +7,11 @@ use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CurrentStoreSessionController;
+use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\KitchenStatusController;
+use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
@@ -78,6 +81,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
     });
 
+    Route::patch('orders/{order}/kitchen-status', KitchenStatusController::class)
+        ->whereUuid('order')
+        ->middleware('branch')
+        ->name('orders.kitchen-status.update');
+
     Route::post('store-sessions/open', OpenStoreSessionController::class)
         ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
         ->name('store-sessions.open');
@@ -85,11 +93,12 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:pos.access')
         ->name('store-sessions.current');
 
-    Route::inertia('workspaces/kitchen', 'workspaces/show', [
-        'workspace' => 'Kitchen',
-        'eyebrow' => 'Branch Operations',
-        'description' => 'Branch-scoped kitchen workspace.',
-    ])->middleware(['permission:kitchen.access', 'branch'])->name('workspaces.kitchen');
+    Route::get('workspaces/kitchen', KitchenWorkspaceController::class)
+        ->middleware(['permission:kitchen.access', 'branch'])
+        ->name('workspaces.kitchen');
+    Route::get('workspaces/customer-display', CustomerDisplayController::class)
+        ->middleware(['permission:customer_display.launch', 'branch'])
+        ->name('workspaces.customer-display');
 });
 
 require __DIR__.'/settings.php';

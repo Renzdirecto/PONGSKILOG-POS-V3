@@ -14,6 +14,7 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
+import type { PosReadyOrder } from '@/types/kitchen';
 
 import type { BranchTable } from '@/types/pos';
 
@@ -24,6 +25,7 @@ type Props = {
     store?: CashierStoreState;
     catalog?: CashierCatalog;
     tables?: BranchTable[];
+    readyOrders?: PosReadyOrder[];
 };
 
 type SharedProps = {

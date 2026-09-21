@@ -9,6 +9,7 @@ use App\Enums\OrderSource;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
 use App\Enums\StoreSessionStatus;
+use App\Events\DisplayOrdersChanged;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Http\Requests\CommitPayLaterOrderRequest;
@@ -111,6 +112,7 @@ class CommitPayLaterOrder
             ]);
             OrderCommitted::dispatch($order);
             KitchenTicketCreated::dispatch($order, $ticket);
+            DisplayOrdersChanged::dispatch($branch, $committedAt);
 
             return $order;
         });

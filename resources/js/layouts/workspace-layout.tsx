@@ -1,16 +1,17 @@
 import { Link, useHttp, usePage } from '@inertiajs/react';
 import {
+    ChefHat,
     LayoutDashboard,
     LogOut,
     QrCode,
-    ReceiptText,
     UtensilsCrossed,
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
+import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
-import { cashier } from '@/routes/workspaces';
+import { cashier, kitchen } from '@/routes/workspaces';
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { openStoreSessionDialogState } from '@/lib/store-session';
@@ -18,6 +19,7 @@ import type {
     Auth,
     BranchContext,
     CurrentStoreSession,
+    PosReadyOrder,
     StoreContext,
 } from '@/types';
 import { useState } from 'react';
@@ -27,6 +29,7 @@ type SharedProps = {
     branchContext: BranchContext;
     storeContext: StoreContext;
     workspace?: string;
+    readyOrders?: PosReadyOrder[];
 };
 
 function roleLabel(role?: string): string {
@@ -63,6 +66,8 @@ export default function WorkspaceLayout({
             auth.roles.some(
                 (role) => role === 'cashier' || role === 'cashier_kitchen',
             ));
+    const isKitchen = page.component === 'workspaces/kitchen';
+    const isOperational = isPos || isKitchen;
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
@@ -71,7 +76,7 @@ export default function WorkspaceLayout({
             (page.props.workspace === 'Owner' ||
                 page.props.workspace === 'Super Admin'));
 
-    if (isPos) {
+    if (isOperational) {
         const openStoreSessionDetails = async () => {
             const openingState = openStoreSessionDialogState();
             setStoreSessionDialogOpen(openingState.open);
@@ -93,13 +98,33 @@ export default function WorkspaceLayout({
         };
 
         const navigation = [
-            { label: 'Dashboard', icon: LayoutDashboard, available: false },
-            { label: 'POS / Order', icon: UtensilsCrossed, available: true },
-            { label: 'QR Orders', icon: QrCode, available: false },
             {
-                label: 'Transaction History',
-                icon: ReceiptText,
+                label: 'Dashboard',
+                icon: LayoutDashboard,
                 available: false,
+                href: null,
+                active: false,
+            },
+            {
+                label: 'POS / Order',
+                icon: UtensilsCrossed,
+                available: auth.permissions.includes('pos.access'),
+                href: cashier(),
+                active: isPos,
+            },
+            {
+                label: 'Kitchen',
+                icon: ChefHat,
+                available: auth.permissions.includes('kitchen.access'),
+                href: kitchen(),
+                active: isKitchen,
+            },
+            {
+                label: 'QR Orders',
+                icon: QrCode,
+                available: false,
+                href: null,
+                active: false,
             },
         ];
         return (
@@ -113,18 +138,18 @@ export default function WorkspaceLayout({
                         />
                     </div>
                     <nav
-                        aria-label="Cashier navigation"
+                        aria-label="Operational navigation"
                         className="flex flex-1 flex-col gap-1.5 px-2 py-2.5"
                     >
-                        {navigation.map(({ label, icon: Icon, available }) =>
-                            available ? (
+                        {navigation.map(({ label, icon: Icon, available, href, active }) =>
+                            available && href ? (
                                 <Link
                                     key={label}
-                                    href={cashier()}
+                                    href={href}
                                     preserveState
                                     preserveScroll
-                                    aria-current="page"
-                                    className="flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] bg-white px-1 text-center text-[10px] font-semibold"
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
                                 >
                                     <Icon className="size-5" />
                                     {label}
@@ -153,13 +178,13 @@ export default function WorkspaceLayout({
                     <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 md:h-[66px] md:px-4">
                         <div className="min-w-0 flex-1">
                             <h1 className="truncate text-[15px] font-bold">
-                                POS / Order
+                                {isKitchen ? 'Kitchen display' : 'POS / Order'}
                             </h1>
                             <p className="truncate text-[11px] text-neutral-500">
                                 {branchContext.current?.name}
                             </p>
                         </div>
-                        {page.props.storeContext?.isOpen ? (
+                        {page.props.storeContext?.isOpen && isPos ? (
                             <button
                                 type="button"
                                 aria-label="View current Store Session details"
@@ -171,6 +196,15 @@ export default function WorkspaceLayout({
                                 <span className="hidden sm:inline">STORE</span>{' '}
                                 OPEN
                             </button>
+                        ) : page.props.storeContext?.isOpen ? (
+                            <span
+                                aria-label="Store open"
+                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2 text-[9px] font-semibold text-green-700 md:px-[11px] md:text-[11.5px]"
+                            >
+                                <span className="size-[7px] rounded-full bg-green-700" />
+                                <span className="hidden sm:inline">STORE</span>{' '}
+                                OPEN
+                            </span>
                         ) : (
                             <span
                                 aria-label="Store closed"
@@ -187,6 +221,12 @@ export default function WorkspaceLayout({
                                 compact
                             />
                         )}
+                        {isPos && branchContext.current && (
+                            <PosReadyNotifications
+                                branchId={branchContext.current.id}
+                                orders={page.props.readyOrders ?? []}
+                            />
+                        )}
                         <PosProfileControls auth={auth} />
                     </header>
                     <StoreSessionDetailsDialog
@@ -200,18 +240,18 @@ export default function WorkspaceLayout({
                         {children}
                     </main>
                     <nav
-                        aria-label="Mobile cashier navigation"
+                        aria-label="Mobile operational navigation"
                         className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[420px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
-                        {navigation.map(({ label, icon: Icon, available }) =>
-                            available ? (
+                        {navigation.map(({ label, icon: Icon, available, href, active }) =>
+                            available && href ? (
                                 <Link
                                     key={label}
-                                    href={cashier()}
+                                    href={href}
                                     preserveState
                                     preserveScroll
-                                    aria-current="page"
-                                    className="flex flex-col items-center justify-center gap-1 rounded-xl bg-white text-center text-[10px] font-semibold"
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
                                 >
                                     <Icon className="size-5" />
                                     {label}

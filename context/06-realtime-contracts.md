@@ -300,8 +300,7 @@ Audience:
 
 - Kitchen
 - POS
-- Customer tracking
-- Customer Display when relevant
+- Private branch channels only
 
 Payload:
 
@@ -327,25 +326,42 @@ Customer mapping:
 - ready → Ready
 - done → Completed
 
+This event is an operational invalidation signal. Kitchen and POS debounce
+bursts, coalesce overlapping reloads, and refetch their authoritative
+branch/session projections. Customer Display does not receive this payload
+because it contains internal order identifiers and operational detail.
+
 ---
 
 ## 13. Customer Display
 
 ### `display.orders_changed`
 
-Safe projection only.
+Audience:
 
-Example:
+- Authorized same-branch Customer Display only
+
+Payload:
+
 
 ```json
 {
-  "preparing": ["ZAB-000123"],
-  "ready": ["ZAB-000119"]
+  "event_id": "uuid",
+  "event_type": "display.orders_changed",
+  "branch_id": "uuid",
+  "occurred_at": "ISO-8601 timestamp"
 }
 ```
 
+This is a privacy-minimal invalidation signal, not an authoritative order
+projection. It is emitted after a committed Pay Now, committed Pay Later, or
+Kitchen lifecycle transition. The display debounces/coalesces signals and
+refetches its order-number-only projection, including after reconnect.
+
 Never include:
 
+- Internal order IDs
+- Order/customer/table/item details
 - Prices
 - Payment
 - Customer private data

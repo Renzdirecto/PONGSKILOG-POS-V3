@@ -486,28 +486,49 @@ Phase 7 manual-QA flow-parity correction (2026-09-20):
 
 ## Phase 8 — Kitchen / KDS
 
-- [ ] Kitchen board
-- [ ] KITCHEN state
-- [ ] PREPARING state
-- [ ] READY state
-- [ ] DONE state
-- [ ] Lifecycle validation
-- [ ] Fullscreen mode
-- [ ] Realtime Kitchen updates
+- [x] Kitchen board
+- [x] KITCHEN state
+- [x] PREPARING state
+- [x] READY state
+- [x] DONE state
+- [x] Lifecycle validation
+- [x] Fullscreen mode
+- [x] Realtime Kitchen updates
 - [ ] Order-edit Kitchen updates
-- [ ] Branch isolation
-- [ ] No financial data exposure
+- [x] Branch isolation
+- [x] No financial data exposure
+
+**Phase 8 operational KDS is COMPLETE.** Committed Pay Now and Pay Later orders
+enter the current OPEN Store Session board exactly once. The server-authoritative
+Kitchen → Preparing → Ready → Done transition locks Order and Kitchen ticket,
+keeps their statuses synchronized, permits forward jumps and one-step rollback,
+and treats duplicate targets as no-ops. The separate Phase 12 committed-order
+editing workflow remains deferred, so its future `kitchen.order_updated` item is
+intentionally unchecked and does not block this approved slice.
+
+- KDS matches the approved standalone interaction and hierarchy in normal and fullscreen modes: filters/counts, search, lifecycle cards, immutable preparation details, responsive density, summary footer, and Customer Display launch. Done history is capped while counts remain truthful.
+- Kitchen props contain no totals, tender, payment method, change, settlement, or other financial fields. Route authorization, active branch, current OPEN session, closed/stale session, foreign branch/order, mismatched Order/ticket state, and cashier-only Ready → Done restrictions are enforced server-side.
+- Compact private branch signals trigger debounced/coalesced authoritative partial reloads and reconnect refetch. Query-count regression coverage remains bounded with 20 tickets, and isolated PostgreSQL workers proved overlapping Ready transitions serialize to one version increment without split Order/ticket state.
 
 ---
 
 ## Phase 9 — Customer Display
 
-- [ ] Preparing order numbers
-- [ ] Ready order numbers
-- [ ] Branch-scoped display
-- [ ] Realtime updates
-- [ ] Reconnect/refetch
-- [ ] Safe public payload
+- [x] Preparing order numbers
+- [x] Ready order numbers
+- [x] Branch-scoped display
+- [x] Realtime updates
+- [x] Reconnect/refetch
+- [x] Safe public payload
+
+**Phase 9 Customer Display is COMPLETE.** The dedicated full-canvas surface maps
+Kitchen and Preparing into Preparing, shows Ready separately, removes Done, and
+exposes order numbers only. Shared employee/auth/profile data is omitted before
+serialization. Its private branch event contains only event identity, branch,
+and time; the client refetches the minimal authoritative projection.
+
+- The POS Ready bell/list, lower-left queue, detail dialog, and cashier Ready → Done action are integrated outside the cart tree, preserving order type, cart, product/payment dialogs, and remembered cashier state across realtime refresh.
+- Live multi-view QA verified KDS lifecycle changes propagating to Customer Display without reload and the POS Ready surface. Responsive checks passed without horizontal overflow at phone, tablet, and desktop widths; KDS grid density progressed from one to three columns in normal mode, and Customer Display stacked on phones while retaining two columns on larger screens.
 
 ---
 

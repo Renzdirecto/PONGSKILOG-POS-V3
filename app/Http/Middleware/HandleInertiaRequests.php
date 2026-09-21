@@ -47,7 +47,7 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        if ($request->routeIs('qr.show')) {
+        if ($request->routeIs('qr.show', 'workspaces.customer-display')) {
             return [];
         }
 

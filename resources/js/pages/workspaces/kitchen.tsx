@@ -74,7 +74,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         new Set(kitchenBoard.tickets.map((ticket) => ticket.id)),
     );
     const pendingNewTicketIds = useRef(new Set<string>());
-    const { playNewOrderSound, playReadySound } = useKitchenAudio();
+    const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
         (event: Record<string, unknown>) => {
@@ -126,9 +126,9 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         );
 
         if (newlyArrivedIds.length > 0) {
-            playNewOrderSound();
+            playNewOrderSounds(newlyArrivedIds.length);
         }
-    }, [kitchenBoard.tickets, playNewOrderSound]);
+    }, [kitchenBoard.tickets, playNewOrderSounds]);
 
     useEffect(() => {
         const synchronizeFullscreen = () => {
@@ -504,6 +504,7 @@ function ClosedKitchen() {
 function useKitchenAudio() {
     const newOrderAudio = useRef<HTMLAudioElement | null>(null);
     const readyAudio = useRef<HTMLAudioElement | null>(null);
+    const newOrderPlaybackQueue = useRef(Promise.resolve());
 
     useEffect(() => {
         const newOrder = new Audio('/audio/kitchen-new-order.mp3');
@@ -545,16 +546,39 @@ function useKitchenAudio() {
         };
     }, []);
 
-    const playNewOrderSound = useCallback(
-        () => playAudioSafely(newOrderAudio.current),
-        [],
-    );
+    const playNewOrderSounds = useCallback((count: number) => {
+        for (let index = 0; index < count; index += 1) {
+            newOrderPlaybackQueue.current = newOrderPlaybackQueue.current
+                .then(() => playAudioToEndSafely(newOrderAudio.current))
+                .catch(() => undefined);
+        }
+    }, []);
     const playReadySound = useCallback(
         () => playAudioSafely(readyAudio.current),
         [],
     );
 
-    return { playNewOrderSound, playReadySound };
+    return { playNewOrderSounds, playReadySound };
+}
+
+function playAudioToEndSafely(audio: HTMLAudioElement | null): Promise<void> {
+    if (audio === null) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        const finish = () => {
+            audio.removeEventListener('ended', finish);
+            audio.removeEventListener('error', finish);
+            resolve();
+        };
+
+        audio.addEventListener('ended', finish, { once: true });
+        audio.addEventListener('error', finish, { once: true });
+        audio.pause();
+        audio.currentTime = 0;
+        void audio.play().catch(finish);
+    });
 }
 
 function playAudioSafely(audio: HTMLAudioElement | null): void {

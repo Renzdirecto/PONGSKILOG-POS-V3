@@ -131,6 +131,8 @@ test('KDS audio is local, transition-confirmed, and does not label structured in
 
     assert.match(kitchenPage, /\/audio\/kitchen-new-order\.mp3/);
     assert.match(kitchenPage, /\/audio\/kitchen-pa-serve\.mp3/);
+    assert.match(kitchenPage, /playNewOrderSounds\(newlyArrivedIds\.length\)/);
+    assert.match(kitchenPage, /playAudioToEndSafely/);
     assert.match(kitchenPage, /result\.changed/);
     assert.doesNotMatch(kitchenPage, /Instruction:/);
 

@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { pesos } from '@/lib/pos-money';
 import { savedItemName } from '@/lib/pos-item-name';
 import { OperationalItemName } from '@/components/operational-item-name';
+import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { customerDisplayLabel } from '@/lib/pos-order';
 import {
     invoiceProofDeferredLabel,
@@ -164,21 +165,11 @@ export function PosPaid({
                                                 value={savedItemName(item)}
                                             />
                                         </p>
-                                        {item.modifiers
-                                            .filter(
-                                                (modifier) =>
-                                                    modifier.semantic_role !==
-                                                    'size',
-                                            )
-                                            .map((modifier) => (
-                                            <p
-                                                key={modifier.id}
-                                                className="pl-3 text-[10.5px] wrap-anywhere text-neutral-500"
-                                            >
-                                                {modifier.name} +
-                                                {pesos(modifier.price_delta)}
-                                            </p>
-                                            ))}
+                                        <PosModifierDetails
+                                            modifiers={item.modifiers}
+                                            standardClassName="pl-3 text-[10.5px] wrap-anywhere text-neutral-500"
+                                            instructionClassName="pl-3 text-[10.5px] wrap-anywhere text-amber-800"
+                                        />
                                         {item.notes && (
                                             <p className="pl-3 text-[10.5px] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                                 Note: {item.notes}

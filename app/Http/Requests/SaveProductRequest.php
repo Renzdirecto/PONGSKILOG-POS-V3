@@ -8,9 +8,29 @@ use App\Models\Branch;
 use App\Models\ModifierGroup;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class SaveProductRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $groups = $this->input('inline_groups');
+
+        if (! is_array($groups)) {
+            return;
+        }
+
+        foreach ($groups as &$group) {
+            if (is_array($group) && ($group['semantic_role'] ?? null) === ModifierSemanticRole::Instruction->value) {
+                $group['selection_type'] = ModifierSelectionType::Multiple->value;
+                $group['min_select'] = 0;
+                $group['max_select'] = max(2, (int) ($group['max_select'] ?? 3));
+            }
+        }
+
+        $this->merge(['inline_groups' => $groups]);
+    }
+
     public function authorize(): bool
     {
         return $this->user()?->can('products.manage') ?? false;
@@ -42,5 +62,27 @@ class SaveProductRequest extends FormRequest
             'branch_configs.*.low_stock_threshold' => ['present', 'nullable', 'integer', 'min:0', 'max:2147483647'],
             'image' => ['sometimes', 'nullable', 'file'],
         ];
+    }
+
+    /** @return array<callable(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            foreach ($this->input('inline_groups', []) as $groupIndex => $group) {
+                if (! is_array($group) || ($group['semantic_role'] ?? null) !== ModifierSemanticRole::Instruction->value) {
+                    continue;
+                }
+
+                foreach ($group['options'] ?? [] as $optionIndex => $option) {
+                    $price = is_array($option) ? ($option['price_delta'] ?? null) : null;
+                    if (is_string($price) && preg_match('/\A0+(?:\.0{1,2})?\z/', $price) !== 1) {
+                        $validator->errors()->add(
+                            "inline_groups.$groupIndex.options.$optionIndex.price_delta",
+                            'Instruction options cannot change the price.',
+                        );
+                    }
+                }
+            }
+        }];
     }
 }

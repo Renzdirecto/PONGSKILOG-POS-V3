@@ -8,6 +8,7 @@ import {
     orderNumberLabel,
     stockAvailabilityLabel,
 } from '../resources/js/lib/pos-order.ts';
+import { lineCents } from '../resources/js/lib/pos-money.ts';
 
 test('a new order starts without remembered customer or table details', () => {
     assert.deepEqual(freshOrderDetails(), {
@@ -96,5 +97,50 @@ test('product customization distinguishes tracked quantities from untracked avai
             stock_status: 'not_tracked',
         }),
         'Available',
+    );
+});
+
+test('instruction selections remain price neutral in the client cart', () => {
+    assert.equal(
+        lineCents({
+            key: 'line-1',
+            product: {
+                id: 'product-1',
+                name: 'Bangsilog',
+                description: null,
+                category_id: 'category-1',
+                category_name: 'Meals',
+                effective_price: '105.00',
+                is_available: true,
+                availability_reason: null,
+                stock_status: 'not_tracked',
+                tracks_inventory: false,
+                on_hand: null,
+                image_url: null,
+                has_modifiers: true,
+                modifier_groups: [
+                    {
+                        id: 'group-1',
+                        name: 'Instructions',
+                        semantic_role: 'instruction',
+                        selection_type: 'multiple',
+                        min_select: 0,
+                        max_select: 3,
+                        options: [
+                            {
+                                id: 'option-1',
+                                name: 'Scramble',
+                                price_delta: '99.00',
+                                sort_order: 0,
+                            },
+                        ],
+                    },
+                ],
+            },
+            quantity: 2,
+            notes: 'No ketchup please',
+            modifiers: [{ group_id: 'group-1', option_id: 'option-1' }],
+        }),
+        21000n,
     );
 });

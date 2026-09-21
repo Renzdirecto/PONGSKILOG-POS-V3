@@ -13,3 +13,9 @@ foreach (['pos' => 'pos.access', 'kitchen' => 'kitchen.access'] as $channel => $
         return $user->is_active && $user->hasPermission($permission) && $user->canAccessBranch($branch);
     });
 }
+
+Broadcast::channel('branch.{branch}.inventory', function (User $user, Branch $branch): bool {
+    return $user->is_active
+        && $user->canAccessBranch($branch)
+        && ($user->hasPermission('pos.access') || $user->hasPermission('inventory.manage') || $user->hasPermission('products.manage'));
+});

@@ -660,6 +660,16 @@ Owner workspace UI alignment slice (2026-09-21):
 - Final verification passed: **1,094 Laravel tests / 6,823 assertions**, **14 frontend contract tests**, Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, and whitespace checks. The existing optional `fontaine`, build timing, and Node experimental type-stripping notices remain non-blocking.
 - Phase 16 remains incomplete. Transactions, Reports, Staff, full Settings, analytics, branch comparison, real notifications, and Store Session summaries remain deferred; no Phase 16 checkbox below is marked by this refinement.
 
+### Realtime catalog synchronization and Instructions Groups follow-up — 2026-09-21
+
+- Wired compact after-commit `inventory.changed`, `product.availability_changed`, and `product.branch_configuration_changed` broadcasts to the private branch inventory channel. Inventory movements and visible catalog mutations now notify only affected authorized branch clients; PostgreSQL/refetched catalog state remains authoritative.
+- POS now maintains one Echo subscription for the active branch, debounces event bursts into an Inertia `catalog` partial reload, prevents overlapping reloads, and performs an authoritative reload after reconnect. Cart, order type, payment state, open Product dialog, selected options, and notes are preserved; an open dialog immediately blocks saving if its Product becomes unavailable.
+- Extended reusable Groups with the explicit `instruction` semantic role. Owner Group and inline Product editors expose Standard options, Size, and Instructions. Instructions normalize to optional/multiple, enforce zero option prices on the server, render as POS chips without price/name effects, and remain separate from free-text notes.
+- Committed order modifiers retain Group name, option name, semantic role, and zero price snapshots. Shared cart/payment/paid/receipt/order-summary presentation renders `Instructions:` independently, leaving Size and Standard behavior unchanged and ready for future KDS/Customer QR reuse without implementing either phase.
+- Focused catalog/POS/inventory/payment regression passed at **429 tests / 3,977 assertions**; full Laravel verification passed at **1,110 tests / 6,971 assertions**. Frontend contract tests passed at **16 tests**. Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, and whitespace checks passed.
+- Live Chrome QA verified MAIN availability, Product enable/disable, price override, out-of-stock, and restock changes in an already-open POS without browser reload; a QAVE-only change did not alter MAIN. Original availability/price/role state and stock quantity were restored. Owner Instructions defaults and explanatory treatment were visually verified; 360/390/430/tablet/desktop checks found no document overflow and browser logs contained no application error.
+- The browser automation bridge could focus but not activate the POS order-type buttons in this run, so live instruction-chip/cart interaction was not claimed; server snapshots/totals/rejections and client price-neutral/reconnect behavior are covered by focused automated tests. Phase 8 and Phase 16 remain incomplete.
+
 - [ ] Dashboard
 - [ ] All Branches scope
 - [ ] Specific Branch scope

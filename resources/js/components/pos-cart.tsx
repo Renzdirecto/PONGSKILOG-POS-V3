@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { PosProductMedia } from '@/components/pos-product-media';
 import { OperationalItemName } from '@/components/operational-item-name';
+import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { lineCents, pesos, selectedOptions } from '@/lib/pos-money';
 import { cartItemName, savedItemName } from '@/lib/pos-item-name';
 import { orderNumberLabel } from '@/lib/pos-order';
@@ -142,21 +143,11 @@ export function PosCart({
                                                 value={row.itemName}
                                             />
                                         </div>
-                                        {row.modifiers
-                                            .filter(
-                                                (option) =>
-                                                    option.semantic_role !==
-                                                    'size',
-                                            )
-                                            .map((option) => (
-                                            <p
-                                                key={option.id}
-                                                className="mt-1 text-[11.5px] leading-4 text-amber-800"
-                                            >
-                                                {option.name} (+
-                                                {pesos(option.price_delta)})
-                                            </p>
-                                            ))}
+                                        <PosModifierDetails
+                                            modifiers={row.modifiers}
+                                            standardClassName="mt-1 text-[11.5px] leading-4 text-amber-800"
+                                            instructionClassName="mt-1 rounded-md bg-amber-50 p-1.5 text-[11px] leading-4 text-amber-900"
+                                        />
                                         {row.notes && (
                                             <p className="mt-1 rounded-md bg-orange-50 p-1.5 text-[11px] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                                 {row.notes}

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Catalog\CreateCategory;
 use App\Actions\Catalog\UpdateCategory;
 use App\Models\Category;
+use App\Support\CatalogRealtime;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -38,9 +39,11 @@ class CategoryController extends Controller
         return to_route('categories.index');
     }
 
-    public function update(Request $request, Category $category, UpdateCategory $update): RedirectResponse
+    public function update(Request $request, Category $category, UpdateCategory $update, CatalogRealtime $realtime): RedirectResponse
     {
-        $update->execute($request->user(), $category, $request->only(['name', 'icon_key', 'sort_order', 'is_active']));
+        $wasActive = $category->is_active;
+        $category = $update->execute($request->user(), $category, $request->only(['name', 'icon_key', 'sort_order', 'is_active']));
+        $realtime->productsChanged($category->products()->get(), $wasActive !== $category->is_active);
 
         return to_route('categories.index');
     }

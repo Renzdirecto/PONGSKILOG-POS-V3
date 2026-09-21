@@ -5,6 +5,7 @@ namespace App\Actions\Orders;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSelectionType;
+use App\Enums\ModifierSemanticRole;
 use App\Enums\OrderSource;
 use App\Enums\OrderType;
 use App\Enums\PaymentStatus;
@@ -93,12 +94,20 @@ class CreatePosDraftOrder
                     }
                     $selected[$option->id] = true;
                     $counts[$group->id] = ($counts[$group->id] ?? 0) + 1;
-                    $unit = ExactMoney::add($unit, ExactMoney::cents($option->price_delta));
+                    $isInstruction = $group->semantic_role === ModifierSemanticRole::Instruction;
+                    if ($isInstruction && ExactMoney::cents($option->price_delta) !== 0) {
+                        throw ValidationException::withMessages(["items.$index.modifiers" => 'Instruction options cannot change the order price.']);
+                    }
+                    if (! $isInstruction) {
+                        $unit = ExactMoney::add($unit, ExactMoney::cents($option->price_delta));
+                    }
                     $modifiers[] = [
                         'id' => (string) Str::uuid(), 'order_item_id' => $itemId,
                         'modifier_option_id' => $option->id, 'group_name_snapshot' => $group->name,
                         'semantic_role_snapshot' => $group->semantic_role?->value,
-                        'option_name_snapshot' => $option->name, 'price_delta_snapshot' => $option->price_delta, 'quantity' => 1,
+                        'option_name_snapshot' => $option->name,
+                        'price_delta_snapshot' => $isInstruction ? '0.00' : $option->price_delta,
+                        'quantity' => 1,
                     ];
                 }
                 foreach ($groups as $group) {

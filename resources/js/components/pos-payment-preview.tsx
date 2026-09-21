@@ -9,6 +9,7 @@ import {
 import { useState } from 'react';
 import { PosTableSelection } from '@/components/pos-table-selection';
 import { OperationalItemName } from '@/components/operational-item-name';
+import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -185,20 +186,11 @@ export function PosPaymentPreview({
                                         value={row.itemName}
                                     />
                                 </p>
-                                {row.modifiers
-                                    .filter(
-                                        (modifier) =>
-                                            modifier.semantic_role !== 'size',
-                                    )
-                                    .map((modifier) => (
-                                    <p
-                                        key={modifier.id}
-                                        className="text-[10.5px] leading-[1.45] wrap-anywhere text-neutral-500"
-                                    >
-                                        {modifier.name} (+
-                                        {pesos(modifier.price_delta)})
-                                    </p>
-                                    ))}
+                                <PosModifierDetails
+                                    modifiers={row.modifiers}
+                                    standardClassName="text-[10.5px] leading-[1.45] wrap-anywhere text-neutral-500"
+                                    instructionClassName="text-[10.5px] leading-[1.45] wrap-anywhere text-amber-800"
+                                />
                                 {row.notes && (
                                     <p className="text-[10.5px] leading-[1.45] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                         {row.notes}

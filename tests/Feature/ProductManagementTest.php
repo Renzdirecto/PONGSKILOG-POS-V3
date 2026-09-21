@@ -458,6 +458,82 @@ test('group management creates edits and deactivates groups and options', functi
     $this->assertDatabaseCount('modifier_options', 1);
 });
 
+test('instruction groups persist semantic defaults and reject priced options', function () {
+    $user = catalogWebManager();
+
+    $this->actingAs($user)->post(route('modifier-groups.store'), [
+        'name' => 'Preparation',
+        'semantic_role' => 'instruction',
+        'selection_type' => 'single',
+        'min_select' => 1,
+        'max_select' => 1,
+        'is_active' => true,
+    ])->assertRedirectToRoute('modifier-groups.index')->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->sole();
+    expect($group->semantic_role)->toBe(ModifierSemanticRole::Instruction)
+        ->and($group->selection_type->value)->toBe('multiple')
+        ->and($group->min_select)->toBe(0)
+        ->and($group->max_select)->toBe(2);
+
+    $this->post(route('modifier-options.store'), [
+        'modifier_group_id' => $group->id,
+        'name' => 'Scramble',
+        'price_delta' => '10.00',
+        'sort_order' => 0,
+        'is_active' => true,
+    ])->assertSessionHasErrors(['price_delta' => 'Instruction options cannot change the price.']);
+    $this->assertDatabaseCount('modifier_options', 0);
+
+    $this->post(route('modifier-options.store'), [
+        'modifier_group_id' => $group->id,
+        'name' => 'Scramble',
+        'price_delta' => '0.00',
+        'sort_order' => 0,
+        'is_active' => true,
+    ])->assertSessionHasNoErrors();
+    expect(ModifierOption::query()->sole()->price_delta)->toBe('0.00');
+});
+
+test('inline instruction groups are normalized and cannot contain priced options', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $input = catalogProductInput($category, [
+        'inline_groups' => [[
+            'name' => 'Instructions',
+            'semantic_role' => 'instruction',
+            'selection_type' => 'single',
+            'min_select' => 1,
+            'max_select' => 1,
+            'is_active' => true,
+            'options' => [[
+                'name' => 'Plain Rice',
+                'price_delta' => '5.00',
+                'sort_order' => 0,
+                'is_active' => true,
+            ]],
+        ]],
+    ]);
+
+    $this->actingAs($user)->post(route('products.store'), $input)
+        ->assertSessionHasErrors('inline_groups.0.options.0.price_delta');
+    $this->assertDatabaseCount('products', 0);
+    $this->assertDatabaseCount('modifier_groups', 0);
+
+    data_set($input, 'inline_groups.0.options.0.price_delta', '0.00');
+    $this->post(route('products.store'), $input)->assertSessionHasNoErrors();
+
+    $group = ModifierGroup::query()->sole();
+    expect($group->semantic_role)->toBe(ModifierSemanticRole::Instruction)
+        ->and($group->selection_type->value)->toBe('multiple')
+        ->and($group->min_select)->toBe(0)
+        ->and($group->max_select)->toBe(2);
+    $this->assertDatabaseHas('product_modifier_groups', [
+        'product_id' => Product::query()->sole()->id,
+        'modifier_group_id' => $group->id,
+    ]);
+});
+
 test('image endpoints upload replace and remove optimized product images', function () {
     $disk = Storage::fake('s3');
     $product = Product::factory()->create();

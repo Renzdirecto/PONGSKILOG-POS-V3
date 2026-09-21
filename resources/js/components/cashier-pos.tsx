@@ -36,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { savedItemName } from '@/lib/pos-item-name';
 import {
     confirmedPayLaterState,
@@ -75,6 +76,7 @@ export function CashierPos({
     tables: BranchTable[];
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
+    const realtimeStatus = usePosCatalogRealtime(branch.id);
     const initialDraft = usePage().flash.posDraft as OrderSummary | undefined;
     const [orderType, setOrderType] = useRemember<OrderType | null>(
         initialDraft?.order_type ?? null,
@@ -161,6 +163,11 @@ export function CashierPos({
     const form = useForm(`${rememberKey}:details`, freshOrderDetails());
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber = saved?.order_number ?? reservation?.order_number ?? null;
+    const editingProduct = editing
+        ? (catalog.products.find(
+              (product) => product.id === editing.product.id,
+          ) ?? editing.product)
+        : null;
 
     useEffect(() => {
         if (
@@ -470,6 +477,17 @@ export function CashierPos({
 
     return (
         <div className="pos-surface flex min-h-0 min-w-0 flex-1 flex-col text-[13px]">
+            {realtimeStatus !== 'connected' && (
+                <div
+                    role="status"
+                    className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-center text-[11.5px] font-semibold text-amber-900"
+                >
+                    {realtimeStatus === 'reconnecting' ||
+                    realtimeStatus === 'connecting'
+                        ? 'Reconnecting to live catalog updates…'
+                        : 'Live catalog updates are offline. Current cart details are preserved.'}
+                </div>
+            )}
             <div className="flex min-h-0 min-w-0 flex-1">
                 <CashierCatalog
                     catalog={catalog}
@@ -504,10 +522,10 @@ export function CashierPos({
                     <span>{saved ? pesos(saved.total) : pesos(total)}</span>
                 </Button>
             </div>
-            {editing && (
+            {editing && editingProduct && (
                 <PosProductDialog
                     key={editing.line?.key ?? editing.product.id}
-                    product={editing.product}
+                    product={editingProduct}
                     initial={editing.line}
                     onClose={() => setEditing(null)}
                     onRemove={() => {

@@ -14,6 +14,8 @@ import { lineCents, pesos } from '@/lib/pos-money';
 import { stockAvailabilityLabel } from '@/lib/pos-order';
 import type { CartLine, PosProduct } from '@/types/pos';
 
+type PosModifierGroup = NonNullable<PosProduct['modifier_groups']>[number];
+
 export const posDialogClass =
     'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:h-dvh max-md:max-h-dvh max-md:max-w-full max-md:rounded-none [&>button:last-child]:top-2.5 [&>button:last-child]:right-2.5 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center';
 
@@ -56,6 +58,25 @@ export function PosProductDialog({
         notes,
         modifiers,
     };
+    const setOptionSelected = (
+        group: PosModifierGroup,
+        optionId: string,
+        checked: boolean,
+    ) =>
+        setModifiers((current) =>
+            checked
+                ? current.filter(
+                      (selection) => selection.option_id !== optionId,
+                  )
+                : [
+                      ...current.filter(
+                          (selection) =>
+                              group.selection_type !== 'single' ||
+                              selection.group_id !== group.id,
+                      ),
+                      { group_id: group.id, option_id: optionId },
+                  ],
+        );
 
     return (
         <Dialog
@@ -165,96 +186,113 @@ export function PosProductDialog({
                                 </p>
                             )}
                         </div>
-                        {groups.map((group) => (
-                            <fieldset key={group.id} className="space-y-2">
-                                <legend className="mb-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                                    {group.name}{' '}
-                                    {group.min_select > 0 && (
-                                        <span className="ml-1 rounded-full bg-neutral-950 px-2 py-1 text-[9px] text-white">
-                                            Required
-                                        </span>
-                                    )}
-                                </legend>
-                                <p className="text-[10px] text-neutral-500">
-                                    Choose {group.min_select}–{group.max_select}
-                                </p>
-                                <div
-                                    className={
-                                        group.selection_type === 'single'
-                                            ? 'flex flex-wrap gap-2'
-                                            : 'space-y-2'
-                                    }
+                        {groups.map((group) => {
+                            const isInstruction =
+                                group.semantic_role === 'instruction';
+                            const selectedInstructions = isInstruction
+                                ? group.options.filter((option) =>
+                                      modifiers.some(
+                                          (selection) =>
+                                              selection.option_id === option.id,
+                                      ),
+                                  )
+                                : [];
+
+                            return (
+                                <fieldset
+                                    key={group.id}
+                                    className="space-y-2"
                                 >
-                                    {group.options.map((option) => {
-                                        const checked = modifiers.some(
-                                            (selection) =>
-                                                selection.option_id ===
-                                                option.id,
-                                        );
-                                        return (
-                                            <label
-                                                key={option.id}
-                                                className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${checked ? 'border-neutral-950 bg-neutral-100' : 'border-neutral-200'} ${group.selection_type === 'multiple' ? 'w-full' : ''}`}
-                                            >
-                                                <input
-                                                    type={
-                                                        group.selection_type ===
-                                                            'single' &&
-                                                        group.min_select > 0
-                                                            ? 'radio'
-                                                            : 'checkbox'
-                                                    }
-                                                    name={`modifier-${group.id}`}
-                                                    checked={checked}
-                                                    onChange={() =>
-                                                        setModifiers(
-                                                            (current) =>
-                                                                checked
-                                                                    ? current.filter(
-                                                                          (
-                                                                              selection,
-                                                                          ) =>
-                                                                              selection.option_id !==
-                                                                              option.id,
-                                                                      )
-                                                                    : [
-                                                                          ...current.filter(
-                                                                              (
-                                                                                  selection,
-                                                                              ) =>
-                                                                                  group.selection_type !==
-                                                                                      'single' ||
-                                                                                  selection.group_id !==
-                                                                                      group.id,
-                                                                          ),
-                                                                          {
-                                                                              group_id:
-                                                                                  group.id,
-                                                                              option_id:
-                                                                                  option.id,
-                                                                          },
-                                                                      ],
-                                                        )
-                                                    }
-                                                    className="size-4 accent-neutral-950"
-                                                />
-                                                <span className="min-w-0 flex-1 wrap-anywhere">
-                                                    {option.name}
-                                                </span>
-                                                <span className="text-[11px] text-red-700">
-                                                    +{pesos(option.price_delta)}
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                                {group.options.length === 0 && (
-                                    <p className="text-xs text-red-700">
-                                        No options are currently available.
+                                    <legend className="mb-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
+                                        {group.name}{' '}
+                                        {group.min_select > 0 && (
+                                            <span className="ml-1 rounded-full bg-neutral-950 px-2 py-1 text-[9px] text-white">
+                                                Required
+                                            </span>
+                                        )}
+                                    </legend>
+                                    <p className="text-[10px] text-neutral-500">
+                                        {isInstruction
+                                            ? `Optional · choose up to ${group.max_select}`
+                                            : `Choose ${group.min_select}–${group.max_select}`}
                                     </p>
-                                )}
-                            </fieldset>
-                        ))}
+                                    <div
+                                        className={
+                                            isInstruction ||
+                                            group.selection_type === 'single'
+                                                ? 'flex flex-wrap gap-2'
+                                                : 'space-y-2'
+                                        }
+                                    >
+                                        {group.options.map((option) => {
+                                            const checked = modifiers.some(
+                                                (selection) =>
+                                                    selection.option_id ===
+                                                    option.id,
+                                            );
+
+                                            return (
+                                                <label
+                                                    key={option.id}
+                                                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${checked ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-700'} ${group.selection_type === 'multiple' && !isInstruction ? 'w-full' : ''}`}
+                                                >
+                                                    <input
+                                                        type={
+                                                            group.selection_type ===
+                                                                'single' &&
+                                                            group.min_select >
+                                                                0
+                                                                ? 'radio'
+                                                                : 'checkbox'
+                                                        }
+                                                        name={`modifier-${group.id}`}
+                                                        checked={checked}
+                                                        onChange={() =>
+                                                            setOptionSelected(
+                                                                group,
+                                                                option.id,
+                                                                checked,
+                                                            )
+                                                        }
+                                                        className={
+                                                            isInstruction
+                                                                ? 'sr-only'
+                                                                : 'size-4 accent-neutral-950'
+                                                        }
+                                                    />
+                                                    <span className="min-w-0 flex-1 wrap-anywhere">
+                                                        {option.name}
+                                                    </span>
+                                                    {!isInstruction && (
+                                                        <span className="text-[11px] text-red-700">
+                                                            +
+                                                            {pesos(
+                                                                option.price_delta,
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    {group.options.length === 0 && (
+                                        <p className="text-xs text-red-700">
+                                            No options are currently available.
+                                        </p>
+                                    )}
+                                    {selectedInstructions.length > 0 && (
+                                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] leading-5 text-amber-900">
+                                            <span className="font-semibold">
+                                                Instructions:
+                                            </span>{' '}
+                                            {selectedInstructions
+                                                .map((option) => option.name)
+                                                .join(', ')}
+                                        </p>
+                                    )}
+                                </fieldset>
+                            );
+                        })}
                         <div className="space-y-2">
                             <Label
                                 htmlFor="pos-notes"
@@ -277,6 +315,17 @@ export function PosProductDialog({
                             <p className="text-xs text-red-700">
                                 Complete the required options within each
                                 selection limit.
+                            </p>
+                        )}
+                        {!product.is_available && (
+                            <p
+                                role="alert"
+                                className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                            >
+                                This product is now unavailable. Your current
+                                choices and note are preserved; close this
+                                dialog and choose another product, or wait for
+                                stock to be restored.
                             </p>
                         )}
                     </div>

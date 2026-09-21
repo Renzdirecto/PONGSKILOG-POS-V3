@@ -13,7 +13,7 @@ export type CategoryIconKey =
     | 'breakfast'
     | 'add_ons'
     | 'food';
-export type ModifierSemanticRole = 'size' | null;
+export type ModifierSemanticRole = 'size' | 'instruction' | null;
 export type CashierCatalog = {
     categories: { id: string; name: string; icon_key?: CategoryIconKey }[];
     products: {

@@ -5,4 +5,5 @@ namespace App\Enums;
 enum ModifierSemanticRole: string
 {
     case Size = 'size';
+    case Instruction = 'instruction';
 }

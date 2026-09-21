@@ -17,6 +17,12 @@ class CreateModifierGroup
     {
         Gate::forUser($user)->authorize('products.manage');
 
+        if (($attributes['semantic_role'] ?? null) === ModifierSemanticRole::Instruction->value) {
+            $attributes['selection_type'] = ModifierSelectionType::Multiple->value;
+            $attributes['min_select'] = 0;
+            $attributes['max_select'] = max(2, (int) ($attributes['max_select'] ?? 3));
+        }
+
         $validated = Validator::make($attributes, [
             'name' => ['required', 'string', 'max:255'],
             'semantic_role' => ['nullable', Rule::enum(ModifierSemanticRole::class)],

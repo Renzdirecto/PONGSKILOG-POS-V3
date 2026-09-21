@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { CheckCircle2, Plus } from 'lucide-react';
 import { OperationalItemName } from '@/components/operational-item-name';
+import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { Button } from '@/components/ui/button';
 import { pesos } from '@/lib/pos-money';
 import { cashier } from '@/routes/workspaces';
@@ -59,20 +60,11 @@ export default function Summary({ order }: { order: OrderSummary }) {
                             <p className="text-xs text-neutral-500">
                                 Base price {pesos(item.unit_price)} each
                             </p>
-                            {item.modifiers
-                                .filter(
-                                    (modifier) =>
-                                        modifier.semantic_role !== 'size',
-                                )
-                                .map((modifier) => (
-                                    <p
-                                        key={modifier.id}
-                                        className="text-xs wrap-anywhere text-neutral-600"
-                                    >
-                                        {modifier.group_name}: {modifier.name}{' '}
-                                        (+{pesos(modifier.price_delta)} each)
-                                    </p>
-                                ))}
+                            <PosModifierDetails
+                                modifiers={item.modifiers}
+                                standardClassName="text-xs wrap-anywhere text-neutral-600"
+                                instructionClassName="text-xs wrap-anywhere text-amber-800"
+                            />
                             {item.notes && (
                                 <p className="rounded-lg bg-orange-50 p-2 text-sm wrap-anywhere whitespace-pre-wrap text-orange-900">
                                     {item.notes}

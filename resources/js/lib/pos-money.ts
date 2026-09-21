@@ -47,7 +47,10 @@ export function selectedOptions(line: CartLine) {
 export function lineCents(line: CartLine): bigint {
     return (
         selectedOptions(line).reduce(
-            (total, option) => total + cents(option.price_delta),
+            (total, option) =>
+                option.semantic_role === 'instruction'
+                    ? total
+                    : total + cents(option.price_delta),
             cents(line.product.effective_price),
         ) * BigInt(line.quantity)
     );

@@ -10,6 +10,10 @@ import {
     openStoreSessionDialogState,
     storeSessionDetailRows,
 } from '../resources/js/lib/store-session.ts';
+import {
+    POS_CATALOG_REALTIME_EVENTS,
+    shouldRefetchCatalogAfterConnectionChange,
+} from '../resources/js/lib/pos-catalog-realtime.ts';
 
 test('Store Session detail rows render persisted opening money and Manila time', () => {
     assert.deepEqual(openStoreSessionDialogState(), {
@@ -49,4 +53,36 @@ test('invoice proof placeholder is limited to the Cashless payment leg and clear
     assert.equal(showsInvoiceProof('cashless'), true);
     assert.equal(showsInvoiceProof('split'), true);
     assert.equal(invoiceProofDeferredLabel, 'Coming in Transaction History');
+});
+
+test('POS subscribes to the compact catalog events and refetches after reconnect', () => {
+    assert.deepEqual(POS_CATALOG_REALTIME_EVENTS, [
+        '.inventory.changed',
+        '.product.availability_changed',
+        '.product.branch_configuration_changed',
+    ]);
+    assert.equal(
+        shouldRefetchCatalogAfterConnectionChange(
+            'unavailable',
+            'connected',
+            true,
+        ),
+        true,
+    );
+    assert.equal(
+        shouldRefetchCatalogAfterConnectionChange(
+            'connecting',
+            'connected',
+            false,
+        ),
+        false,
+    );
+    assert.equal(
+        shouldRefetchCatalogAfterConnectionChange(
+            'connected',
+            'connected',
+            true,
+        ),
+        false,
+    );
 });

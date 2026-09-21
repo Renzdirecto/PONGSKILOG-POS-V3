@@ -63,10 +63,9 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                                 <Status active={group.is_active} />
                             </div>
                             <p className="text-[12px] text-[#767676]">
-                                {group.selection_type === 'single'
-                                    ? 'One choice'
-                                    : 'Multiple choices'}{' '}
-                                · Select {group.min_select}–{group.max_select}
+                                {group.semantic_role === 'instruction'
+                                    ? 'Instructions · Optional, multiple choices · Price-neutral'
+                                    : `${group.semantic_role === 'size' ? 'Size' : 'Standard options'} · ${group.selection_type === 'single' ? 'One choice' : 'Multiple choices'} · Select ${group.min_select}–${group.max_select}`}
                             </p>
                             <div className="flex gap-2">
                                 <Button
@@ -102,7 +101,10 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                                                     {option.name}
                                                 </p>
                                                 <p className="text-[11.5px] text-[#767676]">
-                                                    +{money(option.price_delta)}
+                                                    {group.semantic_role ===
+                                                    'instruction'
+                                                        ? 'Preparation instruction'
+                                                        : `+${money(option.price_delta)}`}
                                                 </p>
                                             </div>
                                             <Status active={option.is_active} />
@@ -210,6 +212,45 @@ function GroupForm({
                     error={form.errors.name}
                 />
                 <Field
+                    id="group-semantic-role"
+                    label="Behavior"
+                    error={form.errors.semantic_role}
+                >
+                    <select
+                        id="group-semantic-role"
+                        className={controlClass}
+                        value={form.data.semantic_role ?? ''}
+                        onChange={(event) => {
+                            const role =
+                                event.target.value === 'size'
+                                    ? 'size'
+                                    : event.target.value === 'instruction'
+                                      ? 'instruction'
+                                      : null;
+                            form.setData((data) => ({
+                                ...data,
+                                semantic_role: role,
+                                ...(role === 'instruction'
+                                    ? {
+                                          selection_type: 'multiple',
+                                          min_select: '0',
+                                          max_select: String(
+                                              Math.max(
+                                                  3,
+                                                  Number(data.max_select),
+                                              ),
+                                          ),
+                                      }
+                                    : {}),
+                            }));
+                        }}
+                    >
+                        <option value="">Standard options</option>
+                        <option value="size">Size</option>
+                        <option value="instruction">Instructions</option>
+                    </select>
+                </Field>
+                <Field
                     id="group-selection"
                     label="Selection type"
                     error={form.errors.selection_type}
@@ -218,6 +259,7 @@ function GroupForm({
                         id="group-selection"
                         className={controlClass}
                         value={form.data.selection_type}
+                        disabled={form.data.semantic_role === 'instruction'}
                         onChange={(event) => {
                             const type = event.target.value as
                                 | 'single'
@@ -241,37 +283,39 @@ function GroupForm({
                         <option value="multiple">Multiple choices</option>
                     </select>
                 </Field>
-                <Field
-                    id="group-semantic-role"
-                    label="Operational display"
-                    error={form.errors.semantic_role}
-                >
-                    <select
-                        id="group-semantic-role"
-                        className={controlClass}
-                        value={form.data.semantic_role ?? ''}
-                        onChange={(event) =>
-                            form.setData(
-                                'semantic_role',
-                                event.target.value === 'size' ? 'size' : null,
-                            )
-                        }
-                    >
-                        <option value="">Standard option Group</option>
-                        <option value="size">
-                            Size prefix (example: Small Yakult)
-                        </option>
-                    </select>
-                </Field>
+                {form.data.semantic_role === 'instruction' && (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                        Instructions are optional preparation choices. They
+                        allow multiple selections and never change the Product
+                        name or price.
+                    </p>
+                )}
                 <div className="grid grid-cols-2 gap-4">
-                    <TextField
-                        id="group-min"
-                        label="Minimum choices"
-                        type="number"
-                        value={form.data.min_select}
-                        onChange={(value) => form.setData('min_select', value)}
-                        error={form.errors.min_select}
-                    />
+                    {form.data.semantic_role === 'instruction' ? (
+                        <Field
+                            id="group-min"
+                            label="Minimum choices"
+                            error={form.errors.min_select}
+                        >
+                            <input
+                                id="group-min"
+                                disabled
+                                value="0"
+                                className={controlClass}
+                            />
+                        </Field>
+                    ) : (
+                        <TextField
+                            id="group-min"
+                            label="Minimum choices"
+                            type="number"
+                            value={form.data.min_select}
+                            onChange={(value) =>
+                                form.setData('min_select', value)
+                            }
+                            error={form.errors.min_select}
+                        />
+                    )}
                     <TextField
                         id="group-max"
                         label="Maximum choices"
@@ -307,7 +351,10 @@ function OptionForm({
     const form = useForm({
         modifier_group_id: group.id,
         name: option?.name ?? '',
-        price_delta: option?.price_delta ?? '0.00',
+        price_delta:
+            group.semantic_role === 'instruction'
+                ? '0.00'
+                : (option?.price_delta ?? '0.00'),
         sort_order: String(option?.sort_order ?? 0),
         is_active: option?.is_active ?? true,
     });
@@ -320,6 +367,13 @@ function OptionForm({
                 event.preventDefault();
                 if (submitting.current) return;
                 submitting.current = true;
+                form.transform((data) => ({
+                    ...data,
+                    price_delta:
+                        group.semantic_role === 'instruction'
+                            ? '0.00'
+                            : data.price_delta,
+                }));
                 form.submit(option ? updateOption(option.id) : storeOption(), {
                     preserveScroll: true,
                     onSuccess: () => {
@@ -343,13 +397,20 @@ function OptionForm({
                     onChange={(value) => form.setData('name', value)}
                     error={form.errors.name}
                 />
-                <TextField
-                    id="option-price"
-                    label="Additional price (₱)"
-                    value={form.data.price_delta}
-                    onChange={(value) => form.setData('price_delta', value)}
-                    error={form.errors.price_delta}
-                />
+                {group.semantic_role === 'instruction' ? (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                        Instruction options are fixed at ₱0.00 and do not
+                        affect order totals.
+                    </p>
+                ) : (
+                    <TextField
+                        id="option-price"
+                        label="Additional price (₱)"
+                        value={form.data.price_delta}
+                        onChange={(value) => form.setData('price_delta', value)}
+                        error={form.errors.price_delta}
+                    />
+                )}
                 <TextField
                     id="option-sort"
                     label="Sort order"

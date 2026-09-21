@@ -208,6 +208,97 @@ test('size groups prefix operational item names without changing the canonical p
     $response->assertSessionHasNoErrors();
 });
 
+test('instruction selections remain structured price neutral and separate from item notes', function () {
+    $branch = Branch::factory()->create();
+    $user = posCashier($branch);
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
+    $group = ModifierGroup::factory()->create([
+        'name' => 'Instructions',
+        'semantic_role' => ModifierSemanticRole::Instruction,
+        'selection_type' => 'multiple',
+        'min_select' => 0,
+        'max_select' => 3,
+    ]);
+    $product->modifierGroups()->attach($group);
+    $scramble = ModifierOption::factory()->for($group)->create(['name' => 'Scramble', 'price_delta' => '0.00']);
+    $plainRice = ModifierOption::factory()->for($group)->create(['name' => 'Plain Rice', 'price_delta' => '0.00']);
+    $payload = posPayload($product);
+    $payload['items'][0]['quantity'] = 1;
+    $payload['items'][0]['notes'] = 'No ketchup please';
+    $payload['items'][0]['modifiers'] = [
+        ['group_id' => $group->id, 'option_id' => $scramble->id],
+        ['group_id' => $group->id, 'option_id' => $plainRice->id],
+    ];
+
+    $this->actingAs($user)->post(route('pos.orders.store'), $payload)
+        ->assertRedirectToRoute('workspaces.cashier')
+        ->assertInertiaFlash('posDraft.total', '105.00')
+        ->assertInertiaFlash('posDraft.items.0.name', 'Bangsilog')
+        ->assertInertiaFlash('posDraft.items.0.display_name', 'Bangsilog')
+        ->assertInertiaFlash('posDraft.items.0.size_prefix', null)
+        ->assertInertiaFlash('posDraft.items.0.notes', 'No ketchup please')
+        ->assertInertiaFlash('posDraft.items.0.modifiers.0.semantic_role', 'instruction')
+        ->assertInertiaFlash('posDraft.items.0.modifiers.1.semantic_role', 'instruction');
+
+    $order = Order::query()->sole();
+    $item = $order->items()->sole();
+    expect($order->total)->toBe('105.00')
+        ->and($item->product_name_snapshot)->toBe('Bangsilog')
+        ->and($item->notes)->toBe('No ketchup please');
+    $this->assertDatabaseHas('order_item_modifiers', [
+        'order_item_id' => $item->id,
+        'group_name_snapshot' => 'Instructions',
+        'option_name_snapshot' => 'Scramble',
+        'semantic_role_snapshot' => 'instruction',
+        'price_delta_snapshot' => '0.00',
+    ]);
+    $this->assertDatabaseHas('order_item_modifiers', [
+        'order_item_id' => $item->id,
+        'option_name_snapshot' => 'Plain Rice',
+        'semantic_role_snapshot' => 'instruction',
+    ]);
+
+    $group->update(['name' => 'Changed group']);
+    $scramble->update(['name' => 'Changed option']);
+    foreach ([app(PayLaterOrderSummary::class)->summary($order), app(PosReceipt::class)->summary($order)] as $summary) {
+        expect($summary['items'][0]['name'])->toBe('Bangsilog')
+            ->and($summary['items'][0]['display_name'])->toBe('Bangsilog')
+            ->and($summary['items'][0]['notes'])->toBe('No ketchup please')
+            ->and($summary['items'][0]['modifiers'][0]['group_name'])->toBe('Instructions')
+            ->and($summary['items'][0]['modifiers'][0]['name'])->toBe('Scramble')
+            ->and($summary['items'][0]['modifiers'][0]['semantic_role'])->toBe('instruction');
+    }
+});
+
+test('instruction groups enforce product attachment active state and zero persisted prices', function (string $state) {
+    $branch = Branch::factory()->create();
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create();
+    $group = ModifierGroup::factory()->create([
+        'semantic_role' => ModifierSemanticRole::Instruction,
+        'selection_type' => 'multiple',
+        'min_select' => 0,
+        'max_select' => 3,
+    ]);
+    $product->modifierGroups()->attach($group);
+    $option = ModifierOption::factory()->for($group)->create(['price_delta' => '0.00']);
+    $payload = posPayload($product);
+    $payload['items'][0]['modifiers'] = [['group_id' => $group->id, 'option_id' => $option->id]];
+
+    match ($state) {
+        'unattached' => $product->modifierGroups()->detach($group),
+        'inactive option' => $option->update(['is_active' => false]),
+        'disabled group' => $group->update(['is_active' => false]),
+        'priced database row' => DB::table('modifier_options')->where('id', $option->id)->update(['price_delta' => '1.00']),
+    };
+
+    $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)
+        ->assertInvalid('items.0.modifiers');
+    $this->assertDatabaseCount('orders', 0);
+    $this->assertDatabaseCount('order_item_modifiers', 0);
+})->with(['unattached', 'inactive option', 'disabled group', 'priced database row']);
+
 test('both order types accept an optional current branch table', function (string $orderType, string $tableState) {
     $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();

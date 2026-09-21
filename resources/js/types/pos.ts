@@ -37,7 +37,7 @@ export type OrderSummary = {
         modifiers: {
             id: string;
             group_name: string;
-            semantic_role?: 'size' | null;
+            semantic_role?: 'size' | 'instruction' | null;
             name: string;
             price_delta: string;
             quantity: number;

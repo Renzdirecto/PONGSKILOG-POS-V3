@@ -3,12 +3,14 @@
 namespace App\Actions\Inventory;
 
 use App\Enums\InventoryMovementType;
+use App\Events\InventoryChanged;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\InventoryState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -16,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 
 class ApplyInventoryMovement
 {
+    public function __construct(private InventoryState $inventoryState) {}
+
     /** Internal primitive: callers authorize their workflow before applying stock changes. */
     public function execute(
         Branch $branch,
@@ -88,7 +92,7 @@ class ApplyInventoryMovement
                 'version' => $balance->version + 1,
             ]);
 
-            return InventoryMovement::query()->create([
+            $movement = InventoryMovement::query()->create([
                 'branch_id' => $branch->id,
                 'product_id' => $product->id,
                 'movement_type' => $movementType,
@@ -99,6 +103,18 @@ class ApplyInventoryMovement
                 'store_session_expense_id' => $storeSessionExpenseId,
                 'stock_transfer_id' => $stockTransferId,
             ]);
+
+            $state = $this->inventoryState->resolve($branchProduct, $balance);
+            InventoryChanged::dispatch(
+                $branch->id,
+                $product->id,
+                $balance->on_hand,
+                $state['low_stock_threshold'],
+                $state['status'],
+                $balance->version,
+            );
+
+            return $movement;
         });
     }
 }

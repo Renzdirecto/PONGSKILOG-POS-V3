@@ -40,7 +40,7 @@ type InlineOption = {
 type InlineGroup = {
     client_key: string;
     name: string;
-    semantic_role: 'size' | null;
+    semantic_role: 'size' | 'instruction' | null;
     selection_type: 'single' | 'multiple';
     min_select: number;
     max_select: number;
@@ -752,9 +752,11 @@ function AttachedGroupCard({
                 <div
                     className={`${controlClass} flex w-28 items-center text-xs font-semibold`}
                 >
-                    {group.selection_type === 'single'
-                        ? 'One choice'
-                        : 'Multiple'}
+                    {group.semantic_role === 'instruction'
+                        ? 'Instructions'
+                        : group.semantic_role === 'size'
+                          ? 'Size'
+                          : 'Standard'}
                 </div>
                 <button
                     type="button"
@@ -779,7 +781,9 @@ function AttachedGroupCard({
                     <div
                         className={`${controlClass} flex items-center text-sm tabular-nums`}
                     >
-                        {money(option.price_delta)}
+                        {group.semantic_role === 'instruction'
+                            ? 'Price-neutral'
+                            : money(option.price_delta)}
                     </div>
                     <div
                         className={`flex min-h-11 items-center justify-center rounded-xl text-xs font-bold ${option.is_active ? 'bg-neutral-950 text-white' : 'border border-neutral-200 text-neutral-500'}`}
@@ -818,7 +822,7 @@ function InlineGroupEditor({
 
     return (
         <section className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-3">
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_44px]">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_150px_44px]">
                 <input
                     aria-label="Group title"
                     value={group.name}
@@ -829,8 +833,44 @@ function InlineGroupEditor({
                     }
                 />
                 <select
+                    aria-label="Group behavior"
+                    value={group.semantic_role ?? ''}
+                    className={controlClass}
+                    onChange={(event) => {
+                        const role =
+                            event.target.value === 'size'
+                                ? 'size'
+                                : event.target.value === 'instruction'
+                                  ? 'instruction'
+                                  : null;
+                        onChange({
+                            ...group,
+                            semantic_role: role,
+                            ...(role === 'instruction'
+                                ? {
+                                      selection_type: 'multiple' as const,
+                                      min_select: 0,
+                                      max_select: Math.max(
+                                          3,
+                                          group.max_select,
+                                      ),
+                                      options: group.options.map((option) => ({
+                                          ...option,
+                                          price_delta: '0.00',
+                                      })),
+                                  }
+                                : {}),
+                        });
+                    }}
+                >
+                    <option value="">Standard options</option>
+                    <option value="size">Size</option>
+                    <option value="instruction">Instructions</option>
+                </select>
+                <select
                     aria-label="Group selection type"
                     value={group.selection_type}
+                    disabled={group.semantic_role === 'instruction'}
                     className={controlClass}
                     onChange={(event) => {
                         const selectionType = event.target.value as
@@ -855,10 +895,17 @@ function InlineGroupEditor({
                 </select>
                 <DeleteButton label="Remove unsaved Group" onClick={onRemove} />
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {group.semantic_role === 'instruction' && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                    Instructions are optional, allow multiple selections, and
+                    never change the Product name or price.
+                </p>
+            )}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <NumberSetting
                     label="Minimum"
                     value={group.min_select}
+                    disabled={group.semantic_role === 'instruction'}
                     onChange={(value) =>
                         onChange({ ...group, min_select: value })
                     }
@@ -869,16 +916,6 @@ function InlineGroupEditor({
                     disabled={group.selection_type === 'single'}
                     onChange={(value) =>
                         onChange({ ...group, max_select: value })
-                    }
-                />
-                <ToggleSetting
-                    label="Size prefix"
-                    checked={group.semantic_role === 'size'}
-                    onChange={(checked) =>
-                        onChange({
-                            ...group,
-                            semantic_role: checked ? 'size' : null,
-                        })
                     }
                 />
                 <ToggleSetting
@@ -912,22 +949,30 @@ function InlineGroupEditor({
                                 })
                             }
                         />
-                        <div className="relative">
-                            <span className="absolute top-1/2 left-3 -translate-y-1/2 text-xs text-neutral-500">
-                                ₱
-                            </span>
-                            <input
-                                aria-label={`Option ${optionIndex + 1} price adjustment`}
-                                value={option.price_delta}
-                                className={`${controlClass} pl-7`}
-                                onChange={(event) =>
-                                    updateOption(optionIndex, {
-                                        ...option,
-                                        price_delta: event.target.value,
-                                    })
-                                }
-                            />
-                        </div>
+                        {group.semantic_role === 'instruction' ? (
+                            <div
+                                className={`${controlClass} flex items-center text-xs font-semibold text-neutral-500`}
+                            >
+                                ₱0.00 fixed
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <span className="absolute top-1/2 left-3 -translate-y-1/2 text-xs text-neutral-500">
+                                    ₱
+                                </span>
+                                <input
+                                    aria-label={`Option ${optionIndex + 1} price adjustment`}
+                                    value={option.price_delta}
+                                    className={`${controlClass} pl-7`}
+                                    onChange={(event) =>
+                                        updateOption(optionIndex, {
+                                            ...option,
+                                            price_delta: event.target.value,
+                                        })
+                                    }
+                                />
+                            </div>
+                        )}
                         <button
                             type="button"
                             className={`min-h-11 rounded-xl border text-xs font-bold ${option.is_active ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-300 bg-white text-neutral-500'}`}

@@ -15,6 +15,7 @@ use App\Models\ModifierGroup;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\CatalogRealtime;
 use App\Support\InventoryState;
 use App\Support\ProductImages;
 use Illuminate\Database\Eloquent\Collection;
@@ -119,8 +120,9 @@ class ProductController extends Controller
         UpsertBranchProduct $upsertBranchProduct,
         ReplaceProductImage $replaceImage,
         ActiveBranchContext $activeBranchContext,
+        CatalogRealtime $realtime,
     ): RedirectResponse {
-        DB::transaction(function () use ($request, $create, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext): void {
+        DB::transaction(function () use ($request, $create, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext, $realtime): void {
             $user = $request->user();
             $product = $create->execute($user, $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
             $inlineGroupIds = $createInlineGroups->execute($user, $request->validated('inline_groups', []));
@@ -144,6 +146,8 @@ class ProductController extends Controller
                     throw ValidationException::withMessages(['image' => 'The image could not be saved. Please try again.']);
                 }
             }
+
+            $realtime->productChanged($product, availabilityChanged: true);
         });
 
         return to_route('products.index');
@@ -158,9 +162,12 @@ class ProductController extends Controller
         UpsertBranchProduct $upsertBranchProduct,
         ReplaceProductImage $replaceImage,
         ActiveBranchContext $activeBranchContext,
+        CatalogRealtime $realtime,
     ): RedirectResponse {
-        DB::transaction(function () use ($request, $product, $update, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext): void {
+        DB::transaction(function () use ($request, $product, $update, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext, $realtime): void {
             $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+            $availabilityChanged = $product->is_active !== $request->boolean('is_active')
+                || $product->category_id !== $request->string('category_id')->toString();
             $user = $request->user();
             $update->execute($user, $product, $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
             $inlineGroupIds = $createInlineGroups->execute($user, $request->validated('inline_groups', []));
@@ -184,6 +191,8 @@ class ProductController extends Controller
                     throw ValidationException::withMessages(['image' => 'The image could not be saved. Please try again.']);
                 }
             }
+
+            $realtime->productChanged($product, availabilityChanged: $availabilityChanged);
         });
 
         return back();

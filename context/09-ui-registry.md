@@ -696,7 +696,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 | Property | Approved pattern |
 | --- | --- |
 | Anatomy | Compact kicker/title header; image panel; two-column product fields from small screens upward; optional description; branch configuration; Options; fixed Cancel/Save footer. |
-| Groups | “Groups” is the user-facing term. Existing reusable Groups render as complete read-only assignment cards with option price/status rows; removing one detaches only its Product assignment. New Groups and Options are created inline in the same Product save. |
+| Groups | “Groups” is the user-facing term. Existing reusable Groups render as complete read-only assignment cards with option price/status rows; removing one detaches only its Product assignment. New Groups and Options are created inline in the same Product save. The behavior picker uses Standard options, Size, and Instructions rather than exposing raw enum values. |
 | Branch and stock truth | A selected global branch exposes only that branch configuration and exact stock-on-hand. All Branches exposes authorized configurations but never a summed stock value. Inventory quantities remain read-only here and are changed only through Adjust Stock. |
 | Images | Use the signed optimized image/fallback, a visible choose/replace control, file validation errors, and the existing protected image operations. |
 | Interactive states | Disable all editor controls during submission, guard duplicate save, retain explicit active/branch-available/inventory-tracked states, and keep destructive assignment controls visually red with text/labels. |
@@ -722,9 +722,32 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 | Category identity | Category icons are allowlisted keys rendered through the shared Lucide map; use a generic fallback and never persist arbitrary SVG/JSX. |
 | Inventory scope | A selected global branch drives quantities, summaries, adjustment, and history. All Branches requires a local branch choice and never aggregates stock. |
 | History | View History opens real paginated branch/Product movements in a responsive dialog/bottom sheet; the protected deep-link page remains a fallback. |
-| POS availability and Size | Unavailable Products stay visible but disabled with a reason. Only a Group explicitly marked with the `size` semantic role may prefix the operational Product name; other options remain detail rows. |
+| POS availability and semantic Groups | Unavailable Products stay visible but disabled with a reason. Only a Group explicitly marked with the `size` semantic role may prefix the operational Product name. `instruction` selections render as price-neutral preparation details, while Standard options remain priced detail rows. |
 | Accessibility and responsive behavior | Filters retain labels, state includes text as well as color, actions meet touch sizing, dialogs manage focus, and lists/tables collapse without horizontal overflow. |
 
 **Usage:** Reuse for Owner catalog/inventory collections and for future history drill-ins where the current filtered context should remain visible.
 
 **Avoid:** Client-only authoritative filtering, presentation toggles that refetch, unavailable cards that can open ordering, inferred Size semantics from names, cross-branch quantity sums, or unprotected history payloads.
+
+## 12.3 Instructions Groups and realtime POS catalog refresh
+
+- **Status:** Approved
+- **Purpose:** Reuse the Group engine for structured preparation choices and keep active POS catalogs current without discarding cashier intent.
+- **Canonical implementation:** `resources/js/pages/catalog/modifiers.tsx`, `resources/js/components/product-editor-form.tsx`, `resources/js/components/pos-product-dialog.tsx`, `resources/js/hooks/use-pos-catalog-realtime.ts`
+- **Reference:** `context/design/PONGSKILOG-OWNER.html`, `context/design/pos.html`, and `context/06-realtime-contracts.md`
+- **Last updated:** 2026-09-21
+
+| Property | Approved pattern |
+| --- | --- |
+| Semantic behaviors | Standard options may affect price; Size may prefix the operational display name; Instructions are structured preparation selections that never change name or price. Behavior comes from the semantic role, never the Group name. |
+| Owner editor | Show a plain-language Behavior select. Instructions force optional minimum `0`, multiple selection, a practical maximum, and fixed `₱0.00` options with a short explanatory state. The same behavior is available to inline Add Group in Product Add/Edit. |
+| POS interaction | Render instruction options as compact, touch-friendly selectable chips with a strong selected state and no price label. Show an `Instructions:` preview separately from the free-text `Note:` value. |
+| Realtime state | Subscribe once to the active branch inventory channel, debounce event bursts, request only the authoritative catalog prop, and refetch on reconnect. Preserve cart, order type, payment flow, open Product dialog, chip selections, and notes. |
+| Availability transition | A refreshed open Product dialog reflects the latest availability, preserves current input, explains the conflict, and disables Add/Update while unavailable. Existing cart intent is not silently rewritten; the backend revalidates at commit. |
+| Historical output | Persist Group name, option name, semantic role, and zero instruction price snapshots. Cart, payment, paid, receipt, and order-summary surfaces aggregate instructions without presenting them as priced modifiers. |
+| Responsive behavior | Chips wrap without horizontal overflow and retain at least 44px touch height. Owner and POS dialogs remain scrollable/reachable at 360, 390, and 430px, tablet, and desktop widths. |
+| Accessibility | Use native checkbox/radio semantics where visible, labelled controls, text in addition to color for selected/unavailable states, and an alert for a live availability conflict. |
+
+**Usage:** Reuse semantic Instructions for future Kitchen and Customer QR rendering; keep the stored structured selections distinct from manual notes.
+
+**Avoid:** Inferring behavior from names, copying instruction labels into the notes textarea, attaching prices to instruction options, remounting the Product dialog during catalog refresh, or treating a realtime payload as authoritative catalog data.

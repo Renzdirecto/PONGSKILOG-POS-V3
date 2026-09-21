@@ -50,12 +50,12 @@ export function InventoryAdjustmentDialog({
                 if (!open && !submitting.current) onClose();
             }}
         >
-            <DialogContent className="max-h-[90svh] overflow-y-auto bg-white p-4 text-neutral-950 sm:max-w-lg sm:p-6 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
+            <DialogContent className="owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white p-4 text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] sm:p-5 [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
                 <DialogHeader className="pr-6 text-left">
-                    <DialogTitle className="text-[17px] font-bold">
+                    <DialogTitle className="text-[16px] font-semibold">
                         Adjust stock
                     </DialogTitle>
-                    <DialogDescription className="break-words text-neutral-600">
+                    <DialogDescription className="text-[12.5px] break-words text-neutral-600">
                         {product.name} · {branch.name} ({branch.code})
                     </DialogDescription>
                 </DialogHeader>

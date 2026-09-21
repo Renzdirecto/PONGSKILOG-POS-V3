@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { BranchSwitcher } from '@/components/branch-switcher';
+import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { cashier } from '@/routes/workspaces';
 import { logout } from '@/routes';
@@ -25,6 +26,7 @@ type SharedProps = {
     auth: Auth;
     branchContext: BranchContext;
     storeContext: StoreContext;
+    workspace?: string;
 };
 
 function roleLabel(role?: string): string {
@@ -61,6 +63,13 @@ export default function WorkspaceLayout({
             auth.roles.some(
                 (role) => role === 'cashier' || role === 'cashier_kitchen',
             ));
+    const isOwnerManagement =
+        page.component.startsWith('catalog/') ||
+        page.component.startsWith('inventory/') ||
+        page.component === 'branches/index' ||
+        (page.component === 'workspaces/show' &&
+            (page.props.workspace === 'Owner' ||
+                page.props.workspace === 'Super Admin'));
 
     if (isPos) {
         const openStoreSessionDetails = async () => {
@@ -225,6 +234,10 @@ export default function WorkspaceLayout({
                 </div>
             </div>
         );
+    }
+
+    if (isOwnerManagement) {
+        return <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>;
     }
 
     return (

@@ -10,6 +10,9 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\ModifierGroup;
 use App\Models\Product;
+use App\Models\User;
+use App\Support\ActiveBranchContext;
+use App\Support\InventoryState;
 use App\Support\ProductImages;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,21 +22,44 @@ use Inertia\Response;
 
 class ProductController extends Controller
 {
-    public function index(Request $request, ProductImages $images): Response
+    public function index(Request $request, ProductImages $images, ActiveBranchContext $activeBranchContext, InventoryState $inventoryState): Response
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'category' => ['nullable', 'uuid'],
-            'status' => ['nullable', 'in:active,inactive'],
+            'status' => ['nullable', 'in:active,inactive,low_stock,out_of_stock'],
         ]);
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+        $inventoryBranch = $activeBranchContext->current($user);
         $branches = Branch::query()->orderBy('code')->get(['id', 'code', 'name']);
-        $products = Product::query()->with(['category', 'modifierGroups', 'branchProducts'])
+        $productsQuery = Product::query()->select('products.*')->with([
+            'category',
+            'modifierGroups',
+            'branchProducts',
+            'inventoryBalances' => fn ($query) => $query->where('branch_id', $inventoryBranch?->id)
+                ->select(['id', 'product_id', 'on_hand', 'updated_at']),
+        ])
             ->when($filters['search'] ?? null, fn ($query, $search) => $query->whereLike('name', '%'.$search.'%'))
             ->when($filters['category'] ?? null, fn ($query, $category) => $query->where('category_id', $category))
-            ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('is_active', $status === 'active'))
+            ->when(in_array($filters['status'] ?? null, ['active', 'inactive'], true), fn ($query) => $query->where('is_active', $filters['status'] === 'active'));
+
+        if (in_array($filters['status'] ?? null, ['low_stock', 'out_of_stock'], true)) {
+            if ($inventoryBranch === null) {
+                $productsQuery->whereIn('products.id', []);
+            } else {
+                $inventoryState->filterProducts($productsQuery, $inventoryBranch, $filters['status']);
+            }
+        }
+
+        $products = $productsQuery
             ->orderBy('name')->orderBy('id')->paginate(24)->withQueryString()
-            ->through(function (Product $product) use ($images, $branches): array {
+            ->through(function (Product $product) use ($images, $branches, $inventoryBranch, $inventoryState): array {
                 $overrides = $product->branchProducts->keyBy('branch_id');
+                $inventoryConfiguration = $inventoryBranch === null ? null : $overrides->get($inventoryBranch->id);
+                $inventory = $inventoryBranch === null
+                    ? null
+                    : $inventoryState->resolve($inventoryConfiguration, $product->inventoryBalances->first());
 
                 return [
                     ...$product->only(['id', 'name', 'description', 'category_id', 'default_price', 'is_active']),
@@ -42,6 +68,8 @@ class ProductController extends Controller
                     'image_url' => $images->cardUrl($product),
                     'has_image' => $product->image_path !== null,
                     'modifier_group_ids' => $product->modifierGroups->modelKeys(),
+                    'modifier_group_count' => $product->modifierGroups->count(),
+                    'inventory' => $inventory,
                     'branch_prices' => $branches->map(function (Branch $branch) use ($product, $overrides): array {
                         $override = $overrides->get($branch->id);
 

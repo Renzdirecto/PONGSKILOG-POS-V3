@@ -66,5 +66,12 @@ export type CatalogProduct = CatalogChoice & {
     image_url: string | null;
     has_image: boolean;
     modifier_group_ids: string[];
+    modifier_group_count: number;
+    inventory: {
+        tracked: boolean;
+        on_hand: number | null;
+        low_stock_threshold: number | null;
+        status: StockStatus;
+    } | null;
     branch_prices: BranchPrice[];
 };

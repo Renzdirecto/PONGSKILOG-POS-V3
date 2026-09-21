@@ -1,5 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { Building2, Pencil, Plus } from 'lucide-react';
+import { Building2, Pencil, Plus, QrCode } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { workspace } from '@/routes';
+import {
+    OwnerPage,
+    OwnerStatusBadge,
+    ownerPanelClass,
+} from '@/components/owner-ui';
+import {
+    actionClass,
+    controlClass,
+    primaryActionClass,
+} from '@/components/catalog-ui';
 import { store, update } from '@/routes/branches';
 import { show as showQr } from '@/routes/qr';
 import type { BranchSummary } from '@/types';
@@ -31,9 +40,6 @@ const statusLabels: Record<BranchStatus, string> = {
     temporarily_closed: 'Temporarily closed',
     inactive: 'Inactive',
 };
-const actionClass =
-    'min-h-11 rounded-xl border-neutral-200 bg-white text-neutral-950 hover:bg-neutral-100 hover:text-neutral-950';
-
 export default function Branches({ branches }: { branches: Branch[] }) {
     const [editing, setEditing] = useState<Branch | null | undefined>(
         undefined,
@@ -42,62 +48,61 @@ export default function Branches({ branches }: { branches: Branch[] }) {
     return (
         <>
             <Head title="Branch management" />
-            <div className="mx-auto flex max-w-5xl flex-col gap-6">
-                <Link
-                    href={workspace()}
-                    className="w-fit py-2 text-sm font-semibold underline underline-offset-4"
-                >
-                    Back to workspace
-                </Link>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="space-y-2">
-                        <p className="text-xs font-bold tracking-[0.18em] text-[#8c671e] uppercase">
-                            Business Operations
-                        </p>
-                        <h1 className="text-3xl font-bold tracking-tight">
-                            Branch management
-                        </h1>
-                        <p className="text-sm leading-6 text-neutral-600">
-                            Maintain branch details and view the current store
-                            state.
-                        </p>
-                    </div>
+            <OwnerPage
+                title="Branch management"
+                description="Maintain branch details, availability, customer QR entry points, and current store state."
+                action={
                     <Button
-                        className="min-h-11 rounded-xl bg-neutral-950 px-5 text-white hover:bg-neutral-800"
+                        className={`${primaryActionClass} w-full md:w-auto`}
                         onClick={() => setEditing(null)}
                     >
-                        <Plus /> Add Branch
+                        <Plus className="size-4" /> Add branch
                     </Button>
-                </div>
+                }
+                maxWidth="max-w-[1180px]"
+            >
                 {branches.length === 0 ? (
-                    <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-center">
-                        <Building2 className="mx-auto mb-3 size-8 text-neutral-400" />
-                        <h2 className="text-lg font-bold">No branches yet</h2>
-                        <p className="mt-2 text-sm text-neutral-600">
+                    <div
+                        className={`${ownerPanelClass} px-5 py-14 text-center`}
+                    >
+                        <Building2 className="mx-auto size-7 text-[#aaa]" />
+                        <h2 className="mt-3 text-sm font-semibold">
+                            No branches yet
+                        </h2>
+                        <p className="mt-1 text-[12.5px] text-[#767676]">
                             Add your first branch to get started.
                         </p>
                     </div>
                 ) : (
-                    <ul className="grid gap-4 md:grid-cols-2">
+                    <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {branches.map((branch) => (
                             <li
                                 key={branch.id}
-                                className="flex min-w-0 flex-col gap-5 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6"
+                                className={`${ownerPanelClass} flex min-w-0 flex-col gap-3 p-4`}
                             >
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <span className="text-xs font-bold tracking-wider text-neutral-500">
+                                    <span className="text-[10px] font-semibold tracking-[0.08em] text-[#767676] uppercase">
                                         {branch.code}
                                     </span>
-                                    <span className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs font-semibold">
+                                    <OwnerStatusBadge
+                                        tone={
+                                            branch.status === 'active'
+                                                ? 'green'
+                                                : branch.status ===
+                                                    'temporarily_closed'
+                                                  ? 'amber'
+                                                  : 'outline'
+                                        }
+                                    >
                                         {statusLabels[branch.status]}
-                                    </span>
+                                    </OwnerStatusBadge>
                                 </div>
-                                <h2 className="text-xl font-bold wrap-break-word">
+                                <h2 className="text-[15px] font-semibold wrap-break-word">
                                     {branch.name}
                                 </h2>
-                                <dl className="grid gap-3 text-sm">
+                                <dl className="grid gap-2 text-[12px]">
                                     <div>
-                                        <dt className="text-xs text-neutral-500">
+                                        <dt className="text-[10px] font-semibold tracking-[0.05em] text-[#888] uppercase">
                                             Address
                                         </dt>
                                         <dd className="mt-1 wrap-break-word whitespace-pre-line">
@@ -106,7 +111,7 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                                         </dd>
                                     </div>
                                     <div>
-                                        <dt className="text-xs text-neutral-500">
+                                        <dt className="text-[10px] font-semibold tracking-[0.05em] text-[#888] uppercase">
                                             Contact
                                         </dt>
                                         <dd className="mt-1 wrap-break-word">
@@ -115,22 +120,26 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                                         </dd>
                                     </div>
                                 </dl>
-                                <div className="mt-auto flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-4">
-                                    <span
-                                        className={`mr-auto text-xs font-bold ${branch.store_is_open ? 'text-emerald-700' : 'text-neutral-500'}`}
+                                <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-[#eeeeee] pt-3">
+                                    <OwnerStatusBadge
+                                        tone={
+                                            branch.store_is_open
+                                                ? 'green'
+                                                : 'neutral'
+                                        }
                                     >
-                                        STORE{' '}
+                                        Store{' '}
                                         {branch.store_is_open
-                                            ? 'OPEN'
-                                            : 'CLOSED'}
-                                    </span>
+                                            ? 'open'
+                                            : 'closed'}
+                                    </OwnerStatusBadge>
                                     <Button
                                         variant="outline"
                                         className={actionClass}
                                         onClick={() => setEditing(branch)}
                                         aria-label={`Edit ${branch.name}`}
                                     >
-                                        <Pencil /> Edit
+                                        <Pencil className="size-3.5" /> Edit
                                     </Button>
                                     <Button
                                         variant="outline"
@@ -138,7 +147,8 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                                         asChild
                                     >
                                         <Link href={showQr(branch.id)}>
-                                            View QR page
+                                            <QrCode className="size-3.5" /> QR
+                                            page
                                         </Link>
                                     </Button>
                                 </div>
@@ -146,23 +156,23 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                         ))}
                     </ul>
                 )}
-                <p className="text-xs leading-5 text-neutral-500">
+                <p className="text-[11.5px] leading-5 text-[#767676]">
                     Store state reflects the current Store Session. Changing
                     branch status does not open or close a session.
                 </p>
-            </div>
+            </OwnerPage>
             <Dialog
                 open={editing !== undefined}
                 onOpenChange={(open) => {
                     if (!open) setEditing(undefined);
                 }}
             >
-                <DialogContent className="max-h-[90svh] overflow-y-auto border-neutral-200 bg-white text-neutral-950 sm:max-w-lg">
+                <DialogContent className="owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px]">
                     <DialogHeader>
-                        <DialogTitle>
+                        <DialogTitle className="text-[16px] font-semibold">
                             {editing ? 'Edit branch' : 'Add branch'}
                         </DialogTitle>
-                        <DialogDescription className="text-neutral-600">
+                        <DialogDescription className="text-[12.5px] text-neutral-600">
                             Update core branch information. Inactive and
                             temporarily closed branches are unavailable to
                             customers.
@@ -243,7 +253,7 @@ function BranchForm({
                         disabled={form.processing}
                         aria-invalid={!!form.errors[field]}
                         aria-describedby={`branch-${field}-hint`}
-                        className="h-11 border-neutral-300 bg-white text-base dark:bg-white"
+                        className={controlClass}
                     />
                     <p
                         id={`branch-${field}-hint`}
@@ -272,7 +282,7 @@ function BranchForm({
                     disabled={form.processing}
                     aria-invalid={!!form.errors.status}
                     aria-describedby="branch-status-error"
-                    className="h-11 w-full rounded-md border border-neutral-300 bg-white px-3 text-base focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none"
+                    className={`${controlClass} w-full`}
                 >
                     {Object.entries(statusLabels).map(([value, label]) => (
                         <option key={value} value={value}>
@@ -293,7 +303,7 @@ function BranchForm({
             <Button
                 type="submit"
                 disabled={form.processing}
-                className="mt-2 min-h-11 rounded-xl bg-neutral-950 text-white hover:bg-neutral-800"
+                className={`${primaryActionClass} mt-2`}
             >
                 {form.processing && <Spinner />}
                 {form.processing

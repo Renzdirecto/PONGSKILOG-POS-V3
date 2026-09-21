@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Branch;
+use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Category;
 use App\Models\ModifierGroup;
@@ -8,6 +9,7 @@ use App\Models\ModifierOption;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -113,9 +115,46 @@ test('management listing exposes exact branch prices and safe image urls', funct
             ->where('image_url', 'https://assets.example.test/'.dirname($product->image_path).'/card.webp')
             ->where('has_image', true)
             ->where('modifier_group_ids', [])
+            ->where('modifier_group_count', 0)
+            ->where('inventory', null)
             ->has('branch_prices', 2)));
 
     $this->assertDatabaseCount('branch_products', 1);
+});
+
+test('product stock presentation and stock filters follow the selected branch', function () {
+    $user = catalogWebManager();
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
+    $otherBranch = Branch::factory()->create(['code' => 'QAVE']);
+    $low = Product::factory()->create(['name' => 'Low meal']);
+    $out = Product::factory()->create(['name' => 'Out meal']);
+    foreach ([$low, $out] as $product) {
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+        BranchProduct::factory()->for($otherBranch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 1]);
+    }
+    BranchInventory::factory()->for($branch)->for($low)->create(['on_hand' => 3]);
+    BranchInventory::factory()->for($branch)->for($out)->create(['on_hand' => 0]);
+    BranchInventory::factory()->for($otherBranch)->for($low)->create(['on_hand' => 20]);
+    BranchInventory::factory()->for($otherBranch)->for($out)->create(['on_hand' => 20]);
+
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->get(route('products.index', ['status' => 'low_stock']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 1)
+            ->where('products.data.0.id', $low->id)
+            ->where('products.data.0.inventory.tracked', true)
+            ->where('products.data.0.inventory.on_hand', 3)
+            ->where('products.data.0.inventory.low_stock_threshold', 5)
+            ->where('products.data.0.inventory.status', 'low_stock'));
+
+    $this->get(route('products.index', ['status' => 'out_of_stock']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 1)
+            ->where('products.data.0.id', $out->id)
+            ->where('products.data.0.inventory.status', 'out_of_stock'));
+
+    $this->withSession([ActiveBranchContext::SESSION_KEY => null])->get(route('products.index', ['status' => 'low_stock']))
+        ->assertInertia(fn (Assert $page) => $page->has('products.data', 0));
 });
 
 test('product search category status and pagination constrain the catalog', function () {

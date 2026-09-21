@@ -293,6 +293,37 @@ test('management stock filters include missing balances and respect threshold bo
     'not tracked' => ['not_tracked', ['E untracked']],
 ]);
 
+test('inventory summaries use the full branch dataset and category filters before pagination', function () {
+    $user = inventoryManager();
+    $branch = Branch::factory()->create();
+    $meals = Category::factory()->create(['name' => 'Meals']);
+    $drinks = Category::factory()->create(['name' => 'Drinks']);
+    foreach ([
+        ['A stocked', $meals, 8],
+        ['B low', $meals, 3],
+        ['C empty', $meals, 0],
+        ['D drink', $drinks, 8],
+    ] as [$name, $category, $quantity]) {
+        $product = Product::factory()->for($category)->create(['name' => $name]);
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+        BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => $quantity]);
+    }
+    Product::factory()->for($meals)->count(25)->create()->each(
+        fn (Product $product) => BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => false]),
+    );
+
+    $this->actingAs($user)->get(route('inventory.index', ['branch_id' => $branch->id, 'category' => $meals->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.category', $meals->id)
+            ->has('categories', 2)
+            ->where('summary.in_stock', 1)
+            ->where('summary.low_stock', 1)
+            ->where('summary.out_of_stock', 1)
+            ->where('summary.not_tracked', 25)
+            ->where('products.total', 28)
+            ->has('products.data', 24));
+});
+
 test('management search pagination and image signing operate only on the current page', function () {
     $user = inventoryManager();
     $branch = Branch::factory()->create();

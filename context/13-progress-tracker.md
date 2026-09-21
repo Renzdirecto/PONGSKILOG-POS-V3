@@ -640,6 +640,14 @@ Phase 6 provides the post-payment visual placeholder only. Actual Cashless/Split
 
 ## Phase 16 — Owner Workspace
 
+Owner workspace UI alignment slice (2026-09-21):
+
+- Aligned the protected Owner/Super Admin management shell, Products/Categories/Modifiers, Inventory/Movement History, Branch Management, and the existing workspace entry state to the decoded `context/design/PONGSKILOG-OWNER.html` reference. The responsive shell uses the 248px desktop sidebar, 96px tablet rail, and mobile top bar/bottom dock/More pattern; unavailable later-phase navigation remains disabled and labeled.
+- Preserved the real product, image, modifier, branch override, inventory adjustment/history, branch QR, Store Session state, branch context, and backend authorization behavior. Added selected-branch stock presentation/filtering to Products and full-dataset branch inventory summary/category filtering with real balance update timestamps; no schema or dependency change.
+- Live local browser QA covered Dashboard, Products, Categories, Inventory, and Branch Management at desktop, tablet-rail, and mobile-dock widths. The pass caught and corrected desktop rail overlap and the mobile active-More contrast issue. Final pages had no document horizontal overflow and recent browser logs contained no application error.
+- Focused catalog/inventory/branch/RBAC verification passed: **404 tests / 2,665 assertions**. Full Laravel verification passed: **1,090 tests / 6,702 assertions**. Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, and whitespace checks passed. The existing optional `fontaine` and build timing notices remain non-blocking.
+- This was a visual alignment and existing-function refinement slice only. Phase 16 remains incomplete: no Phase 16 checkbox below is marked, and Transactions, Reports, Staff, full Settings, analytics, branch comparison, and Store Session summaries were not implemented.
+
 - [ ] Dashboard
 - [ ] All Branches scope
 - [ ] Specific Branch scope

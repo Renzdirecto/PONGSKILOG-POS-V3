@@ -1,4 +1,5 @@
 import { useForm } from '@inertiajs/react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -10,12 +11,12 @@ import {
     Field,
     FormErrors,
     money,
-    panelClass,
     primaryActionClass,
     SaveButton,
     Status,
     TextField,
 } from '@/components/catalog-ui';
+import { ownerPanelClass } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
 import { store, update } from '@/routes/modifier-groups';
 import {
@@ -33,34 +34,41 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
     return (
         <CatalogPage
             tab="Modifiers"
+            counts={{ Modifiers: groups.length }}
             action={
                 <Button
-                    className={primaryActionClass}
+                    className={`${primaryActionClass} w-full md:w-auto`}
                     onClick={() => setEditing(null)}
                 >
-                    Add group
+                    <Plus className="size-4" /> Add group
                 </Button>
             }
         >
             {groups.length === 0 ? (
-                <div className={panelClass}>
-                    No modifier groups yet. Create a group, then add options
-                    such as extra rice or egg.
+                <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
+                    <SlidersHorizontal className="mx-auto size-7 text-[#aaa]" />
+                    <h2 className="mt-3 text-sm font-semibold">
+                        No modifier groups yet
+                    </h2>
+                    <p className="mt-1 text-[12.5px] text-[#767676]">
+                        Create a group, then add options such as extra rice or
+                        egg.
+                    </p>
                 </div>
             ) : (
-                <div className="grid items-start gap-5 lg:grid-cols-2">
+                <div className="grid items-start gap-3 lg:grid-cols-2">
                     {groups.map((group) => (
                         <section
                             key={group.id}
-                            className={`${panelClass} flex flex-col gap-4`}
+                            className={`${ownerPanelClass} flex flex-col gap-3 p-3.5 sm:p-4`}
                         >
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                                <h2 className="min-w-0 text-xl font-bold break-words">
+                                <h2 className="min-w-0 text-[15px] font-semibold break-words">
                                     {group.name}
                                 </h2>
                                 <Status active={group.is_active} />
                             </div>
-                            <p className="text-sm text-neutral-500">
+                            <p className="text-[12px] text-[#767676]">
                                 {group.selection_type === 'single'
                                     ? 'Single choice'
                                     : 'Multiple choices'}{' '}
@@ -89,17 +97,17 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                                     No options in this group.
                                 </p>
                             ) : (
-                                <ul className="divide-y divide-neutral-100">
+                                <ul className="divide-y divide-[#eeeeee] rounded-xl border border-[#eeeeee] px-3">
                                     {group.options.map((option) => (
                                         <li
                                             key={option.id}
-                                            className="flex flex-wrap items-center gap-3 py-3"
+                                            className="flex flex-wrap items-center gap-2.5 py-2.5"
                                         >
                                             <div className="min-w-0 flex-1">
-                                                <p className="font-semibold break-words">
+                                                <p className="text-[13px] font-semibold break-words">
                                                     {option.name}
                                                 </p>
-                                                <p className="text-sm text-neutral-500">
+                                                <p className="text-[11.5px] text-[#767676]">
                                                     +{money(option.price_delta)}
                                                 </p>
                                             </div>

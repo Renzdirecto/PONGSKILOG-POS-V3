@@ -670,3 +670,17 @@ Every major surface should define:
 6. Mobile/tablet are required states, not separate products.
 7. Realtime updates should modify the smallest practical UI region.
 8. Visible production controls must function or be intentionally disabled with a clear reason.
+
+---
+
+# 12. Implemented Owner Management Pattern
+
+The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and interaction reference for Owner management surfaces.
+
+- Wide desktop uses a 248px dark sidebar and 72px top bar; tablet uses a 96px dark rail; mobile uses a 60px top bar and fixed four-item bottom dock with a More sheet.
+- Owner pages use Poppins, a `#F7F7F7` canvas, compact 11–13.5px supporting text, 23px desktop page titles, white 20px-radius panels, restrained borders/shadows, and minimum 44px interactive targets.
+- Products, Categories, and Modifiers share segmented route navigation. Product stock is branch-specific; All Branches never fabricates an aggregate stock value.
+- Inventory uses full-dataset server summaries, compact filters, a dense desktop table, wrapped mobile rows, real update timestamps, and real adjustment/history actions.
+- Management dialogs become bottom sheets on mobile and centered dialogs from the small desktop breakpoint upward.
+- Dashboard, Products, Inventory, and Branch Management link to real protected routes. Unimplemented Transactions, Reports, and Staff destinations remain visibly disabled with a reason.
+- The Owner presentation never replaces backend permission, branch, inventory, catalog, image, or Store Session authority.

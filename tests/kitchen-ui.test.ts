@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+    canOpenCustomerDisplay,
     canTransitionKitchenStatus,
     filterKitchenTickets,
+    kitchenItemLabel,
     orderTypeLabel,
+    POS_READY_REALTIME_EVENTS,
     relativePlacedTime,
     statusLabel,
 } from '../resources/js/lib/kitchen.ts';
@@ -45,6 +49,14 @@ const tickets: KitchenTicket[] = [
     },
 ];
 
+test('customer display navigation follows its launch permission', () => {
+    assert.equal(
+        canOpenCustomerDisplay(['pos.access', 'customer_display.launch']),
+        true,
+    );
+    assert.equal(canOpenCustomerDisplay(['pos.access']), false);
+});
+
 test('kitchen transitions allow all forward moves and only a one-step rollback', () => {
     assert.equal(canTransitionKitchenStatus('kitchen', 'done'), true);
     assert.equal(canTransitionKitchenStatus('ready', 'preparing'), true);
@@ -76,9 +88,7 @@ test('all orders excludes done while tabs and search use status order number or 
         ['order-2'],
     );
     assert.deepEqual(
-        filterKitchenTickets(tickets, 'all', '1044').map(
-            (ticket) => ticket.id,
-        ),
+        filterKitchenTickets(tickets, 'all', '1044').map((ticket) => ticket.id),
         ['order-2'],
     );
 });
@@ -92,6 +102,52 @@ test('kitchen labels and elapsed time remain presentation-only helpers', () => {
             '2026-09-22T10:00:00+08:00',
             new Date('2026-09-22T11:07:00+08:00').getTime(),
         ),
-        '1 hr 7 min',
+        '1 hr 7 min ago',
     );
+});
+
+test('kitchen item labels keep size in the name and compact standard groups', () => {
+    assert.equal(
+        kitchenItemLabel('Large Tapsilog', ['Rice: Plain', 'Egg: Sunny Side']),
+        'Large Tapsilog + Rice: Plain + Egg: Sunny Side',
+    );
+});
+
+test('POS refreshes both ready orders and kitchen status for ticket lifecycle events', () => {
+    assert.deepEqual(POS_READY_REALTIME_EVENTS, [
+        '.kitchen.ticket_created',
+        '.kitchen.status_changed',
+    ]);
+});
+
+test('KDS audio is local, transition-confirmed, and does not label structured instructions', () => {
+    const kitchenPage = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(kitchenPage, /\/audio\/kitchen-new-order\.mp3/);
+    assert.match(kitchenPage, /\/audio\/kitchen-pa-serve\.mp3/);
+    assert.match(kitchenPage, /result\.changed/);
+    assert.doesNotMatch(kitchenPage, /Instruction:/);
+
+    for (const file of ['kitchen-new-order.mp3', 'kitchen-pa-serve.mp3']) {
+        const path = new URL(`../public/audio/${file}`, import.meta.url);
+        assert.equal(existsSync(path), true);
+        assert.ok(statSync(path).size > 0);
+    }
+});
+
+test('Vite keeps hot assets and generated development font URLs on one fixed server', () => {
+    const viteConfig = readFileSync(
+        new URL('../vite.config.ts', import.meta.url),
+        'utf8',
+    );
+
+    assert.match(viteConfig, /host: '127\.0\.0\.1'/);
+    assert.match(viteConfig, /port: 5173/);
+    assert.match(viteConfig, /strictPort: true/);
 });

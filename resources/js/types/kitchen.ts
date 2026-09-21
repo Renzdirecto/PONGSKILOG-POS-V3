@@ -27,6 +27,19 @@ export type KitchenBoardData = {
     counts: Record<'all' | KitchenStatus, number>;
 };
 
+export type KitchenStatusSummary = {
+    is_open: boolean;
+    dine_in: number;
+    take_out: number;
+};
+
+export type KitchenTransitionFlash = {
+    order_id: string;
+    from: KitchenStatus;
+    to: KitchenStatus;
+    changed: boolean;
+};
+
 export type CustomerDisplayData = {
     is_open: boolean;
     preparing: string[];

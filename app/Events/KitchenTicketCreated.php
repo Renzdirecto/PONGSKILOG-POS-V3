@@ -36,6 +36,7 @@ class KitchenTicketCreated implements ShouldBroadcast, ShouldDispatchAfterCommit
 
         return [
             new PrivateChannel('branch.'.$branchId.'.kitchen'),
+            new PrivateChannel('branch.'.$branchId.'.pos'),
         ];
     }
 

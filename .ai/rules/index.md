@@ -12,3 +12,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/{layouts,components,pages}/**/*.tsx | .ai/rules/layoutscomponentspages.md |
 | app/Actions/Orders/** | .ai/rules/orders.md |
 | database/seeders/Local*Seeder.php | .ai/rules/seeders.md |
+| resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |

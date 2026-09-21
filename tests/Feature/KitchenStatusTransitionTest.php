@@ -49,9 +49,14 @@ test('kitchen staff can move forward or one step backward and both records stay 
     [$order] = transitionOrder($branch, $from);
     Event::fake([KitchenStatusChanged::class, DisplayOrdersChanged::class]);
 
-    $this->actingAs(transitionUser($branch))
-        ->patch(route('orders.kitchen-status.update', $order), ['status' => $to->value])
-        ->assertRedirect();
+    $response = $this->actingAs(transitionUser($branch))
+        ->patch(route('orders.kitchen-status.update', $order), ['status' => $to->value]);
+
+    $response->assertRedirect()
+        ->assertInertiaFlash('kitchenTransition.order_id', $order->id)
+        ->assertInertiaFlash('kitchenTransition.from', $from->value)
+        ->assertInertiaFlash('kitchenTransition.to', $to->value)
+        ->assertInertiaFlash('kitchenTransition.changed', true);
 
     expect($order->fresh()->kitchen_status)->toBe($to)
         ->and($order->fresh()->kitchenTicket->status)->toBe($to)
@@ -71,9 +76,14 @@ test('duplicate status requests are idempotent for kitchen and cashier users', f
     [$order] = transitionOrder($branch, $status);
     Event::fake([KitchenStatusChanged::class, DisplayOrdersChanged::class]);
 
-    $this->actingAs(transitionUser($branch, $role))
-        ->patch(route('orders.kitchen-status.update', $order), ['status' => $status->value])
-        ->assertRedirect();
+    $response = $this->actingAs(transitionUser($branch, $role))
+        ->patch(route('orders.kitchen-status.update', $order), ['status' => $status->value]);
+
+    $response->assertRedirect()
+        ->assertInertiaFlash('kitchenTransition.order_id', $order->id)
+        ->assertInertiaFlash('kitchenTransition.from', $status->value)
+        ->assertInertiaFlash('kitchenTransition.to', $status->value)
+        ->assertInertiaFlash('kitchenTransition.changed', false);
 
     expect($order->fresh()->version)->toBe(7);
     Event::assertNotDispatched(KitchenStatusChanged::class);

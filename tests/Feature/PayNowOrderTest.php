@@ -442,7 +442,10 @@ test('paid events contain only branch scoped committed projections', function ()
     $committed = new OrderCommitted($order);
     $ticket = new KitchenTicketCreated($order, $order->kitchenTicket);
     expect($committed->broadcastOn()[0]->name)->toBe('private-branch.'.$branch->id.'.pos');
-    expect($ticket->broadcastOn()[0]->name)->toBe('private-branch.'.$branch->id.'.kitchen');
+    expect(collect($ticket->broadcastOn())->pluck('name')->all())->toBe([
+        'private-branch.'.$branch->id.'.kitchen',
+        'private-branch.'.$branch->id.'.pos',
+    ]);
     expect($committed->broadcastWith())->toMatchArray(['event_type' => 'order.committed', 'branch_id' => $branch->id, 'order_id' => $order->id, 'payment_status' => 'paid', 'version' => 2]);
     expect($ticket->broadcastWith())->toMatchArray(['event_type' => 'kitchen.ticket_created', 'kitchen_ticket_id' => $order->kitchenTicket->id]);
     expect($committed->broadcastWith())->not->toHaveKeys(['total', 'customer_label', 'payments', 'idempotency_key']);

@@ -2,6 +2,7 @@
 
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSemanticRole;
+use App\Enums\OrderType;
 use App\Models\Branch;
 use App\Models\KitchenTicket;
 use App\Models\Order;
@@ -34,9 +35,11 @@ function kitchenOrder(
     StoreSession $session,
     KitchenStatus $status = KitchenStatus::Kitchen,
     string $number = '1043',
+    OrderType $orderType = OrderType::TakeOut,
 ): Order {
     $order = Order::factory()->for($branch)->for($session)->create([
         'order_number' => $number,
+        'order_type' => $orderType,
         'customer_label' => 'Maria',
         'commercial_status' => 'active',
         'payment_status' => 'paid',
@@ -108,6 +111,14 @@ test('kitchen workspace shows a truthful closed state and excludes historical se
             ->where('kitchenBoard.is_open', false)
             ->where('kitchenBoard.tickets', [])
             ->where('kitchenBoard.counts.all', 0));
+
+    $this->actingAs(kitchenUser($branch, 'cashier'))->get(route('workspaces.cashier'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('kitchenStatus', [
+                'is_open' => false,
+                'dine_in' => 0,
+                'take_out' => 0,
+            ]));
 });
 
 test('kitchen workspace requires authentication permission and an assigned branch', function () {
@@ -127,8 +138,10 @@ test('kitchen workspace requires authentication permission and an assigned branc
 test('cashier ready projection includes authorized fulfillment detail only for the current session', function () {
     $branch = Branch::factory()->create();
     $session = StoreSession::factory()->for($branch)->create();
-    $ready = kitchenOrder($branch, $session, KitchenStatus::Ready);
+    $ready = kitchenOrder($branch, $session, KitchenStatus::Ready, '1043', OrderType::DineIn);
     OrderItem::factory()->for($ready)->create(['product_name_snapshot' => 'Bangsilog']);
+    kitchenOrder($branch, $session, KitchenStatus::Kitchen, '1045', OrderType::TakeOut);
+    kitchenOrder($branch, $session, KitchenStatus::Done, '1046', OrderType::TakeOut);
     $oldSession = StoreSession::factory()->closed()->for($branch)->create();
     kitchenOrder($branch, $oldSession, KitchenStatus::Ready, '1044');
 
@@ -138,7 +151,12 @@ test('cashier ready projection includes authorized fulfillment detail only for t
             ->has('readyOrders', 1)
             ->where('readyOrders.0.id', $ready->id)
             ->where('readyOrders.0.status', 'ready')
-            ->where('readyOrders.0.items.0.display_name', 'Bangsilog'));
+            ->where('readyOrders.0.items.0.display_name', 'Bangsilog')
+            ->where('kitchenStatus', [
+                'is_open' => true,
+                'dine_in' => 1,
+                'take_out' => 1,
+            ]));
 });
 
 test('kitchen board query count stays bounded as ticket volume grows', function () {

@@ -3,6 +3,7 @@ import {
     ChefHat,
     LayoutDashboard,
     LogOut,
+    MonitorUp,
     QrCode,
     UtensilsCrossed,
 } from 'lucide-react';
@@ -11,9 +12,10 @@ import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
-import { cashier, kitchen } from '@/routes/workspaces';
+import { cashier, customerDisplay, kitchen } from '@/routes/workspaces';
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
+import { canOpenCustomerDisplay } from '@/lib/kitchen';
 import { openStoreSessionDialogState } from '@/lib/store-session';
 import type {
     Auth,
@@ -120,6 +122,13 @@ export default function WorkspaceLayout({
                 active: isKitchen,
             },
             {
+                label: 'Display',
+                icon: MonitorUp,
+                available: canOpenCustomerDisplay(auth.permissions),
+                href: customerDisplay(),
+                active: false,
+            },
+            {
                 label: 'QR Orders',
                 icon: QrCode,
                 available: false,
@@ -141,33 +150,36 @@ export default function WorkspaceLayout({
                         aria-label="Operational navigation"
                         className="flex flex-1 flex-col gap-1.5 px-2 py-2.5"
                     >
-                        {navigation.map(({ label, icon: Icon, available, href, active }) =>
-                            available && href ? (
-                                <Link
-                                    key={label}
-                                    href={href}
-                                    preserveState
-                                    preserveScroll
-                                    aria-current={active ? 'page' : undefined}
-                                    className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
-                                >
-                                    <Icon className="size-5" />
-                                    {label}
-                                </Link>
-                            ) : (
-                                <button
-                                    key={label}
-                                    disabled
-                                    title={`${label} is not available yet`}
-                                    className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] leading-tight font-semibold text-white/45"
-                                >
-                                    <Icon className="size-5" />
-                                    {label}
-                                    <span className="text-[8px] font-normal">
-                                        Coming later
-                                    </span>
-                                </button>
-                            ),
+                        {navigation.map(
+                            ({ label, icon: Icon, available, href, active }) =>
+                                available && href ? (
+                                    <Link
+                                        key={label}
+                                        href={href}
+                                        preserveState
+                                        preserveScroll
+                                        aria-current={
+                                            active ? 'page' : undefined
+                                        }
+                                        className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
+                                    >
+                                        <Icon className="size-5" />
+                                        {label}
+                                    </Link>
+                                ) : (
+                                    <button
+                                        key={label}
+                                        disabled
+                                        title={`${label} is not available yet`}
+                                        className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] leading-tight font-semibold text-white/45"
+                                    >
+                                        <Icon className="size-5" />
+                                        {label}
+                                        <span className="text-[8px] font-normal">
+                                            Coming later
+                                        </span>
+                                    </button>
+                                ),
                         )}
                     </nav>
                     <span className="border-t border-white/10 p-3 text-center text-[9px] text-white/50">
@@ -241,34 +253,37 @@ export default function WorkspaceLayout({
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[420px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
-                        {navigation.map(({ label, icon: Icon, available, href, active }) =>
-                            available && href ? (
-                                <Link
-                                    key={label}
-                                    href={href}
-                                    preserveState
-                                    preserveScroll
-                                    aria-current={active ? 'page' : undefined}
-                                    className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
-                                >
-                                    <Icon className="size-5" />
-                                    {label}
-                                </Link>
-                            ) : (
-                                <button
-                                    key={label}
-                                    disabled
-                                    className="flex flex-col items-center justify-center gap-1 text-center text-[9px] leading-tight text-white/45"
-                                >
-                                    <Icon className="size-5" />
-                                    {label}
-                                    <span className="text-[8px]">
-                                        Coming later
-                                    </span>
-                                </button>
-                            ),
+                        {navigation.map(
+                            ({ label, icon: Icon, available, href, active }) =>
+                                available && href ? (
+                                    <Link
+                                        key={label}
+                                        href={href}
+                                        preserveState
+                                        preserveScroll
+                                        aria-current={
+                                            active ? 'page' : undefined
+                                        }
+                                        className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
+                                    >
+                                        <Icon className="size-5" />
+                                        {label}
+                                    </Link>
+                                ) : (
+                                    <button
+                                        key={label}
+                                        disabled
+                                        className="flex flex-col items-center justify-center gap-1 text-center text-[9px] leading-tight text-white/45"
+                                    >
+                                        <Icon className="size-5" />
+                                        {label}
+                                        <span className="text-[8px]">
+                                            Coming later
+                                        </span>
+                                    </button>
+                                ),
                         )}
                     </nav>
                 </div>

@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
 
 class KitchenStatusController extends Controller
 {
@@ -25,12 +26,20 @@ class KitchenStatusController extends Controller
         abort_if($branch === null, 403);
         abort_unless($order->branch_id === $branch->getKey(), 404);
 
-        $transitionKitchenOrder->execute(
+        $target = KitchenStatus::from($request->string('status')->toString());
+        $result = $transitionKitchenOrder->executeWithResult(
             $user,
             $branch,
             $order,
-            KitchenStatus::from($request->string('status')->toString()),
+            $target,
         );
+
+        Inertia::flash('kitchenTransition', [
+            'order_id' => (string) $result['order']->getKey(),
+            'from' => $result['from']->value,
+            'to' => $target->value,
+            'changed' => $result['changed'],
+        ]);
 
         return back();
     }

@@ -10,6 +10,7 @@ type Options = {
     channel: string;
     events: readonly string[];
     only: string[];
+    onEvent?: (event: Record<string, unknown>) => void;
 };
 
 export function useBranchRealtimeRefresh({
@@ -17,6 +18,7 @@ export function useBranchRealtimeRefresh({
     channel,
     events,
     only,
+    onEvent,
 }: Options) {
     const connectionStatus = useConnectionStatus();
     const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -25,7 +27,9 @@ export function useBranchRealtimeRefresh({
     const previousStatus = useRef(connectionStatus);
     const hasConnected = useRef(connectionStatus === 'connected');
     const onlyRef = useRef(only);
+    const onEventRef = useRef(onEvent);
     onlyRef.current = only;
+    onEventRef.current = onEvent;
 
     const scheduleRefresh = useCallback((delay = REFRESH_DEBOUNCE_MS) => {
         if (refreshTimer.current !== null) {
@@ -59,7 +63,10 @@ export function useBranchRealtimeRefresh({
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.${channel}`,
         [...events],
-        () => scheduleRefresh(),
+        (event) => {
+            onEventRef.current?.(event);
+            scheduleRefresh();
+        },
         [branchId, channel, scheduleRefresh],
     );
 

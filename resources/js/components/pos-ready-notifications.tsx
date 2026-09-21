@@ -43,7 +43,7 @@ export function PosReadyNotifications({
         branchId,
         channel: 'pos',
         events: POS_READY_REALTIME_EVENTS,
-        only: ['readyOrders'],
+        only: ['readyOrders', 'kitchenStatus'],
     });
 
     useEffect(() => {
@@ -62,7 +62,7 @@ export function PosReadyNotifications({
             updateKitchenStatus.url(selected.id),
             { status: 'done' },
             {
-                only: ['readyOrders'],
+                only: ['readyOrders', 'kitchenStatus'],
                 preserveScroll: true,
                 preserveState: true,
                 onSuccess: () => setSelectedId(null),
@@ -124,11 +124,17 @@ export function PosReadyNotifications({
                                         </span>
                                         <span className="min-w-0 flex-1">
                                             <strong className="block truncate text-xs">
-                                                {order.customer || 'Walk-in customer'}
+                                                {order.customer ||
+                                                    'Walk-in customer'}
                                             </strong>
                                             <span className="text-[10px] text-neutral-500">
-                                                {orderTypeLabel(order.order_type)} ·{' '}
-                                                {relativePlacedTime(order.placed_at)}
+                                                {orderTypeLabel(
+                                                    order.order_type,
+                                                )}{' '}
+                                                ·{' '}
+                                                {relativePlacedTime(
+                                                    order.placed_at,
+                                                )}
                                             </span>
                                         </span>
                                     </button>
@@ -149,7 +155,7 @@ export function PosReadyNotifications({
                             {orders.length}
                         </span>
                     </div>
-                    <div className="flex gap-2 overflow-x-auto p-2 md:flex-col md:overflow-y-auto md:max-h-[210px]">
+                    <div className="flex gap-2 overflow-x-auto p-2 md:max-h-[210px] md:flex-col md:overflow-y-auto">
                         {orders.map((order) => (
                             <button
                                 key={order.id}
@@ -193,9 +199,20 @@ export function PosReadyNotifications({
 
                         <div className="space-y-4 p-5">
                             <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                                <ReadyDetail label="Customer" value={selected.customer || 'Walk-in'} />
-                                <ReadyDetail label="Order type" value={orderTypeLabel(selected.order_type)} />
-                                <ReadyDetail label="Placed" value={relativePlacedTime(selected.placed_at)} />
+                                <ReadyDetail
+                                    label="Customer"
+                                    value={selected.customer || 'Walk-in'}
+                                />
+                                <ReadyDetail
+                                    label="Order type"
+                                    value={orderTypeLabel(selected.order_type)}
+                                />
+                                <ReadyDetail
+                                    label="Placed"
+                                    value={relativePlacedTime(
+                                        selected.placed_at,
+                                    )}
+                                />
                                 <ReadyDetail
                                     label="Payment"
                                     value={paymentLabel(selected)}
@@ -208,19 +225,34 @@ export function PosReadyNotifications({
                                         key={item.id}
                                         className="grid grid-cols-[auto_1fr] gap-3 border-b border-neutral-100 p-3 last:border-0"
                                     >
-                                        <span className="font-black">{item.quantity}×</span>
+                                        <span className="font-black">
+                                            {item.quantity}×
+                                        </span>
                                         <div>
-                                            <p className="text-sm font-bold">{item.display_name}</p>
-                                            {item.standard_modifiers.map((modifier) => (
-                                                <p key={modifier} className="text-xs text-neutral-500">
-                                                    + {modifier}
-                                                </p>
-                                            ))}
-                                            {item.instructions.map((instruction) => (
-                                                <p key={instruction} className="text-xs font-semibold text-amber-700">
-                                                    Instruction: {instruction}
-                                                </p>
-                                            ))}
+                                            <p className="text-sm font-bold">
+                                                {item.display_name}
+                                            </p>
+                                            {item.standard_modifiers.map(
+                                                (modifier) => (
+                                                    <p
+                                                        key={modifier}
+                                                        className="text-xs text-neutral-500"
+                                                    >
+                                                        + {modifier}
+                                                    </p>
+                                                ),
+                                            )}
+                                            {item.instructions.map(
+                                                (instruction) => (
+                                                    <p
+                                                        key={instruction}
+                                                        className="text-xs font-semibold text-amber-700"
+                                                    >
+                                                        Instruction:{' '}
+                                                        {instruction}
+                                                    </p>
+                                                ),
+                                            )}
                                             {item.note && (
                                                 <p className="mt-1 text-xs font-semibold text-red-700">
                                                     Note: {item.note}
@@ -233,9 +265,12 @@ export function PosReadyNotifications({
 
                             <div className="flex items-center justify-between rounded-xl bg-neutral-950 px-4 py-3 text-white">
                                 <span className="flex items-center gap-2 text-xs font-semibold">
-                                    <ReceiptText className="size-4" /> Order total
+                                    <ReceiptText className="size-4" /> Order
+                                    total
                                 </span>
-                                <strong className="text-lg">₱{selected.total}</strong>
+                                <strong className="text-lg">
+                                    ₱{selected.total}
+                                </strong>
                             </div>
                         </div>
 

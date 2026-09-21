@@ -14,7 +14,7 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
-import type { PosReadyOrder } from '@/types/kitchen';
+import type { KitchenStatusSummary, PosReadyOrder } from '@/types/kitchen';
 
 import type { BranchTable } from '@/types/pos';
 
@@ -26,6 +26,7 @@ type Props = {
     catalog?: CashierCatalog;
     tables?: BranchTable[];
     readyOrders?: PosReadyOrder[];
+    kitchenStatus?: KitchenStatusSummary;
 };
 
 type SharedProps = {
@@ -41,6 +42,7 @@ export default function Workspace({
     store,
     catalog,
     tables = [],
+    kitchenStatus = { is_open: false, dine_in: 0, take_out: 0 },
 }: Props) {
     const { auth, branchContext, storeContext } = usePage<SharedProps>().props;
     const scope = branchContext.current?.name ?? 'All Branches';
@@ -56,6 +58,7 @@ export default function Workspace({
                     storeContext={storeContext}
                     catalog={catalog}
                     tables={tables}
+                    kitchenStatus={kitchenStatus}
                 />
             </>
         );

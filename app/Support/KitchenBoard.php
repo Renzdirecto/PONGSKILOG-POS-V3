@@ -133,6 +133,32 @@ class KitchenBoard
             ->all());
     }
 
+    /** @return array{is_open: bool, dine_in: int, take_out: int} */
+    public function statusForPos(Branch $branch): array
+    {
+        $session = $this->openSession($branch);
+
+        if ($session === null) {
+            return ['is_open' => false, 'dine_in' => 0, 'take_out' => 0];
+        }
+
+        $counts = $this->ordersForSession($branch, $session)
+            ->whereIn('kitchen_status', [
+                KitchenStatus::Kitchen,
+                KitchenStatus::Preparing,
+                KitchenStatus::Ready,
+            ])
+            ->selectRaw('order_type, count(*) as aggregate')
+            ->groupBy('order_type')
+            ->pluck('aggregate', 'order_type');
+
+        return [
+            'is_open' => true,
+            'dine_in' => (int) ($counts['dine_in'] ?? 0),
+            'take_out' => (int) ($counts['take_out'] ?? 0),
+        ];
+    }
+
     private function openSession(Branch $branch): ?StoreSession
     {
         return StoreSession::query()

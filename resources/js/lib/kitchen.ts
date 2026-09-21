@@ -6,9 +6,18 @@ export const KITCHEN_REALTIME_EVENTS = [
     '.kitchen.order_updated',
 ] as const;
 
-export const POS_READY_REALTIME_EVENTS = ['.kitchen.status_changed'] as const;
+export const POS_READY_REALTIME_EVENTS = [
+    '.kitchen.ticket_created',
+    '.kitchen.status_changed',
+] as const;
 
 export const DISPLAY_REALTIME_EVENTS = ['.display.orders_changed'] as const;
+
+export function canOpenCustomerDisplay(
+    permissions: readonly string[],
+): boolean {
+    return permissions.includes('customer_display.launch');
+}
 
 const STATUS_POSITION: Record<KitchenStatus, number> = {
     kitchen: 0,
@@ -35,7 +44,8 @@ export function filterKitchenTickets(
     const numberNeedle = needle.replace(/^#/, '');
 
     return tickets.filter((ticket) => {
-        const matchesTab = tab === 'all' ? ticket.status !== 'done' : ticket.status === tab;
+        const matchesTab =
+            tab === 'all' ? ticket.status !== 'done' : ticket.status === tab;
         const matchesSearch =
             needle === '' ||
             ticket.number.toLocaleLowerCase().includes(numberNeedle) ||
@@ -64,11 +74,20 @@ export function relativePlacedTime(placedAt: string, now = Date.now()): string {
     }
 
     if (minutes < 60) {
-        return `${minutes} min`;
+        return `${minutes} min ago`;
     }
 
     const hours = Math.floor(minutes / 60);
     const remainder = minutes % 60;
 
-    return remainder === 0 ? `${hours} hr` : `${hours} hr ${remainder} min`;
+    return remainder === 0
+        ? `${hours} hr ago`
+        : `${hours} hr ${remainder} min ago`;
+}
+
+export function kitchenItemLabel(
+    displayName: string,
+    standardModifiers: readonly string[],
+): string {
+    return [displayName, ...standardModifiers].join(' + ');
 }

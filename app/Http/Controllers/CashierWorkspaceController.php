@@ -43,6 +43,7 @@ class CashierWorkspaceController extends Controller
                 : ['categories' => [], 'products' => []],
             'tables' => fn () => $branch->tables()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'readyOrders' => fn (): array => $kitchenBoard->readyForPos($branch),
+            'kitchenStatus' => fn (): array => $kitchenBoard->statusForPos($branch),
             'store' => [
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active

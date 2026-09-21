@@ -19,7 +19,13 @@ class TransitionKitchenOrder
 {
     public function execute(User $user, Branch $branch, Order $order, KitchenStatus $target): Order
     {
-        return DB::transaction(function () use ($user, $branch, $order, $target): Order {
+        return $this->executeWithResult($user, $branch, $order, $target)['order'];
+    }
+
+    /** @return array{order: Order, changed: bool, from: KitchenStatus} */
+    public function executeWithResult(User $user, Branch $branch, Order $order, KitchenStatus $target): array
+    {
+        return DB::transaction(function () use ($user, $branch, $order, $target): array {
             $session = StoreSession::query()
                 ->whereBelongsTo($branch)
                 ->where('status', StoreSessionStatus::Open)
@@ -48,7 +54,11 @@ class TransitionKitchenOrder
             $this->authorizeTransition($user, $lockedOrder->kitchen_status, $target);
 
             if ($lockedOrder->kitchen_status === $target) {
-                return $lockedOrder->load('kitchenTicket');
+                return [
+                    'order' => $lockedOrder->load('kitchenTicket'),
+                    'changed' => false,
+                    'from' => $target,
+                ];
             }
 
             $from = $lockedOrder->kitchen_status;
@@ -66,7 +76,11 @@ class TransitionKitchenOrder
             KitchenStatusChanged::dispatch($lockedOrder, $from, $target, $changedAt);
             DisplayOrdersChanged::dispatch($branch, $changedAt);
 
-            return $lockedOrder->load('kitchenTicket');
+            return [
+                'order' => $lockedOrder->load('kitchenTicket'),
+                'changed' => true,
+                'from' => $from,
+            ];
         }, 3);
     }
 

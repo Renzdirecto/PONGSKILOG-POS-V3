@@ -117,6 +117,9 @@ export function ProductEditorForm({
     });
     const removal = useForm({});
     const submitting = useRef(false);
+    const [activeSection, setActiveSection] = useState<'product' | 'branch'>(
+        'product',
+    );
     const [groupToAttach, setGroupToAttach] = useState('');
     const [imageRemoved, setImageRemoved] = useState(false);
     const attachedGroups = groups.filter((group) =>
@@ -126,9 +129,6 @@ export function ProductEditorForm({
         (group) => !form.data.modifier_group_ids.includes(group.id),
     );
     const singleBranch = branches.length === 1;
-    const singleBranchConfig = singleBranch
-        ? form.data.branch_configs[0]
-        : null;
     const busy = form.processing || removal.processing;
 
     const updateBranchConfig = (index: number, value: BranchConfig) => {
@@ -155,302 +155,327 @@ export function ProductEditorForm({
                         toast.success('Product saved');
                         onSaved();
                     },
+                    onError: (errors) => {
+                        if (
+                            Object.keys(errors).some((key) =>
+                                key.startsWith('branch_configs.'),
+                            )
+                        ) {
+                            setActiveSection('branch');
+                        }
+                    },
                     onFinish: () => {
                         submitting.current = false;
                     },
                 });
             }}
         >
+            <div
+                role="tablist"
+                aria-label="Product editor sections"
+                className="grid shrink-0 grid-cols-2 gap-[3px] border-b border-neutral-200 bg-white px-4 py-3 sm:px-5"
+            >
+                {(
+                    [
+                        ['product', 'Product'],
+                        ['branch', 'Branch configuration'],
+                    ] as const
+                ).map(([section, label]) => (
+                    <button
+                        key={section}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeSection === section}
+                        className={`min-h-11 rounded-[10px] px-3 text-[13px] font-semibold transition ${activeSection === section ? 'bg-neutral-950 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+                        onClick={() => setActiveSection(section)}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
                 <fieldset disabled={busy} className="min-w-0">
                     <div className="space-y-4">
-                    <ImagePanel
-                        product={product}
-                        imageRemoved={imageRemoved}
-                        selectedImage={form.data.image}
-                        onSelect={(image) => form.setData('image', image)}
-                        onRemove={() => {
-                            if (!product) return;
-                            removal.submit(removeImage(product.id), {
-                                preserveScroll: true,
-                                onSuccess: () => {
-                                    setImageRemoved(true);
-                                    toast.success('Product image removed');
-                                },
-                            });
-                        }}
-                    />
-                    {form.errors.image && (
-                        <p role="alert" className="text-xs text-red-700">
-                            {form.errors.image}
-                        </p>
-                    )}
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <TextField
-                            id="product-name"
-                            label="Product name"
-                            value={form.data.name}
-                            onChange={(value) => form.setData('name', value)}
-                            error={form.errors.name}
-                        />
-                        <Field
-                            id="product-category"
-                            label="Category"
-                            error={form.errors.category_id}
-                        >
-                            <select
-                                id="product-category"
-                                required
-                                className={controlClass}
-                                value={form.data.category_id}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'category_id',
-                                        event.target.value,
-                                    )
-                                }
-                            >
-                                <option value="">Select category</option>
-                                {categories.map((category) => (
-                                    <option
-                                        key={category.id}
-                                        value={category.id}
-                                    >
-                                        {category.name}
-                                        {!category.is_active
-                                            ? ' (inactive)'
-                                            : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </Field>
-                        <TextField
-                            id="product-price"
-                            label="Price"
-                            value={form.data.default_price}
-                            onChange={(value) =>
-                                form.setData('default_price', value)
-                            }
-                            error={form.errors.default_price}
-                        />
-                        <Field id="product-stock" label="Stock on hand">
-                            <input
-                                id="product-stock"
-                                readOnly
-                                className={`${controlClass} bg-neutral-50 text-neutral-600`}
-                                value={
-                                    !singleBranch
-                                        ? 'Choose a global branch'
-                                        : product?.inventory?.on_hand ??
-                                          'Set through Adjust Stock'
-                                }
-                            />
-                        </Field>
-                        <Field
-                            id="product-threshold"
-                            label="Low-stock threshold"
-                            error={
-                                form.errors[
-                                    'branch_configs.0.low_stock_threshold'
-                                ]
-                            }
-                        >
-                            <input
-                                id="product-threshold"
-                                type="number"
-                                min={0}
-                                step={1}
-                                disabled={!singleBranchConfig?.tracks_inventory}
-                                className={controlClass}
-                                value={
-                                    singleBranchConfig?.low_stock_threshold ??
-                                    ''
-                                }
-                                placeholder={
-                                    singleBranch
-                                        ? 'Enable inventory tracking below'
-                                        : 'Configured per branch below'
-                                }
-                                onChange={(event) => {
-                                    if (!singleBranchConfig) return;
-                                    updateBranchConfig(0, {
-                                        ...singleBranchConfig,
-                                        low_stock_threshold:
-                                            event.target.value === ''
-                                                ? null
-                                                : Number(event.target.value),
-                                    });
-                                }}
-                            />
-                        </Field>
-                        <AvailabilitySwitch
-                            active={form.data.is_active}
-                            onChange={(isActive) =>
-                                form.setData('is_active', isActive)
-                            }
-                        />
-                    </div>
-
-                    <Field
-                        id="product-description"
-                        label="Description (optional)"
-                        error={form.errors.description}
-                    >
-                        <textarea
-                            id="product-description"
-                            rows={2}
-                            maxLength={5000}
-                            className={`${controlClass} h-auto py-3`}
-                            value={form.data.description}
-                            onChange={(event) =>
-                                form.setData(
-                                    'description',
-                                    event.target.value,
-                                )
-                            }
-                        />
-                    </Field>
-
-                    <section className="space-y-3 border-t border-neutral-200 pt-4">
-                        <div>
-                            <h3 className="text-sm font-bold">
-                                Branch configuration
-                            </h3>
-                            <p className="text-[11.5px] text-neutral-500">
-                                {singleBranch
-                                    ? `Showing ${branches[0]?.code}, the selected global branch.`
-                                    : 'All authorized branches are shown in All Branches scope.'}
-                            </p>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                            {branches.map((branch, index) => (
-                                <BranchEditor
-                                    key={branch.branch_id}
-                                    branch={branch}
-                                    value={form.data.branch_configs[index]}
-                                    hideThreshold={singleBranch}
-                                    onChange={(value) =>
-                                        updateBranchConfig(index, value)
+                        {activeSection === 'product' && (
+                            <>
+                                <ImagePanel
+                                    product={product}
+                                    imageRemoved={imageRemoved}
+                                    selectedImage={form.data.image}
+                                    onSelect={(image) =>
+                                        form.setData('image', image)
                                     }
-                                />
-                            ))}
-                        </div>
-                    </section>
-
-                    <section className="space-y-3 border-t border-neutral-200 pt-4">
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <h3 className="text-sm font-bold">Options</h3>
-                                <p className="text-[11.5px] text-neutral-500">
-                                    What the cashier and QR menu ask when this
-                                    product is ordered.
-                                </p>
-                            </div>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                className={actionClass}
-                                onClick={() =>
-                                    form.setData('inline_groups', [
-                                        ...form.data.inline_groups,
-                                        newGroup(),
-                                    ])
-                                }
-                            >
-                                <Plus className="size-4" /> Add group
-                            </Button>
-                        </div>
-
-                        {unattachedGroups.length > 0 && (
-                            <div className="flex gap-2">
-                                <select
-                                    aria-label="Reusable Group"
-                                    className={controlClass}
-                                    value={groupToAttach}
-                                    onChange={(event) =>
-                                        setGroupToAttach(event.target.value)
-                                    }
-                                >
-                                    <option value="">
-                                        Attach an existing Group…
-                                    </option>
-                                    {unattachedGroups.map((group) => (
-                                        <option key={group.id} value={group.id}>
-                                            {group.name}
-                                            {!group.is_active
-                                                ? ' (inactive)'
-                                                : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className={actionClass}
-                                    disabled={!groupToAttach}
-                                    onClick={() => {
-                                        form.setData('modifier_group_ids', [
-                                            ...form.data.modifier_group_ids,
-                                            groupToAttach,
-                                        ]);
-                                        setGroupToAttach('');
+                                    onRemove={() => {
+                                        if (!product) return;
+                                        removal.submit(
+                                            removeImage(product.id),
+                                            {
+                                                preserveScroll: true,
+                                                onSuccess: () => {
+                                                    setImageRemoved(true);
+                                                    toast.success(
+                                                        'Product image removed',
+                                                    );
+                                                },
+                                            },
+                                        );
                                     }}
+                                />
+                                {form.errors.image && (
+                                    <p
+                                        role="alert"
+                                        className="text-xs text-red-700"
+                                    >
+                                        {form.errors.image}
+                                    </p>
+                                )}
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <TextField
+                                        id="product-name"
+                                        label="Product name"
+                                        value={form.data.name}
+                                        onChange={(value) =>
+                                            form.setData('name', value)
+                                        }
+                                        error={form.errors.name}
+                                    />
+                                    <Field
+                                        id="product-category"
+                                        label="Category"
+                                        error={form.errors.category_id}
+                                    >
+                                        <select
+                                            id="product-category"
+                                            required
+                                            className={controlClass}
+                                            value={form.data.category_id}
+                                            onChange={(event) =>
+                                                form.setData(
+                                                    'category_id',
+                                                    event.target.value,
+                                                )
+                                            }
+                                        >
+                                            <option value="">
+                                                Select category
+                                            </option>
+                                            {categories.map((category) => (
+                                                <option
+                                                    key={category.id}
+                                                    value={category.id}
+                                                >
+                                                    {category.name}
+                                                    {!category.is_active
+                                                        ? ' (inactive)'
+                                                        : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </Field>
+                                    <TextField
+                                        id="product-price"
+                                        label="Price"
+                                        value={form.data.default_price}
+                                        onChange={(value) =>
+                                            form.setData('default_price', value)
+                                        }
+                                        error={form.errors.default_price}
+                                    />
+                                    <AvailabilitySwitch
+                                        active={form.data.is_active}
+                                        onChange={(isActive) =>
+                                            form.setData('is_active', isActive)
+                                        }
+                                    />
+                                </div>
+
+                                <Field
+                                    id="product-description"
+                                    label="Description (optional)"
+                                    error={form.errors.description}
                                 >
-                                    <Check className="size-4" /> Attach
-                                </Button>
-                            </div>
+                                    <textarea
+                                        id="product-description"
+                                        rows={2}
+                                        maxLength={5000}
+                                        className={`${controlClass} h-auto py-3`}
+                                        value={form.data.description}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'description',
+                                                event.target.value,
+                                            )
+                                        }
+                                    />
+                                </Field>
+                            </>
                         )}
 
-                        {attachedGroups.map((group) => (
-                            <AttachedGroupCard
-                                key={group.id}
-                                group={group}
-                                onRemove={() =>
-                                    form.setData(
-                                        'modifier_group_ids',
-                                        form.data.modifier_group_ids.filter(
-                                            (id) => id !== group.id,
-                                        ),
-                                    )
-                                }
-                            />
-                        ))}
-                        {form.data.inline_groups.map((group, groupIndex) => (
-                            <InlineGroupEditor
-                                key={group.client_key}
-                                group={group}
-                                errors={form.errors}
-                                errorPrefix={`inline_groups.${groupIndex}`}
-                                onChange={(value) =>
-                                    form.setData(
-                                        'inline_groups',
-                                        form.data.inline_groups.map(
-                                            (item, index) =>
-                                                index === groupIndex
-                                                    ? value
-                                                    : item,
-                                        ),
-                                    )
-                                }
-                                onRemove={() =>
-                                    form.setData(
-                                        'inline_groups',
-                                        form.data.inline_groups.filter(
-                                            (_, index) => index !== groupIndex,
-                                        ),
-                                    )
-                                }
-                            />
-                        ))}
-                        {attachedGroups.length === 0 &&
-                            form.data.inline_groups.length === 0 && (
-                                <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-5 text-center text-sm text-neutral-500">
-                                    No Groups attached. Add a new Group or
-                                    attach one from the library.
-                                </p>
-                            )}
-                    </section>
+                        {activeSection === 'branch' && (
+                            <section className="space-y-3">
+                                <div>
+                                    <h3 className="text-sm font-bold">
+                                        Branch configuration
+                                    </h3>
+                                    <p className="text-[11.5px] text-neutral-500">
+                                        {singleBranch
+                                            ? `Showing ${branches[0]?.code}, the selected global branch.`
+                                            : 'All authorized branches are shown in All Branches scope.'}
+                                    </p>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    {branches.map((branch, index) => (
+                                        <BranchEditor
+                                            key={branch.branch_id}
+                                            branch={branch}
+                                            value={
+                                                form.data.branch_configs[index]
+                                            }
+                                            showOnHand={singleBranch}
+                                            currentOnHand={
+                                                product?.inventory?.on_hand ??
+                                                null
+                                            }
+                                            onChange={(value) =>
+                                                updateBranchConfig(index, value)
+                                            }
+                                        />
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {activeSection === 'product' && (
+                            <section className="space-y-3 border-t border-neutral-200 pt-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-sm font-bold">
+                                            Options
+                                        </h3>
+                                        <p className="text-[11.5px] text-neutral-500">
+                                            What the cashier and QR menu ask
+                                            when this product is ordered.
+                                        </p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className={actionClass}
+                                        onClick={() =>
+                                            form.setData('inline_groups', [
+                                                ...form.data.inline_groups,
+                                                newGroup(),
+                                            ])
+                                        }
+                                    >
+                                        <Plus className="size-4" /> Add group
+                                    </Button>
+                                </div>
+
+                                {unattachedGroups.length > 0 && (
+                                    <div className="flex gap-2">
+                                        <select
+                                            aria-label="Reusable Group"
+                                            className={controlClass}
+                                            value={groupToAttach}
+                                            onChange={(event) =>
+                                                setGroupToAttach(
+                                                    event.target.value,
+                                                )
+                                            }
+                                        >
+                                            <option value="">
+                                                Attach an existing Group…
+                                            </option>
+                                            {unattachedGroups.map((group) => (
+                                                <option
+                                                    key={group.id}
+                                                    value={group.id}
+                                                >
+                                                    {group.name}
+                                                    {!group.is_active
+                                                        ? ' (inactive)'
+                                                        : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            className={actionClass}
+                                            disabled={!groupToAttach}
+                                            onClick={() => {
+                                                form.setData(
+                                                    'modifier_group_ids',
+                                                    [
+                                                        ...form.data
+                                                            .modifier_group_ids,
+                                                        groupToAttach,
+                                                    ],
+                                                );
+                                                setGroupToAttach('');
+                                            }}
+                                        >
+                                            <Check className="size-4" /> Attach
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {attachedGroups.map((group) => (
+                                    <AttachedGroupCard
+                                        key={group.id}
+                                        group={group}
+                                        onRemove={() =>
+                                            form.setData(
+                                                'modifier_group_ids',
+                                                form.data.modifier_group_ids.filter(
+                                                    (id) => id !== group.id,
+                                                ),
+                                            )
+                                        }
+                                    />
+                                ))}
+                                {form.data.inline_groups.map(
+                                    (group, groupIndex) => (
+                                        <InlineGroupEditor
+                                            key={group.client_key}
+                                            group={group}
+                                            errors={form.errors}
+                                            errorPrefix={`inline_groups.${groupIndex}`}
+                                            onChange={(value) =>
+                                                form.setData(
+                                                    'inline_groups',
+                                                    form.data.inline_groups.map(
+                                                        (item, index) =>
+                                                            index === groupIndex
+                                                                ? value
+                                                                : item,
+                                                    ),
+                                                )
+                                            }
+                                            onRemove={() =>
+                                                form.setData(
+                                                    'inline_groups',
+                                                    form.data.inline_groups.filter(
+                                                        (_, index) =>
+                                                            index !==
+                                                            groupIndex,
+                                                    ),
+                                                )
+                                            }
+                                        />
+                                    ),
+                                )}
+                                {attachedGroups.length === 0 &&
+                                    form.data.inline_groups.length === 0 && (
+                                        <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-5 text-center text-sm text-neutral-500">
+                                            No Groups attached. Add a new Group
+                                            or attach one from the library.
+                                        </p>
+                                    )}
+                            </section>
+                        )}
                     </div>
                 </fieldset>
             </div>
@@ -602,31 +627,78 @@ function AvailabilitySwitch({
 function BranchEditor({
     branch,
     value,
-    hideThreshold,
+    showOnHand,
+    currentOnHand,
     onChange,
 }: {
     branch: BranchConfiguration;
     value: BranchConfig;
-    hideThreshold: boolean;
+    showOnHand: boolean;
+    currentOnHand: number | null;
     onChange: (value: BranchConfig) => void;
 }) {
     return (
-        <div className="space-y-2 rounded-xl border border-neutral-200 p-3">
+        <div className="space-y-3 rounded-xl border border-neutral-200 p-3">
             <p className="text-[13px] font-semibold">
                 {branch.code} · {branch.name}
             </p>
-            <input
-                aria-label={`${branch.code} price override`}
-                value={value.price_override ?? ''}
-                placeholder="Default price"
-                className={controlClass}
-                onChange={(event) =>
-                    onChange({
-                        ...value,
-                        price_override: event.target.value || null,
-                    })
-                }
-            />
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
+                <Field
+                    id={`branch-price-${branch.branch_id}`}
+                    label="Price override"
+                >
+                    <input
+                        id={`branch-price-${branch.branch_id}`}
+                        value={value.price_override ?? ''}
+                        placeholder="Use default price"
+                        className={controlClass}
+                        onChange={(event) =>
+                            onChange({
+                                ...value,
+                                price_override: event.target.value || null,
+                            })
+                        }
+                    />
+                </Field>
+                {showOnHand && (
+                    <Field
+                        id={`branch-stock-${branch.branch_id}`}
+                        label="Stock on hand"
+                    >
+                        <input
+                            id={`branch-stock-${branch.branch_id}`}
+                            readOnly
+                            className={`${controlClass} bg-neutral-50 text-neutral-600`}
+                            value={currentOnHand ?? 'Set through Adjust Stock'}
+                        />
+                    </Field>
+                )}
+                {value.tracks_inventory && (
+                    <Field
+                        id={`branch-threshold-${branch.branch_id}`}
+                        label="Low-stock threshold"
+                    >
+                        <input
+                            id={`branch-threshold-${branch.branch_id}`}
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={value.low_stock_threshold ?? ''}
+                            placeholder="Optional"
+                            className={controlClass}
+                            onChange={(event) =>
+                                onChange({
+                                    ...value,
+                                    low_stock_threshold:
+                                        event.target.value === ''
+                                            ? null
+                                            : Number(event.target.value),
+                                })
+                            }
+                        />
+                    </Field>
+                )}
+            </div>
             <ActiveField
                 label="Available at this branch"
                 value={value.is_available}
@@ -647,25 +719,11 @@ function BranchEditor({
                     })
                 }
             />
-            {!hideThreshold && value.tracks_inventory && (
-                <input
-                    aria-label={`${branch.code} low stock threshold`}
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={value.low_stock_threshold ?? ''}
-                    placeholder="Low-stock threshold"
-                    className={controlClass}
-                    onChange={(event) =>
-                        onChange({
-                            ...value,
-                            low_stock_threshold:
-                                event.target.value === ''
-                                    ? null
-                                    : Number(event.target.value),
-                        })
-                    }
-                />
+            {!showOnHand && (
+                <p className="text-[11px] leading-5 text-neutral-500">
+                    Stock on hand is managed in Inventory. Select this branch
+                    globally to view its exact quantity.
+                </p>
             )}
         </div>
     );
@@ -681,7 +739,9 @@ function AttachedGroupCard({
     return (
         <section className="space-y-2 rounded-xl border border-neutral-200 p-3">
             <div className="grid grid-cols-[minmax(0,1fr)_auto_44px] gap-2">
-                <div className={`${controlClass} flex items-center font-semibold`}>
+                <div
+                    className={`${controlClass} flex items-center font-semibold`}
+                >
                     {group.name}
                     {!group.is_active && (
                         <span className="ml-2 text-xs text-neutral-500">
@@ -689,7 +749,9 @@ function AttachedGroupCard({
                         </span>
                     )}
                 </div>
-                <div className={`${controlClass} flex w-28 items-center text-xs font-semibold`}>
+                <div
+                    className={`${controlClass} flex w-28 items-center text-xs font-semibold`}
+                >
                     {group.selection_type === 'single'
                         ? 'One choice'
                         : 'Multiple'}
@@ -709,10 +771,14 @@ function AttachedGroupCard({
                     key={option.id}
                     className="grid grid-cols-[minmax(0,1fr)_96px_52px] gap-2"
                 >
-                    <div className={`${controlClass} flex items-center text-sm`}>
+                    <div
+                        className={`${controlClass} flex items-center text-sm`}
+                    >
                         {option.name}
                     </div>
-                    <div className={`${controlClass} flex items-center text-sm tabular-nums`}>
+                    <div
+                        className={`${controlClass} flex items-center text-sm tabular-nums`}
+                    >
                         {money(option.price_delta)}
                     </div>
                     <div

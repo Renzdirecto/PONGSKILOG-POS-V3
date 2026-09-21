@@ -97,6 +97,7 @@ class CreatePosDraftOrder
                     $modifiers[] = [
                         'id' => (string) Str::uuid(), 'order_item_id' => $itemId,
                         'modifier_option_id' => $option->id, 'group_name_snapshot' => $group->name,
+                        'semantic_role_snapshot' => $group->semantic_role?->value,
                         'option_name_snapshot' => $option->name, 'price_delta_snapshot' => $option->price_delta, 'quantity' => 1,
                     ];
                 }

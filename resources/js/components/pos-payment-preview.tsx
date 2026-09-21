@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { PosTableSelection } from '@/components/pos-table-selection';
+import { OperationalItemName } from '@/components/operational-item-name';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -20,6 +21,7 @@ import {
     validPayment,
 } from '@/lib/pos-money';
 import { customerDisplayLabel } from '@/lib/pos-order';
+import { cartItemName, savedItemName } from '@/lib/pos-item-name';
 import type {
     BranchTable,
     CartLine,
@@ -82,11 +84,12 @@ export function PosPaymentPreview({
     const rows =
         saved?.items.map((item) => ({
             ...item,
+            itemName: savedItemName(item),
             amount: pesos(item.line_total),
         })) ??
         lines.map((line) => ({
             id: line.key,
-            name: line.product.name,
+            itemName: cartItemName(line),
             quantity: line.quantity,
             notes: line.notes,
             modifiers: selectedOptions(line),
@@ -178,9 +181,16 @@ export function PosPaymentPreview({
                             </span>
                             <div className="min-w-0 flex-1 space-y-0.5">
                                 <p className="text-[12.5px] leading-[1.35] font-semibold wrap-anywhere text-neutral-950">
-                                    {row.name}
+                                    <OperationalItemName
+                                        value={row.itemName}
+                                    />
                                 </p>
-                                {row.modifiers.map((modifier) => (
+                                {row.modifiers
+                                    .filter(
+                                        (modifier) =>
+                                            modifier.semantic_role !== 'size',
+                                    )
+                                    .map((modifier) => (
                                     <p
                                         key={modifier.id}
                                         className="text-[10.5px] leading-[1.45] wrap-anywhere text-neutral-500"
@@ -188,7 +198,7 @@ export function PosPaymentPreview({
                                         {modifier.name} (+
                                         {pesos(modifier.price_delta)})
                                     </p>
-                                ))}
+                                    ))}
                                 {row.notes && (
                                     <p className="text-[10.5px] leading-[1.45] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                         {row.notes}

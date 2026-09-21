@@ -1,6 +1,7 @@
 import { Grid2X2, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { PosProductMedia } from '@/components/pos-product-media';
+import { CategoryIcon } from '@/components/category-icon';
 import { pesos } from '@/lib/pos-money';
 import type { CashierCatalog as CashierCatalogData } from '@/types/catalog';
 import type { CartLine } from '@/types/pos';
@@ -34,7 +35,10 @@ export function CashierCatalog({
                     aria-label="Catalog categories"
                     className="flex min-w-0 flex-1 [scrollbar-width:none] gap-[7px] overflow-x-auto p-px [&::-webkit-scrollbar]:hidden"
                 >
-                    {[{ id: '', name: 'All' }, ...catalog.categories].map(
+                    {[
+                        { id: '', name: 'All', icon_key: 'food' as const },
+                        ...catalog.categories,
+                    ].map(
                         (category) => (
                             <button
                                 key={category.id}
@@ -42,7 +46,13 @@ export function CashierCatalog({
                                 onClick={() => setCategoryId(category.id)}
                                 className={`flex h-[46px] shrink-0 items-center gap-[7px] rounded-[11px] border px-3.5 text-[13.5px] font-semibold ${categoryId === category.id ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-500'}`}
                             >
-                                {!category.id && <Grid2X2 className="size-4" />}
+                                {category.id ? (
+                                    <CategoryIcon
+                                        iconKey={category.icon_key}
+                                    />
+                                ) : (
+                                    <Grid2X2 className="size-4" />
+                                )}
                                 {category.name}
                                 <span
                                     className={`rounded-md px-1.5 py-0.5 text-[10px] ${categoryId === category.id ? 'bg-white/20' : 'bg-neutral-100'}`}
@@ -101,11 +111,20 @@ export function CashierCatalog({
                                         !onSelect || !product.is_available
                                     }
                                     onClick={() => onSelect?.(product)}
-                                    aria-label={`Customize ${product.name}`}
-                                    className="flex min-w-0 flex-col items-start gap-[7px] rounded-[14px] border border-neutral-200 bg-white p-2.5 text-left shadow-xs enabled:hover:border-neutral-950 enabled:active:scale-[.985] disabled:cursor-default"
+                                    aria-label={
+                                        product.is_available
+                                            ? `Customize ${product.name}`
+                                            : `${product.name} is unavailable`
+                                    }
+                                    className={`flex min-w-0 flex-col items-start gap-[7px] rounded-[14px] border bg-white p-2.5 text-left shadow-xs enabled:hover:border-neutral-950 enabled:active:scale-[.985] disabled:cursor-not-allowed ${product.is_available ? 'border-neutral-200' : 'border-red-300 bg-red-50/45'}`}
                                 >
                                     <span className="relative flex aspect-[3/2] w-full shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-[#f2f2f2]">
                                         <PosProductMedia product={product} />
+                                        {!product.is_available && (
+                                            <span className="absolute inset-x-1.5 bottom-1.5 rounded-lg bg-red-700 px-2 py-1.5 text-center text-[10px] font-bold tracking-wide text-white uppercase shadow-sm">
+                                                Unavailable
+                                            </span>
+                                        )}
                                         {count > 0 && (
                                             <span className="absolute top-1.5 right-1.5 rounded-full bg-neutral-950 px-1.5 py-1 text-[11px] font-bold text-white">
                                                 ×{count}

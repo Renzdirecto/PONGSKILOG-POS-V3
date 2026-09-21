@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { CashierCatalog } from '@/components/cashier-catalog';
+import { OperationalItemName } from '@/components/operational-item-name';
 import { PosTableSelection } from '@/components/pos-table-selection';
 import { PosPaid } from '@/components/pos-paid';
 import { store as payNow } from '@/routes/pos/payments';
@@ -35,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import { savedItemName } from '@/lib/pos-item-name';
 import {
     confirmedPayLaterState,
     payLaterAttemptForOrder,
@@ -843,11 +845,21 @@ export function CashierPos({
                                                                                 item.quantity
                                                                             }
                                                                             ×{' '}
-                                                                            {
-                                                                                item.name
-                                                                            }
+                                                                            <OperationalItemName
+                                                                                value={savedItemName(
+                                                                                    item,
+                                                                                )}
+                                                                            />
                                                                         </span>
-                                                                        {item.modifiers.map(
+                                                                        {item.modifiers
+                                                                            .filter(
+                                                                                (
+                                                                                    modifier,
+                                                                                ) =>
+                                                                                    modifier.semantic_role !==
+                                                                                    'size',
+                                                                            )
+                                                                            .map(
                                                                             (
                                                                                 modifier,
                                                                             ) => (
@@ -866,7 +878,7 @@ export function CashierPos({
                                                                                     }
                                                                                 </span>
                                                                             ),
-                                                                        )}
+                                                                            )}
                                                                         {item.notes && (
                                                                             <span className="block text-[11px] leading-4 text-amber-800 wrap-anywhere">
                                                                                 Note:{' '}
@@ -991,9 +1003,11 @@ export function CashierPos({
                                                                             ×
                                                                         </span>
                                                                         <span className="min-w-0 flex-1 font-semibold wrap-anywhere">
-                                                                            {
-                                                                                item.name
-                                                                            }
+                                                                            <OperationalItemName
+                                                                                value={savedItemName(
+                                                                                    item,
+                                                                                )}
+                                                                            />
                                                                         </span>
                                                                         <span className="font-bold text-red-700">
                                                                             {pesos(
@@ -1001,7 +1015,15 @@ export function CashierPos({
                                                                             )}
                                                                         </span>
                                                                     </div>
-                                                                    {item.modifiers.map(
+                                                                    {item.modifiers
+                                                                        .filter(
+                                                                            (
+                                                                                modifier,
+                                                                            ) =>
+                                                                                modifier.semantic_role !==
+                                                                                'size',
+                                                                        )
+                                                                        .map(
                                                                         (
                                                                             modifier,
                                                                         ) => (
@@ -1025,7 +1047,7 @@ export function CashierPos({
                                                                                 )
                                                                             </p>
                                                                         ),
-                                                                    )}
+                                                                        )}
                                                                     {item.notes && (
                                                                         <p className="rounded-md bg-orange-50 p-2 text-[11px] wrap-anywhere text-amber-800">
                                                                             {

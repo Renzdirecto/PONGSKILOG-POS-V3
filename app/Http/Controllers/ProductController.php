@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Catalog\CreateInlineModifierGroups;
 use App\Actions\Catalog\CreateProduct;
+use App\Actions\Catalog\ReplaceProductImage;
 use App\Actions\Catalog\SyncProductModifierGroups;
 use App\Actions\Catalog\UpdateProduct;
+use App\Actions\Catalog\UpsertBranchProduct;
 use App\Http\Requests\SaveProductRequest;
 use App\Models\Branch;
 use App\Models\Category;
@@ -14,9 +17,11 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\InventoryState;
 use App\Support\ProductImages;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,7 +37,10 @@ class ProductController extends Controller
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         $inventoryBranch = $activeBranchContext->current($user);
-        $branches = Branch::query()->orderBy('code')->get(['id', 'code', 'name']);
+        $branches = ($inventoryBranch === null
+            ? Branch::query()
+            : Branch::query()->whereKey($inventoryBranch->id))
+            ->orderBy('code')->get(['id', 'code', 'name']);
         $productsQuery = Product::query()->select('products.*')->with([
             'category',
             'modifierGroups',
@@ -65,7 +73,7 @@ class ProductController extends Controller
                     ...$product->only(['id', 'name', 'description', 'category_id', 'default_price', 'is_active']),
                     'category_name' => $product->category->name,
                     'category_active' => $product->category->is_active,
-                    'image_url' => $images->cardUrl($product),
+                    'image_url' => $images->safeCardUrl($product),
                     'has_image' => $product->image_path !== null,
                     'modifier_group_ids' => $product->modifierGroups->modelKeys(),
                     'modifier_group_count' => $product->modifierGroups->count(),
@@ -90,30 +98,104 @@ class ProductController extends Controller
 
         return Inertia::render('catalog/products', [
             'products' => $products,
-            'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'is_active']),
-            'modifierGroups' => ModifierGroup::query()->orderBy('name')->get(['id', 'name', 'is_active']),
+            'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'icon_key', 'is_active']),
+            'modifierGroups' => ModifierGroup::query()
+                ->with(['options' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')])
+                ->orderBy('name')->get(['id', 'name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']),
+            'branchConfigurations' => $branches->map(fn (Branch $branch): array => [
+                'branch_id' => $branch->id,
+                'code' => $branch->code,
+                'name' => $branch->name,
+            ]),
             'filters' => $filters,
         ]);
     }
 
-    public function store(SaveProductRequest $request, CreateProduct $create, SyncProductModifierGroups $sync): RedirectResponse
-    {
-        DB::transaction(function () use ($request, $create, $sync): void {
-            $product = $create->execute($request->user(), $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
-            $sync->execute($request->user(), $product, $request->validated('modifier_group_ids'));
+    public function store(
+        SaveProductRequest $request,
+        CreateProduct $create,
+        CreateInlineModifierGroups $createInlineGroups,
+        SyncProductModifierGroups $sync,
+        UpsertBranchProduct $upsertBranchProduct,
+        ReplaceProductImage $replaceImage,
+        ActiveBranchContext $activeBranchContext,
+    ): RedirectResponse {
+        DB::transaction(function () use ($request, $create, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext): void {
+            $user = $request->user();
+            $product = $create->execute($user, $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
+            $inlineGroupIds = $createInlineGroups->execute($user, $request->validated('inline_groups', []));
+            $sync->execute($user, $product, [...$request->validated('modifier_group_ids'), ...$inlineGroupIds]);
+
+            $allowedBranches = $this->allowedConfigurationBranches($user, $activeBranchContext)->keyBy('id');
+            foreach ($request->validated('branch_configs', []) as $configuration) {
+                $branch = $allowedBranches->get($configuration['branch_id']);
+                abort_unless($branch instanceof Branch, 403);
+                $upsertBranchProduct->execute($user, $branch, $product, $configuration);
+            }
+
+            $image = $request->file('image');
+            if ($image !== null) {
+                try {
+                    $replaceImage->execute($user, $product, $image);
+                } catch (ValidationException $exception) {
+                    throw $exception;
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    throw ValidationException::withMessages(['image' => 'The image could not be saved. Please try again.']);
+                }
+            }
         });
 
         return to_route('products.index');
     }
 
-    public function update(SaveProductRequest $request, Product $product, UpdateProduct $update, SyncProductModifierGroups $sync): RedirectResponse
-    {
-        DB::transaction(function () use ($request, $product, $update, $sync): void {
+    public function update(
+        SaveProductRequest $request,
+        Product $product,
+        UpdateProduct $update,
+        CreateInlineModifierGroups $createInlineGroups,
+        SyncProductModifierGroups $sync,
+        UpsertBranchProduct $upsertBranchProduct,
+        ReplaceProductImage $replaceImage,
+        ActiveBranchContext $activeBranchContext,
+    ): RedirectResponse {
+        DB::transaction(function () use ($request, $product, $update, $createInlineGroups, $sync, $upsertBranchProduct, $replaceImage, $activeBranchContext): void {
             $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
-            $update->execute($request->user(), $product, $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
-            $sync->execute($request->user(), $product, $request->validated('modifier_group_ids'));
+            $user = $request->user();
+            $update->execute($user, $product, $request->only(['name', 'category_id', 'description', 'default_price', 'is_active']));
+            $inlineGroupIds = $createInlineGroups->execute($user, $request->validated('inline_groups', []));
+            $sync->execute($user, $product, [...$request->validated('modifier_group_ids'), ...$inlineGroupIds]);
+
+            $allowedBranches = $this->allowedConfigurationBranches($user, $activeBranchContext)->keyBy('id');
+            foreach ($request->validated('branch_configs', []) as $configuration) {
+                $branch = $allowedBranches->get($configuration['branch_id']);
+                abort_unless($branch instanceof Branch, 403);
+                $upsertBranchProduct->execute($user, $branch, $product, $configuration);
+            }
+
+            $image = $request->file('image');
+            if ($image !== null) {
+                try {
+                    $replaceImage->execute($user, $product, $image);
+                } catch (ValidationException $exception) {
+                    throw $exception;
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    throw ValidationException::withMessages(['image' => 'The image could not be saved. Please try again.']);
+                }
+            }
         });
 
         return back();
+    }
+
+    /** @return Collection<int, Branch> */
+    private function allowedConfigurationBranches(User $user, ActiveBranchContext $activeBranchContext): Collection
+    {
+        $currentBranch = $activeBranchContext->current($user);
+
+        return $currentBranch === null
+            ? Branch::query()->orderBy('code')->get()
+            : Branch::query()->whereKey($currentBranch->id)->get();
     }
 }

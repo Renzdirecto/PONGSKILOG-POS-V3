@@ -6,7 +6,7 @@ import {
     PackageSearch,
     SlidersHorizontal,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     actionClass,
     controlClass,
@@ -24,16 +24,23 @@ import {
     ownerPanelClass,
 } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { index } from '@/routes/inventory';
-import { index as movementsIndex } from '@/routes/inventory/movements';
 import { index as productsIndex } from '@/routes/products';
-import type { Auth, BranchSummary } from '@/types';
+import type { Auth, BranchContext, BranchSummary } from '@/types';
 import type {
     InventoryFilters,
     InventoryPagination as Paginated,
     InventoryProduct,
     InventorySummary,
     StockStatus,
+    InventoryMovement,
 } from '@/types/inventory';
 
 type Category = { id: string; name: string };
@@ -44,9 +51,20 @@ type Props = {
     categories: Category[];
     summary: InventorySummary;
     products: Paginated<InventoryProduct>;
+    usesGlobalBranch: boolean;
+    history: {
+        branch: BranchSummary;
+        product: { id: string; name: string };
+        movements: Paginated<InventoryMovement>;
+    } | null;
 };
 
 const updatedDate = new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+});
+const movementDate = new Intl.DateTimeFormat('en-PH', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Asia/Manila',
@@ -65,7 +83,10 @@ const summaryCards: {
 
 export default function Inventory(props: Props) {
     const { selectedBranch, filters, summary, products } = props;
-    const { auth } = usePage<{ auth: Auth }>().props;
+    const { auth } = usePage<{
+        auth: Auth;
+        branchContext: BranchContext;
+    }>().props;
     const [adjustingProductId, setAdjustingProductId] = useState<string | null>(
         null,
     );
@@ -75,7 +96,12 @@ export default function Inventory(props: Props) {
 
     const visit = (
         changes: Partial<
-            InventoryFilters & { branch_id: string; page: number }
+            InventoryFilters & {
+                branch_id: string;
+                page: number;
+                history_product: string;
+                history_page: number;
+            }
         >,
     ) => {
         router.get(
@@ -85,6 +111,7 @@ export default function Inventory(props: Props) {
                 search: filters.search,
                 category: filters.category,
                 stock_status: filters.stock_status,
+                history_product: props.history?.product.id,
                 ...changes,
             },
             { preserveScroll: true, preserveState: true },
@@ -110,6 +137,17 @@ export default function Inventory(props: Props) {
             >
                 {selectedBranch ? (
                     <>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-[13px] font-semibold">
+                                Inventory for {selectedBranch.name} (
+                                {selectedBranch.code})
+                            </p>
+                            {props.usesGlobalBranch && (
+                                <OwnerStatusBadge tone="neutral">
+                                    Global branch scope
+                                </OwnerStatusBadge>
+                            )}
+                        </div>
                         <section
                             aria-label="Inventory summary"
                             className="grid grid-cols-2 gap-2 lg:grid-cols-4"
@@ -183,11 +221,16 @@ export default function Inventory(props: Props) {
                                         <InventoryRow
                                             key={product.id}
                                             product={product}
-                                            branch={selectedBranch}
                                             onAdjust={() =>
                                                 setAdjustingProductId(
                                                     product.id,
                                                 )
+                                            }
+                                            onHistory={() =>
+                                                visit({
+                                                    history_product: product.id,
+                                                    history_page: 1,
+                                                })
                                             }
                                         />
                                     ))}
@@ -202,17 +245,24 @@ export default function Inventory(props: Props) {
                         />
                     </>
                 ) : (
-                    <div
-                        className={`${ownerPanelClass} px-5 py-14 text-center`}
-                    >
-                        <PackageSearch className="mx-auto size-7 text-[#aaa]" />
-                        <h2 className="mt-3 text-sm font-semibold">
-                            No branches
-                        </h2>
-                        <p className="mt-1 text-[12.5px] text-[#767676]">
-                            Inventory becomes available after a branch is added.
-                        </p>
-                    </div>
+                    <>
+                        <InventoryFiltersForm {...props} />
+                        <div
+                            className={`${ownerPanelClass} px-5 py-14 text-center`}
+                        >
+                            <PackageSearch className="mx-auto size-7 text-[#aaa]" />
+                            <h2 className="mt-3 text-sm font-semibold">
+                                {props.branches.length
+                                    ? 'Choose a branch'
+                                    : 'No branches'}
+                            </h2>
+                            <p className="mt-1 text-[12.5px] text-[#767676]">
+                                {props.branches.length
+                                    ? 'Inventory quantities are branch-specific and are never aggregated across All Branches.'
+                                    : 'Inventory becomes available after a branch is added.'}
+                            </p>
+                        </div>
+                    </>
                 )}
                 {adjustingProduct && selectedBranch && (
                     <InventoryAdjustmentDialog
@@ -222,6 +272,20 @@ export default function Inventory(props: Props) {
                         onClose={() => setAdjustingProductId(null)}
                     />
                 )}
+                {props.history && (
+                    <InventoryHistoryDialog
+                        history={props.history}
+                        onClose={() =>
+                            visit({
+                                history_product: undefined,
+                                history_page: undefined,
+                            })
+                        }
+                        onPageChange={(historyPage) =>
+                            visit({ history_page: historyPage })
+                        }
+                    />
+                )}
             </OwnerPage>
         </>
     );
@@ -229,12 +293,12 @@ export default function Inventory(props: Props) {
 
 function InventoryRow({
     product,
-    branch,
     onAdjust,
+    onHistory,
 }: {
     product: InventoryProduct;
-    branch: BranchSummary;
     onAdjust: () => void;
+    onHistory: () => void;
 }) {
     return (
         <li className="grid min-w-0 gap-3 px-3.5 py-3 min-[980px]:grid-cols-[minmax(240px,1.6fr)_120px_100px_155px_210px] min-[980px]:items-center min-[980px]:px-4">
@@ -279,18 +343,97 @@ function InventoryRow({
                     <SlidersHorizontal className="size-3.5" />{' '}
                     {product.tracked ? 'Adjust' : 'Not tracked'}
                 </Button>
-                <Button variant="outline" className={actionClass} asChild>
-                    <Link
-                        href={movementsIndex({
-                            branch: branch.id,
-                            product: product.id,
-                        })}
-                    >
-                        <History className="size-3.5" /> History
-                    </Link>
+                <Button
+                    variant="outline"
+                    className={actionClass}
+                    onClick={onHistory}
+                >
+                    <History className="size-3.5" /> History
                 </Button>
             </div>
         </li>
+    );
+}
+
+function InventoryHistoryDialog({
+    history,
+    onClose,
+    onPageChange,
+}: {
+    history: NonNullable<Props['history']>;
+    onClose: () => void;
+    onPageChange: (page: number) => void;
+}) {
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white p-4 sm:top-1/2 sm:bottom-auto sm:max-w-4xl sm:-translate-y-1/2 sm:rounded-[20px] sm:p-6">
+                <DialogHeader className="pr-7 text-left">
+                    <DialogTitle className="text-[17px] font-bold">
+                        Inventory history
+                    </DialogTitle>
+                    <DialogDescription className="text-[12.5px] text-[#666]">
+                        {history.product.name} · {history.branch.name} (
+                        {history.branch.code})
+                    </DialogDescription>
+                </DialogHeader>
+                {history.movements.data.length === 0 ? (
+                    <div className="rounded-xl border border-[#e5e5e5] px-5 py-12 text-center">
+                        <History className="mx-auto size-7 text-[#aaa]" />
+                        <p className="mt-3 text-sm font-semibold">
+                            No stock movements yet
+                        </p>
+                    </div>
+                ) : (
+                    <ol className="divide-y divide-[#eeeeee] overflow-hidden rounded-xl border border-[#e5e5e5]">
+                        {history.movements.data.map((movement) => (
+                            <li
+                                key={movement.id}
+                                className="grid min-w-0 gap-2 p-3 sm:grid-cols-[150px_minmax(150px,1fr)_minmax(200px,1.5fr)_90px] sm:items-center"
+                            >
+                                <div>
+                                    <p className="text-[12.5px] font-semibold">
+                                        {movement.movement_label}
+                                    </p>
+                                    <time
+                                        dateTime={movement.created_at}
+                                        className="text-[10.5px] text-[#767676]"
+                                    >
+                                        {movementDate.format(
+                                            new Date(movement.created_at),
+                                        )}
+                                    </time>
+                                </div>
+                                <p className="text-[11.5px]">
+                                    <span className="block text-[#767676]">
+                                        Actor
+                                    </span>
+                                    {movement.created_by_name ??
+                                        'Not available'}
+                                </p>
+                                <p className="text-[11.5px] break-words whitespace-pre-wrap">
+                                    <span className="block text-[#767676]">
+                                        Reason
+                                    </span>
+                                    {movement.reason ?? 'No reason recorded'}
+                                </p>
+                                <p
+                                    className={`w-fit rounded-lg px-3 py-2 text-sm font-bold tabular-nums sm:justify-self-end ${movement.quantity_delta > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}
+                                >
+                                    {movement.quantity_delta > 0 ? '+' : ''}
+                                    {movement.quantity_delta.toLocaleString()}
+                                </p>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+                <InventoryPagination
+                    currentPage={history.movements.current_page}
+                    lastPage={history.movements.last_page}
+                    label="Inventory history pagination"
+                    onPageChange={onPageChange}
+                />
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -318,6 +461,7 @@ function InventoryFiltersForm({
     selectedBranch,
     filters,
     categories,
+    usesGlobalBranch,
 }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [category, setCategory] = useState(filters.category ?? '');
@@ -325,6 +469,7 @@ function InventoryFiltersForm({
         filters.stock_status ?? 'all',
     );
     const [loading, setLoading] = useState(false);
+    const firstRender = useRef(true);
     const applyFilters = (branchId = selectedBranch?.id ?? '') => {
         setLoading(true);
         router.get(
@@ -336,40 +481,51 @@ function InventoryFiltersForm({
                 stock_status: stockStatus,
             },
             {
+                replace: true,
                 preserveScroll: true,
                 preserveState: true,
                 onFinish: () => setLoading(false),
             },
         );
     };
+
+    useEffect(() => {
+        if (firstRender.current) {
+            firstRender.current = false;
+            return;
+        }
+
+        const timeout = window.setTimeout(() => applyFilters(), 350);
+
+        return () => window.clearTimeout(timeout);
+    }, [category, search, stockStatus]);
+
     return (
-        <form
-            aria-busy={loading}
-            onSubmit={(event) => {
-                event.preventDefault();
-                if (!loading) applyFilters();
-            }}
-            className={`${ownerPanelClass} p-3`}
-        >
+        <div aria-busy={loading} className={`${ownerPanelClass} p-3`}>
             <fieldset
                 disabled={loading}
-                className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[180px_minmax(220px,1fr)_180px_170px_auto]"
+                className={`grid min-w-0 gap-2 sm:grid-cols-2 ${usesGlobalBranch ? 'xl:grid-cols-[minmax(220px,1fr)_180px_170px]' : 'xl:grid-cols-[180px_minmax(220px,1fr)_180px_170px]'}`}
             >
-                <label>
-                    <span className="sr-only">Branch</span>
-                    <select
-                        aria-label="Branch"
-                        className={controlClass}
-                        value={selectedBranch?.id ?? ''}
-                        onChange={(event) => applyFilters(event.target.value)}
-                    >
-                        {branches.map((branch) => (
-                            <option key={branch.id} value={branch.id}>
-                                {branch.name} ({branch.code})
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                {!usesGlobalBranch && (
+                    <label>
+                        <span className="sr-only">Inventory branch</span>
+                        <select
+                            aria-label="Inventory branch"
+                            className={controlClass}
+                            value={selectedBranch?.id ?? ''}
+                            onChange={(event) =>
+                                applyFilters(event.target.value)
+                            }
+                        >
+                            <option value="">Choose branch</option>
+                            {branches.map((branch) => (
+                                <option key={branch.id} value={branch.id}>
+                                    {branch.name} ({branch.code})
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
                 <label>
                     <span className="sr-only">Search products</span>
                     <input
@@ -419,10 +575,13 @@ function InventoryFiltersForm({
                         )}
                     </select>
                 </label>
-                <Button type="submit" variant="outline" className={actionClass}>
-                    Apply filters
-                </Button>
             </fieldset>
-        </form>
+            <p
+                role="status"
+                className={`mt-2 text-[11px] text-[#767676] ${loading ? 'opacity-100' : 'opacity-0'}`}
+            >
+                Updating inventory…
+            </p>
+        </div>
     );
 }

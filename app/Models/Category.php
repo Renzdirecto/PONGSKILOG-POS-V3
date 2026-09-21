@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CategoryIcon;
 use Database\Factories\CategoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -9,7 +10,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'sort_order', 'is_active'])]
+/** @property CategoryIcon|null $icon_key */
+#[Fillable(['name', 'icon_key', 'sort_order', 'is_active'])]
 class Category extends Model
 {
     /** @use HasFactory<CategoryFactory> */
@@ -19,6 +21,7 @@ class Category extends Model
     protected function casts(): array
     {
         return [
+            'icon_key' => CategoryIcon::class,
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];

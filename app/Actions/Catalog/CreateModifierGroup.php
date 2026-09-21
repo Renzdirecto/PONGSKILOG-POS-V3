@@ -3,6 +3,7 @@
 namespace App\Actions\Catalog;
 
 use App\Enums\ModifierSelectionType;
+use App\Enums\ModifierSemanticRole;
 use App\Models\ModifierGroup;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
@@ -11,13 +12,14 @@ use Illuminate\Validation\Rule;
 
 class CreateModifierGroup
 {
-    /** @param array{name?: mixed, selection_type?: mixed, min_select?: mixed, max_select?: mixed, is_active?: mixed} $attributes */
+    /** @param array{name?: mixed, semantic_role?: mixed, selection_type?: mixed, min_select?: mixed, max_select?: mixed, is_active?: mixed} $attributes */
     public function execute(User $user, array $attributes): ModifierGroup
     {
         Gate::forUser($user)->authorize('products.manage');
 
         $validated = Validator::make($attributes, [
             'name' => ['required', 'string', 'max:255'],
+            'semantic_role' => ['nullable', Rule::enum(ModifierSemanticRole::class)],
             'selection_type' => ['required', Rule::enum(ModifierSelectionType::class)],
             'min_select' => ['required', 'integer', 'min:0', 'max:2147483647'],
             'max_select' => ['required', 'integer', 'min:0', 'max:2147483647', 'gte:min_select'],

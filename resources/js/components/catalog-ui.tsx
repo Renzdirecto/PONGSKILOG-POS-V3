@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { FolderPlus, Layers3, PackagePlus } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -30,7 +31,7 @@ export const primaryActionClass = ownerPrimaryActionClass;
 export const money = (value: string) =>
     `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-type CatalogTab = 'Products' | 'Categories' | 'Modifiers';
+type CatalogTab = 'Products' | 'Categories' | 'Groups';
 
 export function CatalogPage({
     tab,
@@ -40,7 +41,7 @@ export function CatalogPage({
 }: {
     tab: CatalogTab;
     children: ReactNode;
-    action: ReactNode;
+    action?: ReactNode;
     counts?: Partial<Record<CatalogTab, number>>;
 }) {
     const tabs: {
@@ -49,7 +50,7 @@ export function CatalogPage({
     }[] = [
         { label: 'Products', href: productsIndex() },
         { label: 'Categories', href: categoriesIndex() },
-        { label: 'Modifiers', href: modifiersIndex() },
+        { label: 'Groups', href: modifiersIndex() },
     ];
 
     return (
@@ -58,7 +59,7 @@ export function CatalogPage({
             <OwnerPage
                 title="Products"
                 description="Products, categories and the options offered in the POS and customer QR menu."
-                action={action}
+                action={<CatalogQuickActions />}
             >
                 <nav
                     aria-label="Product management"
@@ -82,9 +83,45 @@ export function CatalogPage({
                         </Link>
                     ))}
                 </nav>
+                {action}
                 {children}
             </OwnerPage>
         </>
+    );
+}
+
+function CatalogQuickActions() {
+    const actions = [
+        {
+            label: 'Add product',
+            icon: PackagePlus,
+            href: productsIndex({ query: { create: 'product' } }),
+        },
+        {
+            label: 'Add category',
+            icon: FolderPlus,
+            href: categoriesIndex({ query: { create: 'category' } }),
+        },
+        {
+            label: 'Add group',
+            icon: Layers3,
+            href: modifiersIndex({ query: { create: 'group' } }),
+        },
+    ];
+
+    return (
+        <div className="grid w-full grid-cols-3 gap-1.5 md:flex md:w-auto">
+            {actions.map(({ label, icon: Icon, href }, index) => (
+                <Link
+                    key={label}
+                    href={href}
+                    className={`${index === 0 ? ownerPrimaryActionClass : ownerSecondaryActionClass} inline-flex min-w-0 items-center justify-center gap-1.5 px-2 md:px-3`}
+                >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{label}</span>
+                </Link>
+            ))}
+        </div>
     );
 }
 
@@ -95,6 +132,7 @@ export function CatalogDialog({
     description,
     children,
     wide = false,
+    standalone = false,
 }: {
     open: boolean;
     onClose: () => void;
@@ -102,6 +140,7 @@ export function CatalogDialog({
     description: string;
     children: ReactNode;
     wide?: boolean;
+    standalone?: boolean;
 }) {
     return (
         <Dialog
@@ -111,13 +150,17 @@ export function CatalogDialog({
             }}
         >
             <DialogContent
-                className={`owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white p-4 text-[#111111] sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:rounded-[20px] sm:p-6 ${wide ? 'sm:max-w-3xl' : 'sm:max-w-xl'} [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center`}
+                className={`owner-surface top-auto bottom-0 max-h-[96dvh] w-full max-w-none translate-y-0 rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-[#111111] sm:top-1/2 sm:bottom-auto sm:max-h-[92dvh] sm:-translate-y-1/2 sm:rounded-[20px] ${standalone ? 'flex flex-col gap-0 overflow-hidden p-0' : 'gap-4 overflow-y-auto p-4 sm:p-6'} ${wide ? 'sm:max-w-3xl' : 'sm:max-w-xl'} [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center`}
             >
-                <DialogHeader className="pr-7 text-left">
+                <DialogHeader
+                    className={`pr-12 text-left ${standalone ? 'shrink-0 gap-0.5 border-b border-[#e5e5e5] px-4 py-3' : 'pr-7'}`}
+                >
                     <DialogTitle className="text-[17px] font-bold">
                         {title}
                     </DialogTitle>
-                    <DialogDescription className="text-[12.5px] leading-5 text-[#666]">
+                    <DialogDescription
+                        className={`${standalone ? 'order-first text-[10px] font-semibold tracking-[0.08em] uppercase' : 'text-[12.5px] leading-5'} text-[#666]`}
+                    >
                         {description}
                     </DialogDescription>
                 </DialogHeader>
@@ -140,7 +183,10 @@ export function Field({
 }) {
     return (
         <div className="space-y-2">
-            <Label htmlFor={id} className="text-[12px] font-semibold">
+            <Label
+                htmlFor={id}
+                className="text-[11px] font-semibold tracking-[0.06em] text-[#777] uppercase"
+            >
                 {label}
             </Label>
             {children}

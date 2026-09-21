@@ -11,6 +11,7 @@ use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\OperationalItemName;
 use App\Support\PosAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -60,10 +61,11 @@ class PosDraftOrderController extends Controller
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->branchTable?->name, 'subtotal' => $order->subtotal, 'total' => $order->total,
             'items' => $order->items->map(fn (OrderItem $item): array => [
-                'id' => $item->id, 'name' => $item->product_name_snapshot, 'unit_price' => $item->unit_price,
+                'id' => $item->id, ...OperationalItemName::fromOrderItem($item), 'unit_price' => $item->unit_price,
                 'quantity' => $item->quantity, 'line_total' => $item->line_total, 'notes' => $item->notes,
                 'modifiers' => $item->modifiers->map(fn (OrderItemModifier $modifier): array => [
                     'id' => $modifier->id, 'group_name' => $modifier->group_name_snapshot,
+                    'semantic_role' => $modifier->semantic_role_snapshot,
                     'name' => $modifier->option_name_snapshot, 'price_delta' => $modifier->price_delta_snapshot,
                     'quantity' => $modifier->quantity,
                 ])->all(),

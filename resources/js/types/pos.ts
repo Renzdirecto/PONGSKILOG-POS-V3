@@ -28,6 +28,8 @@ export type OrderSummary = {
     items: {
         id: string;
         name: string;
+        size_prefix?: string | null;
+        display_name?: string;
         unit_price: string;
         quantity: number;
         line_total: string;
@@ -35,6 +37,7 @@ export type OrderSummary = {
         modifiers: {
             id: string;
             group_name: string;
+            semantic_role?: 'size' | null;
             name: string;
             price_delta: string;
             quantity: number;

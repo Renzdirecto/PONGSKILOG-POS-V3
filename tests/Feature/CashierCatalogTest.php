@@ -42,7 +42,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
             ->component('workspaces/show')
             ->where('branchContext.current.id', $branch->id)
             ->where('catalog', [
-                'categories' => [['id' => $category->id, 'name' => 'Silog']],
+                'categories' => [['id' => $category->id, 'name' => 'Silog', 'icon_key' => 'food']],
                 'products' => [[
                     'id' => $product->id,
                     'name' => 'Tapsilog',
@@ -51,6 +51,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
                     'category_name' => 'Silog',
                     'effective_price' => '99.25',
                     'is_available' => true,
+                    'availability_reason' => null,
                     'stock_status' => 'not_tracked',
                     'tracks_inventory' => false,
                     'on_hand' => null,
@@ -118,32 +119,32 @@ test('unavailable branches retain their safe workspace state without catalog dat
             ->where('catalog', ['categories' => [], 'products' => []]));
 })->with([BranchStatus::Inactive, BranchStatus::TemporarilyClosed]);
 
-test('catalog hides globally inactive items and sorts only populated active categories', function () {
+test('catalog keeps disabled products visible and explains why they cannot be ordered', function () {
     $branch = Branch::factory()->create();
     $last = Category::factory()->create(['name' => 'Drinks', 'sort_order' => 2]);
     $second = Category::factory()->create(['name' => 'Silog', 'sort_order' => 1]);
     $first = Category::factory()->create(['name' => 'Extras', 'sort_order' => 1]);
     Category::factory()->create(['name' => 'Empty']);
-    Product::factory()->for(Category::factory()->create(['name' => 'Inactive only']))->create(['is_active' => false]);
-    Product::factory()->for(Category::factory()->create(['is_active' => false]))->create();
+    $disabledProduct = Product::factory()->for(Category::factory()->create(['name' => 'Inactive only']))
+        ->create(['name' => 'Disabled product', 'is_active' => false]);
+    $disabledCategoryProduct = Product::factory()->for(Category::factory()->create(['name' => 'Disabled category', 'is_active' => false]))
+        ->create(['name' => 'Category-disabled product']);
     Product::factory()->for($last)->create(['name' => 'Water']);
     Product::factory()->for($second)->create(['name' => 'Tapsilog']);
     Product::factory()->for($first)->create(['name' => 'Rice']);
     Product::factory()->for($first)->create(['name' => 'Egg']);
-    Product::factory()->for($first)->create(['is_active' => false]);
+    $otherDisabledProduct = Product::factory()->for($first)->create(['name' => 'Disabled extra', 'is_active' => false]);
 
-    $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('catalog.categories', [
-                ['id' => $first->id, 'name' => 'Extras'],
-                ['id' => $second->id, 'name' => 'Silog'],
-                ['id' => $last->id, 'name' => 'Drinks'],
-            ])
-            ->has('catalog.products', 4)
-            ->where('catalog.products.0.name', 'Egg')
-            ->where('catalog.products.1.name', 'Rice')
-            ->where('catalog.products.2.name', 'Tapsilog')
-            ->where('catalog.products.3.name', 'Water'));
+    $response = $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'));
+    $response->assertInertia(fn (Assert $page) => $page->has('catalog.categories', 5)->has('catalog.products', 7));
+
+    $products = collect($response->inertiaProps('catalog.products'))->keyBy('id');
+    expect($products[$disabledProduct->id]['availability_reason'])->toBe('product_disabled')
+        ->and($products[$disabledProduct->id]['is_available'])->toBeFalse()
+        ->and($products[$disabledCategoryProduct->id]['availability_reason'])->toBe('category_disabled')
+        ->and($products[$otherDisabledProduct->id]['availability_reason'])->toBe('product_disabled');
+    expect(collect($response->inertiaProps('catalog.categories'))->pluck('name')->all())
+        ->toContain('Inactive only', 'Disabled category', 'Extras', 'Silog', 'Drinks');
 });
 
 test('branch switching isolates prices and unavailable overrides and ignores forged query scope', function () {
@@ -190,9 +191,9 @@ test('catalog signs only returned card variants and exposes no image internals',
     $product->update(['image_path' => $directory.'/detail.webp']);
     BranchProduct::factory()->for($branch)->for($product)->create(['price_override' => '0.00', 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
     $product->modifierGroups()->attach(ModifierGroup::factory()->create());
-    Product::factory()->create(['is_active' => false, 'image_path' => 'must-not-be-resolved']);
+    Product::factory()->create(['is_active' => false]);
     Product::factory()->for(Category::factory()->create(['is_active' => false]))
-        ->create(['image_path' => 'must-not-be-resolved']);
+        ->create();
     $signedPaths = [];
     Storage::fake('s3')->buildTemporaryUrlsUsing(function (string $path, DateTimeInterface $expiration) use (&$signedPaths) {
         $signedPaths[] = $path;
@@ -201,26 +202,23 @@ test('catalog signs only returned card variants and exposes no image internals',
         return 'https://assets.example.test/'.$path.'?signature=test';
     });
 
-    $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'))
-        ->assertInertia(fn (Assert $page) => $page
-            ->has('catalog.products', 1)
-            ->where('catalog.products.0.image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
-            ->missing('catalog.products.0.image_path')
-            ->missing('catalog.products.0.source_url')
-            ->missing('catalog.products.0.detail_url')
-            ->has('catalog.products.0', fn (Assert $item) => $item
-                ->where('id', $product->id)
-                ->where('name', $product->name)->where('description', $product->description)
-                ->where('category_id', $product->category_id)
-                ->where('category_name', $product->category->name)
-                ->where('effective_price', '0.00')
-                ->where('is_available', false)
-                ->where('stock_status', 'out_of_stock')
-                ->where('tracks_inventory', true)
-                ->where('on_hand', 0)
-                ->where('image_url', 'https://assets.example.test/'.$directory.'/card.webp?signature=test')
-                ->where('has_modifiers', true)
-                ->has('modifier_groups', 1)));
+    $response = $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'));
+    $response->assertInertia(fn (Assert $page) => $page->has('catalog.products', 3));
+
+    $item = collect($response->inertiaProps('catalog.products'))->firstWhere('id', $product->id);
+    expect($item)->toMatchArray([
+        'id' => $product->id,
+        'effective_price' => '0.00',
+        'is_available' => false,
+        'availability_reason' => 'out_of_stock',
+        'stock_status' => 'out_of_stock',
+        'tracks_inventory' => true,
+        'on_hand' => 0,
+        'image_url' => 'https://assets.example.test/'.$directory.'/card.webp?signature=test',
+        'has_modifiers' => true,
+    ]);
+    expect($item)->not->toHaveKeys(['image_path', 'source_url', 'detail_url'])
+        ->and($item['modifier_groups'])->toHaveCount(1);
 
     expect($signedPaths)->toBe([$directory.'/card.webp']);
 });

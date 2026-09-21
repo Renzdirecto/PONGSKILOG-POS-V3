@@ -8,7 +8,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PosProductMedia } from '@/components/pos-product-media';
+import { OperationalItemName } from '@/components/operational-item-name';
 import { lineCents, pesos, selectedOptions } from '@/lib/pos-money';
+import { cartItemName, savedItemName } from '@/lib/pos-item-name';
 import { orderNumberLabel } from '@/lib/pos-order';
 import type { CartLine, OrderSummary, OrderType } from '@/types/pos';
 
@@ -98,7 +100,7 @@ export function PosCart({
                         {(saved
                             ? saved.items.map((item) => ({
                                   key: item.id,
-                                  name: item.name,
+                                  itemName: savedItemName(item),
                                   quantity: item.quantity,
                                   amount: pesos(item.line_total),
                                   notes: item.notes,
@@ -108,7 +110,7 @@ export function PosCart({
                               }))
                             : lines.map((line) => ({
                                   key: line.key,
-                                  name: line.product.name,
+                                  itemName: cartItemName(line),
                                   quantity: line.quantity,
                                   amount: pesos(lineCents(line)),
                                   notes: line.notes,
@@ -136,21 +138,17 @@ export function PosCart({
                                             <span className="shrink-0 text-[13px] font-bold text-red-700">
                                                 {row.quantity}&times;
                                             </span>
-                                            <span className="wrap-anywhere">
-                                                {/^(SMALL|MEDIUM|LARGE) /.test(
-                                                    row.name,
-                                                ) && (
-                                                    <span className="mr-1 inline-block rounded border border-amber-200 bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
-                                                        {row.name.split(' ')[0]}
-                                                    </span>
-                                                )}
-                                                {row.name.replace(
-                                                    /^(SMALL|MEDIUM|LARGE) /,
-                                                    '',
-                                                )}
-                                            </span>
+                                            <OperationalItemName
+                                                value={row.itemName}
+                                            />
                                         </div>
-                                        {row.modifiers.map((option) => (
+                                        {row.modifiers
+                                            .filter(
+                                                (option) =>
+                                                    option.semantic_role !==
+                                                    'size',
+                                            )
+                                            .map((option) => (
                                             <p
                                                 key={option.id}
                                                 className="mt-1 text-[11.5px] leading-4 text-amber-800"
@@ -158,7 +156,7 @@ export function PosCart({
                                                 {option.name} (+
                                                 {pesos(option.price_delta)})
                                             </p>
-                                        ))}
+                                            ))}
                                         {row.notes && (
                                             <p className="mt-1 rounded-md bg-orange-50 p-1.5 text-[11px] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                                 {row.notes}
@@ -174,7 +172,7 @@ export function PosCart({
                                         <div className="flex shrink-0 overflow-hidden rounded-[10px] border border-neutral-300">
                                             <button
                                                 className="flex size-[46px] items-center justify-center hover:bg-neutral-100 disabled:opacity-40"
-                                                aria-label={`Decrease ${row.name} quantity`}
+                                                aria-label={`Decrease ${row.itemName.displayName} quantity`}
                                                 disabled={row.quantity <= 1}
                                                 onClick={() =>
                                                     onQuantityChange(
@@ -190,7 +188,7 @@ export function PosCart({
                                             </span>
                                             <button
                                                 className="flex size-[46px] items-center justify-center hover:bg-neutral-100 disabled:opacity-40"
-                                                aria-label={`Increase ${row.name} quantity`}
+                                                aria-label={`Increase ${row.itemName.displayName} quantity`}
                                                 disabled={row.quantity >= 999}
                                                 onClick={() =>
                                                     onQuantityChange(
@@ -209,7 +207,7 @@ export function PosCart({
                                                     if (row.line)
                                                         onEdit(row.line);
                                                 }}
-                                                aria-label={`Edit ${row.name}`}
+                                                aria-label={`Edit ${row.itemName.displayName}`}
                                             >
                                                 <Pencil className="size-3.5" />
                                                 Edit
@@ -219,7 +217,7 @@ export function PosCart({
                                                 onClick={() =>
                                                     onRemove(row.key)
                                                 }
-                                                aria-label={`Remove ${row.name}`}
+                                                aria-label={`Remove ${row.itemName.displayName}`}
                                             >
                                                 <Trash2 className="size-4" />
                                             </button>

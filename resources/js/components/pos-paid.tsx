@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { pesos } from '@/lib/pos-money';
+import { savedItemName } from '@/lib/pos-item-name';
+import { OperationalItemName } from '@/components/operational-item-name';
 import { customerDisplayLabel } from '@/lib/pos-order';
 import {
     invoiceProofDeferredLabel,
@@ -157,9 +159,18 @@ export function PosPaid({
                                 >
                                     <div className="min-w-0 flex-1">
                                         <p className="font-semibold wrap-anywhere">
-                                            {item.quantity}&times; {item.name}
+                                            {item.quantity}&times;{' '}
+                                            <OperationalItemName
+                                                value={savedItemName(item)}
+                                            />
                                         </p>
-                                        {item.modifiers.map((modifier) => (
+                                        {item.modifiers
+                                            .filter(
+                                                (modifier) =>
+                                                    modifier.semantic_role !==
+                                                    'size',
+                                            )
+                                            .map((modifier) => (
                                             <p
                                                 key={modifier.id}
                                                 className="pl-3 text-[10.5px] wrap-anywhere text-neutral-500"
@@ -167,7 +178,7 @@ export function PosPaid({
                                                 {modifier.name} +
                                                 {pesos(modifier.price_delta)}
                                             </p>
-                                        ))}
+                                            ))}
                                         {item.notes && (
                                             <p className="pl-3 text-[10.5px] wrap-anywhere whitespace-pre-wrap text-amber-800">
                                                 Note: {item.notes}

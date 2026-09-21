@@ -80,7 +80,7 @@ export default function Workspace({
                                         Products
                                     </strong>
                                     <span className="mt-1 block text-[11.5px] text-[#767676]">
-                                        Catalog, categories, modifiers, pricing,
+                                        Catalog, categories, groups, pricing,
                                         and availability.
                                     </span>
                                 </span>

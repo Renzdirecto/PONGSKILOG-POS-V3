@@ -648,6 +648,18 @@ Owner workspace UI alignment slice (2026-09-21):
 - Focused catalog/inventory/branch/RBAC verification passed: **404 tests / 2,665 assertions**. Full Laravel verification passed: **1,090 tests / 6,702 assertions**. Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, and whitespace checks passed. The existing optional `fontaine` and build timing notices remain non-blocking.
 - This was a visual alignment and existing-function refinement slice only. Phase 16 remains incomplete: no Phase 16 checkbox below is marked, and Transactions, Reports, Staff, full Settings, analytics, branch comparison, and Store Session summaries were not implemented.
 
+### Owner catalog, Groups, and Inventory refinement — 2026-09-21
+
+- Added truthful notification/account menus and Product/Category/Group quick actions; renamed user-facing Modifiers to Groups; made Product, Category, and Inventory filtering reactive and server-authoritative; and added local tile/list presentation where applicable.
+- Product Add/Edit now uses one standalone-style editor with image, core fields, selected-branch stock truth, authorized branch configuration, reusable Group assignment cards, inline Group/Option creation, and a fixed action footer. All Branches never fabricates or sums inventory.
+- Added allowlisted Category icon keys and an explicit nullable Group `size` semantic role. The semantic role is snapshotted on committed order modifiers, and shared backend/frontend display helpers prefix only explicitly selected Size options while preserving canonical Product names and historical output.
+- POS catalog projections keep disabled/category-disabled/branch-unavailable/out-of-stock Products visible with an explicit reason while preventing customization/cart entry; authoritative order validation continues rejecting stale unavailable Products.
+- Inventory now follows global Owner scope, requires an explicit local branch in All Branches, retains authoritative Adjust Stock actions and append-only movements, and opens real paginated movement history in a responsive modal with the protected deep-link fallback retained.
+- Live Chrome QA covered the Owner menus and quick actions, Products/Categories/Groups, branch-specific and All Branches behavior, Adjust Stock/history, and the standalone Product editor. The editor was specifically checked at 360, 390, 430, 820, and 1440px: its header/footer remain fixed, its body scrolls independently, touch controls remain reachable, and no visible horizontal document/dialog overflow was found. A no-change live Product save completed successfully; temporary Group previews were cancelled and no QA catalog fixture remains.
+- Additive migration smoke/rollback/reapply passed on isolated SQLite, and isolated PostgreSQL fresh/concurrency verification passed with temporary schemas removed. The normal local PostgreSQL database received only the additive migration; Supabase was not accessed or reset.
+- Final verification passed: **1,094 Laravel tests / 6,823 assertions**, **14 frontend contract tests**, Pint, PHPStan with zero errors, frontend lint, TypeScript, production build, and whitespace checks. The existing optional `fontaine`, build timing, and Node experimental type-stripping notices remain non-blocking.
+- Phase 16 remains incomplete. Transactions, Reports, Staff, full Settings, analytics, branch comparison, real notifications, and Store Session summaries remain deferred; no Phase 16 checkbox below is marked by this refinement.
+
 - [ ] Dashboard
 - [ ] All Branches scope
 - [ ] Specific Branch scope

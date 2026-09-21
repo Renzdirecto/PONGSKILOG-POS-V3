@@ -20,6 +20,7 @@ class ModifierGroupFactory extends Factory
     {
         return [
             'name' => fake()->words(2, true),
+            'semantic_role' => null,
             'selection_type' => ModifierSelectionType::Single,
             'min_select' => 0,
             'max_select' => 1,

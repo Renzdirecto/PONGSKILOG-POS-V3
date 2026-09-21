@@ -15,7 +15,7 @@ class ModifierGroupController extends Controller
     public function index(): Response
     {
         return Inertia::render('catalog/modifiers', [
-            'groups' => ModifierGroup::query()->select(['id', 'name', 'selection_type', 'min_select', 'max_select', 'is_active'])
+            'groups' => ModifierGroup::query()->select(['id', 'name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active'])
                 ->with(['options' => fn ($query) => $query->select(['id', 'modifier_group_id', 'name', 'price_delta', 'sort_order', 'is_active'])->orderBy('sort_order')->orderBy('name')])
                 ->orderBy('name')->get(),
         ]);
@@ -23,14 +23,14 @@ class ModifierGroupController extends Controller
 
     public function store(Request $request, CreateModifierGroup $create): RedirectResponse
     {
-        $create->execute($request->user(), $request->only(['name', 'selection_type', 'min_select', 'max_select', 'is_active']));
+        $create->execute($request->user(), $request->only(['name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']));
 
         return to_route('modifier-groups.index');
     }
 
     public function update(Request $request, ModifierGroup $modifierGroup, UpdateModifierGroup $update): RedirectResponse
     {
-        $update->execute($request->user(), $modifierGroup, $request->only(['name', 'selection_type', 'min_select', 'max_select', 'is_active']));
+        $update->execute($request->user(), $modifierGroup, $request->only(['name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']));
 
         return to_route('modifier-groups.index');
     }

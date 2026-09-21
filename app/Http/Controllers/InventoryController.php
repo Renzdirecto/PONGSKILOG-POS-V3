@@ -3,34 +3,35 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Inventory\AdjustInventory;
-use App\Enums\BranchStatus;
 use App\Http\Requests\AdjustInventoryRequest;
 use App\Http\Requests\InventoryIndexRequest;
 use App\Models\Branch;
 use App\Models\Category;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\InventoryState;
 use App\Support\ProductImages;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class InventoryController extends Controller
 {
-    public function index(InventoryIndexRequest $request, InventoryState $inventoryState, ProductImages $images): Response
+    public function index(InventoryIndexRequest $request, InventoryState $inventoryState, ProductImages $images, ActiveBranchContext $activeBranchContext): Response
     {
         $filters = [
             'search' => $request->validated('search') ?? '',
             'stock_status' => $request->validated('stock_status') ?? 'all',
             'category' => $request->validated('category') ?? '',
         ];
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
         $branches = Branch::query()->orderBy('code')->get(['id', 'name', 'code', 'status']);
-        $branch = $branches->firstWhere('id', $request->validated('branch_id'))
-            ?? $branches->firstWhere('id', $request->session()->get(ActiveBranchContext::SESSION_KEY))
-            ?? $branches->firstWhere('status', BranchStatus::Active)
-            ?? $branches->first();
+        $globalBranch = $activeBranchContext->current($user);
+        $branch = $globalBranch ?? $branches->firstWhere('id', $request->validated('branch_id'));
 
         $baseQuery = Product::query()
             ->when($filters['search'] !== '', fn ($query) => $query->whereLike('products.name', '%'.$filters['search'].'%'))
@@ -71,11 +72,20 @@ class InventoryController extends Controller
                     'id' => $product->id,
                     'name' => $product->name,
                     'category_name' => $product->category->name,
-                    'image_url' => $images->cardUrl($product),
+                    'image_url' => $images->safeCardUrl($product),
                     'last_updated_at' => $balance?->updated_at?->toIso8601String(),
                     ...$inventoryState->resolve($product->branchProducts->first(), $balance),
                 ];
             });
+
+        $historyProduct = $branch === null || $request->validated('history_product') === null
+            ? null
+            : Product::query()->whereKey($request->validated('history_product'))->first();
+        $history = $historyProduct === null ? null : [
+            'branch' => $branch->only(['id', 'name', 'code']),
+            'product' => $historyProduct->only(['id', 'name']),
+            'movements' => $this->movementHistory($branch, $historyProduct, 'history_page'),
+        ];
 
         return Inertia::render('inventory/index', [
             'branches' => $branches->map(fn (Branch $branch): array => $branch->only(['id', 'name', 'code'])),
@@ -84,6 +94,8 @@ class InventoryController extends Controller
             'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'summary' => $summary,
             'products' => $products,
+            'usesGlobalBranch' => $globalBranch !== null,
+            'history' => $history,
         ]);
     }
 
@@ -102,12 +114,22 @@ class InventoryController extends Controller
 
     public function movements(Branch $branch, Product $product): Response
     {
-        $movements = InventoryMovement::query()
+        return Inertia::render('inventory/movements', [
+            'branch' => $branch->only(['id', 'name', 'code']),
+            'product' => $product->only(['id', 'name']),
+            'movements' => $this->movementHistory($branch, $product),
+        ]);
+    }
+
+    /** @return LengthAwarePaginator<int, covariant array<string, mixed>> */
+    private function movementHistory(Branch $branch, Product $product, string $pageName = 'page'): LengthAwarePaginator
+    {
+        return InventoryMovement::query()
             ->where('branch_id', $branch->id)
             ->where('product_id', $product->id)
             ->with('createdBy:id,name')
             ->orderByDesc('created_at')->orderByDesc('id')
-            ->paginate(30)
+            ->paginate(30, ['*'], $pageName)
             ->through(fn (InventoryMovement $movement): array => [
                 'id' => $movement->id,
                 'created_at' => $movement->created_at->toIso8601String(),
@@ -117,11 +139,5 @@ class InventoryController extends Controller
                 'reason' => $movement->reason,
                 'created_by_name' => $movement->createdBy?->name,
             ]);
-
-        return Inertia::render('inventory/movements', [
-            'branch' => $branch->only(['id', 'name', 'code']),
-            'product' => $product->only(['id', 'name']),
-            'movements' => $movements,
-        ]);
     }
 }

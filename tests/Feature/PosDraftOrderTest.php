@@ -4,6 +4,7 @@ use App\Actions\Orders\CreatePosDraftOrder;
 use App\Enums\BranchStatus;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
+use App\Enums\ModifierSemanticRole;
 use App\Enums\OrderSource;
 use App\Enums\OrderType;
 use App\Enums\PaymentStatus;
@@ -21,6 +22,8 @@ use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
+use App\Support\PayLaterOrderSummary;
+use App\Support\PosReceipt;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -156,6 +159,53 @@ test('draft snapshots survive catalog renaming repricing and disablement', funct
         ->where('order.items.0.notes', 'Less rice')
         ->where('order.items.0.modifiers.0.group_name', 'Original group')
         ->where('order.items.0.modifiers.0.name', 'Original option')->where('order.items.0.modifiers.0.price_delta', '20.00'));
+});
+
+test('size groups prefix operational item names without changing the canonical product snapshot', function () {
+    $branch = Branch::factory()->create();
+    $user = posCashier($branch);
+    StoreSession::factory()->for($branch)->create();
+    $product = Product::factory()->create(['name' => 'Yakult', 'default_price' => '55.00']);
+    $size = ModifierGroup::factory()->create([
+        'name' => 'Size',
+        'semantic_role' => ModifierSemanticRole::Size,
+        'min_select' => 1,
+        'max_select' => 1,
+    ]);
+    $extras = ModifierGroup::factory()->create(['name' => 'Extras']);
+    $product->modifierGroups()->attach([$size->id, $extras->id]);
+    $small = ModifierOption::factory()->for($size)->create(['name' => 'Small', 'price_delta' => '0.00']);
+    $pearls = ModifierOption::factory()->for($extras)->create(['name' => 'Pearls', 'price_delta' => '10.00']);
+    $payload = posPayload($product);
+    $payload['items'][0]['quantity'] = 1;
+    $payload['items'][0]['modifiers'] = [
+        ['group_id' => $size->id, 'option_id' => $small->id],
+        ['group_id' => $extras->id, 'option_id' => $pearls->id],
+    ];
+
+    $response = $this->actingAs($user)->post(route('pos.orders.store'), $payload)
+        ->assertRedirectToRoute('workspaces.cashier')
+        ->assertInertiaFlash('posDraft.items.0.name', 'Yakult')
+        ->assertInertiaFlash('posDraft.items.0.size_prefix', 'Small')
+        ->assertInertiaFlash('posDraft.items.0.display_name', 'Small Yakult')
+        ->assertInertiaFlash('posDraft.items.0.modifiers.0.semantic_role', 'size')
+        ->assertInertiaFlash('posDraft.items.0.modifiers.1.semantic_role', null);
+
+    $order = Order::query()->sole();
+    expect($order->items()->sole()->product_name_snapshot)->toBe('Yakult');
+    $this->assertDatabaseHas('order_item_modifiers', [
+        'order_item_id' => $order->items()->sole()->id,
+        'option_name_snapshot' => 'Small',
+        'semantic_role_snapshot' => 'size',
+    ]);
+
+    foreach ([app(PayLaterOrderSummary::class)->summary($order), app(PosReceipt::class)->summary($order)] as $summary) {
+        expect($summary['items'][0]['name'])->toBe('Yakult')
+            ->and($summary['items'][0]['size_prefix'])->toBe('Small')
+            ->and($summary['items'][0]['display_name'])->toBe('Small Yakult');
+    }
+
+    $response->assertSessionHasNoErrors();
 });
 
 test('both order types accept an optional current branch table', function (string $orderType, string $tableState) {

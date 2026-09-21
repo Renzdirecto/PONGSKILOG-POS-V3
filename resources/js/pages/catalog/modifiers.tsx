@@ -1,5 +1,5 @@
-import { useForm } from '@inertiajs/react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { useForm, usePage } from '@inertiajs/react';
+import { SlidersHorizontal } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -11,7 +11,6 @@ import {
     Field,
     FormErrors,
     money,
-    primaryActionClass,
     SaveButton,
     Status,
     TextField,
@@ -26,29 +25,24 @@ import {
 import type { ModifierGroup, ModifierOption } from '@/types/catalog';
 
 export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
-    const [editing, setEditing] = useState<ModifierGroup | null | undefined>();
+    const createRequested = usePage().url.includes('create=group');
+    const [editing, setEditing] = useState<ModifierGroup | null | undefined>(
+        createRequested ? null : undefined,
+    );
     const [optionEditor, setOptionEditor] = useState<{
         group: ModifierGroup;
         option: ModifierOption | null;
     } | null>(null);
     return (
         <CatalogPage
-            tab="Modifiers"
-            counts={{ Modifiers: groups.length }}
-            action={
-                <Button
-                    className={`${primaryActionClass} w-full md:w-auto`}
-                    onClick={() => setEditing(null)}
-                >
-                    <Plus className="size-4" /> Add group
-                </Button>
-            }
+            tab="Groups"
+            counts={{ Groups: groups.length }}
         >
             {groups.length === 0 ? (
                 <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
                     <SlidersHorizontal className="mx-auto size-7 text-[#aaa]" />
                     <h2 className="mt-3 text-sm font-semibold">
-                        No modifier groups yet
+                        No Groups yet
                     </h2>
                     <p className="mt-1 text-[12.5px] text-[#767676]">
                         Create a group, then add options such as extra rice or
@@ -70,7 +64,7 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
                             </div>
                             <p className="text-[12px] text-[#767676]">
                                 {group.selection_type === 'single'
-                                    ? 'Single choice'
+                                    ? 'One choice'
                                     : 'Multiple choices'}{' '}
                                 · Select {group.min_select}–{group.max_select}
                             </p>
@@ -139,7 +133,7 @@ export default function Modifiers({ groups }: { groups: ModifierGroup[] }) {
             <CatalogDialog
                 open={editing !== undefined}
                 onClose={() => setEditing(undefined)}
-                title={editing ? 'Edit modifier group' : 'Add modifier group'}
+                title={editing ? 'Edit Group' : 'Add Group'}
                 description="Set how many options a customer may choose."
             >
                 {editing !== undefined && (
@@ -177,6 +171,7 @@ function GroupForm({
 }) {
     const form = useForm({
         name: group?.name ?? '',
+        semantic_role: group?.semantic_role ?? null,
         selection_type: group?.selection_type ?? 'single',
         min_select: String(group?.min_select ?? 0),
         max_select: String(group?.max_select ?? 1),
@@ -194,7 +189,7 @@ function GroupForm({
                 form.submit(group ? update(group.id) : store(), {
                     preserveScroll: true,
                     onSuccess: () => {
-                        toast.success('Modifier group saved');
+                        toast.success('Group saved');
                         onSaved();
                     },
                     onFinish: () => {
@@ -242,8 +237,30 @@ function GroupForm({
                             }
                         }}
                     >
-                        <option value="single">Single choice</option>
+                        <option value="single">One choice</option>
                         <option value="multiple">Multiple choices</option>
+                    </select>
+                </Field>
+                <Field
+                    id="group-semantic-role"
+                    label="Operational display"
+                    error={form.errors.semantic_role}
+                >
+                    <select
+                        id="group-semantic-role"
+                        className={controlClass}
+                        value={form.data.semantic_role ?? ''}
+                        onChange={(event) =>
+                            form.setData(
+                                'semantic_role',
+                                event.target.value === 'size' ? 'size' : null,
+                            )
+                        }
+                    >
+                        <option value="">Standard option Group</option>
+                        <option value="size">
+                            Size prefix (example: Small Yakult)
+                        </option>
                     </select>
                 </Field>
                 <div className="grid grid-cols-2 gap-4">
@@ -272,7 +289,7 @@ function GroupForm({
             <FormErrors errors={form.errors} />
             <SaveButton
                 processing={form.processing}
-                label={group ? 'Save changes' : 'Add group'}
+                label={group ? 'Save changes' : 'Add Group'}
             />
         </form>
     );
@@ -306,7 +323,7 @@ function OptionForm({
                 form.submit(option ? updateOption(option.id) : storeOption(), {
                     preserveScroll: true,
                     onSuccess: () => {
-                        toast.success('Modifier option saved');
+                        toast.success('Option saved');
                         onSaved();
                     },
                     onFinish: () => {

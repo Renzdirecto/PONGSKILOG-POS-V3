@@ -1,16 +1,26 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
+    Bell,
     Boxes,
     LayoutDashboard,
     Menu,
     PackageSearch,
     ReceiptText,
     Settings,
+    UserRound,
     Users,
 } from 'lucide-react';
 import { useState } from 'react';
 import { BranchSwitcher } from '@/components/branch-switcher';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     Dialog,
     DialogContent,
@@ -21,6 +31,7 @@ import {
 import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
 import { logout } from '@/routes';
+import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
 import { owner, superAdmin } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
@@ -344,7 +355,7 @@ export function OwnerWorkspaceShell({
                     <div className="md:hidden">
                         <BranchSwitcher branchContext={branchContext} compact />
                     </div>
-                    <div className="hidden min-w-0 text-right md:block">
+                    <div className="hidden min-w-0 flex-1 text-right md:block">
                         <p className="truncate text-[13px] font-semibold">
                             {auth.user?.name}
                         </p>
@@ -352,6 +363,83 @@ export function OwnerWorkspaceShell({
                             {workspaceLabel} · {currentScope}
                         </p>
                     </div>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label="Notifications"
+                                title="Notifications"
+                                className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#e5e5e5] bg-white text-[#555] hover:border-[#bbb] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
+                            >
+                                <Bell className="size-[18px]" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="end"
+                            className="owner-surface w-[min(310px,calc(100vw-24px))] rounded-xl p-2"
+                        >
+                            <DropdownMenuLabel className="text-[13px] font-semibold">
+                                Notifications
+                            </DropdownMenuLabel>
+                            <p className="px-2 pb-2 text-[11.5px] leading-5 text-[#666]">
+                                Notifications are coming later. No notification
+                                count is shown until the real service is ready.
+                            </p>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label="Open account menu"
+                                title="Account"
+                                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
+                            >
+                                {initials(auth.user?.name)}
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="end"
+                            className="owner-surface w-[min(300px,calc(100vw-24px))] rounded-xl p-2"
+                        >
+                            <DropdownMenuLabel className="space-y-0.5">
+                                <span className="block truncate text-[13px] font-semibold">
+                                    {auth.user?.name}
+                                </span>
+                                <span className="block text-[11px] font-normal text-[#666]">
+                                    {workspaceLabel} · {currentScope}
+                                </span>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                                <Link href={editProfile()} className="min-h-10">
+                                    <UserRound className="size-4" /> Account
+                                    profile
+                                </Link>
+                            </DropdownMenuItem>
+                            {canSettings && (
+                                <DropdownMenuItem asChild>
+                                    <Link
+                                        href={branchesIndex()}
+                                        className="min-h-10"
+                                    >
+                                        <Settings className="size-4" /> Settings
+                                    </Link>
+                                </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild variant="destructive">
+                                <Link
+                                    href={logout()}
+                                    method="post"
+                                    as="button"
+                                    className="min-h-10 w-full"
+                                >
+                                    Log out
+                                </Link>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </header>
                 <main className="owner-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
                     {children}

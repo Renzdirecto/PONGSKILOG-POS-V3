@@ -1,6 +1,12 @@
 import { router, useForm, usePage } from '@inertiajs/react';
-import { ImageIcon, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
-import { useRef, useState } from 'react';
+import {
+    ImageIcon,
+    LayoutGrid,
+    List,
+    Pencil,
+    SlidersHorizontal,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
@@ -9,18 +15,18 @@ import {
     CatalogPage,
     controlClass,
     money,
-    primaryActionClass,
 } from '@/components/catalog-ui';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
-import {
-    BranchPriceForm,
-    ProductForm,
-    ProductImageForm,
-} from '@/components/product-forms';
+import { ProductEditorForm } from '@/components/product-editor-form';
 import { Button } from '@/components/ui/button';
 import { index, update } from '@/routes/products';
 import type { BranchContext } from '@/types';
-import type { CatalogChoice, CatalogProduct } from '@/types/catalog';
+import type {
+    BranchConfiguration,
+    CatalogChoice,
+    CatalogProduct,
+    ModifierGroup,
+} from '@/types/catalog';
 import type { StockStatus } from '@/types/inventory';
 
 type Filters = { search?: string; category?: string; status?: string };
@@ -32,23 +38,36 @@ type Props = {
         last_page: number;
     };
     categories: CatalogChoice[];
-    modifierGroups: CatalogChoice[];
+    modifierGroups: ModifierGroup[];
+    branchConfigurations: BranchConfiguration[];
     filters: Filters;
 };
 
-type EditorTab = 'details' | 'image' | 'branches';
+type ViewMode = 'tile' | 'list';
 
 export default function Products({
     products,
     categories,
     modifierGroups,
+    branchConfigurations,
     filters,
 }: Props) {
-    const { branchContext } = usePage<{ branchContext: BranchContext }>().props;
-    const [editing, setEditing] = useState<CatalogProduct | null | undefined>();
-    const [editorTab, setEditorTab] = useState<EditorTab>('details');
+    const page = usePage<{ branchContext: BranchContext }>();
+    const { branchContext } = page.props;
+    const createRequested = page.url.includes('create=product');
+    const [editing, setEditing] = useState<CatalogProduct | null | undefined>(
+        createRequested ? null : undefined,
+    );
+    const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        if (typeof window === 'undefined') return 'tile';
+        return window.localStorage.getItem('owner-products-view') === 'list'
+            ? 'list'
+            : 'tile';
+    });
+    useEffect(() => {
+        window.localStorage.setItem('owner-products-view', viewMode);
+    }, [viewMode]);
     const openEditor = (product: CatalogProduct | null) => {
-        setEditorTab('details');
         setEditing(product);
     };
 
@@ -58,17 +77,8 @@ export default function Products({
             counts={{
                 Products: products.total,
                 Categories: categories.length,
-                Modifiers: modifierGroups.length,
+                Groups: modifierGroups.length,
             }}
-            action={
-                <Button
-                    className={`${primaryActionClass} w-full md:w-auto`}
-                    disabled={categories.length === 0}
-                    onClick={() => openEditor(null)}
-                >
-                    <Plus className="size-4" /> Add product
-                </Button>
-            }
         >
             {categories.length === 0 && (
                 <div className="rounded-[11px] border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900">
@@ -85,11 +95,36 @@ export default function Products({
                 <p role="status">
                     {products.data.length} of {products.total} products
                 </p>
-                <p>
-                    {branchContext.current
-                        ? `Stock shown for ${branchContext.current.name}`
-                        : 'Select a branch to view stock status'}
-                </p>
+                <div className="flex items-center gap-2">
+                    <p className="hidden sm:block">
+                        {branchContext.current
+                            ? `Stock shown for ${branchContext.current.name}`
+                            : 'Select a branch to view stock status'}
+                    </p>
+                    <div
+                        className="flex rounded-[10px] bg-[#ededed] p-1"
+                        aria-label="Product view"
+                    >
+                        {(
+                            [
+                                ['tile', LayoutGrid, 'Tile view'],
+                                ['list', List, 'List view'],
+                            ] as const
+                        ).map(([mode, Icon, label]) => (
+                            <button
+                                key={mode}
+                                type="button"
+                                title={label}
+                                aria-label={label}
+                                aria-pressed={viewMode === mode}
+                                onClick={() => setViewMode(mode)}
+                                className={`flex size-10 items-center justify-center rounded-lg ${viewMode === mode ? 'bg-white text-[#111] shadow-sm' : 'text-[#777]'}`}
+                            >
+                                <Icon className="size-4" />
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
             {products.data.length === 0 ? (
                 <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
@@ -105,12 +140,15 @@ export default function Products({
                     </p>
                 </div>
             ) : (
-                <ul className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                <ul
+                    className={`grid gap-2.5 ${viewMode === 'tile' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}
+                >
                     {products.data.map((product) => (
                         <ProductCard
                             key={`${product.id}-${product.is_active}`}
                             product={product}
                             hasInventoryScope={branchContext.current !== null}
+                            list={viewMode === 'list'}
                             onEdit={() => openEditor(product)}
                         />
                     ))}
@@ -164,69 +202,20 @@ export default function Products({
                 open={editing !== undefined}
                 onClose={() => setEditing(undefined)}
                 title={editing ? editing.name : 'Add product'}
-                description={
-                    editing
-                        ? 'Edit product details and retain its branch-specific configuration.'
-                        : 'Add a product to the global catalog.'
-                }
-                wide={editing !== null}
+                description={editing ? 'Edit product' : 'Add product'}
+                wide
+                standalone
             >
                 {editing !== undefined && (
-                    <div className="flex flex-col gap-4">
-                        {editing && (
-                            <div
-                                role="tablist"
-                                aria-label="Product editor"
-                                className="owner-hide-scrollbar flex gap-0.5 overflow-x-auto rounded-[10px] bg-[#f2f2f2] p-[3px]"
-                            >
-                                {(
-                                    [
-                                        ['details', 'Details'],
-                                        ['image', 'Image'],
-                                        ['branches', 'Branches'],
-                                    ] as const
-                                ).map(([value, label]) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={editorTab === value}
-                                        onClick={() => setEditorTab(value)}
-                                        className={`min-h-10 flex-1 rounded-lg px-3 text-[12.5px] font-semibold ${editorTab === value ? 'bg-[#111111] text-white' : 'text-[#666]'}`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        {(editing === null || editorTab === 'details') && (
-                            <ProductForm
-                                key={editing?.id ?? 'new'}
-                                product={editing}
-                                categories={categories}
-                                groups={modifierGroups}
-                                onSaved={() => setEditing(undefined)}
-                            />
-                        )}
-                        {editing && editorTab === 'image' && (
-                            <ProductImageForm
-                                key={editing.id}
-                                product={editing}
-                                onSaved={() => setEditing(undefined)}
-                            />
-                        )}
-                        {editing && editorTab === 'branches' && (
-                            <div className="grid gap-3 md:grid-cols-2">
-                                {editing.branch_prices.map((branch) => (
-                                    <BranchPriceForm
-                                        key={`${branch.branch_id}-${branch.price_override}-${branch.is_available}-${branch.tracks_inventory}-${branch.low_stock_threshold}`}
-                                        product={editing}
-                                        branch={branch}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    <ProductEditorForm
+                        key={editing?.id ?? 'new'}
+                        product={editing}
+                        categories={categories}
+                        groups={modifierGroups}
+                        branches={branchConfigurations}
+                        onSaved={() => setEditing(undefined)}
+                        onCancel={() => setEditing(undefined)}
+                    />
                 )}
             </CatalogDialog>
         </CatalogPage>
@@ -236,10 +225,12 @@ export default function Products({
 function ProductCard({
     product,
     hasInventoryScope,
+    list,
     onEdit,
 }: {
     product: CatalogProduct;
     hasInventoryScope: boolean;
+    list: boolean;
     onEdit: () => void;
 }) {
     const form = useForm({
@@ -255,7 +246,7 @@ function ProductCard({
 
     return (
         <li
-            className={`${ownerPanelClass} flex min-w-0 flex-col gap-3 p-3.5 ${product.is_active ? '' : 'opacity-75'}`}
+            className={`${ownerPanelClass} min-w-0 gap-3 p-3.5 ${list ? 'grid sm:grid-cols-[minmax(240px,1fr)_auto_190px] sm:items-center' : 'flex flex-col'} ${product.is_active ? '' : 'border-red-300 bg-red-50/70 ring-1 ring-red-100'}`}
         >
             <div className="flex items-start gap-3">
                 <ProductThumbnail product={product} />
@@ -287,7 +278,7 @@ function ProductCard({
                     </OwnerStatusBadge>
                 )}
                 <OwnerStatusBadge
-                    tone={product.is_active ? 'green' : 'outline'}
+                    tone={product.is_active ? 'green' : 'red'}
                 >
                     {product.is_active ? 'Active' : 'Disabled'}
                 </OwnerStatusBadge>
@@ -394,19 +385,35 @@ function ProductFilters({
     const [search, setSearch] = useState(filters.search ?? '');
     const [category, setCategory] = useState(filters.category ?? '');
     const [status, setStatus] = useState(filters.status ?? '');
+    const [loading, setLoading] = useState(false);
+    const firstRender = useRef(true);
+
+    useEffect(() => {
+        if (firstRender.current) {
+            firstRender.current = false;
+            return;
+        }
+
+        const timeout = window.setTimeout(() => {
+            router.get(
+                index.url(),
+                { search, category, status },
+                {
+                    replace: true,
+                    preserveScroll: true,
+                    preserveState: true,
+                    only: ['products', 'filters'],
+                    onStart: () => setLoading(true),
+                    onFinish: () => setLoading(false),
+                },
+            );
+        }, 350);
+
+        return () => window.clearTimeout(timeout);
+    }, [category, search, status]);
 
     return (
-        <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(event) => {
-                event.preventDefault();
-                router.get(
-                    index.url(),
-                    { search, category, status },
-                    { preserveScroll: true, preserveState: true },
-                );
-            }}
-        >
+        <div className="flex flex-wrap items-end gap-2" aria-busy={loading}>
             <label className="min-w-0 flex-1 basis-56">
                 <span className="sr-only">Search products</span>
                 <input
@@ -453,13 +460,12 @@ function ProductFilters({
                     </option>
                 </select>
             </label>
-            <Button
-                type="submit"
-                variant="outline"
-                className={`${actionClass} flex-1 sm:flex-none`}
+            <span
+                role="status"
+                className={`px-2 text-[11px] text-[#767676] ${loading ? 'opacity-100' : 'opacity-0'}`}
             >
-                Apply filters
-            </Button>
+                Updating…
+            </span>
             {(filters.search || filters.category || filters.status) && (
                 <Button
                     type="button"
@@ -470,6 +476,6 @@ function ProductFilters({
                     Clear
                 </Button>
             )}
-        </form>
+        </div>
     );
 }

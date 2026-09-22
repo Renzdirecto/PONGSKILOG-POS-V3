@@ -824,3 +824,16 @@ Remaining acceptance: inspect 360/390/430px phones, iPad Mini 768/1024px, and de
 for wrapping, reachable dialogs/actions, actual QR scanning and receipt download,
 live reconnect behavior, and the complete customer / cashier / Kitchen journey.
 No full browser visual acceptance is claimed from source or automated checks.
+
+
+---
+
+## Approved manual-QA refinement slice - 2026-09-22
+
+Primary decoded references remain customer-qr.html, pos.html and PONGSKILOG-OWNER.html; customer-qr-old.html is legacy only. Cashier cards now use provisional red QR identity, optional black name, green Dine In / sky Take Out badge, clock + shared elapsed timer, compact item summary, UNPAID/total, and LOAD | VIEW | DELETE. Archived cards expose VIEW/RESTORE. Delete confirmation uses the reference's Keep it / Delete order hierarchy and backend archival.
+
+Customer updates include configured/disabled welcome social links, allowlisted category icons, cart icon/quantity count, top-scoped success toast, Confirm Order CTA, green/blue order-type selection, Track/View icons, green top View Order action, actual timestamped colored timeline, rounded Browse/New Order + View Order + Receipt actions, and Stay connected on tracking/receipt. Existing browse-only protection and terminal-only reset remain.
+
+Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity and visibility of the existing brand logo; custom logo upload/printer integration and full Phase 16 remain deferred. Receipt is still the existing customer-safe text export.
+
+Source tracing and automated checks do not constitute visual acceptance: USER MANUAL QA REQUIRED. No broad browser sweep was performed.

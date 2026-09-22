@@ -37,6 +37,10 @@ class CustomerQrProjection
 
         return [
             'public_tracking_id' => $order->public_tracking_id, 'order_number' => $order->order_number,
+            'qr_number' => CustomerQrNumber::display($order->qr_sequence),
+            'reference_number' => $order->reference_number,
+            'preparing_at' => $order->preparing_at?->toIso8601String(),
+            'ready_at' => $order->ready_at?->toIso8601String(),
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->table_name_snapshot, 'subtotal' => $order->subtotal, 'total' => $order->total,
             'commercial_status' => $order->commercial_status->value, 'payment_status' => $order->payment_status->value,
@@ -66,7 +70,9 @@ class CustomerQrProjection
         abort_unless($projection['receipt_available'], 410, 'Receipt expired. Receipts are available for 24 hours after payment.');
         $order->loadMissing('branch');
 
-        return [...$projection, 'branch' => $order->branch->only(['name', 'code', 'address', 'contact']),
+        return [...$projection, 'branch' => ['name' => $order->branch->receipt_name ?? $order->branch->name, 'code' => $order->branch->code,
+            'address' => $order->branch->receipt_address ?? $order->branch->address, 'contact' => $order->branch->receipt_contact ?? $order->branch->contact,
+            'footer' => $order->branch->receipt_footer, 'show_logo' => $order->branch->receipt_show_logo],
             'payments' => $order->payments->map(fn (Payment $payment): array => [
                 'method' => $payment->method->value, 'amount' => $payment->amount,
                 'amount_received' => $payment->amount_received, 'change_amount' => $payment->change_amount,

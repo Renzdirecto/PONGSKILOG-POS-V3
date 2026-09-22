@@ -26,8 +26,10 @@ class LoadCustomerQrOrder
     public function execute(User $user, Branch $branch, Order $requested): Order
     {
         return DB::transaction(function () use ($user, $branch, $requested): Order {
-            $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
+            $branch = Branch::query()->whereKey($branch->id)->sharedLock()->firstOrFail();
             $user = $this->access->authorize($user, $branch);
+            /** Serialize claims by the same cashier without serializing unrelated branch orders. */
+            User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
             $store = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->sharedLock()->first();
             if ($store === null) {
                 throw ValidationException::withMessages(['store' => 'Store is closed. Open the store before loading a QR order.']);

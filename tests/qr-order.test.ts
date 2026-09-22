@@ -152,3 +152,11 @@ test('receipt download contains persisted line names instructions and tender cha
     assert.match(text, /Change : ₱10.00/);
     assert.doesNotMatch(text, /cashier|idempotency|token_hash/);
 });
+
+
+test('QR display transitions from provisional to official identity and elapsed time is local', async () => {
+    const { qrIdentity, qrElapsed } = await import('../resources/js/lib/qr-order.ts');
+    assert.equal(qrIdentity({order_number: null, qr_number: 'QR-01'}), 'QR-01');
+    assert.equal(qrIdentity({order_number: '1001', qr_number: 'QR-01'}), '#1001');
+    assert.equal(qrElapsed('2026-09-22T00:00:00Z', Date.parse('2026-09-22T00:02:03Z')), '2m 3s');
+});

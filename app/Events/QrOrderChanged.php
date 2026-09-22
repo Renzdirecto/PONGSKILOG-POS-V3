@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\Order;
+use App\Support\CustomerQrNumber;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
@@ -22,7 +23,7 @@ class QrOrderChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, S
         $this->payload = [
             'event_id' => (string) Str::uuid(), 'event_type' => $eventType,
             'branch_id' => $order->branch_id, 'order_id' => $order->id,
-            'order_number' => $order->order_number, 'version' => $order->version,
+            'qr_number' => CustomerQrNumber::display($order->qr_sequence), 'version' => $order->version,
             ...($eventType === 'qr.order_archived'
                 ? ['archive_reason' => $order->archive_reason, 'archived_at' => $order->archived_at?->toIso8601String()]
                 : ['order_type' => $order->order_type->value, 'submitted_at' => $order->submitted_at?->toIso8601String()]),

@@ -75,6 +75,8 @@ class TransitionKitchenOrder
             $ticket->update(['status' => $target]);
             $lockedOrder->update([
                 'kitchen_status' => $target,
+                'preparing_at' => $target === KitchenStatus::Kitchen ? null : ($target === KitchenStatus::Preparing && $from === KitchenStatus::Kitchen ? $changedAt : $lockedOrder->preparing_at),
+                'ready_at' => in_array($target, [KitchenStatus::Kitchen, KitchenStatus::Preparing], true) ? null : ($target === KitchenStatus::Ready && $from !== KitchenStatus::Done ? $changedAt : $lockedOrder->ready_at),
                 'completed_at' => $target === KitchenStatus::Done ? $changedAt : null,
                 'version' => $lockedOrder->version + 1,
             ]);

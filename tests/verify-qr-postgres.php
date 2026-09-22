@@ -7,9 +7,11 @@
  */
 
 use App\Actions\Orders\ArchiveCustomerQrOrder;
+use App\Actions\Orders\CancelLoadedCustomerQrOrder;
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\LoadCustomerQrOrder;
 use App\Actions\Orders\PayNowOrder;
+use App\Actions\Orders\RestoreCustomerQrOrder;
 use App\Actions\Orders\SubmitCustomerQrOrder;
 use App\Enums\CommercialStatus;
 use App\Models\Branch;
@@ -99,10 +101,12 @@ if (($argv[1] ?? '') === '--sqlite-migrations') {
         qrVerify(Schema::hasTable('customer_qr_sessions'), 'QR session table missing');
         $originalChecks = substr_count(strtolower(DB::selectOne("SELECT sql FROM sqlite_master WHERE name = 'orders'")->sql), 'check');
         qrVerify($originalChecks >= 9, 'SQLite migration lost existing Order CHECK constraints');
-        qrVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'SQLite rollback failed');
+        $legacy = Order::factory()->create(['order_number' => '1043', 'reference_number' => 'MAIN-260919-1043']);
+        qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'SQLite rollback failed');
         qrVerify(! Schema::hasTable('customer_qr_sessions') && ! Schema::hasColumn('orders', 'public_tracking_id'), 'SQLite rollback left QR fields');
         qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'SQLite reapply failed');
         qrVerify(substr_count(strtolower(DB::selectOne("SELECT sql FROM sqlite_master WHERE name = 'orders'")->sql), 'check') === $originalChecks, 'SQLite rollback/reapply lost Order CHECK constraints');
+        qrVerify($legacy->fresh()->order_number === '1043' && $legacy->fresh()->reference_number === 'MAIN-260919-1043', 'SQLite historical identity rewritten');
         echo 'SQLITE PASS: isolated fresh / rollback / reapply with existing Order CHECK constraints.'.PHP_EOL;
     } finally {
         DB::disconnect('sqlite');
@@ -137,6 +141,8 @@ if ($worker) {
         $result = match ($job['mode']) {
             'submit' => app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::findOrFail($job['session']), $job['payload']),
             'load' => app(LoadCustomerQrOrder::class)->execute($user, $branch, Order::findOrFail($job['order'])),
+            'cancel' => app(CancelLoadedCustomerQrOrder::class)->execute($user, $branch, Order::findOrFail($job['order'])),
+            'restore' => app(RestoreCustomerQrOrder::class)->execute($user, $branch, Order::findOrFail($job['order'])),
             'archive' => app(ArchiveCustomerQrOrder::class)->execute(Order::findOrFail($job['order'])),
             'now' => app(PayNowOrder::class)->execute($user, $branch, $job['payload']),
             'later' => app(CommitPayLaterOrder::class)->execute($user, $branch, Order::findOrFail($job['order']), $job['payload']),
@@ -217,12 +223,15 @@ try {
     $createdSchema = true;
     qrVerify(DB::selectOne('SELECT current_schema() AS schema')->schema === $schema, 'Schema isolation failed');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL fresh migration failed');
-    qrVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
     qrVerify(! Schema::hasTable('customer_qr_sessions'), 'PostgreSQL rollback left QR schema');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL reapply failed');
+    $legacy = Order::factory()->create(['order_number' => '1043', 'reference_number' => 'MAIN-260919-1043']);
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true, '--no-interaction' => true]) === 0, 'Historical migration rollback failed');
+    qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Historical migration reapply failed');
+    qrVerify($legacy->fresh()->order_number === '1043' && $legacy->fresh()->reference_number === 'MAIN-260919-1043', 'Historical identity rewritten');
     (new RbacSeeder)->run();
     echo 'POSTGRES MIGRATION PASS: isolated fresh / rollback / reapply.'.PHP_EOL;
-
     [$branch, $user, $product, $stock, , $session] = qrRaceFixture();
     $job = ['mode' => 'submit', 'branch' => $branch->id, 'user' => $user->id, 'session' => $session->id, 'payload' => qrRacePayload($product)];
     $results = qrOverlap($schema, $connection, $observer, [$job, $job], fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
@@ -265,9 +274,84 @@ try {
         $results = qrOverlap($schema, $connection, $observer, [$job, $job], fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
         qrVerify(array_column($results, 'status') === ['success', 'success'], 'Duplicate QR commercial commit did not replay');
         qrRaceEffects($order, $mode === 'now' ? 1 : 0, 1, 1);
-        qrVerify($stock->fresh()->on_hand === 8 && $order->fresh()->order_number === $order->order_number, 'Stock or order identity changed incorrectly');
+        qrVerify($stock->fresh()->on_hand === 8 && $order->fresh()->order_number !== null && $order->fresh()->qr_sequence === $order->qr_sequence, 'Stock or order identity changed incorrectly');
         echo strtoupper($mode).' PASS: duplicate QR commit deducts once and creates one ticket.'.PHP_EOL;
     }
+
+    [$branch, $user, $product, , , $session] = qrRaceFixture();
+    $sessionB = CustomerQrSession::factory()->for($branch)->create();
+    $job = ['mode' => 'submit', 'branch' => $branch->id, 'user' => $user->id, 'session' => $session->id, 'payload' => qrRacePayload($product)];
+    qrOverlap($schema, $connection, $observer, [$job, [...$job, 'session' => $sessionB->id, 'payload' => qrRacePayload($product)]], fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
+    qrVerify(Order::where('branch_id', $branch->id)->orderBy('qr_sequence')->pluck('qr_sequence')->all() === [1, 2], 'Provisional numbering duplicated');
+    qrVerify(Order::where('branch_id', $branch->id)->whereNotNull('order_number')->doesntExist(), 'Submit consumed official identity');
+    echo 'G PASS: concurrent submissions receive QR-01 and QR-02 without official identity.'.PHP_EOL;
+
+    foreach (['now', 'later'] as $mode) {
+        [$branch, $user, $product, $stock, , $session] = qrRaceFixture();
+        $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));
+        app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+        $payload = ['idempotency_key' => (string) Str::uuid()];
+        if ($mode === 'now') {
+            $payload += ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00'];
+        }
+        $job = ['mode' => $mode, 'branch' => $branch->id, 'user' => $user->id, 'order' => $order->id, 'payload' => $payload];
+        $results = qrOverlap($schema, $connection, $observer, [$job, [...$job, 'mode' => 'cancel']], fn () => Order::whereKey($order->id)->lockForUpdate()->sole());
+        $statuses = array_column($results, 'status');
+        sort($statuses);
+        qrVerify($statuses === ['rejected', 'success'], 'Cancel/commit did not have exactly one winner');
+        $committed = $order->fresh()->committed_at !== null;
+        qrVerify(($order->fresh()->order_number !== null) === $committed, 'Partial identity allocation');
+        qrRaceEffects($order, $committed && $mode === 'now' ? 1 : 0, $committed ? 1 : 0, $committed ? 1 : 0);
+        qrVerify($stock->fresh()->on_hand === ($committed ? 8 : 10), 'Cancel/commit stock mismatch');
+        echo 'H PASS: Cancel LOAD versus '.$mode.' commits exactly one legal final state.'.PHP_EOL;
+
+        [$branch, $user, $product, $stock, , $session] = qrRaceFixture();
+        $other = qrRaceCashier($branch);
+        $first = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));
+        $second = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrRacePayload($product));
+        app(LoadCustomerQrOrder::class)->execute($user, $branch, $first);
+        app(LoadCustomerQrOrder::class)->execute($other, $branch, $second);
+        $jobs = [];
+        foreach ([[$first, $user], [$second, $other]] as [$candidate, $cashier]) {
+            $payload = ['idempotency_key' => (string) Str::uuid()];
+            if ($mode === 'now') {
+                $payload += ['draft_order_id' => $candidate->id, 'payment_method' => 'cash', 'cash_received' => '200.00'];
+            }
+            $jobs[] = ['mode' => $mode, 'branch' => $branch->id, 'user' => $cashier->id, 'order' => $candidate->id, 'payload' => $payload];
+        }
+        $results = qrOverlap($schema, $connection, $observer, $jobs, fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
+        qrVerify(array_column($results, 'status') === ['success', 'success'], 'Concurrent commits failed');
+        $orders = Order::where('branch_id', $branch->id)->get();
+        qrVerify($orders->pluck('order_number')->unique()->count() === 2 && $orders->pluck('reference_number')->unique()->count() === 2, 'Duplicate official identities');
+        qrVerify($first->fresh()->qr_sequence === 1 && $second->fresh()->qr_sequence === 2, 'Provisional identity mutated');
+        qrRaceEffects($first, $mode === 'now' ? 1 : 0, 1, 1);
+        qrRaceEffects($second, $mode === 'now' ? 1 : 0, 1, 1);
+        qrVerify($stock->fresh()->on_hand === 6, 'Concurrent commits deducted incorrectly');
+        echo 'I PASS: concurrent '.$mode.' official short numbers and daily references are unique; stock/tickets exactly once.'.PHP_EOL;
+    }
+
+    [$branch, $user, $product, , $store, $session] = qrRaceFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $session->update(['active_order_id' => null]);
+    $job = ['mode' => 'restore', 'branch' => $branch->id, 'user' => $user->id, 'order' => $order->id];
+    $submit = ['mode' => 'submit', 'branch' => $branch->id, 'user' => $user->id, 'session' => $session->id, 'payload' => qrRacePayload($product)];
+    $results = qrOverlap($schema, $connection, $observer, [$job, $submit], fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
+    $statuses = array_column($results, 'status');
+    sort($statuses);
+    qrVerify($statuses === ['rejected', 'success'], 'Restore allowed conflicting active order');
+    qrVerify(Order::where('customer_qr_session_id', $session->id)->where('commercial_status', CommercialStatus::Submitted)->count() === 1, 'Multiple active customer orders');
+    qrRaceEffects($order, 0, 0, 0);
+    echo 'J PASS: Restore versus new submission preserves one active anonymous order.'.PHP_EOL;
+
+    [$branch, $user, $product, , $store, $session] = qrRaceFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $job = ['mode' => 'restore', 'branch' => $branch->id, 'user' => $user->id, 'order' => $order->id];
+    $results = qrOverlap($schema, $connection, $observer, [$job], fn () => StoreSession::whereKey($store->id)->lockForUpdate()->sole(), fn () => $store->update(['status' => 'closed']));
+    qrVerify($results[0]['status'] === 'rejected', 'Restore crossed Store Close');
+    qrRaceEffects($order, 0, 0, 0);
+    echo 'K PASS: Restore respects the exclusive Store Close boundary.'.PHP_EOL;
 
     foreach (['store', 'branch'] as $boundary) {
         [$branch, $user, $product, $stock, $store, $session] = qrRaceFixture();

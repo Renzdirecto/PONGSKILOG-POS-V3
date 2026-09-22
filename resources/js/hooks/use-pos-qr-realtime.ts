@@ -23,7 +23,7 @@ export function usePosQrRealtime(branchId: string) {
     );
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.pos`,
-        ['.qr.order_submitted', '.qr.order_loaded', '.qr.order_archived'],
+        ['.qr.order_submitted', '.qr.order_loaded', '.qr.order_archived', '.qr.order_released', '.qr.order_restored'],
         (event) => {
             if (accept(event)) refresh.schedule();
         },

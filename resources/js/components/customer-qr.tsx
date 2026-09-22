@@ -1,3 +1,6 @@
+import { CategoryIcon } from '@/components/category-icon';
+import type { CategoryIconKey } from '@/types/catalog';
+import { qrIdentity } from '@/lib/qr-order';
 import { Head, router, useRemember } from '@inertiajs/react';
 import {
     ArrowLeft,
@@ -49,7 +52,7 @@ type Props = {
     branch: BranchSummary;
     store: { status: 'open' | 'closed' };
     catalog: {
-        categories: { id: string; name: string }[];
+        categories: { id: string; name: string; icon_key?: CategoryIconKey }[];
         products: QrProduct[];
     };
     order: QrOrder | null;
@@ -87,30 +90,50 @@ const steps = [
         'Ipakita ang order number sa cashier para sa payment. Hindi pa ipapadala sa kitchen ang order hangga’t hindi confirmed ang payment.',
     ],
 ];
-export function QrSocials({ branch }: { branch: BranchSummary }) {
+export function QrSocials({
+    branch,
+}: {
+    branch: BranchSummary & {
+        facebook_url?: string | null;
+        website_url?: string | null;
+    };
+}) {
     return (
         <div className="flex gap-1.5">
             <button
                 className={qrButton}
                 aria-label="Facebook"
+                disabled={!branch.facebook_url}
+                title={
+                    branch.facebook_url ? undefined : 'Facebook not configured'
+                }
                 onClick={() =>
                     window.open(
-                        'https://www.facebook.com/search/top?q=Pongskilog',
+                        branch.facebook_url!,
                         '_blank',
                         'noopener,noreferrer',
                     )
                 }
             >
-                <Facebook size={17} />
+                <Facebook size={17} /> Facebook
             </button>
             <button
                 className={qrButton}
                 aria-label="Website"
+                disabled={!branch.website_url}
+                title={
+                    branch.website_url ? undefined : 'Website not configured'
+                }
                 onClick={() =>
-                    toast.info('Wala pang naka-configure na website link.')
+                    branch.website_url &&
+                    window.open(
+                        branch.website_url,
+                        '_blank',
+                        'noopener,noreferrer',
+                    )
                 }
             >
-                <Globe size={17} />
+                <Globe size={17} /> Website
             </button>
             <button
                 className={qrButton}
@@ -123,7 +146,7 @@ export function QrSocials({ branch }: { branch: BranchSummary }) {
                     )
                 }
             >
-                <MapPin size={17} />
+                <MapPin size={17} /> Maps
             </button>
         </div>
     );
@@ -477,6 +500,7 @@ export default function CustomerQr({
                                         Continue to menu{' '}
                                         <ChevronRight size={18} />
                                     </button>
+                                    <QrSocials branch={branch} />
                                     <p className="text-center text-[11px] leading-5 text-neutral-500">
                                         By continuing, you agree to our{' '}
                                         <button
@@ -505,7 +529,7 @@ export default function CustomerQr({
                                             : 'May current order ka pa'}
                                     </strong>
                                     <h2 className="text-4xl font-bold">
-                                        #{order.order_number}
+                                        {qrIdentity(order)}
                                     </h2>
                                     <p>{qrStatus(order)}</p>
                                     <button
@@ -567,6 +591,10 @@ export default function CustomerQr({
                                         className={`${qrButton} shrink-0 rounded-full ${category === cat.id ? 'border-neutral-950 bg-neutral-950 text-white' : ''}`}
                                         onClick={() => setCategory(cat.id)}
                                     >
+                                        <CategoryIcon
+                                            iconKey={cat.icon_key ?? 'utensils'}
+                                            className="size-4"
+                                        />
                                         {cat.name}
                                     </button>
                                 ))}
@@ -977,7 +1005,7 @@ export default function CustomerQr({
                                                 className={qrPrimary}
                                                 onClick={() => go('review')}
                                             >
-                                                View order{' '}
+                                                Confirm Order{' '}
                                                 <ChevronRight size={16} />
                                             </button>
                                             <button
@@ -1019,7 +1047,7 @@ export default function CustomerQr({
                                                             className={
                                                                 orderType ===
                                                                 type
-                                                                    ? qrPrimary
+                                                                    ? `${qrButton} ${type === 'dine_in' ? 'border-green-300 bg-green-50 text-green-800' : 'border-sky-300 bg-sky-50 text-sky-800'}`
                                                                     : qrButton
                                                             }
                                                             onClick={() =>
@@ -1094,7 +1122,7 @@ export default function CustomerQr({
                                 Your order number
                             </p>
                             <h1 className="text-5xl font-extrabold">
-                                #{order.order_number}
+                                {qrIdentity(order)}
                             </h1>
                             <p className="mx-auto rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
                                 {qrStatus(order)}
@@ -1114,13 +1142,13 @@ export default function CustomerQr({
                                 onClick={() => go('track')}
                             >
                                 <Clock3 size={18} />
-                                Track order
+                                <Clock3 size={16} /> Track order
                             </button>
                             <button
                                 className={qrButton}
                                 onClick={() => setModal('details')}
                             >
-                                View order
+                                <ShoppingBag size={16} /> View order
                             </button>
                             <p className="text-[11px] text-neutral-500">
                                 Waiting for Cashier / Payment. Hintayin lang ang
@@ -1147,10 +1175,11 @@ export default function CustomerQr({
                         className={`${qrPrimary} mx-auto flex h-14 w-full max-w-[720px] justify-between`}
                         onClick={() => go(order ? 'track' : 'cart')}
                     >
-                        <span>
+                        <span className="flex items-center gap-2">
+                            {!order && <ShoppingBag size={18} />}
                             {order
-                                ? `${terminal ? 'Last order' : 'Current order'} #${order.order_number} · ${qrStatus(order)}`
-                                : `${count} items in cart`}
+                                ? `Back to Track Order · ${qrIdentity(order)}`
+                                : `Cart ${count}`}
                         </span>
                         <span>
                             {order ? <ChevronRight size={18} /> : pesos(total)}
@@ -1181,6 +1210,7 @@ export default function CustomerQr({
                         setEditing(null);
                         toast.success(
                             `${editing.line ? 'Updated' : 'Added'} ${line.product.name}`,
+                            { position: 'top-center' },
                         );
                     }}
                 />
@@ -1195,7 +1225,9 @@ export default function CustomerQr({
                     <DialogContent className="pos-surface flex max-h-[90dvh] flex-col gap-4 overflow-y-auto rounded-2xl bg-white text-neutral-950 max-sm:top-auto max-sm:bottom-0 max-sm:max-w-full max-sm:translate-y-0 max-sm:rounded-b-none">
                         <DialogTitle>
                             {modal === 'details'
-                                ? `#${order?.order_number}`
+                                ? order
+                                    ? qrIdentity(order)
+                                    : ''
                                 : modal === 'remove'
                                   ? 'Remove this item?'
                                   : 'Before you order'}

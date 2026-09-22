@@ -1,6 +1,14 @@
+import { qrIdentity, qrElapsed } from '@/lib/qr-order';
 import { router } from '@inertiajs/react';
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
-import { Search, QrCode } from 'lucide-react';
+import {
+    Search,
+    QrCode,
+    ShoppingCart,
+    Eye,
+    Trash2,
+    RotateCcw,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -17,7 +25,7 @@ import {
     createBranchEventGuard,
     createRealtimeRefresh,
 } from '@/lib/realtime-refresh';
-import { index, load, destroy } from '@/routes/pos/qr-orders';
+import { index, load, destroy, restore } from '@/routes/pos/qr-orders';
 import { cashier } from '@/routes/workspaces';
 import type { StaffQrOrder } from '@/types/qr';
 
@@ -39,6 +47,26 @@ export function StaffQrOrders({
     onLoad: (order: StaffQrOrder) => void;
 }) {
     const connection = useConnectionStatus();
+    const [now, setNow] = useState(Date.now);
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+    const restoreOrder = async (order: StaffQrOrder) => {
+        if (submitting.current) return;
+        submitting.current = true;
+        setBusy(true);
+        try {
+            await qrRequest(restore(order.id));
+            setSelected(null);
+            refresh.schedule(0);
+        } catch (reason) {
+            setError(qrError(reason).message);
+        } finally {
+            submitting.current = false;
+            setBusy(false);
+        }
+    };
     const [search, setSearch] = useState('');
     const [archived, setArchived] = useState(false);
     const [page, setPage] = useState(1);
@@ -78,13 +106,19 @@ export function StaffQrOrders({
     const accept = useMemo(() => createBranchEventGuard(branchId), [branchId]);
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.pos`,
-        ['.qr.order_submitted', '.qr.order_loaded', '.qr.order_archived'],
+        [
+            '.qr.order_submitted',
+            '.qr.order_loaded',
+            '.qr.order_archived',
+            '.qr.order_released',
+            '.qr.order_restored',
+        ],
         (event) => {
             if (accept(event)) {
                 refresh.schedule();
                 if (event.event_type === 'qr.order_submitted')
                     toast('New QR order', {
-                        description: `#${String(event.order_number)}`,
+                        description: String(event.qr_number),
                     });
             }
         },
@@ -163,12 +197,14 @@ export function StaffQrOrders({
                         Retrieve a customer order, then process payment in POS.
                     </p>
                 </div>
-                <button
-                    className={qrButton}
-                    onClick={() => refresh.schedule(0)}
-                >
-                    Refresh
-                </button>
+                {(connection !== 'connected' || error) && (
+                    <button
+                        className={qrButton}
+                        onClick={() => refresh.schedule(0)}
+                    >
+                        Retry
+                    </button>
+                )}
             </div>
             {connection !== 'connected' && (
                 <p
@@ -192,7 +228,7 @@ export function StaffQrOrders({
                     className={`${qrPanel} flex flex-wrap items-center justify-between gap-3 text-sm`}
                 >
                     <span>
-                        You loaded <strong>#{loaded.order_number}</strong>.
+                        You loaded <strong>{qrIdentity(loaded)}</strong>.
                         Continue its payment in POS.
                     </span>
                     <button
@@ -255,37 +291,38 @@ export function StaffQrOrders({
                             key={order.id}
                             className={`${qrPanel} flex flex-col gap-3`}
                         >
-                            <div className="flex justify-between gap-2">
-                                <h2 className="text-lg font-bold">
-                                    #{order.order_number}
-                                </h2>
-                                <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <h2 className="text-[17px] font-bold text-red-700">
+                                        {qrIdentity(order)}
+                                    </h2>
+                                    {order.customer_label && (
+                                        <p className="mt-1 text-[13px] font-semibold text-black">
+                                            {order.customer_label}
+                                        </p>
+                                    )}
+                                </div>
+                                <span
+                                    className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${archived ? 'border-neutral-200 bg-neutral-100 text-neutral-600' : order.order_type === 'dine_in' ? 'border-green-200 bg-green-50 text-green-800' : 'border-sky-200 bg-sky-50 text-sky-800'}`}
+                                >
                                     {archived
-                                        ? 'Archived / Unclaimed'
-                                        : 'Waiting for payment'}
+                                        ? 'ARCHIVED'
+                                        : order.order_type === 'dine_in'
+                                          ? 'DINE IN'
+                                          : 'TAKE OUT'}
                                 </span>
                             </div>
-                            <div className="flex flex-wrap gap-2 text-[11px] text-neutral-500">
-                                <span>
-                                    {order.order_type === 'dine_in'
-                                        ? 'Dine in'
-                                        : 'Take out'}
-                                </span>
-                                {order.customer_label && (
-                                    <span>· {order.customer_label}</span>
-                                )}
-                                {order.table_name && (
-                                    <span>· {order.table_name}</span>
-                                )}
-                                <time dateTime={order.submitted_at}>
-                                    {new Date(
-                                        order.submitted_at,
-                                    ).toLocaleTimeString([], {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                    })}
-                                </time>
-                            </div>
+                            <p className="text-[11px] text-neutral-500">
+                                Order Time:{' '}
+                                {new Date(
+                                    order.submitted_at,
+                                ).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                })}{' '}
+                                · {qrElapsed(order.submitted_at, now)}{' '}
+                                {order.table_name && `· ${order.table_name}`}
+                            </p>
                             <div className="flex-1 space-y-1 text-xs">
                                 {order.items.slice(0, 4).map((item) => (
                                     <div
@@ -306,33 +343,47 @@ export function StaffQrOrders({
                                 )}
                             </div>
                             <div className="flex justify-between border-t border-neutral-100 pt-3 text-sm font-bold">
-                                <span>Total</span>
+                                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] text-red-700">
+                                    UNPAID
+                                </span>
                                 <span>{pesos(order.total)}</span>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="-mx-4 -mb-4 flex flex-wrap gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
+                                {!archived && (
+                                    <button
+                                        className={`${qrPrimary} h-[46px] flex-1`}
+                                        disabled={busy || hasCurrentCart}
+                                        onClick={() => claim(order)}
+                                    >
+                                        <ShoppingCart size={16} />
+                                        {busy ? 'Loading\u2026' : 'LOAD'}
+                                    </button>
+                                )}
                                 <button
-                                    className={`${qrButton} flex-1`}
+                                    className={`${qrButton} h-[46px] flex-1`}
                                     onClick={() => setSelected(order)}
                                 >
-                                    View
+                                    <Eye size={16} />
+                                    VIEW
                                 </button>
-                                {!archived && (
-                                    <>
-                                        <button
-                                            className={`${qrPrimary} flex-1`}
-                                            disabled={busy || hasCurrentCart}
-                                            onClick={() => claim(order)}
-                                        >
-                                            LOAD
-                                        </button>
-                                        <button
-                                            className={`${qrButton} text-red-700`}
-                                            disabled={busy}
-                                            onClick={() => setDeleting(order)}
-                                        >
-                                            Delete
-                                        </button>
-                                    </>
+                                {archived ? (
+                                    <button
+                                        className={`${qrButton} h-[46px] flex-1`}
+                                        disabled={busy}
+                                        onClick={() => restoreOrder(order)}
+                                    >
+                                        <RotateCcw size={16} />
+                                        RESTORE
+                                    </button>
+                                ) : (
+                                    <button
+                                        className={`${qrButton} h-[46px] text-red-700`}
+                                        disabled={busy}
+                                        onClick={() => setDeleting(order)}
+                                    >
+                                        <Trash2 size={16} />
+                                        DELETE
+                                    </button>
                                 )}
                             </div>
                         </article>
@@ -405,31 +456,34 @@ export function StaffQrOrders({
                     }}
                 >
                     <DialogContent className="pos-surface max-h-[90dvh] overflow-y-auto rounded-2xl bg-white text-neutral-950">
+                        {deleting && <div className="flex size-[46px] items-center justify-center rounded-xl bg-red-50 text-red-700"><Trash2 size={22}/></div>}
                         <DialogTitle>
                             {deleting
-                                ? 'Delete QR order?'
-                                : `#${selected?.order_number}`}
+                                ? `Delete ${qrIdentity(deleting)}?`
+                                : selected
+                                  ? qrIdentity(selected)
+                                  : ''}
                         </DialogTitle>
                         <DialogDescription>
                             {deleting
-                                ? `Archive #${deleting.order_number} from the waiting queue? Its history will be retained.`
+                                ? "The customer's QR order is removed from the queue. Nothing was paid, reserved or sent to the kitchen, so no stock or sales record is affected."
                                 : 'Review the submitted order before loading it into POS.'}
                         </DialogDescription>
                         {deleting ? (
                             <div className="flex gap-2">
                                 <button
-                                    className={qrButton}
+                                    className={`${qrButton} h-[52px] flex-1`}
                                     disabled={busy}
                                     onClick={() => setDeleting(null)}
                                 >
-                                    Cancel
+                                    Keep it
                                 </button>
                                 <button
-                                    className={`${qrPrimary} bg-red-700`}
+                                    className={`${qrPrimary} h-[52px] flex-1 bg-red-700`}
                                     disabled={busy}
                                     onClick={archive}
                                 >
-                                    {busy ? 'Deleting…' : 'Delete'}
+                                    {busy ? 'Deleting…' : 'Delete order'}
                                 </button>
                             </div>
                         ) : (

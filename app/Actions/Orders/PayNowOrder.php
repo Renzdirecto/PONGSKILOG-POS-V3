@@ -21,6 +21,7 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\User;
 use App\Support\LoadedQrOrder;
+use App\Support\OrderNumber;
 use App\Support\OrderPaymentLegs;
 use App\Support\PosAccess;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -83,7 +84,10 @@ class PayNowOrder
                 }
                 if ($order->source === OrderSource::CustomerQr) {
                     abort_unless($order->store_session_id === $session->id, 409, 'This QR order belongs to an earlier store session.');
-                    $this->loadedQr->validateTable($order, $branch);
+                    $this->loadedQr->applyMetadata($order, $branch, $data);
+                }
+                if ($order->source === OrderSource::CustomerQr && $order->order_number === null) {
+                    $order->forceFill(app(OrderNumber::class)->allocate($branch, now()));
                 }
                 $paidAt = now();
                 foreach ($this->paymentLegs->for($order, $data) as $method => $leg) {
@@ -147,6 +151,7 @@ class PayNowOrder
         if (empty($data['draft_order_id']) && ! $this->matchesCart($order, $data)) {
             abort(409, 'This payment attempt belongs to another order.');
         }
+        $this->loadedQr->validateReplay($order, $data);
         $legs = $this->paymentLegs->for($order, $data);
         if ($order->payment_status !== PaymentStatus::Paid || count($legs) !== $payments->count()) {
             abort(409, 'This payment attempt has already been used with different details.');

@@ -1,6 +1,6 @@
 import { http } from '@inertiajs/react';
 export async function qrRequest<T>(
-    route: { url: string; method: 'get' | 'post' | 'delete' },
+    route: { url: string; method: 'get' | 'post' | 'delete' | 'put' },
     data?: unknown,
 ): Promise<T> {
     const response = await http

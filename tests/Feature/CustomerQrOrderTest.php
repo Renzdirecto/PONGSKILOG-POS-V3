@@ -1,8 +1,12 @@
 <?php
 
 use App\Actions\Orders\ArchiveCustomerQrOrder;
+use App\Actions\Orders\CancelLoadedCustomerQrOrder;
+use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\LoadCustomerQrOrder;
+use App\Actions\Orders\PayNowOrder;
 use App\Actions\Orders\SubmitCustomerQrOrder;
+use App\Actions\Orders\TransitionKitchenOrder;
 use App\Enums\BranchStatus;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
@@ -22,8 +26,10 @@ use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\CustomerQrAccess;
+use App\Support\OrderNumber;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 
@@ -78,7 +84,7 @@ test('anonymous submit persists authoritative snapshots and recovers exact repla
     expect($order->committed_at)->toBeNull();
     expect($session->fresh()->active_order_id)->toBe($order->id);
     $response->assertJsonMissingPath('order.id')->assertJsonMissingPath('order.created_by_user_id');
-    $this->postJson(route('qr.orders.store', $branch), $payload)->assertOk()->assertJsonPath('order.order_number', $order->order_number);
+    $this->postJson(route('qr.orders.store', $branch), $payload)->assertOk()->assertJsonPath('order.order_number', $order->fresh()->order_number);
     $this->assertDatabaseCount('orders', 1);
     qrNoEffects();
 
@@ -92,7 +98,8 @@ test('anonymous submit persists authoritative snapshots and recovers exact repla
 test('load claims the same order and existing payment actions commit the submitted price once', function (string $method) {
     [$branch, $session, $token, $product, $user, , $stock] = qrFixture();
     $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
-    $number = $order->order_number;
+    $number = $order->qr_sequence;
+    expect($order->fresh()->order_number)->toBeNull();
     $product->update(['default_price' => '250.00']);
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
     $this->postJson(route('pos.qr-orders.load', $order))->assertOk()->assertJsonPath('order.id', $order->id)->assertJsonPath('order.total', '190.00');
@@ -108,7 +115,8 @@ test('load claims the same order and existing payment actions commit the submitt
     $this->assertDatabaseCount('inventory_movements', 1);
     $this->assertDatabaseCount('payments', $method === 'now' ? 1 : 0);
     expect($stock->fresh()->on_hand)->toBe(8);
-    expect($order->fresh()->order_number)->toBe($number);
+    expect($order->fresh()->qr_sequence)->toBe($number);
+    expect($order->fresh()->order_number)->toBe('1001');
     expect($order->fresh()->source)->toBe(OrderSource::CustomerQr);
     expect($order->fresh()->total)->toBe('190.00');
     if ($method === 'later') {
@@ -150,7 +158,7 @@ test('submission rejects malformed expired missing and foreign session credentia
 })->with(['malformed', 'expired', 'missing', 'foreign']);
 
 test('tracking and receipt are session owned and receipt expires exactly 24 hours after payment', function () {
-    $this->freezeTime();
+    $this->travelTo(now()->startOfSecond());
     [$branch, $session, $token, $product, $user] = qrFixture();
     $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
     $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token);
@@ -171,7 +179,7 @@ test('tracking and receipt are session owned and receipt expires exactly 24 hour
 });
 
 test('scheduler archives untouched orders at 30 minutes and preserves claimed orders', function () {
-    $this->freezeTime();
+    $this->travelTo(now()->startOfSecond());
     [$branch, $session, , $product, $user] = qrFixture();
     $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
     $claimed = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrPayload($product));
@@ -228,13 +236,13 @@ test('submission validates product customization table and quantity without part
 
 test('anonymous session cookie is hashed secure scoped and absent from public props', function () {
     $branch = Branch::factory()->create();
-    $response = $this->get('https://localhost/qr/'.$branch->id)->assertOk();
+    $response = $this->get('https://localhost/kiosk/'.$branch->code)->assertOk();
     $cookie = $response->getCookie(app(CustomerQrAccess::class)->cookieName($branch));
     expect($cookie)->not->toBeNull();
     expect($cookie->isHttpOnly())->toBeTrue();
     expect($cookie->isSecure())->toBeTrue();
     expect($cookie->getSameSite())->toBe('lax');
-    expect($cookie->getPath())->toBe('/qr/'.$branch->id);
+    expect($cookie->getPath())->toBe('/');
     $session = CustomerQrSession::query()->sole();
     expect($session->token_hash)->toBe(hash('sha256', $cookie->getValue()));
     expect(json_encode($response->viewData('page')['props']))->not->toContain($cookie->getValue(), $session->token_hash, 'token_hash', 'opening_cash_amount');
@@ -244,7 +252,7 @@ test('public catalog hides operational inventory quantities and excludes another
     [$branch, , $token, $product] = qrFixture();
     $other = Branch::factory()->create();
     BranchProduct::factory()->for($other)->for($product)->create(['price_override' => '999.00']);
-    $response = $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)->get(route('qr.show', $branch));
+    $response = $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)->get(route('kiosk.show', ['branch' => $branch->code]));
     $catalog = $response->viewData('page')['props']['catalog'];
     expect($catalog['products'][0]['effective_price'])->toBe('95.00');
     expect($catalog['products'][0])->not->toHaveKeys(['on_hand', 'tracks_inventory', 'low_stock_threshold']);
@@ -360,7 +368,7 @@ test('QR size and instruction snapshots survive catalog changes through kitchen 
     $this->get(route('workspaces.kitchen'))->assertInertia(fn (AssertableInertia $page) => $page->has('kitchenBoard.tickets', 0));
     $this->postJson(route('pos.qr-orders.load', $order))->assertOk();
     $this->postJson(route('pos.payments.store'), ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '250.00', 'idempotency_key' => (string) Str::uuid()])->assertOk();
-    $this->get(route('workspaces.kitchen'))->assertInertia(fn (AssertableInertia $page) => $page->where('kitchenBoard.tickets.0.number', $order->order_number)
+    $this->get(route('workspaces.kitchen'))->assertInertia(fn (AssertableInertia $page) => $page->where('kitchenBoard.tickets.0.number', $order->fresh()->order_number)
         ->where('kitchenBoard.tickets.0.items.0.display_name', 'Large Tapsilog')->where('kitchenBoard.tickets.0.items.0.instructions', ['Scrambled'])->where('kitchenBoard.tickets.0.items.0.note', 'Less salt'));
     Event::fake([CustomerTrackingChanged::class]);
     foreach (['preparing', 'ready', 'done'] as $status) {
@@ -401,3 +409,186 @@ test('load and archive reject submitted orders that already have payment or kitc
     expect($order->fresh()->commercial_status)->toBe(CommercialStatus::Submitted);
     qrNoEffects();
 })->with([['payment_status', 'paid'], ['kitchen_status', 'kitchen'], ['payment_term', 'pay_later']]);
+
+test('QR numbers use a separate counter per store session and delayed daily official identity', function () {
+    $this->travelTo(now()->setTimezone('Asia/Manila')->setDate(2026, 9, 22)->setTime(12, 0));
+    [$branch, $session, , $product, $user, $store] = qrFixture();
+    $first = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    expect($first->qr_sequence)->toBe(1)->and($first->order_number)->toBeNull()->and($first->reference_number)->toBeNull();
+    $this->assertDatabaseCount('order_number_counters', 0);
+    $second = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrPayload($product));
+    expect($second->qr_sequence)->toBe(2);
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $first);
+    expect($first->fresh()->order_number)->toBeNull();
+    app(CancelLoadedCustomerQrOrder::class)->execute($user, $branch, $first);
+    expect($first->fresh()->loaded_by_user_id)->toBeNull()->and($first->fresh()->order_number)->toBeNull();
+    qrNoEffects();
+    $store->update(['status' => 'closed']);
+    StoreSession::factory()->for($branch)->create();
+    $third = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrPayload($product));
+    expect($third->qr_sequence)->toBe(1);
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $third);
+    $committed = app(CommitPayLaterOrder::class)->execute($user, $branch, $third, ['idempotency_key' => (string) Str::uuid()]);
+    expect($committed->order_number)->toBe('1001')->and($committed->reference_number)->toBe($branch->code.'-092226-0001');
+    $this->travel(1)->days();
+    $identity = app(OrderNumber::class)->allocate($branch, now());
+    expect($identity['reference_number'])->toBe($branch->code.'-092326-0001');
+    expect($committed->fresh()->reference_number)->toBe($branch->code.'-092226-0001');
+});
+
+test('cancel load is owned and preserves the submitted snapshot without effects', function () {
+    [$branch, $session, , $product, $user] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    $other = User::factory()->create();
+    $other->roles()->attach(Role::where('name', 'cashier')->sole());
+    $other->branches()->attach($branch, ['is_active' => true]);
+    $this->actingAs($other)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $this->postJson(route('pos.qr-orders.cancel-load', $order))->assertConflict();
+    $this->actingAs($user)->postJson(route('pos.qr-orders.cancel-load', $order))->assertOk();
+    expect($order->fresh()->loaded_by_user_id)->toBeNull()->and($order->fresh()->qr_sequence)->toBe(1);
+    expect($order->items()->sole()->notes)->toBe('Less salt');
+    qrNoEffects();
+});
+
+test('restore renews the archive deadline and rejects conflicting customer orders', function () {
+    [$branch, $session, , $product, $user] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $this->travel(31)->minutes();
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $this->postJson(route('pos.qr-orders.restore', $order))->assertOk()->assertJsonPath('order.qr_number', 'QR-01');
+    expect($order->fresh()->archived_at)->toBeNull()->and($order->fresh()->archive_reason)->toBeNull();
+    expect(app(ArchiveCustomerQrOrder::class)->execute($order))->toBeFalse();
+    qrNoEffects();
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $session->update(['active_order_id' => null]);
+    app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    $this->postJson(route('pos.qr-orders.restore', $order))->assertConflict();
+});
+
+test('loaded QR metadata commits with either payment path and rejects changed replay', function (string $method) {
+    [$branch, $session, , $product, $user] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    $table = BranchTable::factory()->for($branch)->create();
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $data = ['idempotency_key' => (string) Str::uuid(), 'qr_metadata' => ['customer_label' => '', 'branch_table_id' => $table->id]];
+    if ($method === 'now') {
+        $data += ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00'];
+    }
+    $url = $method === 'now' ? route('pos.payments.store') : route('pos.orders.pay-later.store', $order);
+    $this->postJson($url, $data)->assertOk();
+    expect($order->fresh()->customer_label)->toBeNull()->and($order->fresh()->branch_table_id)->toBe($table->id);
+    expect($order->items()->sole()->unit_price)->toBe('95.00');
+    $this->postJson($url, $data)->assertOk();
+    $data['qr_metadata']['customer_label'] = 'Changed';
+    $this->postJson($url, $data)->assertConflict();
+    $this->postJson(route('pos.qr-orders.cancel-load', $order))->assertConflict();
+})->with(['now', 'later']);
+
+test('previous paid receipt remains owned after a new QR order until its own exact expiry', function () {
+    $this->travelTo(now()->startOfSecond());
+    [$branch, $session, $token, $product, $user] = qrFixture('cashier_kitchen');
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    app(PayNowOrder::class)->execute($user, $branch, ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00', 'idempotency_key' => (string) Str::uuid()]);
+    app(TransitionKitchenOrder::class)->execute($user, $branch, $order, KitchenStatus::Done);
+    $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token);
+    $this->postJson(route('qr.reset', $branch))->assertOk();
+    $this->postJson(route('qr.orders.store', $branch), qrPayload($product))->assertOk();
+    expect($session->fresh()->active_order_id)->not->toBe($order->id);
+    $url = route('qr.orders.receipt', [$branch, $order->public_tracking_id]);
+    $this->getJson($url)->assertOk();
+    $this->travel(24)->hours();
+    $this->getJson($url)->assertStatus(410);
+    $this->assertModelExists($order);
+});
+
+test('kitchen progress persists actual transition times and clears downstream rollback times', function () {
+    $this->travelTo(now()->startOfSecond());
+    [$branch, $session, , $product, $user] = qrFixture('cashier_kitchen');
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    $order = app(CommitPayLaterOrder::class)->execute($user, $branch, $order, ['idempotency_key' => (string) Str::uuid()]);
+    $transition = app(TransitionKitchenOrder::class);
+    $this->travel(1)->minutes();
+    $order = $transition->execute($user, $branch, $order, KitchenStatus::Preparing);
+    $prepared = $order->preparing_at->toIso8601String();
+    expect($order->preparing_at->eq(now()))->toBeTrue();
+    $this->travel(1)->minutes();
+    $order = $transition->execute($user, $branch, $order, KitchenStatus::Ready);
+    expect($order->ready_at->eq(now()))->toBeTrue();
+    $order = $transition->execute($user, $branch, $order, KitchenStatus::Preparing);
+    expect($order->ready_at)->toBeNull()->and($order->preparing_at->toIso8601String())->toBe($prepared);
+    $order = $transition->execute($user, $branch, $order, KitchenStatus::Kitchen);
+    expect($order->preparing_at)->toBeNull()->and($order->ready_at)->toBeNull()->and($order->completed_at)->toBeNull();
+});
+
+test('owner QR settings enforce authorization and persist only validated public configuration', function () {
+    [$branch, $session, $token, $product, $cashier] = qrFixture();
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::where('name', 'owner')->sole());
+    $url = route('branches.qr-settings.update', $branch);
+    $this->actingAs($cashier)->putJson($url, ['qr_ordering_enabled' => false])->assertForbidden();
+    $this->actingAs($owner)->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'javascript:alert(1)'])->assertUnprocessable();
+    $this->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'https://example.com'])->assertOk();
+    expect($branch->fresh()->qr_ordering_enabled)->toBeFalse()->and($branch->fresh()->receipt_footer)->toBe('Thank you');
+    $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)->postJson(route('qr.orders.store', $branch), qrPayload($product))->assertUnprocessable();
+    qrNoEffects();
+});
+
+test('kiosk activity deduplicates opens and exposes only bounded branch date history to owners', function () {
+    $this->travelTo(now()->startOfSecond());
+    [$branch, , $token] = qrFixture();
+    $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token);
+    $url = route('kiosk.show', ['branch' => $branch->code]);
+    $this->get($url)->assertOk();
+    $this->get($url)->assertOk();
+    $this->assertDatabaseCount('customer_qr_visits', 1);
+    $this->travel(3)->minutes();
+    $this->get($url)->assertOk();
+    $this->assertDatabaseCount('customer_qr_visits', 2);
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::where('name', 'owner')->sole());
+    $result = $this->actingAs($owner)->getJson(route('branches.qr-history', $branch))->assertOk()->assertJsonPath('count', 2);
+    expect(array_keys($result->json('visits.data.0')))->toBe(['visited_at']);
+    $this->getJson(route('branches.qr-history', [$branch, 'date' => now('Asia/Manila')->subDay()->toDateString()]))->assertOk()->assertJsonPath('count', 0);
+    expect(Schema::getColumnListing('customer_qr_visits'))->not->toContain('ip_address', 'user_agent', 'token_hash');
+});
+
+test('ineligible QR restore is rejected without side effects', function (string $reason) {
+    [$branch, $session, , $product, $user, $store] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $order->refresh();
+    match ($reason) {
+        'expired' => $session->update(['expires_at' => now()->subMinute()]),
+        'closed' => $store->update(['status' => 'closed']),
+        'loaded' => $order->update(['loaded_by_user_id' => $user->id]),
+        'wrong_state' => $order->update(['commercial_status' => CommercialStatus::Submitted]),
+        'foreign_branch' => $user->branches()->detach($branch),
+    };
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $response = $this->postJson(route('pos.qr-orders.restore', $order));
+    $reason === 'foreign_branch' ? $response->assertRedirect(route('workspace')) : $response->assertConflict();
+    expect($order->fresh()->order_number)->toBeNull();
+    qrNoEffects();
+})->with(['expired', 'closed', 'loaded', 'wrong_state', 'foreign_branch']);
+
+test('failed QR commercial commitment rolls back both identity counters and all effects', function (string $method) {
+    [$branch, $session, , $product, $user, , $stock] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    $stock->update(['on_hand' => 0]);
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $payload = ['idempotency_key' => (string) Str::uuid()];
+    if ($method === 'now') {
+        $payload += ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00'];
+    }
+    $this->postJson($method === 'now' ? route('pos.payments.store') : route('pos.orders.pay-later.store', $order), $payload)->assertUnprocessable();
+    expect($order->fresh()->order_number)->toBeNull()->and($order->fresh()->reference_number)->toBeNull();
+    $this->assertDatabaseCount('order_number_counters', 0);
+    $this->assertDatabaseCount('order_reference_counters', 0);
+    qrNoEffects();
+})->with(['now', 'later']);

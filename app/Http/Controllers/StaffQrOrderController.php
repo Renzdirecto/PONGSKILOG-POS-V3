@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Orders\ArchiveCustomerQrOrder;
+use App\Actions\Orders\CancelLoadedCustomerQrOrder;
 use App\Actions\Orders\LoadCustomerQrOrder;
+use App\Actions\Orders\RestoreCustomerQrOrder;
 use App\Enums\CommercialStatus;
 use App\Enums\OrderSource;
 use App\Enums\StoreSessionStatus;
@@ -42,7 +44,8 @@ class StaffQrOrderController extends Controller
             ->when(! $archived, fn ($query) => $query->where('store_session_id', $store?->id)->whereNull('loaded_by_user_id'))
             ->when(! empty($data['search']), function ($query) use ($data): void {
                 $search = '%'.strtolower(ltrim($data['search'], '#')).'%';
-                $query->where(fn ($query) => $query->whereRaw('LOWER(order_number) LIKE ?', [$search])
+                $sequence = preg_match('/^(?:QR-)?0*(\d+)$/i', trim($data['search']), $matches) ? (int) $matches[1] : null;
+                $query->where(fn ($query) => $query->when($sequence !== null, fn ($query) => $query->where('qr_sequence', $sequence))
                     ->orWhereRaw('LOWER(customer_label) LIKE ?', [$search])->orWhereRaw('LOWER(table_name_snapshot) LIKE ?', [$search]));
             })->orderBy('submitted_at')->orderBy('id');
         $orders = $query->with(['items.modifiers', 'branchTable', 'createdBy'])->paginate(30);
@@ -56,6 +59,21 @@ class StaffQrOrderController extends Controller
         [$user, $branch] = $this->authorize($request);
 
         return response()->json(['order' => $this->summary->qr($load->execute($user, $branch, $order))])->header('Cache-Control', 'no-store');
+    }
+
+    public function cancelLoad(Request $request, Order $order, CancelLoadedCustomerQrOrder $cancel): JsonResponse
+    {
+        [$user, $branch] = $this->authorize($request);
+        $cancel->execute($user, $branch, $order);
+
+        return response()->json(['released' => true]);
+    }
+
+    public function restore(Request $request, Order $order, RestoreCustomerQrOrder $restore): JsonResponse
+    {
+        [$user, $branch] = $this->authorize($request);
+
+        return response()->json(['order' => $this->summary->qr($restore->execute($user, $branch, $order))]);
     }
 
     public function destroy(Request $request, Order $order, ArchiveCustomerQrOrder $archive): JsonResponse

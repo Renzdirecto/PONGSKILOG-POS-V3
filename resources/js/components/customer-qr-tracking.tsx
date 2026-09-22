@@ -1,5 +1,15 @@
-import { router } from '@inertiajs/react';
-import { Check, Download, Clock3, ChefHat, ShoppingBag } from 'lucide-react';
+import { qrIdentity } from '@/lib/qr-order';
+import {
+    Check,
+    Download,
+    Clock3,
+    ChefHat,
+    ShoppingBag,
+    Eye,
+    ReceiptText,
+    ArrowLeft,
+    Plus,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { qrButton, qrPanel, qrPrimary } from './customer-qr-product';
 import { pesos } from '@/lib/pos-money';
@@ -7,7 +17,9 @@ import { canStartQrOrder, qrStatus, receiptText } from '@/lib/qr-order';
 import { qrError, qrRequest } from '@/lib/qr-http';
 import { receipt as receiptRoute } from '@/routes/qr/orders';
 import type { QrOrder, QrReceipt } from '@/types/qr';
+import { QrSocials } from './customer-qr';
 import type { QrView } from './customer-qr';
+import type { BranchSummary } from '@/types';
 
 export function QrItems({
     order,
@@ -68,7 +80,7 @@ export function CustomerQrTracking({
     busy,
     details,
 }: {
-    branch: { id: string; name: string };
+    branch: BranchSummary;
     order: QrOrder | null;
     view: 'track' | 'receipt';
     go: (view: QrView) => void;
@@ -154,22 +166,27 @@ export function CustomerQrTracking({
     return (
         <main className="mx-auto flex max-w-[560px] flex-col gap-4 px-4 py-6 pb-12">
             <div className="flex items-center justify-between gap-2">
-                <button className={qrButton} onClick={() => go('menu')}>
-                    Menu
+                <button
+                    className={qrButton}
+                    onClick={() => go(view === 'receipt' ? 'track' : 'menu')}
+                >
+                    <ArrowLeft size={16} />
+                    {view === 'receipt' ? 'Back to Order' : 'Menu'}
                 </button>
                 <h1 className="text-sm font-bold">
                     {view === 'receipt'
                         ? 'Digital receipt'
                         : 'Track your order'}
                 </h1>
-                <button
-                    className={qrButton}
-                    onClick={() =>
-                        router.reload({ only: ['order', 'store', 'catalog'] })
-                    }
-                >
-                    Refresh
-                </button>
+                {view === 'track' && (
+                    <button
+                        className={`${qrButton} border-green-200 bg-green-50 text-green-800`}
+                        onClick={details}
+                    >
+                        <Eye size={16} />
+                        View Order
+                    </button>
+                )}
             </div>
             {view === 'receipt' ? (
                 <>
@@ -198,11 +215,13 @@ export function CustomerQrTracking({
                         <>
                             <div className="rounded-2xl border border-neutral-200 bg-white p-5">
                                 <div className="text-center">
-                                    <img
-                                        src="/images/branding/logo.png"
-                                        alt="Pongskilog"
-                                        className="mx-auto mb-3 h-10"
-                                    />
+                                    {receipt.branch.show_logo !== false && (
+                                        <img
+                                            src="/images/branding/logo.png"
+                                            alt="Pongskilog"
+                                            className="mx-auto mb-3 h-10"
+                                        />
+                                    )}
                                     <h2 className="font-bold">
                                         {receipt.branch.name}
                                     </h2>
@@ -211,6 +230,9 @@ export function CustomerQrTracking({
                                     </p>
                                     <p className="mt-4 text-3xl font-bold">
                                         #{receipt.order_number}
+                                    </p>
+                                    <p className="mt-2 text-xs text-neutral-500">
+                                        REF: {receipt.reference_number}
                                     </p>
                                     <span className="mt-3 inline-block rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
                                         PAID
@@ -280,7 +302,8 @@ export function CustomerQrTracking({
                                     ))}
                                 </div>
                                 <p className="mt-5 text-center text-[11px] text-neutral-500">
-                                    Salamat sa pag-order sa Pongskilog!
+                                    {receipt.branch.footer ||
+                                        'Salamat sa pag-order sa Pongskilog!'}
                                 </p>
                             </div>
                             <p className="text-center text-[11px] text-neutral-500">
@@ -319,8 +342,13 @@ export function CustomerQrTracking({
                             Your order number
                         </p>
                         <h2 className="text-5xl font-extrabold">
-                            #{order.order_number}
+                            {qrIdentity(order)}
                         </h2>
+                        {order.reference_number && (
+                            <p className="text-xs text-neutral-500">
+                                REF: {order.reference_number}
+                            </p>
+                        )}
                         <span
                             className={`rounded-full px-4 py-2 text-sm font-semibold ${archived ? 'bg-neutral-100' : 'bg-amber-50 text-amber-800'}`}
                         >
@@ -372,11 +400,31 @@ export function CustomerQrTracking({
                                         className={`flex items-center gap-3 ${stage < index + 1 ? 'text-neutral-400' : ''}`}
                                     >
                                         <StatusIcon
-                                            className={`size-8 rounded-full p-2 ${stage >= index + 1 ? 'bg-green-50 text-green-700' : 'bg-neutral-100'}`}
+                                            className={`size-8 rounded-full p-2 ${stage >= index + 1 ? ['bg-amber-50 text-amber-700', 'bg-sky-50 text-sky-700', 'bg-green-50 text-green-700', 'bg-neutral-100 text-neutral-600'][index] : 'bg-neutral-100'}`}
                                         />
                                         <span className="text-xs font-semibold">
                                             {String(label)}
                                         </span>
+                                        {[
+                                            order.committed_at,
+                                            order.preparing_at,
+                                            order.ready_at,
+                                            order.completed_at,
+                                        ][index] && (
+                                            <time className="ml-auto text-[11px] tabular-nums">
+                                                {new Date(
+                                                    [
+                                                        order.committed_at,
+                                                        order.preparing_at,
+                                                        order.ready_at,
+                                                        order.completed_at,
+                                                    ][index]!,
+                                                ).toLocaleTimeString([], {
+                                                    hour: '2-digit',
+                                                    minute: '2-digit',
+                                                })}
+                                            </time>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -390,29 +438,41 @@ export function CustomerQrTracking({
                         </span>
                         <strong>{pesos(order.total)}</strong>
                     </div>
-                    <button className={qrButton} onClick={details}>
-                        View order
-                    </button>
-                    {order.payment_status === 'paid' && (
+                    <div className="grid grid-cols-3 gap-2">
                         <button
-                            className={qrButton}
+                            className={`${qrButton} flex-col rounded-2xl py-4`}
+                            disabled={busy}
+                            onClick={() =>
+                                canStartQrOrder(order) ? begin() : go('menu')
+                            }
+                        >
+                            {canStartQrOrder(order) ? (
+                                <Plus size={20} />
+                            ) : (
+                                <ShoppingBag size={20} />
+                            )}
+                            <span>
+                                {canStartQrOrder(order)
+                                    ? 'New Order'
+                                    : 'Browse Menu'}
+                            </span>
+                        </button>
+                        <button
+                            className={`${qrButton} flex-col rounded-2xl py-4`}
+                            onClick={details}
+                        >
+                            <Eye size={20} />
+                            View Order
+                        </button>
+                        <button
+                            className={`${qrButton} flex-col rounded-2xl py-4 disabled:bg-neutral-100 disabled:text-neutral-400`}
+                            disabled={!order.receipt_available || expired}
                             onClick={() => go('receipt')}
                         >
-                            View receipt
+                            <ReceiptText size={20} />
+                            Receipt
                         </button>
-                    )}
-                    {canStartQrOrder(order) && (
-                        <button
-                            className={qrPrimary}
-                            disabled={busy}
-                            onClick={begin}
-                        >
-                            Start new order
-                        </button>
-                    )}
-                    <button className={qrButton} onClick={() => go('menu')}>
-                        Browse menu
-                    </button>
+                    </div>
                     {done && (
                         <a
                             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`Pongskilog ${branch.name}`)}`}
@@ -425,6 +485,12 @@ export function CustomerQrTracking({
                     )}
                 </>
             )}
+            <footer className="mt-5 flex flex-col items-center gap-3 border-t border-neutral-200 pt-6">
+                <p className="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">
+                    Stay connected
+                </p>
+                <QrSocials branch={branch} />
+            </footer>
         </main>
     );
 }

@@ -738,3 +738,14 @@ If offline, block:
 - Inventory-changing Store Purchase
 
 No fake local success.
+
+
+---
+
+## Approved QR refinement flows - 2026-09-22
+
+Customer: permanent kiosk link -> welcome/social links -> menu/category icons -> cart quantity count -> Confirm Order -> submit QR-01 -> track. Before commitment, the provisional label is used; after Pay Now/Pay Later, the official number and reference are shown. Current-order menu browsing cannot add or submit another order and offers Back to Track Order. Tracking uses real Kitchen/Preparing/Ready/Done times and amber/blue/green/gray treatments. Receipt stays disabled when unavailable; Back to Order and Stay connected are shared with receipt. Paid receipt A remains owned after beginning order B until A's own 24-hour deadline.
+
+Cashier: QR queue -> server-confirmed LOAD -> optional name/table -> Pay Now or Pay Later. An unrelated POS cart blocks LOAD. Cancel Loaded Order releases only the loaded QR, discards its temporary metadata and returns to the waiting queue. DELETE opens the standalone confirmation and archives; Archived exposes VIEW/RESTORE, never LOAD. Eligible RESTORE renews the archive timer and invalidates staff/customer projections. Navigation is Dashboard, POS, QR Orders, Kitchen, History, Display with existing permission checks and unavailable History.
+
+Owner: Settings -> Branch Management -> EDIT or VIEW QR -> QR/History tabs. QR shows the permanent public link, image, availability, independent toggle, VIEW QR and COPY LINK. History defaults to today's Manila date, shows bounded link-open activity and supports date selection. Receipt settings save typed customer-visible identity fields per branch. Final responsive and interaction acceptance remains USER MANUAL QA REQUIRED.

@@ -69,7 +69,7 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
         ->assertJsonPath('receipt.cashier', $user->name)->assertJsonPath('receipt.items.0.notes', 'Less salt')
         ->assertJsonMissingPath('receipt.payments.0.idempotency_key');
     expect($order->order_number)->toMatch('/\A[0-9]+\z/')
-        ->and($order->reference_number)->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('ymd').'-'.$order->order_number)
+        ->and($order->reference_number)->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('mdy').'-0001')
         ->and($order->order_number)->not->toBe('FORGED')
         ->and($order->reference_number)->not->toBe('FORGED');
     expect($order->commercial_status)->toBe(CommercialStatus::Active);
@@ -118,7 +118,7 @@ test('reserved order keeps the same numeric identifier from early POS context th
     ])->assertOk()->json('order');
 
     expect($reservation['order_number'])->toMatch('/\A[0-9]+\z/')
-        ->and($reservation['reference_number'])->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('ymd').'-'.$reservation['order_number']);
+        ->and($reservation['reference_number'])->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('mdy').'-0001');
 
     $payload = paymentPayload($product, 'cashless', null);
     $payload['reserved_order_id'] = $reservation['id'];
@@ -480,7 +480,7 @@ test('payment product and order item reads remain bounded as the cart grows', fu
     $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'));
     DB::disableQueryLog();
 
-    expect($reads->count())->toBeLessThanOrEqual(34)
+    expect($reads->count())->toBeLessThanOrEqual(36)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "products"'))->count())->toBeLessThanOrEqual(4)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "order_items"'))->count())->toBeLessThanOrEqual(2);
 })->with([1, 30, 100]);

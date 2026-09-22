@@ -20,7 +20,7 @@ export function freshOrderDetails(): {
 }
 
 export function orderNumberLabel(orderNumber: string | null): string {
-    return orderNumber ? `#${orderNumber}` : 'Preparing order…';
+    return orderNumber ? (orderNumber.startsWith('QR-') ? orderNumber : `#${orderNumber}`) : 'Preparing order…';
 }
 
 export function needsOrderReservation(

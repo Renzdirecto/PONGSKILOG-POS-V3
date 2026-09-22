@@ -1,3 +1,5 @@
+import { cancelLoad } from '@/routes/pos/qr-orders';
+import { qrRequest, qrError } from '@/lib/qr-http';
 import {
     router,
     useForm,
@@ -173,10 +175,13 @@ export function CashierPos({
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
-    const form = useForm(`${rememberKey}:details`, freshOrderDetails());
+    const form = useForm(`${rememberKey}:details`, {...freshOrderDetails(), customer_label: initialDraft?.customer_label ?? '', branch_table_id: loadedQr?.branch_table_id ?? ''});
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber =
-        saved?.order_number ?? reservation?.order_number ?? null;
+        saved?.order_number ??
+        saved?.qr_number ??
+        reservation?.order_number ??
+        null;
     const editingProduct = editing
         ? (catalog.products.find(
               (product) => product.id === editing.product.id,
@@ -267,7 +272,18 @@ export function CashierPos({
             ...input,
             idempotency_key: crypto.randomUUID(),
             ...(saved
-                ? { draft_order_id: saved.id }
+                ? {
+                      draft_order_id: saved.id,
+                      ...(saved.source === 'customer_qr'
+                          ? {
+                                qr_metadata: {
+                                    customer_label: form.data.customer_label,
+                                    branch_table_id:
+                                        form.data.branch_table_id || null,
+                                },
+                            }
+                          : {}),
+                  }
                 : {
                       reserved_order_id: reservedOrder?.id,
                       order_type: orderType,
@@ -359,7 +375,15 @@ export function CashierPos({
         const activation = payLaterAttemptForOrder(payLaterAttempt, {
             order_id: targetOrder.id,
             ...(saved
-                ? {}
+                ? saved.source === 'customer_qr'
+                    ? {
+                          qr_metadata: {
+                              customer_label: form.data.customer_label,
+                              branch_table_id:
+                                  form.data.branch_table_id || null,
+                          },
+                      }
+                    : {}
                 : {
                       order_type: orderType,
                       customer_label: form.data.customer_label,
@@ -525,6 +549,7 @@ export function CashierPos({
                         branch_table_id: order.branch_table_id ?? '',
                     });
                     router.visit(cashier(), {
+                        only: ['loadedQr', 'qrWaitingCount'],
                         preserveState: true,
                         preserveScroll: true,
                     });
@@ -534,6 +559,39 @@ export function CashierPos({
 
     return (
         <div className="pos-surface flex min-h-0 min-w-0 flex-1 flex-col text-[13px]">
+            {saved?.source === 'customer_qr' && (
+                <div className="flex items-center justify-between gap-3 border-b bg-red-50 px-4 py-2 text-xs">
+                    <strong>From {saved.qr_number}</strong>
+                    <button
+                        className="rounded-lg border border-red-200 px-3 py-2 font-bold text-red-700 disabled:opacity-50"
+                        disabled={
+                            payment.processing ||
+                            payLater.processing ||
+                            attempt !== null ||
+                            payLaterAttempt !== null
+                        }
+                        onClick={async () => {
+                            try {
+                                await qrRequest(cancelLoad(saved.id));
+                                setSaved(null);
+                                setLines([]);
+                                setReservation(null);
+                                setOrderType(null);
+                                form.setData(freshOrderDetails());
+                                setDialog(null);
+                                router.visit(
+                                    cashier({ query: { view: 'qr' } }),
+                                    { preserveState: true },
+                                );
+                            } catch (reason) {
+                                toast.error(qrError(reason).message);
+                            }
+                        }}
+                    >
+                        CANCEL LOADED ORDER
+                    </button>
+                </div>
+            )}
             {realtimeStatus !== 'connected' && (
                 <div
                     role="status"
@@ -877,7 +935,7 @@ export function CashierPos({
                                                             customerDisplayLabel(
                                                                 payLaterSuccess.customer_label,
                                                                 payLaterSuccess.table_name,
-                                                            ) || 'Walk-in',
+                                                            ) || '',
                                                         ],
                                                         [
                                                             'Reference',
@@ -1041,7 +1099,11 @@ export function CashierPos({
                                                 </p>
                                                 <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
                                                     {orderNumber
-                                                        ? `#${orderNumber}`
+                                                        ? orderNumber.startsWith(
+                                                              'QR-',
+                                                          )
+                                                            ? orderNumber
+                                                            : `#${orderNumber}`
                                                         : 'Preparing…'}
                                                 </p>
                                             </div>
@@ -1057,7 +1119,8 @@ export function CashierPos({
                                                     ? 'DINE IN'
                                                     : 'TAKE OUT'}
                                             </div>
-                                            {saved ? (
+                                            {saved &&
+                                            saved.source !== 'customer_qr' ? (
                                                 <>
                                                     <p className="text-center text-sm font-semibold wrap-anywhere">
                                                         {customer}

@@ -6,7 +6,11 @@ export type QrProduct = Omit<
 export type QrLine = Omit<CartLine, 'product'> & { product: QrProduct };
 export type QrOrder = {
     public_tracking_id: string;
-    order_number: string;
+    order_number: string | null;
+    qr_number: string | null;
+    reference_number: string | null;
+    preparing_at: string | null;
+    ready_at: string | null;
     order_type: OrderType;
     customer_label: string | null;
     table_name: string | null;
@@ -37,6 +41,8 @@ export type QrReceipt = QrOrder & {
         code: string;
         address: string | null;
         contact: string | null;
+        footer?: string | null;
+        show_logo?: boolean;
     };
     payments: {
         method: string;
@@ -47,6 +53,7 @@ export type QrReceipt = QrOrder & {
 };
 export type StaffQrOrder = OrderSummary & {
     source: 'customer_qr';
+    qr_number: string | null;
     commercial_status: string;
     submitted_at: string;
     archived_at: string | null;

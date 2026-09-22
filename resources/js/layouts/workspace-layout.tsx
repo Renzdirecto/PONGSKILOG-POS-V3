@@ -112,11 +112,18 @@ export default function WorkspaceLayout({
                 active: false,
             },
             {
-                label: 'POS / Order',
+                label: 'POS',
                 icon: UtensilsCrossed,
                 available: auth.permissions.includes('pos.access'),
                 href: cashier(),
                 active: isPos && !isQr,
+            },
+            {
+                label: 'QR Orders',
+                icon: QrCode,
+                available: auth.permissions.includes('pos.access'),
+                href: cashier({ query: { view: 'qr' } }),
+                active: isQr,
             },
             {
                 label: 'Kitchen',
@@ -126,18 +133,18 @@ export default function WorkspaceLayout({
                 active: isKitchen,
             },
             {
+                label: 'History',
+                icon: LayoutDashboard,
+                available: false,
+                href: null,
+                active: false,
+            },
+            {
                 label: 'Display',
                 icon: MonitorUp,
                 available: canOpenCustomerDisplay(auth.permissions),
                 href: customerDisplay(),
                 active: false,
-            },
-            {
-                label: 'QR Orders',
-                icon: QrCode,
-                available: auth.permissions.includes('pos.access'),
-                href: cashier({ query: { view: 'qr' } }),
-                active: isQr,
             },
         ];
         return (

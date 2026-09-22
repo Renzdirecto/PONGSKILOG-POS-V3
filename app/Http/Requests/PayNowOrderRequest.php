@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\LoadedQrOrder;
 use Illuminate\Validation\Rule;
 
 class PayNowOrderRequest extends StorePosDraftOrderRequest
@@ -22,6 +23,7 @@ class PayNowOrderRequest extends StorePosDraftOrderRequest
             'draft_order_id' => ['nullable', 'uuid'],
             'reserved_order_id' => ['nullable', 'uuid'],
             'idempotency_key' => ['required', 'uuid'],
+            ...LoadedQrOrder::metadataRules(),
             'payment_method' => ['required', Rule::in(['cash', 'cashless', 'split'])],
             'cash_received' => ['required_if:payment_method,cash,split', ...$money],
             'cashless_amount' => ['required_if:payment_method,split', ...$money],

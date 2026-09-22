@@ -1,6 +1,9 @@
-import { Head, useForm } from '@inertiajs/react';
+import { update as saveQrSettings } from '@/routes/branches/qr-settings';
+import { qrHistory } from '@/routes/branches';
+import { qrRequest, qrError } from '@/lib/qr-http';
+import { Head, useForm, router } from '@inertiajs/react';
 import { Building2, Pencil, Plus, QrCode } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +38,14 @@ type Branch = BranchSummary & {
     store_is_open: boolean;
     qr_url: string;
     qr_image: string;
+    qr_ordering_enabled: boolean;
+    receipt_name: string | null;
+    receipt_address: string | null;
+    receipt_contact: string | null;
+    receipt_footer: string | null;
+    receipt_show_logo: boolean;
+    facebook_url: string | null;
+    website_url: string | null;
 };
 
 const statusLabels: Record<BranchStatus, string> = {
@@ -43,6 +54,7 @@ const statusLabels: Record<BranchStatus, string> = {
     inactive: 'Inactive',
 };
 export default function Branches({ branches }: { branches: Branch[] }) {
+    const [section, setSection] = useState<'branches' | 'receipt'>('branches');
     const [qrBranch, setQrBranch] = useState<Branch | null>(null);
     const [editing, setEditing] = useState<Branch | null | undefined>(
         undefined,
@@ -50,9 +62,9 @@ export default function Branches({ branches }: { branches: Branch[] }) {
 
     return (
         <>
-            <Head title="Branch management" />
+            <Head title="Settings" />
             <OwnerPage
-                title="Branch management"
+                title="Settings"
                 description="Maintain branch details, availability, customer QR entry points, and current store state."
                 action={
                     <Button
@@ -64,7 +76,26 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                 }
                 maxWidth="max-w-[1180px]"
             >
-                {branches.length === 0 ? (
+                <div className="mb-4 flex gap-2 border-b border-neutral-200 pb-3">
+                    {(['branches', 'receipt'] as const).map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => setSection(tab)}
+                            className={`${actionClass} px-4 py-3 ${section === tab ? 'bg-neutral-950 text-white' : 'bg-white'}`}
+                        >
+                            {tab === 'branches'
+                                ? 'Branch Management'
+                                : 'Receipt'}
+                        </button>
+                    ))}
+                </div>
+                {section === 'receipt' ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {branches.map((branch) => (
+                            <ReceiptSettings key={branch.id} branch={branch} />
+                        ))}
+                    </div>
+                ) : branches.length === 0 ? (
                     <div
                         className={`${ownerPanelClass} px-5 py-14 text-center`}
                     >
@@ -170,44 +201,16 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                 <DialogContent className="owner-surface max-h-[90dvh] overflow-y-auto rounded-[18px] bg-white text-neutral-950">
                     <DialogTitle>Customer QR</DialogTitle>
                     <DialogDescription>
-                        Pongskilog ? {qrBranch?.name}
+                        Pongskilog · {qrBranch?.name}
                     </DialogDescription>
                     {qrBranch && (
-                        <div className="flex flex-col items-center gap-4">
-                            <img
-                                src={qrBranch.qr_image}
-                                alt={`Scan to order at ${qrBranch.name}`}
-                                className="size-60 min-[520px]:size-[280px]"
-                            />
-                            <p className="text-sm font-semibold">
-                                Scan to order
-                            </p>
-                            <a
-                                className="max-w-full text-center text-xs wrap-anywhere underline"
-                                href={qrBranch.qr_url}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                {qrBranch.qr_url}
-                            </a>
-                            <Button
-                                className={primaryActionClass}
-                                onClick={async () => {
-                                    try {
-                                        await navigator.clipboard.writeText(
-                                            qrBranch.qr_url,
-                                        );
-                                        toast.success('Ordering link copied');
-                                    } catch {
-                                        toast.error(
-                                            'Copy blocked by the browser. Select and copy the link above.',
-                                        );
-                                    }
-                                }}
-                            >
-                                Copy link
-                            </Button>
-                        </div>
+                        <BranchQrPanel
+                            branch={
+                                branches.find(
+                                    (item) => item.id === qrBranch.id,
+                                ) ?? qrBranch
+                            }
+                        />
                     )}
                 </DialogContent>
             </Dialog>
@@ -362,6 +365,277 @@ function BranchForm({
                       ? 'Save changes'
                       : 'Add Branch'}
             </Button>
+        </form>
+    );
+}
+
+function BranchQrPanel({ branch }: { branch: Branch }) {
+    const [tab, setTab] = useState<'qr' | 'history'>('qr');
+    const [date, setDate] = useState(() =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(
+            new Date(),
+        ),
+    );
+    const [page, setPage] = useState(1);
+    const [history, setHistory] = useState<{
+        count: number;
+        visits: { data: { visited_at: string }[]; last_page: number };
+    } | null>(null);
+    const [error, setError] = useState('');
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+        if (tab !== 'history') return;
+        let current = true;
+        void qrRequest<{
+            count: number;
+            visits: { data: { visited_at: string }[]; last_page: number };
+        }>(qrHistory(branch.id, { query: { date, page } }))
+            .then((data) => {
+                if (current) {
+                    setHistory(data);
+                    setError('');
+                }
+            })
+            .catch((reason) => {
+                if (current) setError(qrError(reason).message);
+            });
+        return () => {
+            current = false;
+        };
+    }, [tab, date, page, branch.id]);
+    return (
+        <div className="space-y-4">
+            <div className="flex gap-2">
+                {(['qr', 'history'] as const).map((value) => (
+                    <button
+                        key={value}
+                        className={`${actionClass} px-4 py-2 ${tab === value ? 'bg-black text-white' : ''}`}
+                        onClick={() => setTab(value)}
+                    >
+                        {value.toUpperCase()}
+                    </button>
+                ))}
+            </div>
+            {error && (
+                <p role="alert" className="text-sm text-red-700">
+                    {error}
+                </p>
+            )}
+            {tab === 'qr' ? (
+                <div className="flex flex-col items-center gap-4">
+                    <img
+                        src={branch.qr_image}
+                        alt={`Scan to order at ${branch.name}`}
+                        className="size-60"
+                    />
+                    <p className="text-sm font-semibold">
+                        {branch.status === 'active' &&
+                        branch.store_is_open &&
+                        branch.qr_ordering_enabled
+                            ? 'QR ordering available'
+                            : 'QR ordering unavailable'}
+                    </p>
+                    <label className="flex items-center gap-3 text-sm">
+                        <input
+                            type="checkbox"
+                            checked={branch.qr_ordering_enabled}
+                            disabled={busy}
+                            onChange={async (event) => {
+                                setBusy(true);
+                                try {
+                                    await qrRequest(saveQrSettings(branch.id), {
+                                        qr_ordering_enabled:
+                                            event.target.checked,
+                                    });
+                                    router.reload({ only: ['branches'] });
+                                } catch (reason) {
+                                    setError(qrError(reason).message);
+                                } finally {
+                                    setBusy(false);
+                                }
+                            }}
+                        />
+                        Enable QR ordering
+                    </label>
+                    <p className="max-w-full text-xs wrap-anywhere">
+                        {branch.qr_url}
+                    </p>
+                    <div className="flex gap-2">
+                        <a
+                            href={branch.qr_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`${primaryActionClass} px-4 py-3`}
+                        >
+                            VIEW QR
+                        </a>
+                        <button
+                            className={`${actionClass} px-4 py-3`}
+                            onClick={async () => {
+                                try {
+                                    await navigator.clipboard.writeText(
+                                        branch.qr_url,
+                                    );
+                                    toast.success('Ordering link copied');
+                                } catch {
+                                    setError(
+                                        'Copy blocked. Select and copy the public link above.',
+                                    );
+                                }
+                            }}
+                        >
+                            COPY LINK
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    <h3 className="text-xs font-bold tracking-wider">
+                        QR ACTIVITY{' '}
+                        {date ===
+                        new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'Asia/Manila',
+                        }).format(new Date())
+                            ? 'TODAY'
+                            : date}
+                    </h3>
+                    <label className="flex items-center justify-between text-sm">
+                        Date
+                        <input
+                            type="date"
+                            value={date}
+                            className={controlClass}
+                            onChange={(event) => {
+                                setDate(event.target.value);
+                                setPage(1);
+                            }}
+                        />
+                    </label>
+                    <p className="text-3xl font-bold">
+                        {history?.count ?? '?'}
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                        Public kiosk link opens. Rapid repeat opens are counted
+                        once.
+                    </p>
+                    <ul className="divide-y divide-neutral-100">
+                        {history?.visits.data.map((visit, index) => (
+                            <li key={index} className="py-2 text-sm">
+                                {new Date(
+                                    visit.visited_at.replace(' ', 'T') + 'Z',
+                                ).toLocaleTimeString([], {
+                                    timeZone: 'Asia/Manila',
+                                })}
+                            </li>
+                        ))}
+                    </ul>
+                    {history && history.visits.last_page > 1 && (
+                        <div className="flex justify-between">
+                            <button
+                                disabled={page === 1}
+                                onClick={() => setPage(page - 1)}
+                            >
+                                Previous
+                            </button>
+                            <span>
+                                {page} / {history.visits.last_page}
+                            </span>
+                            <button
+                                disabled={page >= history.visits.last_page}
+                                onClick={() => setPage(page + 1)}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ReceiptSettings({ branch }: { branch: Branch }) {
+    const [data, setData] = useState({
+        receipt_name: branch.receipt_name ?? branch.name,
+        receipt_address: branch.receipt_address ?? branch.address ?? '',
+        receipt_contact: branch.receipt_contact ?? branch.contact ?? '',
+        receipt_footer: branch.receipt_footer ?? 'Salamat po! Come again.',
+        receipt_show_logo: branch.receipt_show_logo,
+        facebook_url: branch.facebook_url ?? '',
+        website_url: branch.website_url ?? '',
+    });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    return (
+        <form
+            className={`${ownerPanelClass} space-y-4 p-5`}
+            onSubmit={async (event) => {
+                event.preventDefault();
+                setBusy(true);
+                setError('');
+                try {
+                    await qrRequest(saveQrSettings(branch.id), data);
+                    toast.success('Receipt settings saved');
+                    router.reload({ only: ['branches'] });
+                } catch (reason) {
+                    setError(qrError(reason).message);
+                } finally {
+                    setBusy(false);
+                }
+            }}
+        >
+            <h2 className="font-semibold">Receipt · {branch.name}</h2>
+            <p className="text-xs text-neutral-500">
+                Customer-visible receipt information.
+            </p>
+            <label className="flex items-center gap-2 text-sm">
+                <input
+                    type="checkbox"
+                    checked={data.receipt_show_logo}
+                    onChange={(event) =>
+                        setData({
+                            ...data,
+                            receipt_show_logo: event.target.checked,
+                        })
+                    }
+                />
+                Show Pongskilog logo
+            </label>
+            {(
+                [
+                    ['receipt_name', 'Business / branch line'],
+                    ['receipt_address', 'Address'],
+                    ['receipt_contact', 'Contact'],
+                    ['receipt_footer', 'Footer text'],
+                    ['facebook_url', 'Facebook URL'],
+                    ['website_url', 'Website URL'],
+                ] as const
+            ).map(([key, label]) => (
+                <label
+                    key={key}
+                    className="flex flex-col gap-2 text-xs font-semibold"
+                >
+                    {label}
+                    <input
+                        className={controlClass}
+                        value={data[key]}
+                        onChange={(event) =>
+                            setData({ ...data, [key]: event.target.value })
+                        }
+                    />
+                </label>
+            ))}
+            {error && (
+                <p role="alert" className="text-sm text-red-700">
+                    {error}
+                </p>
+            )}
+            <button
+                disabled={busy}
+                className={`${primaryActionClass} px-4 py-3`}
+            >
+                {busy ? 'Saving\u2026' : 'Save changes'}
+            </button>
         </form>
     );
 }

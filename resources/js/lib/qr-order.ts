@@ -103,3 +103,19 @@ export function mergeQrLine(cart: QrLine[], line: QrLine): QrLine[] {
           )
         : [...cart, line];
 }
+
+export function qrIdentity(order: {
+    order_number: string | null;
+    qr_number?: string | null;
+}): string {
+    return order.order_number
+        ? `#${order.order_number}`
+        : (order.qr_number ?? 'QR order');
+}
+export function qrElapsed(submittedAt: string, now: number): string {
+    const seconds = Math.max(
+        0,
+        Math.floor((now - new Date(submittedAt).getTime()) / 1000),
+    );
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}

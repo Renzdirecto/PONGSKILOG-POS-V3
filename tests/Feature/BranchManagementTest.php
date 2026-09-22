@@ -159,7 +159,7 @@ test('branch listing uses bounded queries and exposes only core fields and curre
     DB::disableQueryLog();
     $response->assertInertia(fn (Assert $page) => $page->has('branches', 2)
         ->where('branches.0.id', $open->id)->where('branches.0.name', 'Alpha')
-        ->where('branches.0.qr_url', route('qr.show', $open))
+        ->where('branches.0.qr_url', route('kiosk.show', ['branch' => $open->kiosk_code]))
         ->where('branches.0.qr_image', fn (string $image): bool => str_starts_with($image, 'data:image/svg+xml;base64,') && str_contains(base64_decode(substr($image, strlen('data:image/svg+xml;base64,'))), '<svg'))
         ->where('branches.0.store_is_open', true)->missing('branches.0.opening_cash_amount')
         ->where('branches.1.store_is_open', false));

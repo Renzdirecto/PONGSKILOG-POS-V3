@@ -168,7 +168,7 @@ export function PosReadyNotifications({
                                     #{order.number}
                                 </span>
                                 <span className="min-w-0 flex-1 truncate text-[11px] text-neutral-500">
-                                    {order.customer || 'Walk-in'}
+                                    {order.customer || ''}
                                 </span>
                                 <Check className="size-4 text-emerald-700" />
                             </button>
@@ -202,7 +202,7 @@ export function PosReadyNotifications({
                             <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                                 <ReadyDetail
                                     label="Customer"
-                                    value={selected.customer || 'Walk-in'}
+                                    value={selected.customer || ''}
                                 />
                                 <ReadyDetail
                                     label="Order type"

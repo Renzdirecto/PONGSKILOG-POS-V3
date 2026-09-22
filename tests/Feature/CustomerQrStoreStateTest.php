@@ -22,9 +22,9 @@ test('public QR availability follows branch status and its current session', fun
     }
     $before = StoreSession::query()->orderBy('id')->get()->toArray();
 
-    $this->get(route('qr.show', $branch))->assertInertia(fn (Assert $page) => $page
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertInertia(fn (Assert $page) => $page
         ->component('qr/show')
-        ->where('branch', $branch->only(['id', 'name', 'code']))
+        ->where('branch', $branch->only(['id', 'name', 'code', 'facebook_url', 'website_url']))
         ->where('store', ['status' => $expected])
         ->missing('auth')->missing('branchContext')->missing('storeContext'));
 
@@ -41,13 +41,16 @@ test('public QR availability follows branch status and its current session', fun
 test('QR refresh sees current availability and the UUID link survives a code change', function () {
     $branch = Branch::factory()->create(['code' => 'MAIN']);
     $url = route('qr.show', $branch);
-    $this->get($url)->assertInertia(fn (Assert $page) => $page->where('store.status', 'closed'));
+    $this->get($url)->assertRedirect(route('kiosk.show', ['branch' => $branch->kiosk_code]));
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertInertia(fn (Assert $page) => $page->where('store.status', 'closed'));
 
     $session = StoreSession::factory()->for($branch)->create();
-    $this->get($url)->assertInertia(fn (Assert $page) => $page->where('store.status', 'open'));
+    $this->get($url)->assertRedirect(route('kiosk.show', ['branch' => $branch->kiosk_code]));
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertInertia(fn (Assert $page) => $page->where('store.status', 'open'));
 
     $branch->update(['code' => 'MAIN-NEW', 'status' => BranchStatus::TemporarilyClosed]);
-    $this->get($url)->assertInertia(fn (Assert $page) => $page->where('branch.code', 'MAIN-NEW')->where('store.status', 'closed'));
+    $this->get($url)->assertRedirect(route('kiosk.show', ['branch' => $branch->kiosk_code]));
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertInertia(fn (Assert $page) => $page->where('branch.code', 'MAIN-NEW')->where('store.status', 'closed'));
     expect($session->fresh()->status)->toBe(StoreSessionStatus::Open);
 });
 
@@ -65,11 +68,11 @@ test('QR never shares internal props even for a signed in user with private sess
     $response = $this->actingAs($staff)->withSession([
         ActiveBranchContext::SESSION_KEY => $branch->id,
         'errors' => (new ViewErrorBag)->put('default', new MessageBag(['private' => 'Internal error'])),
-    ])->get(route('qr.show', $branch));
+    ])->get(route('kiosk.show', ['branch' => $branch->kiosk_code]));
 
     $props = $response->viewData('page')['props'];
     expect(array_keys($props))->toEqualCanonicalizing(['branch', 'store', 'catalog', 'order'])
-        ->and($props['branch'])->toBe($branch->only(['id', 'name', 'code']))
+        ->and($props['branch'])->toBe($branch->only(['id', 'name', 'code', 'facebook_url', 'website_url']))
         ->and($props['store'])->toBe(['status' => 'open']);
 });
 
@@ -83,11 +86,11 @@ test('QR entry creates only anonymous identity and exposes the protected submiss
     Queue::fake();
     DB::enableQueryLog();
 
-    $this->get(route('qr.show', $branch))->assertOk();
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertOk();
 
     $queries = collect(DB::getQueryLog())->pluck('query');
     DB::disableQueryLog();
-    expect($queries->filter(fn (string $query): bool => preg_match('/^\s*(insert|update|delete|replace|alter|drop)\b/i', $query) === 1 && ! str_contains($query, 'customer_qr_sessions')))->toBeEmpty();
+    expect($queries->filter(fn (string $query): bool => preg_match('/^\s*(insert|update|delete|replace|alter|drop)\b/i', $query) === 1 && ! str_contains($query, 'customer_qr_sessions') && ! str_contains($query, 'customer_qr_visits')))->toBeEmpty();
     $this->assertDatabaseCount('customer_qr_sessions', 1);
     foreach (['orders', 'payments', 'inventory_movements', 'kitchen_tickets'] as $table) {
         $this->assertDatabaseCount($table, 0);
@@ -95,5 +98,5 @@ test('QR entry creates only anonymous identity and exposes the protected submiss
     Queue::assertNothingPushed();
     $qrRoutes = collect(Route::getRoutes()->getRoutes())->filter(fn ($route): bool => str_starts_with($route->uri(), 'qr/'));
     expect($qrRoutes->firstWhere(fn ($route): bool => $route->getName() === 'qr.orders.store')->methods())->toBe(['POST']);
-    $this->post(route('qr.show', $branch))->assertMethodNotAllowed();
+    $this->post(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertMethodNotAllowed();
 });

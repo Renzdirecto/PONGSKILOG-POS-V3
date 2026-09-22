@@ -20,3 +20,6 @@ An exact-key Pay Later replay may recover only when any supplied local cart stil
 
 ## Kitchen transitions share the session boundary and serialize only their order
 Lock the current OPEN StoreSession with sharedLock, then Order and KitchenTicket with lockForUpdate, in that order. Future Store Close must take the session exclusive lock first. Keep synchronized statuses and same-target idempotency; unrelated orders must complete while another order row is blocked.
+
+## QR numbers are provisional until commercial commitment
+Customer QR submission allocates only a per-Store-Session qr_sequence from customer_qr_order_counters. LOAD and Cancel LOAD never consume official identity. Pay Now/Pay Later atomically assign both official identifiers with payment/stock/Kitchen; direct POS keeps early reservation. New references use an independent branch/Manila-date counter and BRANCH-MMDDYY-####; preserve legacy identifiers.

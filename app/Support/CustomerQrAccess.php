@@ -30,6 +30,12 @@ class CustomerQrAccess
     public function start(Request $request, Branch $branch): CustomerQrSession
     {
         if ($session = $this->resolve($request, $branch)) {
+            $token = $request->cookie($this->cookieName($branch));
+            if (! is_string($token)) {
+                abort(419);
+            }
+            Cookie::queue(cookie($this->cookieName($branch), $token, 60 * 24 * 7, '/', null, $request->isSecure(), true, false, 'lax'));
+
             return $session;
         }
         $token = bin2hex(random_bytes(32));
@@ -38,7 +44,7 @@ class CustomerQrAccess
             'expires_at' => now()->addDays(7),
         ]);
         Cookie::queue(cookie($this->cookieName($branch), $token, 60 * 24 * 7,
-            '/qr/'.$branch->id, null, $request->isSecure(), true, false, 'lax'));
+            '/', null, $request->isSecure(), true, false, 'lax'));
 
         return $session;
     }

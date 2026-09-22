@@ -683,9 +683,9 @@ signals.
 
 | Event | Private audience | Payload |
 | --- | --- | --- |
-| `qr.order_submitted` | `branch.{branchId}.pos` | event ID/type, branch ID, Order ID/number/type, submitted time, version |
+| `qr.order_submitted` | `branch.{branchId}.pos` | event ID/type, branch ID, Order ID/qr_number/type, submitted time, version |
 | `qr.order_loaded` | same authorized POS branch | same compact identity/version envelope; removes a competing LOAD from waiting queues |
-| `qr.order_archived` | same authorized POS branch | event ID/type, branch ID, Order ID/number, archive reason/time, version |
+| `qr.order_archived` | same authorized POS branch | event ID/type, branch ID, Order ID/qr_number, archive reason/time, version |
 | `order.tracking_changed` | `order-tracking.{publicTrackingId}` | event ID/type, public tracking ID, occurrence time, version only |
 | `qr.catalog_changed` | `qr-catalog.{branchId}` | event ID/type, branch ID, occurrence time only |
 
@@ -709,3 +709,12 @@ unsubmitted cart intent and open customization. Offline/disconnected states expo
 Refresh/Retry and never pretend that a write succeeded. No periodic polling or
 simulated kitchen progress is used. Browser-to-frame latency remains manual QA;
 automated delivery/rollback/failure and PostgreSQL concurrency checks are covered.
+
+
+---
+
+## Approved QR refinement invalidations - 2026-09-22
+
+Before commitment, QR staff events expose qr_number (QR-01), not order_number. Added qr.order_released and qr.order_restored on the same authorized private branch POS channel. Cancel and restore emit customer tracking invalidation as well. QR toggle changes emit customer catalog invalidation. Official committed Order/Kitchen/Display paths continue using operational identity.
+
+Immediate after-commit delivery, transport rescue, compact payloads, event deduplication, bounded coalesced refetch, reconnect refresh and branch/session isolation remain. No HTTP polling was added. The queue has one client clock for all elapsed labels. Normal connected QR queue/tracking/receipt screens omit manual Refresh controls; recovery remains in unavailable/error states.

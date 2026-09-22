@@ -20,6 +20,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Support\LoadedQrOrder;
+use App\Support\OrderNumber;
 use App\Support\PosAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -98,7 +99,10 @@ class CommitPayLaterOrder
 
             if ($order->source === OrderSource::CustomerQr) {
                 abort_unless($order->store_session_id === $session->id, 409, 'This QR order belongs to an earlier store session.');
-                $this->loadedQr->validateTable($order, $branch);
+                $this->loadedQr->applyMetadata($order, $branch, $data);
+            }
+            if ($order->source === OrderSource::CustomerQr && $order->order_number === null) {
+                $order->forceFill(app(OrderNumber::class)->allocate($branch, now()));
             }
             $committedAt = now();
             $this->inventory->execute(
@@ -141,6 +145,7 @@ class CommitPayLaterOrder
             || $order->store_session_id === null || $order->kitchenTicket()->doesntExist()) {
             abort(409, 'This Pay Later attempt is not in a recoverable committed state.');
         }
+        $this->loadedQr->validateReplay($order, $data);
         if ($hasLocalCart && ! $this->matchesCart($order, $data)) {
             abort(409, 'This Pay Later attempt has already been used with different order details.');
         }

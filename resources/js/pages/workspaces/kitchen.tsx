@@ -398,7 +398,7 @@ function TicketCard({
                             </span>
                         )}
                         <span className="text-red-700">
-                            {ticket.customer || 'Walk-in'}
+                            {ticket.customer || ''}
                         </span>
                     </p>
                     <p className="text-[9px] leading-3 font-bold tabular-nums">

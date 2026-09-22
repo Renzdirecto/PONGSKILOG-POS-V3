@@ -10,7 +10,8 @@ class StoreState
 {
     public function customerAvailable(Branch $branch): bool
     {
-        return $branch->status === BranchStatus::Active
+        return $branch->qr_ordering_enabled
+            && $branch->status === BranchStatus::Active
             && $this->status($branch) === StoreSessionStatus::Open;
     }
 

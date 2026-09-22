@@ -16,6 +16,7 @@ class PayLaterOrderSummary
         return [
             'id' => $order->id,
             'order_number' => $order->order_number,
+            'qr_number' => CustomerQrNumber::display($order->qr_sequence),
             'reference_number' => $order->reference_number,
             'order_type' => $order->order_type->value,
             'customer_label' => $order->customer_label,

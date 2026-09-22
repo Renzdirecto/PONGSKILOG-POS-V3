@@ -13,7 +13,7 @@ use App\Http\Requests\SubmitCustomerQrOrderRequest;
 use App\Models\Branch;
 use App\Models\CustomerQrSession;
 use App\Models\Order;
-use App\Support\OrderNumber;
+use App\Support\CustomerQrNumber;
 use App\Support\OrderSnapshots;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -22,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 
 class SubmitCustomerQrOrder
 {
-    public function __construct(private OrderSnapshots $snapshots, private OrderNumber $numbers) {}
+    public function __construct(private OrderSnapshots $snapshots, private CustomerQrNumber $numbers) {}
 
     /** @param array<string, mixed> $input */
     public function execute(Branch $branch, CustomerQrSession $session, array $input): Order
@@ -47,7 +47,7 @@ class SubmitCustomerQrOrder
 
                 return $existing;
             }
-            if ($branch->status !== BranchStatus::Active || $store === null) {
+            if (! $branch->qr_ordering_enabled || $branch->status !== BranchStatus::Active || $store === null) {
                 throw ValidationException::withMessages(['store' => 'STORE IS CURRENTLY CLOSED']);
             }
             abort_if($session->active_order_id !== null, 409, 'You already have a current order. Return to tracking before starting another order.');
@@ -55,7 +55,7 @@ class SubmitCustomerQrOrder
             $snapshot = $this->snapshots->prepare($branch, $data, $orderId, lockCatalog: true);
             $order = new Order;
             $order->forceFill([
-                ...$snapshot['attributes'], ...$this->numbers->allocate($branch, now()),
+                ...$snapshot['attributes'], 'qr_sequence' => $this->numbers->allocate($store),
                 'id' => $orderId, 'branch_id' => $branch->id, 'store_session_id' => $store->id,
                 'source' => OrderSource::CustomerQr, 'commercial_status' => CommercialStatus::Submitted,
                 'payment_status' => PaymentStatus::Unpaid, 'payment_term' => null,

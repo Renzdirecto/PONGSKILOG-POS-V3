@@ -24,12 +24,12 @@ class BranchController extends Controller
         Gate::authorize('viewAny', Branch::class);
 
         $branches = Branch::query()
-            ->select(['id', 'code', 'name', 'status', 'address', 'contact'])
+            ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo'])
             ->withExists(['storeSessions as store_is_open' => fn (Builder $query) => $query->where('status', StoreSessionStatus::Open)])
             ->orderBy('name')->orderBy('code')->get();
 
         return Inertia::render('branches/index', ['branches' => $branches->map(function (Branch $branch): array {
-            $url = route('qr.show', $branch);
+            $url = route('kiosk.show', ['branch' => $branch->kiosk_code]);
             $writer = new Writer(new ImageRenderer(
                 new RendererStyle(320), new SvgImageBackEnd,
             ));

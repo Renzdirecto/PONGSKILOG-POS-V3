@@ -25,6 +25,111 @@ import {
 type Invoice = { name: string; url: string };
 type Preview = { file: File; url: string };
 
+const MAX_INVOICE_EDGE = 1600;
+const MAX_INVOICE_UPLOAD_BYTES = 1_500_000;
+
+function loadInvoiceImage(url: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () =>
+            reject(new Error('The selected image could not be read.'));
+        image.src = url;
+    });
+}
+
+function invoiceCanvasBlob(
+    canvas: HTMLCanvasElement,
+    quality: number,
+): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(
+            (blob) => {
+                if (blob) {
+                    resolve(blob);
+                    return;
+                }
+
+                reject(new Error('The selected image could not be prepared.'));
+            },
+            'image/jpeg',
+            quality,
+        );
+    });
+}
+
+async function prepareInvoiceImage(file: File): Promise<File> {
+    const sourceUrl = URL.createObjectURL(file);
+
+    try {
+        const image = await loadInvoiceImage(sourceUrl);
+        const scale = Math.min(
+            1,
+            MAX_INVOICE_EDGE /
+                Math.max(image.naturalWidth, image.naturalHeight),
+        );
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+            throw new Error('The selected image could not be prepared.');
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        let blob = await invoiceCanvasBlob(canvas, 0.82);
+
+        for (const quality of [0.68, 0.54]) {
+            if (blob.size <= MAX_INVOICE_UPLOAD_BYTES) {
+                break;
+            }
+
+            blob = await invoiceCanvasBlob(canvas, quality);
+        }
+
+        if (blob.size > MAX_INVOICE_UPLOAD_BYTES) {
+            throw new Error(
+                'The image is still too large. Try taking another photo.',
+            );
+        }
+
+        return new File([blob], `invoice-${Date.now()}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+        });
+    } finally {
+        URL.revokeObjectURL(sourceUrl);
+    }
+}
+
+function invoiceUploadError(error: unknown): string {
+    if (typeof error === 'object' && error !== null && 'response' in error) {
+        const response = (error as { response?: { data?: unknown } }).response;
+        let data = response?.data;
+
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data) as unknown;
+            } catch {
+                data = null;
+            }
+        }
+
+        if (typeof data === 'object' && data !== null && 'errors' in data) {
+            const errors = (data as { errors?: { invoice?: unknown } }).errors;
+            const message = errors?.invoice;
+
+            if (Array.isArray(message) && typeof message[0] === 'string') {
+                return message[0];
+            }
+        }
+    }
+
+    return 'The invoice proof could not be saved. Please try again.';
+}
+
 export function TransactionInvoiceDialog({
     paymentId,
     invoice,
@@ -46,6 +151,7 @@ export function TransactionInvoiceDialog({
     const [camera, setCamera] = useState(false);
     const [preview, setPreview] = useState<Preview | null>(null);
     const [processing, setProcessing] = useState(false);
+    const [viewingInvoice, setViewingInvoice] = useState(false);
 
     function stopCamera() {
         stream.current?.getTracks().forEach((track) => track.stop());
@@ -67,9 +173,25 @@ export function TransactionInvoiceDialog({
         [preview],
     );
 
-    function choosePreview(file: File) {
+    async function choosePreview(file: File) {
         stopCamera();
-        setPreview({ file, url: URL.createObjectURL(file) });
+        setProcessing(true);
+
+        try {
+            const preparedFile = await prepareInvoiceImage(file);
+            setPreview({
+                file: preparedFile,
+                url: URL.createObjectURL(preparedFile),
+            });
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'The selected image could not be prepared.',
+            );
+        } finally {
+            setProcessing(false);
+        }
     }
 
     function retry() {
@@ -80,6 +202,7 @@ export function TransactionInvoiceDialog({
     function closeDialog() {
         stopCamera();
         retry();
+        setViewingInvoice(false);
         onClose();
     }
 
@@ -95,12 +218,12 @@ export function TransactionInvoiceDialog({
                 headers: { Accept: 'application/json' },
             });
             toast.success('Invoice proof saved.');
-            onChanged((JSON.parse(response.data) as { invoice: Invoice }).invoice);
-            closeDialog();
-        } catch {
-            toast.error(
-                'The invoice proof could not be saved. Check the image and try again.',
+            onChanged(
+                (JSON.parse(response.data) as { invoice: Invoice }).invoice,
             );
+            closeDialog();
+        } catch (error) {
+            toast.error(invoiceUploadError(error));
         } finally {
             setProcessing(false);
         }
@@ -127,17 +250,34 @@ export function TransactionInvoiceDialog({
     function capture() {
         if (!video.current || video.current.videoWidth === 0) return;
         const canvas = document.createElement('canvas');
-        canvas.width = video.current.videoWidth;
-        canvas.height = video.current.videoHeight;
-        canvas.getContext('2d')?.drawImage(video.current, 0, 0);
-        canvas.toBlob((blob) => {
-            if (!blob) return;
-            choosePreview(
-                new File([blob], `invoice-${Date.now()}.jpg`, {
-                    type: 'image/jpeg',
-                }),
-            );
-        }, 'image/jpeg', 0.9);
+        const scale = Math.min(
+            1,
+            MAX_INVOICE_EDGE /
+                Math.max(video.current.videoWidth, video.current.videoHeight),
+        );
+        canvas.width = Math.max(
+            1,
+            Math.round(video.current.videoWidth * scale),
+        );
+        canvas.height = Math.max(
+            1,
+            Math.round(video.current.videoHeight * scale),
+        );
+        canvas
+            .getContext('2d')
+            ?.drawImage(video.current, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+            (blob) => {
+                if (!blob) return;
+                void choosePreview(
+                    new File([blob], `invoice-${Date.now()}.jpg`, {
+                        type: 'image/jpeg',
+                    }),
+                );
+            },
+            'image/jpeg',
+            0.82,
+        );
     }
 
     async function remove() {
@@ -175,7 +315,9 @@ export function TransactionInvoiceDialog({
                     >
                         <ArrowLeft className="size-4" /> Back
                     </button>
-                    <DialogTitle className="text-sm">Capture invoice</DialogTitle>
+                    <DialogTitle className="text-sm">
+                        Capture invoice
+                    </DialogTitle>
                     <span className="w-14" />
                 </header>
                 <DialogDescription className="px-4 pt-4 text-xs leading-5 text-neutral-600">
@@ -202,14 +344,13 @@ export function TransactionInvoiceDialog({
                                 <Check className="size-4 text-green-700" />
                             </div>
                             <div className="mt-3 grid grid-cols-3 gap-2">
-                                <a
-                                    href={invoice.url}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                <button
+                                    type="button"
+                                    onClick={() => setViewingInvoice(true)}
                                     className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[10px] border text-xs font-semibold"
                                 >
                                     <Eye className="size-3.5" /> View
-                                </a>
+                                </button>
                                 {mutable && (
                                     <Button
                                         variant="outline"
@@ -310,11 +451,32 @@ export function TransactionInvoiceDialog({
                         capture="environment"
                         onChange={(event) => {
                             const file = event.target.files?.[0];
-                            if (file) choosePreview(file);
+                            if (file) void choosePreview(file);
                         }}
                     />
                 </div>
             </DialogContent>
+            {invoice && (
+                <Dialog open={viewingInvoice} onOpenChange={setViewingInvoice}>
+                    <DialogContent className="pos-surface flex max-h-[92dvh] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+                        <header className="border-b border-neutral-200 px-5 py-4 pr-12">
+                            <DialogTitle className="text-base">
+                                Invoice receipt
+                            </DialogTitle>
+                            <DialogDescription className="mt-1 truncate text-xs">
+                                {invoice.name}
+                            </DialogDescription>
+                        </header>
+                        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-neutral-100 p-3 sm:p-5">
+                            <img
+                                src={invoice.url}
+                                alt="Invoice receipt"
+                                className="max-h-[calc(92dvh-7rem)] max-w-full rounded-[12px] bg-white object-contain shadow-sm"
+                            />
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </Dialog>
     );
 }

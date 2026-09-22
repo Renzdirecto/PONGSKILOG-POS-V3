@@ -153,6 +153,12 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         const currentIds = new Set(
             kitchenBoard.tickets.map((ticket) => ticket.id),
         );
+        setUpdatedOrderIds(
+            (current) =>
+                new Set(
+                    [...current].filter((orderId) => currentIds.has(orderId)),
+                ),
+        );
         const newlyArrivedIds = [...pendingNewTicketIds.current].filter(
             (ticketId) =>
                 currentIds.has(ticketId) &&

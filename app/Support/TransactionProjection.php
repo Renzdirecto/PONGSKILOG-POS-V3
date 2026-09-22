@@ -136,6 +136,13 @@ class TransactionProjection
                     ],
                 ])->values()->all(),
             ];
-        })->values()->all());
+        })->sortBy(fn (array $group): array => [
+            match ($group['context']) {
+                'initial', 'pay_later_settlement' => 0,
+                default => 1,
+            },
+            $group['paid_at'],
+            $group['id'],
+        ])->values()->all());
     }
 }

@@ -29,7 +29,7 @@ class StorePaymentInvoiceProofRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'invoice' => ['required', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('5mb')->dimensions(
+            'invoice' => ['required', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('2mb')->dimensions(
                 Rule::dimensions()->minWidth(64)->minHeight(64)->maxWidth(8000)->maxHeight(8000),
             )],
         ];

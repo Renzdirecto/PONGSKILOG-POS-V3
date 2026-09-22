@@ -191,6 +191,10 @@ test('KDS renders one-row controls and split ticket timing', () => {
     assert.doesNotMatch(kitchenPage, /next\.delete\(orderId\)/);
     assert.match(
         kitchenPage,
+        /\[\.\.\.current\]\.filter\(\(orderId\) => currentIds\.has\(orderId\)\)/,
+    );
+    assert.match(
+        kitchenPage,
         /text-red-700[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
     );
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);

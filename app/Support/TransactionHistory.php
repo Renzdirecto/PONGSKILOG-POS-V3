@@ -100,7 +100,15 @@ class TransactionHistory
             $method = $filters['payment_method'];
             $firstAttempt = fn (Builder $payments, string $paymentMethod) => $payments
                 ->where('method', $paymentMethod)
-                ->whereRaw('payments.paid_at = (select min(first_payment.paid_at) from payments as first_payment where first_payment.order_id = orders.id)');
+                ->where(function (Builder $attempt): void {
+                    $attempt
+                        ->whereIn('payment_context', ['initial', 'pay_later_settlement'])
+                        ->orWhere(function (Builder $legacy): void {
+                            $legacy
+                                ->whereNull('payment_context')
+                                ->whereRaw('payments.paid_at = (select min(first_payment.paid_at) from payments as first_payment where first_payment.order_id = orders.id)');
+                        });
+                });
             if ($method === 'split') {
                 $query->whereHas('payments', fn (Builder $payments) => $firstAttempt($payments, 'cash'))
                     ->whereHas('payments', fn (Builder $payments) => $firstAttempt($payments, 'cashless'));

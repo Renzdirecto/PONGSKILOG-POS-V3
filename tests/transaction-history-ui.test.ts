@@ -94,11 +94,20 @@ test('null customers never receive a fabricated display label', () => {
 });
 
 test('invoice selection and capture create a local preview before confirm uploads', () => {
-    assert.match(invoice, /function choosePreview\(file: File\)/);
-    assert.match(invoice, /setPreview\(\{ file, url: URL\.createObjectURL\(file\) \}\)/);
+    assert.match(invoice, /async function choosePreview\(file: File\)/);
+    assert.match(invoice, /await prepareInvoiceImage\(file\)/);
+    assert.match(invoice, /MAX_INVOICE_EDGE = 1600/);
+    assert.match(invoice, /MAX_INVOICE_UPLOAD_BYTES = 1_500_000/);
+    assert.match(invoice, /canvas\.toBlob[\s\S]*'image\/jpeg'/);
+    assert.match(invoice, /url: URL\.createObjectURL\(preparedFile\)/);
     assert.match(invoice, /onClick=\{retry\}/);
     assert.match(invoice, /onClick=\{\(\) => void confirm\(\)\}/);
     assert.match(invoice, /async function confirm\(\)[\s\S]*\.\.\.store\(paymentId\)/);
+    assert.match(invoice, /toast\.error\(invoiceUploadError\(error\)\)/);
+    assert.match(invoice, /const \[viewingInvoice, setViewingInvoice\]/);
+    assert.match(invoice, /onClick=\{\(\) => setViewingInvoice\(true\)\}/);
+    assert.match(invoice, /Invoice receipt/);
+    assert.doesNotMatch(invoice, /target="_blank"/);
     assert.doesNotMatch(invoice, /function retry\(\)[\s\S]{0,180}store\(paymentId\)/);
 });
 

@@ -172,14 +172,15 @@ test('method filter classifies the first grouped attempt instead of accumulated 
         'store_session_id' => $this->session->id, 'commercial_status' => 'active', 'payment_status' => 'paid',
         'payment_term' => 'immediate', 'kitchen_status' => 'kitchen', 'total' => '100.00', 'committed_at' => now()->subMinutes(30),
     ]);
+    $sameSecond = now()->subMinutes(30)->startOfSecond();
     Payment::factory()->for($cash)->create([
         'branch_id' => $this->branch->id, 'store_session_id' => $this->session->id, 'created_by_user_id' => $this->cashier->id,
-        'method' => 'cash', 'amount' => '80.00', 'idempotency_key' => Str::uuid().':cash', 'paid_at' => now()->subMinutes(30),
+        'method' => 'cash', 'amount' => '80.00', 'idempotency_key' => Str::uuid().':cash', 'payment_context' => 'initial', 'paid_at' => $sameSecond,
     ]);
     Payment::factory()->for($cash)->create([
         'branch_id' => $this->branch->id, 'store_session_id' => $this->session->id, 'created_by_user_id' => $this->cashier->id,
         'method' => 'cashless', 'amount' => '20.00', 'amount_received' => null, 'change_amount' => null,
-        'idempotency_key' => Str::uuid().':cashless', 'payment_context' => 'edit_balance_settlement', 'paid_at' => now(),
+        'idempotency_key' => Str::uuid().':cashless', 'payment_context' => 'edit_balance_settlement', 'paid_at' => $sameSecond,
     ]);
 
     $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])

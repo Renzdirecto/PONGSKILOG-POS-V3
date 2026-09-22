@@ -58,6 +58,7 @@ test('cash payments invalid files and closed sessions cannot mutate invoice proo
     ]);
     $this->withHeader('Accept', 'application/json')->post(route('pos.payments.invoice.store', $cash), ['invoice' => UploadedFile::fake()->image('cash.jpg', 640, 480)])->assertUnprocessable();
     $this->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->create('fake.jpg', 2, 'text/plain')])->assertUnprocessable()->assertJsonValidationErrors('invoice');
+    $this->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->image('oversized.jpg', 640, 480)->size(2100)])->assertUnprocessable()->assertJsonValidationErrors('invoice');
     $this->session->update(['status' => 'closed']);
     $this->withHeader('Accept', 'application/json')->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->image('late.jpg', 640, 480)])->assertUnprocessable();
     $this->assertDatabaseCount('payment_invoice_proofs', 0);

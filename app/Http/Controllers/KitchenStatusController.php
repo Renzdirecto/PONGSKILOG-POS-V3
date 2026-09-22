@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateKitchenStatusRequest;
 use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
@@ -18,7 +19,7 @@ class KitchenStatusController extends Controller
         Order $order,
         ActiveBranchContext $activeBranchContext,
         TransitionKitchenOrder $transitionKitchenOrder,
-    ): RedirectResponse {
+    ): RedirectResponse|JsonResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
 
@@ -34,12 +35,19 @@ class KitchenStatusController extends Controller
             $target,
         );
 
-        Inertia::flash('kitchenTransition', [
+        $transition = [
             'order_id' => (string) $result['order']->getKey(),
             'from' => $result['from']->value,
             'to' => $target->value,
             'changed' => $result['changed'],
-        ]);
+            'version' => $result['order']->version,
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json(['kitchenTransition' => $transition]);
+        }
+
+        Inertia::flash('kitchenTransition', $transition);
 
         return back();
     }

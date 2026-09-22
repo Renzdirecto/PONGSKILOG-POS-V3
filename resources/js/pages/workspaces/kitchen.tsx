@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage, useRemember } from '@inertiajs/react';
+import { Head, Link, http, usePage, useRemember } from '@inertiajs/react';
 import {
     BellRing,
     ChefHat,
@@ -13,7 +13,14 @@ import {
     UtensilsCrossed,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from 'react';
 import { toast } from 'sonner';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import {
@@ -26,13 +33,17 @@ import {
     statusLabel,
 } from '@/lib/kitchen';
 import { update as updateKitchenStatus } from '@/routes/orders/kitchen-status';
+import {
+    KitchenTransitionStore,
+    projectKitchenBoard,
+} from '@/lib/kitchen-transitions';
+import type { KitchenTransitionResult } from '@/lib/kitchen-transitions';
 import { customerDisplay } from '@/routes/workspaces';
 import type {
     BranchContext,
     KitchenBoardData,
     KitchenStatus,
     KitchenTicket,
-    KitchenTransitionFlash,
 } from '@/types';
 
 type Props = {
@@ -68,7 +79,23 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     );
     const [search, setSearch] = useRemember('', 'kitchen-search');
     const [fullscreen, setFullscreen] = useState(false);
-    const [updatingOrder, setUpdatingOrder] = useState<string | null>(null);
+    const transitions = useMemo(
+        () => new KitchenTransitionStore(),
+        [branch?.id],
+    );
+    const pendingTransitions = useSyncExternalStore(
+        transitions.subscribe,
+        transitions.snapshot,
+        transitions.snapshot,
+    );
+    const projectedBoard = useMemo(
+        () => projectKitchenBoard(kitchenBoard, pendingTransitions),
+        [kitchenBoard, pendingTransitions],
+    );
+    useEffect(
+        () => transitions.reconcile(kitchenBoard),
+        [kitchenBoard, transitions],
+    );
     const [now, setNow] = useState(() => Date.now());
     const knownTicketIds = useRef(
         new Set(kitchenBoard.tickets.map((ticket) => ticket.id)),
@@ -96,9 +123,10 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         [],
     );
 
-    useBranchRealtimeRefresh({
+    const { scheduleRefresh } = useBranchRealtimeRefresh({
         branchId: branch?.id ?? '',
         channel: 'kitchen',
+        debounceMs: 35,
         events: KITCHEN_REALTIME_EVENTS,
         only: ['kitchenBoard'],
         onEvent: handleRealtimeEvent,
@@ -145,8 +173,8 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     }, []);
 
     const tickets = useMemo(
-        () => filterKitchenTickets(kitchenBoard.tickets, tab, search),
-        [kitchenBoard.tickets, search, tab],
+        () => filterKitchenTickets(projectedBoard.tickets, tab, search),
+        [projectedBoard.tickets, search, tab],
     );
 
     async function toggleFullscreen() {
@@ -162,40 +190,50 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     }
 
     function transition(ticket: KitchenTicket, status: KitchenStatus) {
-        if (updatingOrder !== null || !kitchenBoard.is_open) {
+        if (!kitchenBoard.is_open) {
             return;
         }
-
-        setUpdatingOrder(ticket.id);
-        router.patch(
-            updateKitchenStatus.url(ticket.id),
-            { status },
-            {
-                only: ['kitchenBoard'],
-                preserveScroll: true,
-                preserveState: true,
-                onFlash: (flash) => {
-                    const result = flash.kitchenTransition as
-                        | KitchenTransitionFlash
-                        | undefined;
-
-                    if (
-                        status === 'ready' &&
-                        result?.order_id === ticket.id &&
-                        result.to === 'ready' &&
-                        result.changed
-                    ) {
-                        playReadySound();
+        void transitions.run(
+            ticket,
+            status,
+            async () => {
+                try {
+                    const response = await http.getClient().request({
+                        ...updateKitchenStatus(ticket.id),
+                        data: { status },
+                        headers: { Accept: 'application/json' },
+                        signal: AbortSignal.timeout(15_000),
+                    });
+                    return (
+                        JSON.parse(response.data) as {
+                            kitchenTransition: KitchenTransitionResult;
+                        }
+                    ).kitchenTransition;
+                } catch (error) {
+                    const response = (error as { response?: { data: string } })
+                        .response;
+                    if (response) {
+                        const data = JSON.parse(response.data) as {
+                            errors?: { status?: string[] };
+                            message?: string;
+                        };
+                        throw new Error(
+                            data.errors?.status?.[0] ??
+                                data.message ??
+                                'The kitchen status could not be changed.',
+                        );
                     }
-                },
-                onError: (errors) =>
-                    toast.error(
-                        typeof errors.status === 'string'
-                            ? errors.status
-                            : 'The kitchen status could not be changed.',
-                    ),
-                onFinish: () => setUpdatingOrder(null),
+                    throw error;
+                }
             },
+            playReadySound,
+            (error) =>
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : 'The kitchen status could not be changed.',
+                ),
+            scheduleRefresh,
         );
     }
 
@@ -225,13 +263,13 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     <span
                                         className={`text-[10.5px] font-bold tabular-nums ${tab === key ? activeCountClass(key) : 'text-[#949494]'}`}
                                     >
-                                        {kitchenBoard.counts[key]}
+                                        {projectedBoard.counts[key]}
                                     </span>
                                 </button>
                             ))}
                         </nav>
                         {!fullscreen ? (
-                            <label className="relative min-w-0 flex-1 sm:w-[180px] sm:flex-none min-[1280px]:w-[240px]">
+                            <label className="relative min-w-0 flex-1 min-[1280px]:w-[240px] sm:w-[180px] sm:flex-none">
                                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
                                 <span className="sr-only">Search orders</span>
                                 <input
@@ -292,7 +330,10 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                 ticket={ticket}
                                 compact={fullscreen}
                                 now={now}
-                                disabled={updatingOrder !== null}
+                                disabled={
+                                    pendingTransitions[ticket.id]?.pending ??
+                                    false
+                                }
                                 onTransition={transition}
                             />
                         ))}
@@ -303,15 +344,15 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                     <footer className="sticky bottom-0 z-20 mt-auto flex min-h-[72px] flex-wrap items-center gap-5 border-t border-white/10 bg-[#111] px-4 py-3 text-white">
                         <Summary
                             label="Total active"
-                            value={kitchenBoard.counts.all}
+                            value={projectedBoard.counts.all}
                         />
                         <Summary
                             label="In prep"
-                            value={kitchenBoard.counts.preparing}
+                            value={projectedBoard.counts.preparing}
                         />
                         <Summary
                             label="Ready"
-                            value={kitchenBoard.counts.ready}
+                            value={projectedBoard.counts.ready}
                         />
                         <Link
                             href={customerDisplay()}
@@ -342,6 +383,7 @@ function TicketCard({
 }) {
     return (
         <article
+            aria-busy={disabled}
             className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
             <header
@@ -349,6 +391,11 @@ function TicketCard({
             >
                 <p className="mr-auto flex min-w-0 items-center gap-1 truncate text-sm font-black tracking-tight">
                     <span>#{ticket.number}</span>
+                    {disabled && (
+                        <span className="text-[9px] font-normal text-neutral-500">
+                            Saving...
+                        </span>
+                    )}
                     <span className="text-red-700">
                         {ticket.customer || 'Walk-in'}
                     </span>
@@ -510,6 +557,7 @@ function useKitchenAudio() {
     const newOrderAudio = useRef<HTMLAudioElement | null>(null);
     const readyAudio = useRef<HTMLAudioElement | null>(null);
     const newOrderPlaybackQueue = useRef(Promise.resolve());
+    const readyPlaybackQueue = useRef(Promise.resolve());
 
     useEffect(() => {
         const newOrder = new Audio('/audio/kitchen-new-order.mp3');
@@ -558,10 +606,11 @@ function useKitchenAudio() {
                 .catch(() => undefined);
         }
     }, []);
-    const playReadySound = useCallback(
-        () => playAudioSafely(readyAudio.current),
-        [],
-    );
+    const playReadySound = useCallback(() => {
+        readyPlaybackQueue.current = readyPlaybackQueue.current
+            .then(() => playAudioToEndSafely(readyAudio.current))
+            .catch(() => undefined);
+    }, []);
 
     return { playNewOrderSounds, playReadySound };
 }
@@ -584,14 +633,4 @@ function playAudioToEndSafely(audio: HTMLAudioElement | null): Promise<void> {
         audio.currentTime = 0;
         void audio.play().catch(finish);
     });
-}
-
-function playAudioSafely(audio: HTMLAudioElement | null): void {
-    if (audio === null) {
-        return;
-    }
-
-    audio.pause();
-    audio.currentTime = 0;
-    void audio.play().catch(() => undefined);
 }

@@ -42,6 +42,7 @@ export function PosReadyNotifications({
     useBranchRealtimeRefresh({
         branchId,
         channel: 'pos',
+        debounceMs: 35,
         events: POS_READY_REALTIME_EVENTS,
         only: ['readyOrders', 'kitchenStatus'],
     });

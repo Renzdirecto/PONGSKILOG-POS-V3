@@ -22,14 +22,20 @@ class TransitionKitchenOrder
         return $this->executeWithResult($user, $branch, $order, $target)['order'];
     }
 
-    /** @return array{order: Order, changed: bool, from: KitchenStatus} */
+    /**
+     * Lock order: OPEN Store Session (shared), Order (exclusive), KitchenTicket (exclusive).
+     * A Store Close must take the session's exclusive lock before changing its status
+     * or locking orders. Different orders can share the open-session boundary.
+     *
+     * @return array{order: Order, changed: bool, from: KitchenStatus}
+     */
     public function executeWithResult(User $user, Branch $branch, Order $order, KitchenStatus $target): array
     {
         return DB::transaction(function () use ($user, $branch, $order, $target): array {
             $session = StoreSession::query()
                 ->whereBelongsTo($branch)
                 ->where('status', StoreSessionStatus::Open)
-                ->lockForUpdate()
+                ->sharedLock()
                 ->first();
 
             if ($session === null) {

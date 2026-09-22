@@ -6,13 +6,13 @@ use App\Enums\KitchenStatus;
 use App\Models\Order;
 use Carbon\CarbonInterface;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Support\Str;
 
-class KitchenStatusChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
+class KitchenStatusChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

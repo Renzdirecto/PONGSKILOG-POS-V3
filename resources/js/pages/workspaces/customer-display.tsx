@@ -22,6 +22,7 @@ export default function CustomerDisplay({
     useBranchRealtimeRefresh({
         branchId,
         channel: 'customer-display',
+        debounceMs: 35,
         events: DISPLAY_REALTIME_EVENTS,
         only: ['display'],
     });

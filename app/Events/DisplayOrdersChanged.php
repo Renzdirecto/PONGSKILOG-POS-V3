@@ -5,13 +5,13 @@ namespace App\Events;
 use App\Models\Branch;
 use Carbon\CarbonInterface;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Support\Str;
 
-class DisplayOrdersChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
+class DisplayOrdersChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

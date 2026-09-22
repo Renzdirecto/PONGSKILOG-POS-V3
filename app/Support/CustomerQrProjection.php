@@ -43,7 +43,7 @@ class CustomerQrProjection
             'ready_at' => $order->ready_at?->toIso8601String(),
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->table_name_snapshot, 'subtotal' => $order->subtotal, 'total' => $order->total,
-            'commercial_status' => $order->commercial_status->value, 'payment_status' => $order->payment_status->value,
+            'commercial_status' => $order->commercial_status->value, 'voided_at' => $order->voided_at?->toIso8601String(), 'payment_status' => $order->payment_status->value,
             'payment_term' => $order->payment_term?->value, 'kitchen_status' => $order->kitchen_status->value,
             'submitted_at' => $order->submitted_at?->toIso8601String(), 'committed_at' => $order->committed_at?->toIso8601String(),
             'completed_at' => $order->completed_at?->toIso8601String(), 'archived_at' => $order->archived_at?->toIso8601String(),

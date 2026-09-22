@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveBranchController;
+use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchQrSettingsController;
@@ -29,6 +30,8 @@ use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\TransactionHistoryController;
+use App\Http\Controllers\VoidOrderController;
+use App\Http\Controllers\VoidOrdersController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -83,6 +86,14 @@ Route::middleware(['auth'])->group(function () {
         'description' => 'Business-wide system administration workspace.',
     ])->middleware('permission:access_control.manage')->name('workspaces.super-admin');
 
+    Route::get('workspaces/audit-trail', AuditTrailController::class)
+        ->middleware('permission:audit.view')
+        ->name('workspaces.audit-trail');
+
+    Route::get('workspaces/void-orders', VoidOrdersController::class)
+        ->middleware('permission:void_orders.manage')
+        ->name('workspaces.void-orders');
+
     Route::inertia('workspaces/owner', 'workspaces/show', [
         'workspace' => 'Owner',
         'eyebrow' => 'Business Operations',
@@ -111,6 +122,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
         Route::get('pos/transactions/{order}', [TransactionHistoryController::class, 'show'])->whereUuid('order')->name('pos.transactions.show');
         Route::patch('pos/transactions/{order}', CommittedOrderEditController::class)->whereUuid('order')->name('pos.transactions.update');
+        Route::post('pos/transactions/{order}/void', VoidOrderController::class)
+            ->whereUuid('order')
+            ->middleware('throttle:5,1')
+            ->name('pos.transactions.void');
         Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->name('pos.payments.invoice.store');
         Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
         Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->name('pos.payments.invoice.destroy');

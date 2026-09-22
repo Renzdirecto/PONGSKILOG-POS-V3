@@ -52,7 +52,7 @@ import { lineCents, pesos } from '@/lib/pos-money';
 import { stockAvailabilityLabel } from '@/lib/pos-order';
 import { update as updateKitchenStatus } from '@/routes/orders/kitchen-status';
 import { store as settle } from '@/routes/pos/orders/settlements';
-import { show, update } from '@/routes/pos/transactions';
+import { show, update, voidMethod } from '@/routes/pos/transactions';
 import { transactionHistory } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
@@ -99,6 +99,7 @@ type Summary = {
     order_type: 'dine_in' | 'take_out';
     table_name: string | null;
     kitchen_status: KitchenStatus;
+    commercial_status: 'active' | 'completed' | 'voided';
     payment_status: 'paid' | 'unpaid' | 'partial';
     payment_method: 'cash' | 'cashless' | 'split' | null;
     initial_cash: string | null;
@@ -111,11 +112,22 @@ type Summary = {
     outstanding: string;
     committed_at: string;
     edited_at: string | null;
+    voided_at: string | null;
+    void: {
+        reason_code: string;
+        reason_label: string;
+        reason_text: string | null;
+        initiated_by: string | null;
+        authorized_by: string | null;
+        authorization_method: string;
+        created_at: string | null;
+    } | null;
     version: number;
     item_count: number;
     items_preview: SummaryItem[];
     can_edit: boolean;
     can_settle: boolean;
+    can_void: boolean;
 };
 type Detail = Summary & {
     items: DetailItem[];
@@ -142,6 +154,10 @@ type Detail = Summary & {
         reason: string | null;
         created_at: string;
         created_by: string;
+    }[];
+    inventory_restorations: {
+        product_name: string | null;
+        quantity_restored: number;
     }[];
     receipt: ReceiptSummary;
 };
@@ -198,6 +214,7 @@ const KITCHEN_STYLES: Record<KitchenStatus, string> = {
 const HISTORY_REALTIME_EVENTS = [
     '.order.committed',
     '.order.updated',
+    '.order.voided',
     '.kitchen.ticket_created',
     '.kitchen.status_changed',
 ] as const;
@@ -224,6 +241,7 @@ export default function TransactionHistory({
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
     const [settling, setSettling] = useState(false);
+    const [voiding, setVoiding] = useState(false);
     const [receiptOpen, setReceiptOpen] = useState(false);
     const [resolution, setResolution] = useState<Detail | null>(null);
     const [invoicePayment, setInvoicePayment] = useState<
@@ -462,6 +480,7 @@ export default function TransactionHistory({
                         ['paid', 'Paid'],
                         ['pending', 'Pending'],
                         ['balance', 'Balance due'],
+                        ['void', 'Voided'],
                     ]}
                     onChange={(value) =>
                         apply({ payment_status: value || undefined })
@@ -547,6 +566,11 @@ export default function TransactionHistory({
                                     detail ? setSettling(true) : undefined,
                                 )
                             }
+                            onVoid={() =>
+                                void loadDetail(item.id).then((detail) =>
+                                    detail ? setVoiding(true) : undefined,
+                                )
+                            }
                             onPrint={() =>
                                 void loadDetail(item.id).then((detail) =>
                                     detail ? setReceiptOpen(true) : undefined,
@@ -600,12 +624,14 @@ export default function TransactionHistory({
                     selected !== null &&
                     !editing &&
                     !settling &&
+                    !voiding &&
                     !receiptOpen &&
                     resolution === null
                 }
                 onClose={() => setSelected(null)}
                 onEdit={() => setEditing(true)}
                 onSettle={() => setSettling(true)}
+                onVoid={() => setVoiding(true)}
                 onPrint={() => setReceiptOpen(true)}
                 onInvoice={setInvoicePayment}
             />
@@ -644,6 +670,20 @@ export default function TransactionHistory({
                         setSelected(detail);
                         setSettling(false);
                         setResolution(null);
+                        refresh();
+                    }}
+                />
+            )}
+            {selected && voiding && (
+                <VoidDialog
+                    detail={selected}
+                    onClose={() => {
+                        setVoiding(false);
+                        setSelected(null);
+                    }}
+                    onVoided={(detail) => {
+                        setSelected(detail);
+                        setVoiding(false);
                         refresh();
                     }}
                 />
@@ -936,6 +976,7 @@ function TransactionCard({
     onDetails,
     onEdit,
     onPayment,
+    onVoid,
     onPrint,
 }: {
     item: Summary;
@@ -943,14 +984,16 @@ function TransactionCard({
     onDetails: () => void;
     onEdit: () => void;
     onPayment: () => void;
+    onVoid: () => void;
     onPrint: () => void;
 }) {
     const customer = truthfulCustomer(item);
     const date = formatManila(item.committed_at);
     const many = item.items_preview.length > 5;
+    const isVoided = item.commercial_status === 'voided';
     return (
         <article
-            className={`flex min-w-0 flex-col gap-2 rounded-2xl border border-[#e5e5e5] bg-white p-[11px] shadow-[0_1px_2px_rgba(17,17,17,.05),0_8px_20px_-12px_rgba(17,17,17,.18)] ${compact ? 'sm:p-3' : ''}`}
+            className={`flex min-w-0 flex-col gap-2 rounded-2xl border border-[#e5e5e5] bg-white p-[11px] shadow-[0_1px_2px_rgba(17,17,17,.05),0_8px_20px_-12px_rgba(17,17,17,.18)] ${isVoided ? 'bg-red-50/40 opacity-75' : ''} ${compact ? 'sm:p-3' : ''}`}
         >
             <div className="flex min-w-0 items-center gap-2.5">
                 <strong className="shrink-0 text-[17px] tracking-[-0.02em] tabular-nums">
@@ -972,7 +1015,7 @@ function TransactionCard({
             </div>
             <div className="flex flex-wrap gap-1.5">
                 <SemanticChip kind={item.order_type} />
-                <SemanticChip kind={item.kitchen_status} />
+                {isVoided ? <SemanticChip kind="voided" /> : <SemanticChip kind={item.kitchen_status} />}
                 <SemanticChip
                     kind={
                         item.payment_status === 'unpaid'
@@ -1041,7 +1084,7 @@ function TransactionCard({
                     Details
                 </button>
             </div>
-            {Number(item.outstanding) > 0 && (
+            {!isVoided && Number(item.outstanding) > 0 && (
                 <button
                     type="button"
                     disabled={!item.can_settle}
@@ -1063,15 +1106,16 @@ function TransactionCard({
             <div className="grid grid-cols-3 gap-1.5">
                 <button
                     type="button"
-                    disabled
-                    title="Available in Phase 13"
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-neutral-200 text-[12.5px] font-semibold text-red-700 disabled:opacity-60"
+                    disabled={!item.can_void}
+                    title={item.can_void ? 'Void transaction' : 'This transaction cannot be voided'}
+                    onClick={onVoid}
+                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
                 >
                     <AlertTriangle className="size-4" /> Void
                 </button>
                 <button
                     type="button"
-                    disabled={!item.can_edit}
+                    disabled={!item.can_edit || isVoided}
                     title={
                         item.can_edit
                             ? 'Edit transaction'
@@ -1102,6 +1146,7 @@ function SemanticChip({ kind }: { kind: string }) {
         preparing: 'Preparing',
         ready: 'Ready',
         done: 'Done',
+        voided: 'Voided',
         cash: 'Cash',
         cashless: 'Cashless',
         split: 'Split',
@@ -1117,6 +1162,7 @@ function SemanticChip({ kind }: { kind: string }) {
         preparing: KITCHEN_STYLES.preparing,
         ready: KITCHEN_STYLES.ready,
         done: KITCHEN_STYLES.done,
+        voided: 'border-red-200 bg-red-50 text-red-700',
         cash: 'border-green-200 bg-green-50 text-green-700',
         cashless: 'border-blue-200 bg-blue-50 text-blue-700',
         split: 'border-blue-100 bg-[#f5f9ff] text-blue-700',
@@ -1149,6 +1195,7 @@ function TransactionDetailDialog({
     onClose,
     onEdit,
     onSettle,
+    onVoid,
     onPrint,
     onInvoice,
 }: {
@@ -1158,6 +1205,7 @@ function TransactionDetailDialog({
     onClose: () => void;
     onEdit: () => void;
     onSettle: () => void;
+    onVoid: () => void;
     onPrint: () => void;
     onInvoice: (
         payment: Detail['payment_groups'][number]['payments'][number],
@@ -1195,7 +1243,7 @@ function TransactionDetailDialog({
                             </div>
                             <div className="flex flex-wrap justify-end gap-1.5">
                                 <SemanticChip kind={detail.order_type} />
-                                <SemanticChip kind={detail.kitchen_status} />
+                                <SemanticChip kind={detail.commercial_status === 'voided' ? 'voided' : detail.kitchen_status} />
                                 <SemanticChip
                                     kind={
                                         detail.payment_status === 'unpaid'
@@ -1251,6 +1299,14 @@ function TransactionDetailDialog({
                                       ]
                                     : []),
                                 ['REF', detail.reference_number],
+                                ...(detail.void
+                                    ? [
+                                          ['Void reason', detail.void.reason_label],
+                                          ['Initiated by', detail.void.initiated_by ?? 'â€”'],
+                                          ['Authorized by', detail.void.authorized_by ?? 'â€”'],
+                                          ['Voided', detail.void.created_at ? `${formatManila(detail.void.created_at).date} Â· ${formatManila(detail.void.created_at).time}` : 'â€”'],
+                                      ] as [string, string][]
+                                    : []),
                             ]}
                         />
                         <section>
@@ -1323,6 +1379,12 @@ function TransactionDetailDialog({
                             </div>
                         </section>
                         <MoneyPanel detail={detail} />
+                        {detail.inventory_restorations.length > 0 && (
+                            <section>
+                                <p className="mb-1.5 text-[9.5px] font-semibold tracking-[.09em] text-neutral-400 uppercase">Inventory restored</p>
+                                <MetadataRows rows={detail.inventory_restorations.map((restoration) => [restoration.product_name ?? 'Product', `${restoration.quantity_restored} restored`])} />
+                            </section>
+                        )}
                         {detail.payment_groups.some((group) =>
                             group.payments.some(
                                 (payment) => payment.method === 'cashless',
@@ -1371,15 +1433,16 @@ function TransactionDetailDialog({
                     <footer className="grid shrink-0 grid-cols-[auto_auto_1fr] gap-2 border-t border-neutral-200 bg-white p-3.5">
                         <button
                             type="button"
-                            disabled
-                            title="Available in Phase 13"
-                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold text-red-700 opacity-60"
+                            disabled={!detail.can_void}
+                            title={detail.can_void ? 'Void transaction' : 'This transaction cannot be voided'}
+                            onClick={onVoid}
+                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
                         >
                             <ShieldBan className="size-4" /> Void
                         </button>
                         <button
                             type="button"
-                            disabled={!detail.can_edit}
+                            disabled={!detail.can_edit || detail.commercial_status === 'voided'}
                             onClick={onEdit}
                             className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
                         >
@@ -1500,6 +1563,209 @@ function MoneyRow({
                 {value}
             </dd>
         </div>
+    );
+}
+
+const VOID_REASONS: { value: string; label: string }[] = [
+    { value: 'wrong_item', label: 'Wrong item' },
+    { value: 'customer_cancelled', label: 'Customer cancelled' },
+    { value: 'duplicate_transaction', label: 'Duplicate transaction' },
+    { value: 'price_or_quantity_error', label: 'Price or quantity error' },
+    { value: 'other', label: 'Other' },
+];
+
+function VoidDialog({
+    detail,
+    onClose,
+    onVoided,
+}: {
+    detail: Detail;
+    onClose: () => void;
+    onVoided: (detail: Detail) => void;
+}) {
+    const [reasonCode, setReasonCode] = useState('');
+    const [reasonText, setReasonText] = useState('');
+    const [authorizerEmail, setAuthorizerEmail] = useState('');
+    const [authorizerPassword, setAuthorizerPassword] = useState('');
+    const [processing, setProcessing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [idempotencyKey] = useState(createClientUuid);
+
+    async function submit() {
+        if (!navigator.onLine) {
+            setError('Void authorization requires an internet connection.');
+
+            return;
+        }
+
+        if (!reasonCode) {
+            setError('Select a Void reason.');
+
+            return;
+        }
+
+        if (reasonCode === 'other' && !reasonText.trim()) {
+            setError('Describe the Void reason.');
+
+            return;
+        }
+
+        setProcessing(true);
+        setError(null);
+
+        try {
+            const response = await http.getClient().request({
+                ...voidMethod(detail.id),
+                data: {
+                    reason_code: reasonCode,
+                    reason_text: reasonText.trim() || null,
+                    authorizer_email: authorizerEmail.trim(),
+                    authorizer_password: authorizerPassword,
+                    idempotency_key: idempotencyKey,
+                    expected_version: detail.version,
+                },
+                headers: { Accept: 'application/json' },
+            });
+            const updated = (
+                JSON.parse(response.data) as { transaction: Detail }
+            ).transaction;
+
+            toast.success(`Transaction #${detail.order_number} was voided.`);
+            onVoided(updated);
+        } catch (requestError) {
+            const response = requestError as {
+                response?: { data?: string; status?: number };
+            };
+
+            if (response.response?.status === 409) {
+                setError('Transaction changed. Review the latest details before voiding.');
+
+                return;
+            }
+
+            try {
+                const payload = JSON.parse(response.response?.data ?? '{}') as {
+                    message?: string;
+                    errors?: Record<string, string[]>;
+                };
+                setError(
+                    payload.errors?.authorization?.[0] ??
+                        payload.message ??
+                        'Void could not be authorized.',
+                );
+            } catch {
+                setError('Void could not be authorized.');
+            }
+        } finally {
+            setProcessing(false);
+        }
+    }
+
+    return (
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="pos-surface max-w-md p-5">
+                <span className="inline-flex size-11 items-center justify-center rounded-xl bg-red-50 text-red-700">
+                    <ShieldBan className="size-5" />
+                </span>
+                <DialogTitle>Void transaction #{detail.order_number}</DialogTitle>
+                <DialogDescription className="text-[12.5px] leading-5">
+                    This permanently marks the transaction as voided. The
+                    original order and payment history are retained for audit;
+                    stock is restored when applicable.
+                </DialogDescription>
+                <MetadataRows
+                    rows={[
+                        ['Customer / table', truthfulCustomer(detail) ?? 'Walk-in'],
+                        ['Order type', detail.order_type === 'dine_in' ? 'Dine in' : 'Take out'],
+                        ['Total', pesos(detail.total)],
+                        ['Reference', detail.reference_number],
+                    ]}
+                />
+                {error && (
+                    <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">
+                        {error}
+                    </p>
+                )}
+                <fieldset className="space-y-2">
+                    <legend className="text-[10px] font-semibold tracking-[.09em] text-neutral-500 uppercase">
+                        Void reason
+                    </legend>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {VOID_REASONS.map((reason) => (
+                            <button
+                                key={reason.value}
+                                type="button"
+                                onClick={() => setReasonCode(reason.value)}
+                                className={`min-h-11 rounded-xl border px-3 text-left text-[12px] font-semibold ${reasonCode === reason.value ? 'border-red-700 bg-red-50 text-red-800' : 'border-neutral-200'}`}
+                            >
+                                {reason.label}
+                            </button>
+                        ))}
+                    </div>
+                </fieldset>
+                {reasonCode === 'other' && (
+                    <label className="block space-y-1.5">
+                        <span className="text-[10px] font-semibold tracking-[.09em] text-neutral-500 uppercase">
+                            Reason details
+                        </span>
+                        <textarea
+                            value={reasonText}
+                            onChange={(event) => setReasonText(event.target.value)}
+                            maxLength={1000}
+                            rows={3}
+                            className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                        />
+                    </label>
+                )}
+                <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-[12px] font-semibold text-amber-900">
+                        A different active Owner or Super Admin must authorize this Void.
+                    </p>
+                    <label className="block space-y-1">
+                        <span className="text-[10px] font-semibold tracking-[.09em] text-amber-800 uppercase">
+                            Authorizer email
+                        </span>
+                        <input
+                            type="email"
+                            autoComplete="username"
+                            value={authorizerEmail}
+                            onChange={(event) => setAuthorizerEmail(event.target.value)}
+                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-sm"
+                        />
+                    </label>
+                    <label className="block space-y-1">
+                        <span className="text-[10px] font-semibold tracking-[.09em] text-amber-800 uppercase">
+                            Authorizer password
+                        </span>
+                        <input
+                            type="password"
+                            autoComplete="current-password"
+                            value={authorizerPassword}
+                            onChange={(event) => setAuthorizerPassword(event.target.value)}
+                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-sm"
+                        />
+                    </label>
+                </section>
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        disabled={processing}
+                        onClick={onClose}
+                        className="h-12 rounded-xl border border-neutral-300 text-sm font-semibold disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        disabled={processing}
+                        onClick={() => void submit()}
+                        className="h-12 rounded-xl bg-red-700 text-sm font-semibold text-white hover:bg-red-800 disabled:bg-red-300"
+                    >
+                        {processing ? 'Authorizing…' : 'Confirm Void'}
+                    </button>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 

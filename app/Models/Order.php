@@ -145,4 +145,10 @@ class Order extends Model
     {
         return $this->hasOne(KitchenTicket::class);
     }
+
+    /** @return HasOne<OrderVoid, $this> */
+    public function voidRecord(): HasOne
+    {
+        return $this->hasOne(OrderVoid::class);
+    }
 }

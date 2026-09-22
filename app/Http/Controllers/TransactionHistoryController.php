@@ -42,7 +42,7 @@ class TransactionHistoryController extends Controller
         $branch = $context->current($user);
         abort_if($branch === null, 403);
         $access->authorize($user, $branch);
-        $order = Order::query()->where('branch_id', $branch->id)->whereNotNull('committed_at')->with('items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments.createdBy', 'branchTable')->findOrFail($order->id);
+        $order = Order::query()->where('branch_id', $branch->id)->whereNotNull('committed_at')->with('items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments.createdBy', 'branchTable', 'voidRecord.initiatedBy', 'voidRecord.authorizedBy')->findOrFail($order->id);
         $canMutate = $order->commercial_status->value === 'active'
             && $branch->storeSessions()->where('status', StoreSessionStatus::Open)->whereKey($order->store_session_id)->exists();
 

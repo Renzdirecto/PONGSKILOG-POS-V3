@@ -22,6 +22,8 @@ class PosReceipt
             'id' => $order->id, 'order_number' => $order->order_number, 'reference_number' => $order->reference_number,
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->branchTable?->name, 'subtotal' => $order->subtotal, 'total' => $order->total,
+            'commercial_status' => $order->commercial_status->value,
+            'voided_at' => $order->voided_at?->toIso8601String(),
             'payment_status' => $order->payment_status->value,
             'amount_paid' => ExactMoney::decimal($money['payments']),
             'adjustment_total' => ExactMoney::decimal($money['adjustments']),

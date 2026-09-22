@@ -84,6 +84,7 @@ export default function WorkspaceLayout({
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
+        page.component.startsWith('super-admin/') ||
         page.component === 'branches/index' ||
         (page.component === 'workspaces/show' &&
             (page.props.workspace === 'Owner' ||

@@ -387,32 +387,34 @@ function TicketCard({
             className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
             <header
-                className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
+                className={`flex items-start gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
             >
-                <p className="min-w-0 text-sm font-black tracking-tight wrap-anywhere">
-                    <span className="whitespace-nowrap">#{ticket.number}</span>{' '}
-                    {disabled && (
-                        <span className="text-[9px] font-normal text-neutral-500">
-                            Saving...{' '}
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs leading-4 font-black tracking-tight wrap-anywhere">
+                        <span className="whitespace-nowrap">#{ticket.number}</span>{' '}
+                        {disabled && (
+                            <span className="text-[9px] font-normal text-neutral-500">
+                                Saving...{' '}
+                            </span>
+                        )}
+                        <span className="text-red-700">
+                            {ticket.customer || 'Walk-in'}
                         </span>
-                    )}
-                    <span className="text-red-700">
-                        {ticket.customer || 'Walk-in'}
-                    </span>
-                </p>
+                    </p>
+                    <p className="text-[9px] leading-3 font-bold tabular-nums">
+                        <span className="text-neutral-500">
+                            {placedTimeLabel(ticket.placed_at)} ·{' '}
+                        </span>
+                        <span className="text-red-700">
+                            {relativePlacedTime(ticket.placed_at, now)}
+                        </span>
+                    </p>
+                </div>
                 <span
                     className={`shrink-0 rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
                 >
                     {orderTypeLabel(ticket.order_type)}
                 </span>
-                <p className="col-span-2 text-[9px] font-bold tabular-nums">
-                    <span className="text-neutral-500">
-                        {placedTimeLabel(ticket.placed_at)} ·{' '}
-                    </span>
-                    <span className="text-red-700">
-                        {relativePlacedTime(ticket.placed_at, now)}
-                    </span>
-                </p>
             </header>
             <div className={`space-y-3 ${compact ? 'p-2.5' : 'p-3'}`}>
                 {ticket.items.map((item) => (

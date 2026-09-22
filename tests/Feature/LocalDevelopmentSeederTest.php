@@ -227,7 +227,7 @@ test('development accounts have the intended roles and active branch assignments
     foreach ([
         'superadmin@gmail.com' => ['super_admin', []],
         'owner@gmail.com' => ['owner', []],
-        'cashier@gmail.com' => ['cashier', ['MAIN']],
+        'cashier@gmail.com' => ['cashier_kitchen', ['MAIN']],
         'kitchen@gmail.com' => ['kitchen_staff', ['MAIN']],
         'branch@gmail.com' => ['cashier', ['MAIN', 'QAVE']],
     ] as $email => [$role, $branches]) {

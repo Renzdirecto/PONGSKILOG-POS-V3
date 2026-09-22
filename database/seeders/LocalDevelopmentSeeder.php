@@ -44,7 +44,7 @@ class LocalDevelopmentSeeder extends Seeder
             $accounts = [
                 ['Super Admin Tester', 'superadmin@gmail.com', 'super_admin', []],
                 ['Owner Tester', 'owner@gmail.com', 'owner', []],
-                ['Cashier Tester', 'cashier@gmail.com', 'cashier', [$main->id]],
+                ['Cashier Tester', 'cashier@gmail.com', 'cashier_kitchen', [$main->id]],
                 ['Kitchen Tester', 'kitchen@gmail.com', 'kitchen_staff', [$main->id]],
                 ['Multi Branch Cashier', 'branch@gmail.com', 'cashier', [$main->id, $quezon->id]],
             ];

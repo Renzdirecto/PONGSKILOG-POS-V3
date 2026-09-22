@@ -33,6 +33,7 @@ void createInertiaApp({
             case name.startsWith('branches/'):
             case name.startsWith('catalog/'):
             case name.startsWith('inventory/'):
+            case name.startsWith('super-admin/'):
             case name.startsWith('workspaces/'):
                 return WorkspaceLayout;
             default:

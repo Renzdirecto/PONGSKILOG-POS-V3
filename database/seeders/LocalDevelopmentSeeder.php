@@ -63,6 +63,7 @@ class LocalDevelopmentSeeder extends Seeder
             }
 
             $this->call(LocalMenuCatalogSeeder::class);
+            $this->call(LocalModifierGroupSeeder::class);
         });
     }
 }

@@ -5,11 +5,14 @@ use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Category;
 use App\Models\InventoryMovement;
+use App\Models\ModifierGroup;
+use App\Models\ModifierOption;
 use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\LocalDevelopmentSeeder;
 use Database\Seeders\LocalMenuCatalogSeeder;
+use Database\Seeders\LocalModifierGroupSeeder;
 use Illuminate\Support\Facades\Hash;
 
 test('development accounts can log in and reach their assigned workspace', function (string $email, string $destination, int $branchCount) {
@@ -53,10 +56,56 @@ test('development seeding can be repeated without duplicating records or resetti
     $this->assertDatabaseCount('products', 52);
     $this->assertDatabaseCount('branch_products', 104);
     $this->assertDatabaseCount('branch_inventory', 104);
+    $this->assertDatabaseCount('modifier_groups', 5);
+    $this->assertDatabaseCount('modifier_options', 9);
+    $this->assertDatabaseCount('product_modifier_groups', 13);
     expect(InventoryMovement::query()->count())->toBe($movementCount);
     $this->assertDatabaseCount('orders', 0);
     $this->assertDatabaseCount('user_roles', 5);
     $this->assertDatabaseCount('user_branch_assignments', 4);
+});
+
+test('development seeding restores the proven local modifier groups and assignments without duplicates', function () {
+    $this->seed(LocalDevelopmentSeeder::class);
+
+    $expectedGroups = [
+        'Egg options' => [null, 'single', 1, 1, ['Sunny side up' => '0.00', 'Scrambled' => '0.00']],
+        'Rice' => [null, 'single', 1, 1, ['Regular' => '0.00', 'Extra rice' => '25.00']],
+        'Size' => ['size', 'single', 1, 1, ['Medium' => '15.00', 'Large' => '30.00']],
+        'Sugar level' => [null, 'single', 1, 1, ['50%' => '0.00', '25%' => '0.00']],
+        'Add-ons' => [null, 'multiple', 0, 1, ['Pearls' => '15.00']],
+    ];
+
+    foreach ($expectedGroups as $name => [$semanticRole, $selectionType, $minimum, $maximum, $options]) {
+        $group = ModifierGroup::query()->where('name', $name)->sole();
+
+        expect($group->semantic_role?->value)->toBe($semanticRole)
+            ->and($group->selection_type->value)->toBe($selectionType)
+            ->and($group->min_select)->toBe($minimum)
+            ->and($group->max_select)->toBe($maximum)
+            ->and($group->options()->orderBy('sort_order')->pluck('price_delta', 'name')->all())->toBe($options);
+    }
+
+    foreach (['Tapsilog', 'Hotsilog', 'Chicksilog', 'Bangsilog', 'Longsilog'] as $productName) {
+        expect(Product::query()->where('name', $productName)->sole()
+            ->modifierGroups()->orderBy('name')->pluck('name')->all())
+            ->toBe(['Egg options', 'Rice']);
+    }
+    expect(Product::query()->where('name', 'Lemon Yakult')->sole()
+        ->modifierGroups()->orderBy('name')->pluck('name')->all())
+        ->toBe(['Add-ons', 'Size', 'Sugar level']);
+    $this->assertDatabaseCount('modifier_groups', 5);
+    $this->assertDatabaseCount('modifier_options', 9);
+    $this->assertDatabaseCount('product_modifier_groups', 13);
+
+    $pearls = ModifierOption::query()->where('name', 'Pearls')->sole();
+    $pearls->update(['price_delta' => '19.00']);
+    $this->seed(LocalDevelopmentSeeder::class);
+
+    expect($pearls->refresh()->price_delta)->toBe('19.00');
+    $this->assertDatabaseCount('modifier_groups', 5);
+    $this->assertDatabaseCount('modifier_options', 9);
+    $this->assertDatabaseCount('product_modifier_groups', 13);
 });
 
 test('development seeding creates locally priced tracked menu inventory without attaching images', function () {
@@ -159,6 +208,17 @@ test('local menu seeding refuses production before changing catalog data', funct
     $this->assertDatabaseCount('branch_products', 0);
     $this->assertDatabaseCount('branch_inventory', 0);
     $this->assertDatabaseCount('inventory_movements', 0);
+});
+
+test('local modifier fixture seeding refuses production before creating groups', function () {
+    app()->instance('env', 'production');
+
+    expect(fn () => app(LocalModifierGroupSeeder::class)->run())
+        ->toThrow(RuntimeException::class, 'Local modifier fixtures may only be seeded locally or in tests.');
+
+    $this->assertDatabaseCount('modifier_groups', 0);
+    $this->assertDatabaseCount('modifier_options', 0);
+    $this->assertDatabaseCount('product_modifier_groups', 0);
 });
 
 test('development accounts have the intended roles and active branch assignments with stores closed', function () {

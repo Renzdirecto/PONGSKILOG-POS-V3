@@ -43,6 +43,7 @@ export type QrReceipt = QrOrder & {
         contact: string | null;
         footer?: string | null;
         show_logo?: boolean;
+        logo_url?: string;
     };
     payments: {
         method: string;

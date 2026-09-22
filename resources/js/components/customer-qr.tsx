@@ -50,7 +50,7 @@ import type { QrLine, QrOrder, QrProduct } from '@/types/qr';
 
 type Props = {
     branch: BranchSummary;
-    store: { status: 'open' | 'closed' };
+    store: { status: 'open' | 'closed'; is_open: boolean };
     catalog: {
         categories: { id: string; name: string; icon_key?: CategoryIconKey }[];
         products: QrProduct[];
@@ -92,14 +92,16 @@ const steps = [
 ];
 export function QrSocials({
     branch,
+    iconOnly = false,
 }: {
+    iconOnly?: boolean;
     branch: BranchSummary & {
         facebook_url?: string | null;
         website_url?: string | null;
     };
 }) {
     return (
-        <div className="flex gap-1.5">
+        <div className="flex shrink-0 gap-1.5">
             <button
                 className={qrButton}
                 aria-label="Facebook"
@@ -115,7 +117,7 @@ export function QrSocials({
                     )
                 }
             >
-                <Facebook size={17} /> Facebook
+                <Facebook size={17} /> {!iconOnly && 'Facebook'}
             </button>
             <button
                 className={qrButton}
@@ -133,7 +135,7 @@ export function QrSocials({
                     )
                 }
             >
-                <Globe size={17} /> Website
+                <Globe size={17} /> {!iconOnly && 'Website'}
             </button>
             <button
                 className={qrButton}
@@ -146,7 +148,7 @@ export function QrSocials({
                     )
                 }
             >
-                <MapPin size={17} /> Maps
+                <MapPin size={17} /> {!iconOnly && 'Maps'}
             </button>
         </div>
     );
@@ -365,31 +367,73 @@ export default function CustomerQr({
         <div className="pos-surface min-h-dvh bg-[#fafafa] [font-family:Poppins,sans-serif] text-[#111]">
             <Head title={`${branch.name} · Order`} />
             {view !== 'welcome' && (
-                <header className="border-b border-neutral-200 bg-white">
-                    <div className="mx-auto flex max-w-[1120px] items-center gap-2 px-3 py-1.5">
-                        <button
-                            onClick={() => go('menu')}
-                            aria-label="PONGSKILOG menu"
-                        >
-                            <img
-                                src="/images/branding/logo.png"
-                                alt="Pongskilog"
-                                className="h-7 w-auto"
-                            />
-                        </button>
-                        <div className="min-w-0 flex-1">
-                            <p className="truncate text-[11.5px] font-semibold">
-                                {branch.name}
-                            </p>
-                            <p className="text-[10.5px] text-neutral-500">
-                                {store.status === 'open'
-                                    ? 'Open now · Order mula sa phone mo'
-                                    : 'Store is currently closed'}
-                            </p>
+                <div
+                    className={
+                        view === 'menu'
+                            ? 'sticky top-0 z-20 bg-[#fafafa]'
+                            : undefined
+                    }
+                >
+                    <header className="border-b border-neutral-200 bg-white">
+                        <div className="mx-auto flex max-w-[1120px] items-center gap-2 px-3 py-1.5">
+                            <button
+                                onClick={() => go('menu')}
+                                aria-label="PONGSKILOG menu"
+                            >
+                                <img
+                                    src="/images/branding/logo.png"
+                                    alt="Pongskilog"
+                                    className="h-7 w-auto"
+                                />
+                            </button>
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11.5px] font-semibold">
+                                    {branch.name}
+                                </p>
+                                <p className="text-[10.5px] text-neutral-500">
+                                    {store.status === 'open'
+                                        ? 'Open now · Order mula sa phone mo'
+                                        : store.is_open
+                                          ? 'Store open · QR ordering unavailable'
+                                          : 'Store is currently closed'}
+                                </p>
+                            </div>
+                            <QrSocials branch={branch} iconOnly />
                         </div>
-                        <QrSocials branch={branch} />
-                    </div>
-                </header>
+                    </header>
+                    {view === 'menu' && !closed && (
+                        <div className="mx-auto flex max-w-[1120px] flex-col gap-3 px-3 pt-3 pb-2 min-[900px]:px-6 min-[900px]:pt-5">
+                            <input
+                                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-base"
+                                type="search"
+                                placeholder="Search menu"
+                                aria-label="Search menu"
+                                value={query}
+                                onChange={(event) =>
+                                    setQuery(event.target.value)
+                                }
+                            />
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                                {[
+                                    { id: 'all', name: 'All menu' },
+                                    ...catalog.categories,
+                                ].map((cat) => (
+                                    <button
+                                        key={cat.id}
+                                        className={`${qrButton} shrink-0 rounded-full ${category === cat.id ? 'border-neutral-950 bg-neutral-950 text-white' : ''}`}
+                                        onClick={() => setCategory(cat.id)}
+                                    >
+                                        <CategoryIcon
+                                            iconKey={cat.icon_key ?? 'utensils'}
+                                            className="size-4"
+                                        />
+                                        {cat.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             )}
             {(!online || connection !== 'connected') && (
                 <div
@@ -429,11 +473,15 @@ export default function CustomerQr({
                         className="h-12"
                     />
                     <h1 className="text-xl font-bold">
-                        STORE IS CURRENTLY CLOSED
+                        {store.is_open
+                            ? 'QR ORDERING IS UNAVAILABLE TODAY'
+                            : 'STORE IS CURRENTLY CLOSED'}
                     </h1>
                     <p className="text-sm text-neutral-500">
-                        {branch.name} · Ordering is paused. Please check again
-                        when the store opens.
+                        {branch.name} ·{' '}
+                        {store.is_open
+                            ? 'The store is open. Please order directly at the cashier.'
+                            : 'Ordering is paused. Please check again when the store opens.'}
                     </p>
                     <button
                         className={qrPrimary}
@@ -571,34 +619,6 @@ export default function CustomerQr({
                     )}
                     {view === 'menu' && (
                         <main className="mx-auto flex max-w-[1120px] flex-col gap-3 px-3 pt-3 pb-28 min-[900px]:px-6 min-[900px]:pt-5">
-                            <input
-                                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-base"
-                                type="search"
-                                placeholder="Search menu"
-                                aria-label="Search menu"
-                                value={query}
-                                onChange={(event) =>
-                                    setQuery(event.target.value)
-                                }
-                            />
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                                {[
-                                    { id: 'all', name: 'All menu' },
-                                    ...catalog.categories,
-                                ].map((cat) => (
-                                    <button
-                                        key={cat.id}
-                                        className={`${qrButton} shrink-0 rounded-full ${category === cat.id ? 'border-neutral-950 bg-neutral-950 text-white' : ''}`}
-                                        onClick={() => setCategory(cat.id)}
-                                    >
-                                        <CategoryIcon
-                                            iconKey={cat.icon_key ?? 'utensils'}
-                                            className="size-4"
-                                        />
-                                        {cat.name}
-                                    </button>
-                                ))}
-                            </div>
                             {order && (
                                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
                                     <strong>
@@ -1141,7 +1161,6 @@ export default function CustomerQr({
                                 className={qrPrimary}
                                 onClick={() => go('track')}
                             >
-                                <Clock3 size={18} />
                                 <Clock3 size={16} /> Track order
                             </button>
                             <button

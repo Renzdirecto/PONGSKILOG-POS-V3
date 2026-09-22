@@ -44,6 +44,24 @@ export function createRealtimeRefresh(
     };
 }
 
+/** Submitted QR orders can safely reload assets; unsent carts must stay intact. */
+export function createQrVersionRecovery(
+    trackingId: string | undefined,
+    reload: () => void,
+) {
+    let reloading = false;
+    return (event: {
+        detail: { versionChange: boolean };
+        preventDefault: () => void;
+    }) => {
+        if (!trackingId || !event.detail.versionChange) return;
+        event.preventDefault();
+        if (reloading) return;
+        reloading = true;
+        reload();
+    };
+}
+
 export function createBranchEventGuard(branchId: string) {
     const seen = new Set<string>();
     return (event: Record<string, unknown>) => {

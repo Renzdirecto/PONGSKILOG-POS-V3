@@ -27,9 +27,12 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\CustomerQrAccess;
 use App\Support\OrderNumber;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 
@@ -160,6 +163,7 @@ test('submission rejects malformed expired missing and foreign session credentia
 test('tracking and receipt are session owned and receipt expires exactly 24 hours after payment', function () {
     $this->travelTo(now()->startOfSecond());
     [$branch, $session, $token, $product, $user] = qrFixture();
+    $branch->update(['receipt_name' => 'Custom receipt branch', 'receipt_address' => 'Receipt address', 'receipt_contact' => '09170000000', 'receipt_footer' => 'Thank you!', 'receipt_show_logo' => false]);
     $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
     $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token);
     $url = route('qr.orders.receipt', [$branch, $order->public_tracking_id]);
@@ -171,8 +175,10 @@ test('tracking and receipt are session owned and receipt expires exactly 24 hour
     $this->postJson(route('qr.broadcasting.auth', $branch), ['channel_name' => 'private-order-tracking.'.$foreign->public_tracking_id, 'socket_id' => '1.2'])->assertNotFound();
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
     $this->postJson(route('pos.qr-orders.load', $order))->assertOk();
-    $this->postJson(route('pos.payments.store'), ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00', 'idempotency_key' => (string) Str::uuid()])->assertOk();
+    $this->postJson(route('pos.payments.store'), ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00', 'idempotency_key' => (string) Str::uuid()])->assertOk()
+        ->assertJsonPath('receipt.branch.name', 'Custom receipt branch')->assertJsonPath('receipt.branch.footer', 'Thank you!')->assertJsonPath('receipt.branch.show_logo', false);
     $this->getJson($url)->assertOk()->assertJsonPath('receipt.total', '190.00')->assertJsonMissingPath('receipt.id')->assertJsonMissingPath('receipt.cashier')->assertJsonMissingPath('receipt.payments.0.idempotency_key');
+    $this->getJson($url)->assertOk()->assertJsonPath('receipt.branch.name', 'Custom receipt branch')->assertJsonPath('receipt.branch.address', 'Receipt address')->assertJsonPath('receipt.branch.contact', '09170000000')->assertJsonPath('receipt.branch.footer', 'Thank you!')->assertJsonPath('receipt.branch.show_logo', false);
     $this->travel(24)->hours();
     $this->getJson($url)->assertGone();
     $this->assertModelExists($order);
@@ -592,3 +598,61 @@ test('failed QR commercial commitment rolls back both identity counters and all 
     $this->assertDatabaseCount('order_reference_counters', 0);
     qrNoEffects();
 })->with(['now', 'later']);
+
+test('owner receipt logo upload replacement and removal update persisted branding', function () {
+    Storage::fake('s3');
+    [$branch, , , , $owner] = qrFixture('owner');
+    $url = route('branches.qr-settings.update', $branch);
+    $this->actingAs($owner)->post($url, ['_method' => 'PUT', 'receipt_logo' => UploadedFile::fake()->image('logo.png'), 'receipt_show_logo' => '1'], ['Accept' => 'application/json'])->assertOk();
+    $first = $branch->fresh()->receipt_logo_path;
+    Storage::disk('s3')->assertExists($first);
+    $this->get(route('branches.receipt-logo', $branch))->assertOk()->assertHeader('Content-Type', 'image/png');
+    $this->get(route('branches.index'))->assertInertia(fn (AssertableInertia $page) => $page->where('branches.0.receipt_logo_url', route('branches.receipt-logo', $branch, false).'?v='.md5($first)));
+    $this->post($url, ['_method' => 'PUT', 'receipt_logo' => UploadedFile::fake()->image('replacement.png')], ['Accept' => 'application/json'])->assertOk();
+    $second = $branch->fresh()->receipt_logo_path;
+    expect($second)->not->toBe($first);
+    Storage::disk('s3')->assertMissing($first);
+    $this->putJson($url, ['remove_receipt_logo' => true, 'receipt_show_logo' => false])->assertOk();
+    expect($branch->fresh()->receipt_logo_path)->toBeNull()->and($branch->fresh()->receipt_show_logo)->toBeFalse();
+    Storage::disk('s3')->assertMissing($second);
+    $this->get(route('branches.receipt-logo', $branch))->assertNotFound();
+});
+
+test('receipt logo rejects nonimages oversized images and unauthorized uploads', function () {
+    Storage::fake('s3');
+    [$branch, , , , $cashier] = qrFixture();
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::where('name', 'owner')->sole());
+    $url = route('branches.qr-settings.update', $branch);
+    $this->actingAs($cashier)->putJson($url, ['receipt_logo' => UploadedFile::fake()->image('logo.png')])->assertForbidden();
+    $this->actingAs($owner)->putJson($url, ['receipt_logo' => UploadedFile::fake()->create('script.svg', 1, 'image/svg+xml')])->assertUnprocessable();
+    $this->putJson($url, ['receipt_logo' => UploadedFile::fake()->image('large.png')->size(2049)])->assertUnprocessable();
+    expect($branch->fresh()->receipt_logo_path)->toBeNull();
+    Storage::disk('s3')->assertDirectoryEmpty('receipt-logos');
+});
+
+test('QR activity counts only selected branch date orders and distinguishes loaded retrievals', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-22 12:00:00', 'Asia/Manila'));
+    [$branch, $session, , $product, $owner] = qrFixture('owner');
+    app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    [$other, $otherSession, , $otherProduct] = qrFixture();
+    app(SubmitCustomerQrOrder::class)->execute($other, $otherSession, qrPayload($otherProduct));
+    $url = route('branches.qr-history', $branch);
+    $this->actingAs($owner)->getJson($url)->assertOk()->assertJsonPath('orders_placed', 1)->assertJsonPath('waiting_retrieval', 1);
+    $branch->orders()->update(['loaded_by_user_id' => $owner->id]);
+    $this->getJson($url)->assertOk()->assertJsonPath('orders_placed', 1)->assertJsonPath('waiting_retrieval', 0);
+    $this->getJson(route('branches.qr-history', [$branch, 'date' => '2026-09-21']))->assertOk()->assertJsonPath('orders_placed', 0)->assertJsonPath('waiting_retrieval', 0);
+});
+
+test('disabled QR ordering distinguishes an open store from a closed store', function (bool $open) {
+    [$branch, , , , , $store] = qrFixture();
+    $branch->update(['qr_ordering_enabled' => false]);
+    if (! $open) {
+        $store->update(['status' => 'closed']);
+    }
+
+    $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('store.status', 'closed')
+            ->where('store.is_open', $open));
+})->with([true, false]);

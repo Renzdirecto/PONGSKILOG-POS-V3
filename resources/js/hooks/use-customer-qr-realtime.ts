@@ -4,10 +4,23 @@ import Pusher from 'pusher-js';
 import { useEffect, useState } from 'react';
 import { auth } from '@/routes/qr/broadcasting';
 import { qrRequest } from '@/lib/qr-http';
-import { createRealtimeRefresh } from '@/lib/realtime-refresh';
+import {
+    createQrVersionRecovery,
+    createRealtimeRefresh,
+} from '@/lib/realtime-refresh';
 
 export function useCustomerQrRealtime(branchId: string, trackingId?: string) {
     const [status, setStatus] = useState('connecting');
+    useEffect(
+        () =>
+            router.on(
+                'location',
+                createQrVersionRecovery(trackingId, () =>
+                    window.location.reload(),
+                ),
+            ),
+        [trackingId],
+    );
     useEffect(() => {
         const refresh = createRealtimeRefresh(
             (finish) =>

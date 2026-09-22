@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property BranchStatus $status
  */
-#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo'])]
+#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])]
 class Branch extends Model
 {
     protected $attributes = ['qr_ordering_enabled' => true, 'receipt_show_logo' => true];

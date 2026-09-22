@@ -10,10 +10,12 @@ import {
     ArrowLeft,
     Plus,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { qrButton, qrPanel, qrPrimary } from './customer-qr-product';
 import { pesos } from '@/lib/pos-money';
-import { canStartQrOrder, qrStatus, receiptText } from '@/lib/qr-order';
+import { canStartQrOrder, qrStatus } from '@/lib/qr-order';
+import { receiptPng } from '@/lib/receipt-png';
 import { qrError, qrRequest } from '@/lib/qr-http';
 import { receipt as receiptRoute } from '@/routes/qr/orders';
 import type { QrOrder, QrReceipt } from '@/types/qr';
@@ -91,6 +93,7 @@ export function CustomerQrTracking({
     const [receipt, setReceipt] = useState<QrReceipt | null>(null);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
+    const receiptCard = useRef<HTMLDivElement>(null);
     const [expired, setExpired] = useState(false);
     const tracking = order?.public_tracking_id;
     useEffect(() => {
@@ -128,23 +131,33 @@ export function CustomerQrTracking({
     const save = async () => {
         if (!tracking || saving) return;
         setSaving(true);
+        let exporting = false;
         try {
             const { receipt: fresh } = await qrRequest<{ receipt: QrReceipt }>(
                 receiptRoute({ branch: branch.id, tracking }),
             );
+            flushSync(() => setReceipt(fresh));
+            exporting = true;
+            if (!receiptCard.current)
+                throw new Error('Receipt is unavailable.');
             const url = URL.createObjectURL(
-                new Blob([receiptText(fresh)], {
-                    type: 'text/plain;charset=utf-8',
-                }),
+                await receiptPng(receiptCard.current),
             );
             const link = document.createElement('a');
             link.href = url;
-            link.download = `Pongskilog-${fresh.order_number}.txt`;
+            link.download = `Pongskilog-${fresh.reference_number}.png`;
+            document.body.appendChild(link);
             link.click();
-            URL.revokeObjectURL(url);
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            setError('');
         } catch (reason) {
-            setError(qrError(reason).message);
-            setReceipt(null);
+            setError(
+                exporting
+                    ? 'Unable to save the PNG. Please try again.'
+                    : qrError(reason).message,
+            );
+            if (!exporting) setReceipt(null);
         } finally {
             setSaving(false);
         }
@@ -213,11 +226,17 @@ export function CustomerQrTracking({
                         </div>
                     ) : receipt ? (
                         <>
-                            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                            <div
+                                ref={receiptCard}
+                                className="rounded-2xl border border-neutral-200 bg-white p-5"
+                            >
                                 <div className="text-center">
                                     {receipt.branch.show_logo !== false && (
                                         <img
-                                            src="/images/branding/logo.png"
+                                            src={
+                                                receipt.branch.logo_url ??
+                                                '/images/branding/logo.png'
+                                            }
                                             alt="Pongskilog"
                                             className="mx-auto mb-3 h-10"
                                         />
@@ -228,6 +247,11 @@ export function CustomerQrTracking({
                                     <p className="mt-1 text-[11px] text-neutral-500">
                                         {receipt.branch.address}
                                     </p>
+                                    {receipt.branch.contact && (
+                                        <p className="mt-1 text-[11px] text-neutral-500">
+                                            {receipt.branch.contact}
+                                        </p>
+                                    )}
                                     <p className="mt-4 text-3xl font-bold">
                                         #{receipt.order_number}
                                     </p>
@@ -316,7 +340,7 @@ export function CustomerQrTracking({
                                 onClick={save}
                             >
                                 <Download size={16} />
-                                {saving ? 'Saving…' : 'Save receipt'}
+                                {saving ? 'Saving…' : 'Save receipt as PNG'}
                             </button>
                         </>
                     ) : (
@@ -376,6 +400,19 @@ export function CustomerQrTracking({
                                 <span className="text-xs font-semibold">
                                     Order submitted
                                 </span>
+                                {order.submitted_at && (
+                                    <time
+                                        dateTime={order.submitted_at}
+                                        className="ml-auto shrink-0 text-[11px] tabular-nums"
+                                    >
+                                        {new Date(
+                                            order.submitted_at,
+                                        ).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                        })}
+                                    </time>
+                                )}
                             </div>
                             <div className="flex items-center gap-3">
                                 <Clock3
@@ -386,6 +423,20 @@ export function CustomerQrTracking({
                                         ? 'Payment confirmed'
                                         : 'Payment pending'}
                                 </span>
+                                {order.payment_status === 'paid' &&
+                                    order.paid_at && (
+                                        <time
+                                            dateTime={order.paid_at}
+                                            className="ml-auto shrink-0 text-[11px] tabular-nums"
+                                        >
+                                            {new Date(
+                                                order.paid_at,
+                                            ).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                            })}
+                                        </time>
+                                    )}
                             </div>
                             {[
                                 ['In kitchen', ChefHat],

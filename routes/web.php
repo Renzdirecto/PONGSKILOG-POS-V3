@@ -29,6 +29,7 @@ use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
+Route::get('branches/{branch}/receipt-logo', [BranchQrSettingsController::class, 'logo'])->whereUuid('branch')->name('branches.receipt-logo');
 
 Route::get('kiosk/{branch:kiosk_code}', CustomerQrController::class)->middleware('throttle:60,1')->name('kiosk.show');
 

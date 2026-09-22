@@ -104,6 +104,9 @@ export type PaidReceipt = OrderSummary & {
         code: string;
         address: string | null;
         contact: string | null;
+        footer?: string | null;
+        show_logo?: boolean;
+        logo_url?: string;
     };
     payments: {
         method: 'cash' | 'cashless';

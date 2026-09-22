@@ -289,7 +289,7 @@ export function StaffQrOrders({
                     {queue.data.map((order) => (
                         <article
                             key={order.id}
-                            className={`${qrPanel} flex flex-col gap-3`}
+                            className={`${qrPanel} flex flex-col gap-3 overflow-hidden`}
                         >
                             <div className="flex items-start justify-between gap-2">
                                 <div>
@@ -348,7 +348,7 @@ export function StaffQrOrders({
                                 </span>
                                 <span>{pesos(order.total)}</span>
                             </div>
-                            <div className="-mx-4 -mb-4 flex flex-wrap gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
+                            <div className="-mx-3 -mb-3 flex flex-wrap gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
                                 {!archived && (
                                     <button
                                         className={`${qrPrimary} h-[46px] flex-1`}

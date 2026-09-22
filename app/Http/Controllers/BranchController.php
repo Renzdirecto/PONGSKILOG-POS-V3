@@ -24,7 +24,7 @@ class BranchController extends Controller
         Gate::authorize('viewAny', Branch::class);
 
         $branches = Branch::query()
-            ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo'])
+            ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])
             ->withExists(['storeSessions as store_is_open' => fn (Builder $query) => $query->where('status', StoreSessionStatus::Open)])
             ->orderBy('name')->orderBy('code')->get();
 
@@ -34,7 +34,7 @@ class BranchController extends Controller
                 new RendererStyle(320), new SvgImageBackEnd,
             ));
 
-            return [...$branch->toArray(), 'qr_url' => $url, 'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url))];
+            return [...$branch->toArray(), 'receipt_logo_url' => $branch->receipt_logo_path ? route('branches.receipt-logo', $branch, false).'?v='.md5($branch->receipt_logo_path) : '/images/branding/logo.png', 'qr_url' => $url, 'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url))];
         })]);
     }
 

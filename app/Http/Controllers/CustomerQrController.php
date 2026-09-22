@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BranchStatus;
+use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\CustomerQrSession;
 use App\Support\CustomerQrAccess;
@@ -34,10 +36,11 @@ class CustomerQrController extends Controller
             });
         }
         $order = $session->activeOrder;
+        $storeOpen = $branch->status === BranchStatus::Active && $storeState->status($branch) === StoreSessionStatus::Open;
 
         $response = Inertia::render('qr/show', [
             'branch' => $branch->only(['id', 'name', 'code', 'facebook_url', 'website_url']),
-            'store' => ['status' => $storeState->customerAvailable($branch) ? 'open' : 'closed'],
+            'store' => ['status' => $storeOpen && $branch->qr_ordering_enabled ? 'open' : 'closed', 'is_open' => $storeOpen],
             'catalog' => fn () => $projection->catalog($branch),
             'order' => fn () => $order === null ? null : $projection->order($order),
         ])->toResponse($request);

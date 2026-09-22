@@ -30,7 +30,7 @@ class OrderVoidFactory extends Factory
             'reason_code' => 'wrong_item',
             'reason_label' => 'Wrong item rung up',
             'reason_text' => null,
-            'authorization_method' => 'password_reauth',
+            'authorization_method' => 'super_admin_pin',
             'idempotency_key' => fake()->uuid(),
         ];
     }

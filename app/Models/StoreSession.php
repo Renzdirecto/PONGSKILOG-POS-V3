@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $opening_cash_amount
  * @property string $opening_cashless_amount
+ * @property StoreSessionStatus $status
  */
 #[Fillable([
     'branch_id', 'status', 'opened_by_user_id', 'opened_at',

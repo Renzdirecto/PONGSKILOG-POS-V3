@@ -33,11 +33,28 @@ test('super admin can securely configure the four digit void PIN', function () {
         ->not->toContain('1234');
 });
 
-test('non super admins cannot configure the void PIN', function () {
-    $cashier = User::factory()->create();
-    $cashier->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+test('a replacement PIN becomes authoritative without creating another global row', function () {
+    $this->actingAs($this->superAdmin)->put(route('workspaces.void-orders.pin.update'), [
+        'pin' => '1234',
+        'pin_confirmation' => '1234',
+    ])->assertRedirect();
 
-    $this->actingAs($cashier)
+    $this->put(route('workspaces.void-orders.pin.update'), [
+        'pin' => '5678',
+        'pin_confirmation' => '5678',
+    ])->assertRedirect();
+
+    $setting = VoidAuthorizationSetting::query()->sole();
+    expect(Hash::check('1234', $setting->pin_hash))->toBeFalse()
+        ->and(Hash::check('5678', $setting->pin_hash))->toBeTrue()
+        ->and(AuditLog::query()->where('action', 'void_pin.configured')->count())->toBe(2);
+});
+
+test('non super admins cannot configure the void PIN', function (string $role) {
+    $user = User::factory()->create();
+    $user->roles()->attach(Role::query()->where('name', $role)->sole());
+
+    $this->actingAs($user)
         ->put(route('workspaces.void-orders.pin.update'), [
             'pin' => '1234',
             'pin_confirmation' => '1234',
@@ -45,7 +62,7 @@ test('non super admins cannot configure the void PIN', function () {
         ->assertForbidden();
 
     $this->assertDatabaseCount('void_authorization_settings', 0);
-});
+})->with(['owner', 'cashier', 'cashier_kitchen', 'kitchen_staff']);
 
 test('void PIN requires exactly four matching digits', function () {
     $this->actingAs($this->superAdmin)

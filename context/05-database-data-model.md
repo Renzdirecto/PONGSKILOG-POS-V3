@@ -575,6 +575,19 @@ Must cover:
 
 Audit rows are append-only in normal app behavior.
 
+### `order_voids`
+
+- UUID primary key with restrictive Branch, Store Session, Order, initiator, and authorizer relations
+- One row per Order and one row per idempotency key
+- Stable reason code/label, nullable Other detail, `super_admin_pin` authorization method, and timestamps
+- Original Order, item, Payment, Kitchen, adjustment, and inventory movement history is retained
+
+### `void_authorization_settings`
+
+- One row for unique scope `global`
+- Hashed four-digit PIN only; no plaintext PIN column
+- Restrictive configuring Super Admin relation and required configuration timestamp
+
 ---
 
 ## 17. Settings

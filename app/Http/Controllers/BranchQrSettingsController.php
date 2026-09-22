@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\CommercialStatus;
 use App\Enums\OrderSource;
 use App\Events\CustomerCatalogChanged;
 use App\Models\Branch;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +19,7 @@ use Throwable;
 
 class BranchQrSettingsController extends Controller
 {
-    public function update(Request $request, Branch $branch): JsonResponse
+    public function update(Request $request, Branch $branch, AuditRecorder $audit): JsonResponse
     {
         Gate::authorize('update', $branch);
         $data = $request->validate([
@@ -37,13 +39,26 @@ class BranchQrSettingsController extends Controller
         $remove = $request->boolean('remove_receipt_logo');
         unset($data['receipt_logo'], $data['remove_receipt_logo']);
         try {
-            $previous = DB::transaction(function () use ($branch, $data, $uploaded, $remove): ?string {
+            $previous = DB::transaction(function () use ($request, $branch, $data, $uploaded, $remove, $audit): ?string {
+                $actor = $request->user();
+                abort_unless($actor instanceof User, 401);
                 $locked = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
                 $previous = $locked->receipt_logo_path;
+                $before = $this->auditSnapshot($locked);
                 if ($uploaded || $remove) {
                     $data['receipt_logo_path'] = $uploaded ?: null;
                 }
                 $locked->update($data);
+                $audit->record(
+                    branch: $locked,
+                    actor: $actor,
+                    module: 'settings',
+                    action: 'branch_receipt_qr_settings.updated',
+                    auditableType: Branch::class,
+                    auditableId: $locked->id,
+                    before: $before,
+                    after: $this->auditSnapshot($locked),
+                );
                 CustomerCatalogChanged::dispatch($branch->id);
 
                 return $previous;
@@ -81,5 +96,15 @@ class BranchQrSettingsController extends Controller
             'orders_placed' => (clone $orders)->count(),
             'waiting_retrieval' => (clone $orders)->where('commercial_status', CommercialStatus::Submitted)->whereNull('loaded_by_user_id')->count(),
             'visits' => $query->orderByDesc('visited_at')->paginate(30, ['visited_at'])])->header('Cache-Control', 'no-store');
+    }
+
+    /** @return array<string, mixed> */
+    private function auditSnapshot(Branch $branch): array
+    {
+        return $branch->only([
+            'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name',
+            'receipt_address', 'receipt_contact', 'receipt_footer',
+            'receipt_show_logo', 'receipt_logo_path',
+        ]);
     }
 }

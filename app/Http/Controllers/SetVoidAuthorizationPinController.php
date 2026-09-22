@@ -18,13 +18,17 @@ class SetVoidAuthorizationPinController extends Controller
         abort_unless($user instanceof User, 401);
 
         DB::transaction(function () use ($request, $audit, $user): void {
+            if (DB::getDriverName() === 'pgsql') {
+                DB::select("SELECT pg_advisory_xact_lock(hashtextextended('void_authorization_settings:global', 0))");
+            }
+
             $setting = VoidAuthorizationSetting::query()
                 ->where('scope', 'global')
                 ->lockForUpdate()
                 ->first();
             $before = $setting === null ? null : [
                 'configured_by_user_id' => $setting->configured_by_user_id,
-                'configured_at' => $setting->configured_at?->toIso8601String(),
+                'configured_at' => $setting->configured_at->toIso8601String(),
             ];
 
             $setting ??= new VoidAuthorizationSetting(['scope' => 'global']);
@@ -45,7 +49,7 @@ class SetVoidAuthorizationPinController extends Controller
                 before: $before,
                 after: [
                     'configured_by_user_id' => $setting->configured_by_user_id,
-                    'configured_at' => $setting->configured_at?->toIso8601String(),
+                    'configured_at' => $setting->configured_at->toIso8601String(),
                 ],
                 metadata: ['pin' => '[REDACTED]'],
             );

@@ -6,6 +6,7 @@
         "build": "vp build",
         "build:ssr": "vp build && vp build --ssr",
         "dev": "vp dev",
+        "test:frontend": "node --test --experimental-strip-types tests/*.test.ts",
         "check": "vp check",
         "check:frontend": "vp check --no-fmt resources/js",
         "check:fix": "vp check --fix",

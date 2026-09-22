@@ -577,6 +577,11 @@ test('owner QR settings enforce authorization and persist only validated public 
     $this->actingAs($owner)->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'javascript:alert(1)'])->assertUnprocessable();
     $this->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'https://example.com'])->assertOk();
     expect($branch->fresh()->qr_ordering_enabled)->toBeFalse()->and($branch->fresh()->receipt_footer)->toBe('Thank you');
+    $this->assertDatabaseHas('audit_logs', [
+        'action' => 'branch_receipt_qr_settings.updated',
+        'auditable_id' => $branch->id,
+        'user_id' => $owner->id,
+    ]);
     $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)->postJson(route('qr.orders.store', $branch), qrPayload($product))->assertUnprocessable();
     qrNoEffects();
 });

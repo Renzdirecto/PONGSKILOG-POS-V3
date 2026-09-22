@@ -2,17 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerCatalogChanged;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
+use App\Models\User;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -38,18 +41,56 @@ class BranchController extends Controller
         })]);
     }
 
-    public function store(StoreBranchRequest $request): RedirectResponse
+    public function store(StoreBranchRequest $request, AuditRecorder $audit): RedirectResponse
     {
-        Branch::query()->create($request->validated());
+        DB::transaction(function () use ($request, $audit): void {
+            $actor = $request->user();
+            abort_unless($actor instanceof User, 401);
+            $branch = Branch::query()->create($request->validated());
+            $audit->record(
+                branch: $branch,
+                actor: $actor,
+                module: 'branches',
+                action: 'branch.created',
+                auditableType: Branch::class,
+                auditableId: $branch->id,
+                after: $this->auditSnapshot($branch),
+            );
+        });
 
         return to_route('branches.index');
     }
 
-    public function update(UpdateBranchRequest $request, Branch $branch): RedirectResponse
+    public function update(UpdateBranchRequest $request, Branch $branch, AuditRecorder $audit): RedirectResponse
     {
-        $branch->update($request->validated());
-        CustomerCatalogChanged::dispatch($branch->id);
+        DB::transaction(function () use ($request, $branch, $audit): void {
+            $actor = $request->user();
+            abort_unless($actor instanceof User, 401);
+            $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
+            $before = $this->auditSnapshot($branch);
+            $branch->update($request->validated());
+            $audit->record(
+                branch: $branch,
+                actor: $actor,
+                module: 'branches',
+                action: 'branch.updated',
+                auditableType: Branch::class,
+                auditableId: $branch->id,
+                before: $before,
+                after: $this->auditSnapshot($branch),
+            );
+            CustomerCatalogChanged::dispatch($branch->id);
+        });
 
         return to_route('branches.index');
+    }
+
+    /** @return array<string, mixed> */
+    private function auditSnapshot(Branch $branch): array
+    {
+        return $branch->only([
+            'code', 'name', 'status', 'address', 'contact', 'kiosk_code',
+            'qr_ordering_enabled', 'facebook_url', 'website_url',
+        ]);
     }
 }

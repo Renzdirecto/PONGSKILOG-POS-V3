@@ -54,7 +54,7 @@ class AuditRecorder
         }
 
         foreach ($values as $key => $value) {
-            if (preg_match('/password|secret|token|credential/i', (string) $key) === 1) {
+            if (preg_match('/password|pin|secret|token|credential/i', (string) $key) === 1) {
                 $values[$key] = '[REDACTED]';
             } elseif (is_array($value)) {
                 $values[$key] = $this->redact($value);

@@ -7,7 +7,9 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/** @property Carbon $configured_at */
 #[Fillable(['scope', 'pin_hash', 'configured_by_user_id', 'configured_at'])]
 class VoidAuthorizationSetting extends Model
 {

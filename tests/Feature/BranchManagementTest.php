@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\BranchStatus;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
@@ -42,6 +43,8 @@ test('management roles can list create and update branches', function (string $r
     $this->put(route('branches.update', $branch), branchInput(['name' => 'Updated Branch', 'contact' => '555-0123', 'address' => '123 Main Street']))
         ->assertRedirectToRoute('branches.index')->assertSessionHasNoErrors();
     $this->assertDatabaseHas('branches', ['id' => $branch->id, 'name' => 'Updated Branch', 'contact' => '555-0123', 'address' => '123 Main Street']);
+    expect(AuditLog::query()->where('auditable_id', $branch->id)->pluck('action')->all())
+        ->toBe(['branch.created', 'branch.updated']);
 })->with(['owner', 'super_admin']);
 
 test('normal staff cannot manage branches even with settings permission', function (string $roleName) {

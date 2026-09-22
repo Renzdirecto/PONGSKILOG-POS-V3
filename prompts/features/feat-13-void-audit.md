@@ -13,10 +13,10 @@
 
 ## Approved decisions
 
-- Void authorization uses a separate active Owner or Super Admin's account email and password, verified server-side with Laravel's password hashing.
+- Void authorization uses one global four-digit approval PIN configured by an authenticated active Super Admin and stored only as a password hash.
 - Void has strict two-person control: `initiated_by_user_id` and `authorized_by_user_id` must identify different authenticated users. A dual-role user cannot authorize their own Void.
-- The initiating user must be an active assigned cashier or cashier+kitchen operator with POS access to the active branch; the authorizer must be an active Owner or Super Admin with current business-wide authority.
-- No prototype/shared PIN, plaintext credential storage, password logging, secret audit metadata, or secret realtime payload.
+- The initiating user must be an active assigned cashier or cashier+kitchen operator with POS access to the active branch; the authorizer is the active Super Admin who most recently configured the global PIN. Possession of that PIN intentionally represents delegated approval authority.
+- No hardcoded prototype PIN, plaintext credential storage, credential logging, secret audit metadata, or secret realtime payload.
 - One append-only void record per Order is the authoritative Void event; payment, OrderItem, KitchenTicket, prior inventory movement, and adjustment history are retained.
 - Audit is centralized through one explicit recorder and is mandatory/atomic for current business-critical and security-sensitive mutations.
 
@@ -58,7 +58,8 @@ Excluded:
 
 ## Data and authorization design
 
-- `order_voids`: UUID primary key, branch, Store Session, unique Order, initiator, authorizer, stable reason code and human-readable label, nullable required-for-Other note, `password_reauth` method, timestamps, and useful list/detail indexes.
+- `order_voids`: UUID primary key, branch, Store Session, unique Order, initiator, authorizer, stable reason code and human-readable label, nullable required-for-Other note, `super_admin_pin` method, timestamps, and useful list/detail indexes.
+- `void_authorization_settings`: one globally unique row with only the PIN hash, configuring Super Admin, and configuration timestamp. No plaintext PIN column exists.
 - Orders retain their identity/history and transition to `commercial_status=voided`, `voided_at`, and a new version. Payment status remains historical truth (paid/unpaid/partial), while operational projections distinguish it from `VOIDED`.
 - Audit indexes support `(branch_id, created_at)`, `(user_id, created_at)`, `(module, created_at)`, `(action, created_at)`, and `(auditable_type, auditable_id, created_at)` without redundant speculative indexes.
 - Audit Trail and Void Orders use Super Admin-only backend authorization without requiring POS active-branch context; Owner is explicitly denied their dedicated pages.
@@ -66,16 +67,16 @@ Excluded:
 ## Workflow and failure behavior
 
 1. The cashier opens a current-session eligible transaction and sees the standalone-parity Void modal.
-2. The cashier selects a mandatory stable reason; `Other` requires meaningful free text; an Owner/Super Admin other than the initiator enters email and password.
+2. The cashier selects a mandatory stable reason; `Other` requires meaningful free text; the global four-digit approval PIN is entered for delegated authorization by its configuring Super Admin.
 3. The request carries UUID idempotency key and expected Order version; the UI never queues an offline Void and shows generic authorization failure wording.
 4. The action authenticates both actors, locks the session and Order, validates scope/status/version/unique void, aggregates eligible prior movement quantities, locks tracked inventory deterministically, appends restoration movements, writes void + audit, and commits.
-5. After commit, compact invalidations prompt authoritative refetch. KDS hides the ticket through commercial state rather than false lifecycle transition; Customer Display removes it; QR tracking resolves to a customer-safe cancellation state; receipts remain historical but visibly VOIDED.
+5. After commit, compact invalidations prompt authoritative refetch. KDS hides the ticket through commercial state rather than false lifecycle transition; Customer Display removes it; QR tracking resolves to a customer-safe terminal state; normal Cashier/customer receipt access is denied after Void while payment history remains protected internally.
 
 ## Exact implementation plan
 
 1. Inspect/update the generated Wayfinder surface and add additive schema/models/factories/relationships for void records and non-redundant Audit indexes.
 2. Implement the typed AuditRecorder, migrate existing edit/proof writes, and add atomic audit calls to every current business/security mutation; publish the resulting audited/not-audited endpoint matrix.
-3. Build the Void request/controller/action with Form Request validation, throttle, two-person credential re-authentication, idempotency hash, session/order/version locking, aggregate ledger restoration, void/audit persistence, and post-commit events.
+3. Build the Void request/controller/action with Form Request validation, throttle, global hashed-PIN authorization, distinct initiator/authorizer attribution, idempotency hash, session/order/version locking, aggregate ledger restoration, void/audit persistence, and post-commit events.
 4. Extend Transaction History/detail/receipt/tracking/KDS/display queries and projections so voided records are retained and operationally excluded correctly.
 5. Add Super Admin Audit Trail and Void Orders controllers, paginated query objects/projections, protected routes, management-shell navigation, and responsive standalone-parity React pages/detail views.
 6. Wire cashier modal/form state, eligibility explanations, changed/stale handling, local stable UUID generation, protected route functions, and targeted realtime refetch behavior.
@@ -84,7 +85,7 @@ Excluded:
 
 ## Testing and verification
 
-- Void matrix: eligible payment/Pay Later/partial/edited/QR-origin orders; inventory tracked/untracked/repeated products; every denial; stale version; two-person/self-authorization denial; idempotent replay/conflict; retained payments/adjustments/tickets.
+- Void matrix: eligible payment/Pay Later/partial/edited/QR-origin orders; inventory tracked/untracked/repeated products; wrong/missing PIN and ineligible PIN-owner denial; stale version; initiator/authorizer distinction; idempotent replay/conflict; retained payments/adjustments/tickets.
 - Audit matrix: row data/redaction/rollback for every audited existing mutation, no audit for read-only endpoints, append-only routes, protected Audit Trail filters/pagination/details, and all denied roles.
 - Void Orders matrix: business-wide lists/filter/search/detail/payment/inventory/audit linkage plus role denial.
 - Concurrency: duplicate void, void versus edit/settlement/kitchen/invoice proof/session boundary, ordered product locking, exact replay/conflict, and unrelated Orders.
@@ -92,15 +93,15 @@ Excluded:
 
 ## Documentation, policy, and user-guide impact
 
-- Update contexts 02, 03, 05, 06, 07, 08, 09, 11, and 13 with two-person re-auth, initiator/authorizer distinction, Void record, net restoration, protected management surfaces, audit policy/matrix, and pending manual QA.
+- Update contexts 02, 03, 05, 06, 07, 08, 09, 11, and 13 with the accepted global hashed-PIN model, initiator/authorizer distinction, Void record, net restoration, protected management surfaces, audit policy/matrix, and accepted manual QA.
 - Do not mark Phase 13 complete or present the two Super Admin pages as full Phase 18.
 
 ## Acceptance checks
 
 - Exactly one durable Void/audit/restoration effect exists for a successful attempt; no historical financial/inventory/Kitchen data is overwritten or deleted.
-- A distinct eligible Owner/Super Admin re-authenticates successfully; self-authorization and all ineligible cases fail safely and generically.
+- The active PIN-owning Super Admin is attributed as authorizer; the operational initiator is distinct; wrong/missing PIN and ineligible PIN-owner cases fail safely and generically.
 - Void correctly neutralizes the Order's ledger effect after repeated edits; payments and lower-total adjustments remain historically accurate.
-- Void status is truthful in cashier history/detail/receipt and customer-safe operational surfaces, with no sensitive realtime leakage.
+- Voided Orders are absent from Cashier History and receipt surfaces while protected Super Admin history and customer-safe operational surfaces remain truthful, with no sensitive realtime leakage.
 - Super Admin can audit all branches through paginated protected pages; Owner and operational roles cannot.
 - All required automated/static/migration gates pass, the branch is pushed, no PR exists, and manual QA remains explicitly pending.
 

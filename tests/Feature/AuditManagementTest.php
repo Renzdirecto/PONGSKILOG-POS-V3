@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Audit\AuditRecorder;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Order;
@@ -38,10 +39,68 @@ test('super admin can view immutable audit entries while owners are denied', fun
             ->where('logs.data.0.action', 'order.voided'));
 });
 
+test('audit recorder recursively redacts credentials and audit models reject mutation', function () {
+    $audit = app(AuditRecorder::class)->record(
+        branch: $this->branch,
+        actor: $this->superAdmin,
+        module: 'security',
+        action: 'security.checked',
+        auditableType: User::class,
+        auditableId: (string) $this->superAdmin->id,
+        metadata: [
+            'password' => 'password-value',
+            'nested' => ['authorization_pin' => '1234', 'api_token' => 'token-value'],
+            'safe' => 'retained',
+        ],
+    );
+
+    expect($audit->metadata)->toBe([
+        'password' => '[REDACTED]',
+        'nested' => ['authorization_pin' => '[REDACTED]', 'api_token' => '[REDACTED]'],
+        'safe' => 'retained',
+    ]);
+    expect(fn () => $audit->update(['action' => 'rewritten']))->toThrow(LogicException::class);
+    expect(fn () => $audit->delete())->toThrow(LogicException::class);
+    $this->assertDatabaseHas('audit_logs', ['id' => $audit->id, 'action' => 'security.checked']);
+});
+
 test('owner is denied the protected void register', function () {
     $this->actingAs($this->owner)
         ->get(route('workspaces.void-orders'))
         ->assertForbidden();
+});
+
+test('non super admin roles cannot open audit management or authorize its private channel', function (string $role): void {
+    $user = User::factory()->create();
+    $user->roles()->attach(Role::query()->where('name', $role)->sole());
+
+    $this->actingAs($user)->get(route('workspaces.audit-trail'))->assertForbidden();
+    $this->get(route('workspaces.void-orders'))->assertForbidden();
+    config(['broadcasting.default' => 'pusher', 'broadcasting.connections.pusher' => [
+        'driver' => 'pusher', 'key' => 'test-key', 'secret' => 'test-secret',
+        'app_id' => 'test-app', 'options' => ['cluster' => 'ap1'],
+    ]]);
+    (static function (): void {
+        require base_path('routes/channels.php');
+    })();
+    $this->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456',
+        'channel_name' => 'private-audit-trail',
+    ])->assertForbidden();
+})->with(['owner', 'cashier', 'cashier_kitchen', 'kitchen_staff']);
+
+test('super admin can authorize the private audit channel', function (): void {
+    config(['broadcasting.default' => 'pusher', 'broadcasting.connections.pusher' => [
+        'driver' => 'pusher', 'key' => 'test-key', 'secret' => 'test-secret',
+        'app_id' => 'test-app', 'options' => ['cluster' => 'ap1'],
+    ]]);
+    (static function (): void {
+        require base_path('routes/channels.php');
+    })();
+    $this->actingAs($this->superAdmin)->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456',
+        'channel_name' => 'private-audit-trail',
+    ])->assertOk();
 });
 
 test('void register provides a complete order breakdown without raw audit payloads', function () {

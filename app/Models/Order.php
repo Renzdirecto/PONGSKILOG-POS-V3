@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $completed_at
  * @property Carbon|null $committed_at
  * @property Carbon|null $edited_at
+ * @property Carbon|null $voided_at
  * @property string|null $original_total
  * @property string|null $store_session_id
  * @property int $version

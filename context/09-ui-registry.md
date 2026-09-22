@@ -579,6 +579,8 @@ Super Admin retains full business-wide permission regardless of workspace presen
 
 ## 7.2 Audit Trail
 
+Implemented Phase 13 protected register; this does not mark the full Phase 18 workspace complete.
+
 Filters:
 
 - Branch
@@ -597,6 +599,8 @@ Detail:
 - Metadata
 
 ## 7.3 Void Orders
+
+Implemented Phase 13 protected register with global PIN configuration for Super Admin; this does not mark the full Phase 18 workspace complete.
 
 - Voided transaction list
 - Branch/date/user filters

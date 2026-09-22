@@ -60,7 +60,7 @@ class VoidOrder
 
             $branch = Branch::query()->whereKey($branch->id)->firstOrFail();
             $initiator = $this->access->authorize($initiator, $branch);
-            $authorizer = $this->authorizer($data, $initiator);
+            $authorizer = $this->authorizer($data, $initiator, lock: false);
             $requestHash = $this->requestHash($requestedOrder, $initiator, $authorizer, $data);
 
             $replay = OrderVoid::query()->where('idempotency_key', $data['idempotency_key'])->first();
@@ -90,6 +90,8 @@ class VoidOrder
                 ->whereKey($requestedOrder->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $authorizer = $this->authorizer($data, $initiator, lock: true);
+            $requestHash = $this->requestHash($order, $initiator, $authorizer, $data);
             if ($order->store_session_id !== $session->id || $order->committed_at === null || $order->commercial_status !== CommercialStatus::Active) {
                 throw ValidationException::withMessages(['order' => 'Only an active order from the current store session can be voided.']);
             }
@@ -154,12 +156,12 @@ class VoidOrder
     }
 
     /** @param array<string, mixed> $data */
-    private function authorizer(array $data, User $initiator): User
+    private function authorizer(array $data, User $initiator, bool $lock): User
     {
         $setting = VoidAuthorizationSetting::query()
             ->where('scope', 'global')
             ->with('configuredBy')
-            ->lockForUpdate()
+            ->when($lock, fn ($query) => $query->lockForUpdate())
             ->first();
         $authorizer = $setting?->configuredBy;
 

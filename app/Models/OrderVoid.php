@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/** @property Carbon $created_at */
 #[Fillable(['branch_id', 'store_session_id', 'order_id', 'initiated_by_user_id', 'authorized_by_user_id', 'reason_code', 'reason_label', 'reason_text', 'authorization_method', 'idempotency_key'])]
 class OrderVoid extends Model
 {

@@ -447,6 +447,11 @@ test('inventory history cannot be updated or deleted through direct management r
     $user = inventoryManager();
     $configuration = BranchProduct::factory()->create(['tracks_inventory' => true]);
     $movement = app(AdjustInventory::class)->execute($user, $configuration->branch, $configuration->product, 5, 'Opening count');
+    $this->assertDatabaseHas('audit_logs', [
+        'action' => 'inventory.adjusted',
+        'auditable_id' => $configuration->product->id,
+        'user_id' => $user->id,
+    ]);
     $originalMovement = $movement->refresh()->getAttributes();
     $originalBalance = BranchInventory::query()->sole()->getAttributes();
     $history = route('inventory.movements.index', [$configuration->branch, $configuration->product]);

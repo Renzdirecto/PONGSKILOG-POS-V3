@@ -550,7 +550,8 @@ After close:
 
 Void requires:
 
-- Authorization/PIN/re-auth
+- One global four-digit approval PIN configured by an active Super Admin and stored only as a hash
+- The configuring Super Admin recorded as authorizer and a distinct active assigned Cashier/Cashier+Kitchen user recorded as initiator
 - Reason
 - Confirmation
 - Audit
@@ -560,6 +561,8 @@ If inventory was already deducted:
 - Restore using compensating inventory movement
 
 Original records remain.
+
+Voided Orders leave normal Cashier Transaction History and all normal receipt surfaces, but remain available in the protected Super Admin Void Orders register. Inventory restoration is the aggregate net negative effect of the Order's `sale`, `pay_later_commit`, and `order_edit_delta` ledger movements, appended once as sorted `void_restore` movements.
 
 ---
 

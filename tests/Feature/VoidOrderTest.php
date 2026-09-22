@@ -3,6 +3,11 @@
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\EditCommittedOrder;
+use App\Actions\Orders\VoidOrder;
+use App\Events\AuditLogRecorded;
+use App\Events\CustomerTrackingChanged;
+use App\Events\DisplayOrdersChanged;
+use App\Events\OrderVoided;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchInventory;
@@ -15,6 +20,9 @@ use App\Models\User;
 use App\Models\VoidAuthorizationSetting;
 use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -129,6 +137,27 @@ test('void rejects an incorrect configured PIN', function () {
     $this->assertDatabaseHas('audit_logs', ['auditable_id' => $order->id, 'action' => 'order.pay_later_committed']);
 });
 
+test('void fails safely without a configured PIN or with an ineligible PIN owner', function (string $state) {
+    $order = voidOrderFixture($this);
+    $setting = VoidAuthorizationSetting::query()->sole();
+
+    match ($state) {
+        'missing' => $setting->delete(),
+        'inactive' => $this->superAdmin->forceFill(['is_active' => false])->save(),
+        'role_removed' => $this->superAdmin->roles()->detach(),
+    };
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['authorization']);
+
+    expect($order->fresh()->commercial_status->value)->toBe('active')
+        ->and($this->balance->fresh()->on_hand)->toBe(9);
+    $this->assertDatabaseCount('order_voids', 0);
+})->with(['missing', 'inactive', 'role_removed']);
+
 test('void rejects a PIN configured by the initiating cashier even when they are also a super admin', function () {
     $order = voidOrderFixture($this);
     $this->cashier->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
@@ -199,7 +228,8 @@ test('void restores the net tracked inventory effect after an edited order and r
     }
 
     expect($this->balance->fresh()->on_hand)->toBe(10)
-        ->and($edited->fresh()->commercial_status->value)->toBe('voided');
+        ->and($edited->fresh()->commercial_status->value)->toBe('voided')
+        ->and($edited->fresh()->version)->toBe(4);
     $this->assertDatabaseHas('inventory_movements', [
         'order_id' => $edited->id,
         'movement_type' => 'void_restore',
@@ -207,4 +237,52 @@ test('void restores the net tracked inventory effect after an edited order and r
     ]);
     expect($edited->inventoryMovements()->where('movement_type', 'void_restore')->count())->toBe(1);
     $this->assertDatabaseCount('order_voids', 1);
+    expect(AuditLog::query()->where('action', 'order.voided')->count())->toBe(1);
 });
+
+test('reusing a void idempotency key with changed intent returns conflict', function () {
+    $order = voidOrderFixture($this);
+    $payload = voidPayload($this, $order);
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), $payload)
+        ->assertOk();
+
+    $this->postJson(route('pos.transactions.void', $order), [
+        ...$payload,
+        'reason_code' => 'customer_cancelled',
+    ])->assertConflict();
+
+    $this->assertDatabaseCount('order_voids', 1);
+    expect(AuditLog::query()->where('action', 'order.voided')->count())->toBe(1);
+});
+
+test('void rolls back every critical effect when a critical write fails', function (string $_stage, string $trigger): void {
+    $order = voidOrderFixture($this);
+    Event::fake([AuditLogRecorded::class, CustomerTrackingChanged::class, DisplayOrdersChanged::class, OrderVoided::class]);
+    DB::statement($trigger);
+
+    expect(fn () => app(VoidOrder::class)->execute(
+        $this->cashier,
+        $this->branch,
+        $order,
+        voidPayload($this, $order),
+    ))->toThrow(QueryException::class);
+
+    expect($order->fresh()->commercial_status->value)->toBe('active')
+        ->and($order->fresh()->version)->toBe(2)
+        ->and($this->balance->fresh()->on_hand)->toBe(9);
+    $this->assertDatabaseCount('order_voids', 0);
+    expect($order->inventoryMovements()->where('movement_type', 'void_restore')->count())->toBe(0);
+    expect(AuditLog::query()->where('action', 'order.voided')->count())->toBe(0);
+    Event::assertNotDispatched(AuditLogRecorded::class);
+    Event::assertNotDispatched(CustomerTrackingChanged::class);
+    Event::assertNotDispatched(DisplayOrdersChanged::class);
+    Event::assertNotDispatched(OrderVoided::class);
+})->with([
+    'inventory restoration' => ['inventory', "CREATE TRIGGER fail_void_inventory BEFORE INSERT ON inventory_movements WHEN NEW.movement_type = 'void_restore' BEGIN SELECT RAISE(FAIL, 'injected inventory failure'); END"],
+    'OrderVoid creation' => ['void', "CREATE TRIGGER fail_order_void BEFORE INSERT ON order_voids BEGIN SELECT RAISE(FAIL, 'injected void failure'); END"],
+    'Order state update' => ['order', "CREATE TRIGGER fail_void_order_update BEFORE UPDATE ON orders WHEN NEW.commercial_status = 'voided' BEGIN SELECT RAISE(FAIL, 'injected order failure'); END"],
+    'audit creation' => ['audit', "CREATE TRIGGER fail_void_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'order.voided' BEGIN SELECT RAISE(FAIL, 'injected audit failure'); END"],
+]);

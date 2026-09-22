@@ -105,7 +105,7 @@ class VoidOrdersController extends Controller
             'branches' => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
             'users' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
             'pinStatus' => $pinSetting === null ? null : [
-                'configured_at' => $pinSetting->configured_at?->toIso8601String(),
+                'configured_at' => $pinSetting->configured_at->toIso8601String(),
                 'configured_by' => $pinSetting->configuredBy?->only(['id', 'name', 'email']),
             ],
         ]);

@@ -17,6 +17,12 @@ class AuditLog extends Model
 
     public const UPDATED_AT = null;
 
+    protected static function booted(): void
+    {
+        static::updating(fn (): never => throw new \LogicException('Audit logs are append-only.'));
+        static::deleting(fn (): never => throw new \LogicException('Audit logs are append-only.'));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

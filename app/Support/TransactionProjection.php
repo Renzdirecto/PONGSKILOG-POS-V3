@@ -68,7 +68,7 @@ class TransactionProjection
                 'initiated_by' => $void->initiatedBy?->name,
                 'authorized_by' => $void->authorizedBy?->name,
                 'authorization_method' => $void->authorization_method,
-                'created_at' => $void->created_at?->toIso8601String(),
+                'created_at' => $void->created_at->toIso8601String(),
             ],
             'version' => $order->version,
             'item_count' => $order->items->sum('quantity'),

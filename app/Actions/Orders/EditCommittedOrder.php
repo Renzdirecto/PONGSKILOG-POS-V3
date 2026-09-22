@@ -2,6 +2,7 @@
 
 namespace App\Actions\Orders;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Actions\Inventory\ApplyInventoryMovement;
 use App\Enums\CommercialStatus;
 use App\Enums\InventoryMovementType;
@@ -37,6 +38,7 @@ class EditCommittedOrder
         private OrderSnapshots $snapshots,
         private ApplyInventoryMovement $inventory,
         private OrderMoney $money,
+        private AuditRecorder $audit,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -144,13 +146,18 @@ class EditCommittedOrder
             }
 
             $order->load('items.modifiers', 'payments', 'adjustments');
-            AuditLog::query()->create([
-                'branch_id' => $branch->id, 'user_id' => $actor->id, 'module' => 'transactions',
-                'action' => 'committed_order_edited', 'auditable_type' => Order::class, 'auditable_id' => $order->id,
-                'before' => $before, 'after' => $this->auditSnapshot($order),
-                'metadata' => ['request_hash' => $hash, 'reason' => $data['reason'] ?? null, 'inventory_deltas' => $deltas],
-                'idempotency_key' => $key,
-            ]);
+            $this->audit->record(
+                branch: $branch,
+                actor: $actor,
+                module: 'transactions',
+                action: 'committed_order_edited',
+                auditableType: Order::class,
+                auditableId: $order->id,
+                before: $before,
+                after: $this->auditSnapshot($order),
+                metadata: ['request_hash' => $hash, 'reason' => $data['reason'] ?? null, 'inventory_deltas' => $deltas],
+                idempotencyKey: $key,
+            );
             OrderUpdated::dispatch($order, ['items', 'total', 'payment_status']);
             KitchenOrderUpdated::dispatch($order);
             CustomerTrackingChanged::dispatch($order);

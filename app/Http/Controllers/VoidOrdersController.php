@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderVoid;
 use App\Models\User;
 use App\Models\VoidAuthorizationSetting;
+use App\Support\TransactionProjection;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Inertia\Inertia;
@@ -16,7 +17,7 @@ use Inertia\Response;
 
 class VoidOrdersController extends Controller
 {
-    public function __invoke(VoidOrdersRequest $request): Response
+    public function __invoke(VoidOrdersRequest $request, TransactionProjection $projection): Response
     {
         $filters = $request->safe()->only([
             'branch_id',
@@ -29,7 +30,13 @@ class VoidOrdersController extends Controller
         $voids = OrderVoid::query()
             ->with([
                 'branch:id,name,code',
-                'order:id,order_number,reference_number,customer_label,total,commercial_status,voided_at',
+                'order.items.modifiers',
+                'order.payments.createdBy',
+                'order.payments.invoiceProof',
+                'order.adjustments.createdBy',
+                'order.branchTable',
+                'order.voidRecord.initiatedBy',
+                'order.voidRecord.authorizedBy',
                 'initiatedBy:id,name,email',
                 'authorizedBy:id,name,email',
             ])
@@ -65,7 +72,7 @@ class VoidOrdersController extends Controller
             ->get()
             ->keyBy('auditable_id');
 
-        $voids->through(function (OrderVoid $void) use ($audits): array {
+        $voids->through(function (OrderVoid $void) use ($audits, $projection): array {
             /** @var AuditLog|null $audit */
             $audit = $audits->get($void->order_id);
 
@@ -73,7 +80,7 @@ class VoidOrdersController extends Controller
                 'id' => $void->id,
                 'created_at' => $void->created_at->toIso8601String(),
                 'branch' => $void->branch?->only(['id', 'name', 'code']),
-                'order' => $void->order?->only(['id', 'order_number', 'reference_number', 'customer_label', 'total', 'commercial_status', 'voided_at']),
+                'order' => $void->order === null ? null : $projection->detail($void->order, false),
                 'initiated_by' => $void->initiatedBy?->only(['id', 'name', 'email']),
                 'authorized_by' => $void->authorizedBy?->only(['id', 'name', 'email']),
                 'reason_code' => $void->reason_code,
@@ -83,9 +90,6 @@ class VoidOrdersController extends Controller
                 'audit' => $audit === null ? null : [
                     'id' => $audit->id,
                     'created_at' => $audit->created_at->toIso8601String(),
-                    'before' => $audit->before,
-                    'after' => $audit->after,
-                    'metadata' => $audit->metadata,
                 ],
             ];
         });

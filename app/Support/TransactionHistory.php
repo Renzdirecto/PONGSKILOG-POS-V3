@@ -67,7 +67,7 @@ class TransactionHistory
         return Order::query()
             ->where('branch_id', $branch->id)
             ->whereNotNull('committed_at')
-            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed, CommercialStatus::Voided]);
+            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed]);
     }
 
     /** @param Builder<Order> $query
@@ -94,11 +94,6 @@ class TransactionHistory
             }
         }
         if (! empty($filters['payment_status'])) {
-            if ($filters['payment_status'] === 'void') {
-                $query->where('commercial_status', CommercialStatus::Voided);
-
-                return;
-            }
             $status = match ($filters['payment_status']) {
                 'pending' => 'unpaid', 'balance' => 'partial', default => $filters['payment_status'],
             };

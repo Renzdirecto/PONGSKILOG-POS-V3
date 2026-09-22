@@ -121,6 +121,17 @@ test('signed public receipt still rejects an order that is no longer paid', func
     $this->getJson($path)->assertNotFound();
 });
 
+test('voided orders cannot create or reopen a receipt', function () {
+    [$order, $user] = receiptShareFixture();
+    $path = $this->actingAs($user)->postJson(route('pos.orders.receipt-share', $order))->assertOk()->json('url');
+
+    $order->update(['commercial_status' => 'voided', 'voided_at' => now()]);
+
+    $this->postJson(route('pos.orders.receipt-share', $order))->assertNotFound();
+    auth()->forgetGuards();
+    $this->getJson($path)->assertNotFound();
+});
+
 test('LAN QR uses the request origin and relative signature survives a different host', function () {
     [$order, $user] = receiptShareFixture();
     $response = $this->actingAs($user)->postJson('http://192.168.1.25:8000/pos/orders/'.$order->id.'/receipt-share')->assertOk();

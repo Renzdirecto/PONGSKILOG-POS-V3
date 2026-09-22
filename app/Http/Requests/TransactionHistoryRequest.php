@@ -35,7 +35,7 @@ class TransactionHistoryRequest extends FormRequest
             'from' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d'],
             'to' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d', 'after_or_equal:from'],
             'kitchen_status' => ['nullable', Rule::enum(KitchenStatus::class)],
-            'payment_status' => ['nullable', Rule::in(['paid', 'pending', 'balance', 'void'])],
+            'payment_status' => ['nullable', Rule::in(['paid', 'pending', 'balance'])],
             'order_type' => ['nullable', Rule::enum(OrderType::class)],
             'payment_method' => ['nullable', Rule::in(['cash', 'cashless', 'split'])],
             'page' => ['nullable', 'integer', 'min:1'],

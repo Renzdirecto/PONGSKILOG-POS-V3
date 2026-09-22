@@ -22,12 +22,7 @@ import {
     UtensilsCrossed,
     X,
 } from 'lucide-react';
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { CategoryIcon } from '@/components/category-icon';
@@ -299,8 +294,9 @@ export default function TransactionHistory({
                 ...show(id),
                 headers: { Accept: 'application/json' },
             });
-            const detail = (JSON.parse(response.data) as { transaction: Detail })
-                .transaction;
+            const detail = (
+                JSON.parse(response.data) as { transaction: Detail }
+            ).transaction;
             setSelected(detail);
             return detail;
         } catch {
@@ -318,12 +314,16 @@ export default function TransactionHistory({
 
     function clearFilters() {
         setSearchText('');
-        router.get(transactionHistory(), {}, {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-            only: ['transactions', 'history_total', 'metrics', 'filters'],
-        });
+        router.get(
+            transactionHistory(),
+            {},
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                only: ['transactions', 'history_total', 'metrics', 'filters'],
+            },
+        );
     }
 
     const metricCards = [
@@ -480,7 +480,6 @@ export default function TransactionHistory({
                         ['paid', 'Paid'],
                         ['pending', 'Pending'],
                         ['balance', 'Balance due'],
-                        ['void', 'Voided'],
                     ]}
                     onChange={(value) =>
                         apply({ payment_status: value || undefined })
@@ -681,8 +680,8 @@ export default function TransactionHistory({
                         setVoiding(false);
                         setSelected(null);
                     }}
-                    onVoided={(detail) => {
-                        setSelected(detail);
+                    onVoided={() => {
+                        setSelected(null);
                         setVoiding(false);
                         refresh();
                     }}
@@ -746,7 +745,11 @@ function CompactSelect({
                 className={`h-10 max-w-[168px] appearance-none rounded-[10px] border py-0 pr-8 pl-3 text-[12.5px] font-semibold outline-none ${active ? 'border-[#111] bg-[#111] text-white' : 'border-[#e5e5e5] bg-white text-[#111]'}`}
             >
                 {options.map(([key, text]) => (
-                    <option key={key} value={key} className="bg-white text-[#111]">
+                    <option
+                        key={key}
+                        value={key}
+                        className="bg-white text-[#111]"
+                    >
                         {text}
                     </option>
                 ))}
@@ -778,8 +781,9 @@ function DateFilter({
     const label =
         filters.date === 'custom'
             ? shortRange(filters.from, filters.to)
-            : DATE_OPTIONS.find(([key]) => key === (filters.date ?? ''))?.[1] ??
-              'All dates';
+            : (DATE_OPTIONS.find(
+                  ([key]) => key === (filters.date ?? ''),
+              )?.[1] ?? 'All dates');
 
     function toggle() {
         if (!open && button.current) {
@@ -863,7 +867,9 @@ function DateFilter({
                                 <button
                                     type="button"
                                     aria-label="Previous month"
-                                    onClick={() => setMonth(shiftMonth(month, -1))}
+                                    onClick={() =>
+                                        setMonth(shiftMonth(month, -1))
+                                    }
                                     className="inline-flex size-[30px] items-center justify-center rounded-[9px] border border-neutral-200"
                                 >
                                     <ChevronLeft className="size-4" />
@@ -874,25 +880,34 @@ function DateFilter({
                                 <button
                                     type="button"
                                     aria-label="Next month"
-                                    onClick={() => setMonth(shiftMonth(month, 1))}
+                                    onClick={() =>
+                                        setMonth(shiftMonth(month, 1))
+                                    }
                                     className="inline-flex size-[30px] items-center justify-center rounded-[9px] border border-neutral-200"
                                 >
                                     <ChevronRight className="size-4" />
                                 </button>
                             </div>
                             <div className="grid grid-cols-7 gap-px">
-                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(
-                                    (weekday, index) => (
-                                        <span
-                                            key={weekday}
-                                            className={`flex h-[22px] items-center justify-center text-[9.5px] font-bold tracking-wide uppercase ${index > 4 ? 'text-red-700' : 'text-neutral-400'}`}
-                                        >
-                                            {weekday}
-                                        </span>
-                                    ),
-                                )}
+                                {[
+                                    'Mon',
+                                    'Tue',
+                                    'Wed',
+                                    'Thu',
+                                    'Fri',
+                                    'Sat',
+                                    'Sun',
+                                ].map((weekday, index) => (
+                                    <span
+                                        key={weekday}
+                                        className={`flex h-[22px] items-center justify-center text-[9.5px] font-bold tracking-wide uppercase ${index > 4 ? 'text-red-700' : 'text-neutral-400'}`}
+                                    >
+                                        {weekday}
+                                    </span>
+                                ))}
                                 {days.map((day) => {
-                                    const endpoint = day.key === from || day.key === to;
+                                    const endpoint =
+                                        day.key === from || day.key === to;
                                     const inRange =
                                         Boolean(from && to) &&
                                         day.key > from &&
@@ -1015,24 +1030,29 @@ function TransactionCard({
             </div>
             <div className="flex flex-wrap gap-1.5">
                 <SemanticChip kind={item.order_type} />
-                {isVoided ? <SemanticChip kind="voided" /> : <SemanticChip kind={item.kitchen_status} />}
+                {isVoided ? (
+                    <SemanticChip kind="voided" />
+                ) : (
+                    <SemanticChip kind={item.kitchen_status} />
+                )}
                 <SemanticChip
                     kind={
                         item.payment_status === 'unpaid'
                             ? 'unpaid'
                             : item.payment_status === 'partial'
                               ? 'balance'
-                              : item.payment_method ?? 'paid'
+                              : (item.payment_method ?? 'paid')
                     }
                 />
                 {item.edited_at && <SemanticChip kind="edited" />}
             </div>
-            {item.payment_method === 'split' && item.payment_status !== 'unpaid' && (
-                <p className="text-[11.5px] font-semibold text-[#444] tabular-nums">
-                    Split · Cash {pesos(item.initial_cash ?? '0')} / Cashless{' '}
-                    {pesos(item.initial_cashless ?? '0')}
-                </p>
-            )}
+            {item.payment_method === 'split' &&
+                item.payment_status !== 'unpaid' && (
+                    <p className="text-[11.5px] font-semibold text-[#444] tabular-nums">
+                        Split · Cash {pesos(item.initial_cash ?? '0')} /
+                        Cashless {pesos(item.initial_cashless ?? '0')}
+                    </p>
+                )}
             <div className="min-w-0 flex-1">
                 <p className="mb-1 text-[9.5px] font-semibold tracking-[.09em] text-neutral-400 uppercase">
                     Order summary
@@ -1061,7 +1081,7 @@ function TransactionCard({
                     ))}
                 </div>
                 {many && (
-                    <p className="mt-1 text-[10.5px] italic text-neutral-400">
+                    <p className="mt-1 text-[10.5px] text-neutral-400 italic">
                         Scroll for {item.items_preview.length - 5} more item
                         {item.items_preview.length - 5 === 1 ? '' : 's'}
                     </p>
@@ -1107,7 +1127,11 @@ function TransactionCard({
                 <button
                     type="button"
                     disabled={!item.can_void}
-                    title={item.can_void ? 'Void transaction' : 'This transaction cannot be voided'}
+                    title={
+                        item.can_void
+                            ? 'Void transaction'
+                            : 'This transaction cannot be voided'
+                    }
                     onClick={onVoid}
                     className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
                 >
@@ -1223,7 +1247,8 @@ function TransactionDetailDialog({
                         {detail ? `#${detail.order_number}` : ''}
                     </DialogTitle>
                     <DialogDescription className="sr-only">
-                        Transaction items, payment metadata, totals, and actions.
+                        Transaction items, payment metadata, totals, and
+                        actions.
                     </DialogDescription>
                 </header>
                 {loading || !detail ? (
@@ -1243,14 +1268,22 @@ function TransactionDetailDialog({
                             </div>
                             <div className="flex flex-wrap justify-end gap-1.5">
                                 <SemanticChip kind={detail.order_type} />
-                                <SemanticChip kind={detail.commercial_status === 'voided' ? 'voided' : detail.kitchen_status} />
+                                <SemanticChip
+                                    kind={
+                                        detail.commercial_status === 'voided'
+                                            ? 'voided'
+                                            : detail.kitchen_status
+                                    }
+                                />
                                 <SemanticChip
                                     kind={
                                         detail.payment_status === 'unpaid'
                                             ? 'unpaid'
-                                            : detail.payment_status === 'partial'
+                                            : detail.payment_status ===
+                                                'partial'
                                               ? 'balance'
-                                              : detail.payment_method ?? 'paid'
+                                              : (detail.payment_method ??
+                                                'paid')
                                     }
                                 />
                             </div>
@@ -1300,12 +1333,27 @@ function TransactionDetailDialog({
                                     : []),
                                 ['REF', detail.reference_number],
                                 ...(detail.void
-                                    ? [
-                                          ['Void reason', detail.void.reason_label],
-                                          ['Initiated by', detail.void.initiated_by ?? 'â€”'],
-                                          ['Authorized by', detail.void.authorized_by ?? 'â€”'],
-                                          ['Voided', detail.void.created_at ? `${formatManila(detail.void.created_at).date} Â· ${formatManila(detail.void.created_at).time}` : 'â€”'],
-                                      ] as [string, string][]
+                                    ? ([
+                                          [
+                                              'Void reason',
+                                              detail.void.reason_label,
+                                          ],
+                                          [
+                                              'Initiated by',
+                                              detail.void.initiated_by ?? 'â€”',
+                                          ],
+                                          [
+                                              'Authorized by',
+                                              detail.void.authorized_by ??
+                                                  'â€”',
+                                          ],
+                                          [
+                                              'Voided',
+                                              detail.void.created_at
+                                                  ? `${formatManila(detail.void.created_at).date} Â· ${formatManila(detail.void.created_at).time}`
+                                                  : 'â€”',
+                                          ],
+                                      ] as [string, string][])
                                     : []),
                             ]}
                         />
@@ -1381,8 +1429,18 @@ function TransactionDetailDialog({
                         <MoneyPanel detail={detail} />
                         {detail.inventory_restorations.length > 0 && (
                             <section>
-                                <p className="mb-1.5 text-[9.5px] font-semibold tracking-[.09em] text-neutral-400 uppercase">Inventory restored</p>
-                                <MetadataRows rows={detail.inventory_restorations.map((restoration) => [restoration.product_name ?? 'Product', `${restoration.quantity_restored} restored`])} />
+                                <p className="mb-1.5 text-[9.5px] font-semibold tracking-[.09em] text-neutral-400 uppercase">
+                                    Inventory restored
+                                </p>
+                                <MetadataRows
+                                    rows={detail.inventory_restorations.map(
+                                        (restoration) => [
+                                            restoration.product_name ??
+                                                'Product',
+                                            `${restoration.quantity_restored} restored`,
+                                        ],
+                                    )}
+                                />
                             </section>
                         )}
                         {detail.payment_groups.some((group) =>
@@ -1417,7 +1475,8 @@ function TransactionDetailDialog({
                                                             : 'Capture invoice'}
                                                     </strong>
                                                     <span className="block truncate text-[11px] text-neutral-500">
-                                                        {payment.invoice?.name ??
+                                                        {payment.invoice
+                                                            ?.name ??
                                                             'No proof attached'}
                                                     </span>
                                                 </span>
@@ -1434,7 +1493,11 @@ function TransactionDetailDialog({
                         <button
                             type="button"
                             disabled={!detail.can_void}
-                            title={detail.can_void ? 'Void transaction' : 'This transaction cannot be voided'}
+                            title={
+                                detail.can_void
+                                    ? 'Void transaction'
+                                    : 'This transaction cannot be voided'
+                            }
                             onClick={onVoid}
                             className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
                         >
@@ -1442,7 +1505,10 @@ function TransactionDetailDialog({
                         </button>
                         <button
                             type="button"
-                            disabled={!detail.can_edit || detail.commercial_status === 'voided'}
+                            disabled={
+                                !detail.can_edit ||
+                                detail.commercial_status === 'voided'
+                            }
                             onClick={onEdit}
                             className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
                         >
@@ -1642,7 +1708,9 @@ function VoidDialog({
             };
 
             if (response.response?.status === 409) {
-                setError('Transaction changed. Review the latest details before voiding.');
+                setError(
+                    'Transaction changed. Review the latest details before voiding.',
+                );
 
                 return;
             }
@@ -1672,7 +1740,9 @@ function VoidDialog({
                 <span className="inline-flex size-11 items-center justify-center rounded-xl bg-red-50 text-red-700">
                     <ShieldBan className="size-5" />
                 </span>
-                <DialogTitle>Void transaction #{detail.order_number}</DialogTitle>
+                <DialogTitle>
+                    Void transaction #{detail.order_number}
+                </DialogTitle>
                 <DialogDescription className="text-[12.5px] leading-5">
                     This permanently marks the transaction as voided. The
                     original order and payment history are retained for audit;
@@ -1680,14 +1750,25 @@ function VoidDialog({
                 </DialogDescription>
                 <MetadataRows
                     rows={[
-                        ['Customer / table', truthfulCustomer(detail) ?? 'Walk-in'],
-                        ['Order type', detail.order_type === 'dine_in' ? 'Dine in' : 'Take out'],
+                        [
+                            'Customer / table',
+                            truthfulCustomer(detail) ?? 'Walk-in',
+                        ],
+                        [
+                            'Order type',
+                            detail.order_type === 'dine_in'
+                                ? 'Dine in'
+                                : 'Take out',
+                        ],
                         ['Total', pesos(detail.total)],
                         ['Reference', detail.reference_number],
                     ]}
                 />
                 {error && (
-                    <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">
+                    <p
+                        role="alert"
+                        className="rounded-xl bg-red-50 p-3 text-sm text-red-800"
+                    >
                         {error}
                     </p>
                 )}
@@ -1715,7 +1796,9 @@ function VoidDialog({
                         </span>
                         <textarea
                             value={reasonText}
-                            onChange={(event) => setReasonText(event.target.value)}
+                            onChange={(event) =>
+                                setReasonText(event.target.value)
+                            }
                             maxLength={1000}
                             rows={3}
                             className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
@@ -1736,7 +1819,13 @@ function VoidDialog({
                             autoComplete="one-time-code"
                             maxLength={4}
                             value={authorizationPin}
-                            onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                            onChange={(event) =>
+                                setAuthorizationPin(
+                                    event.target.value
+                                        .replace(/\D/g, '')
+                                        .slice(0, 4),
+                                )
+                            }
                             className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-center text-lg tracking-[0.5em]"
                         />
                     </label>
@@ -1752,7 +1841,11 @@ function VoidDialog({
                     </button>
                     <button
                         type="button"
-                        disabled={processing || !reasonCode || !/^\d{4}$/.test(authorizationPin)}
+                        disabled={
+                            processing ||
+                            !reasonCode ||
+                            !/^\d{4}$/.test(authorizationPin)
+                        }
                         onClick={() => void submit()}
                         className="h-12 rounded-xl bg-red-700 text-sm font-semibold text-white hover:bg-red-800 disabled:bg-red-300"
                     >
@@ -1924,7 +2017,10 @@ function EditDialog({
 
     if (confirmLower) {
         return (
-            <Dialog open onOpenChange={(value) => !value && setConfirmLower(false)}>
+            <Dialog
+                open
+                onOpenChange={(value) => !value && setConfirmLower(false)}
+            >
                 <DialogContent className="pos-surface max-w-md p-5">
                     <span className="inline-flex size-11 items-center justify-center rounded-xl bg-red-50 text-red-700">
                         <AlertTriangle className="size-5" />
@@ -1973,7 +2069,7 @@ function EditDialog({
     return (
         <>
             <Dialog open onOpenChange={(value) => !value && onClose()}>
-                <DialogContent className="pos-surface flex max-h-[94dvh] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px] max-md:h-dvh max-md:max-h-dvh max-md:max-w-full max-md:rounded-none">
+                <DialogContent className="pos-surface flex max-h-[94dvh] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 max-md:h-dvh max-md:max-h-dvh max-md:max-w-full max-md:rounded-none sm:max-w-[760px]">
                     {screen === 'edit' ? (
                         <>
                             <header className="flex items-center justify-between border-b border-neutral-200 px-3.5 py-3">
@@ -1981,7 +2077,8 @@ function EditDialog({
                                     Edit transaction #{detail.order_number}
                                 </DialogTitle>
                                 <DialogDescription className="sr-only">
-                                    Edit transaction items and order information.
+                                    Edit transaction items and order
+                                    information.
                                 </DialogDescription>
                             </header>
                             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -2114,11 +2211,12 @@ function EditDialog({
                                                 line={line}
                                                 onChange={(changed) =>
                                                     setLines((current) =>
-                                                        current.map((candidate) =>
-                                                            candidate.key ===
-                                                            changed.key
-                                                                ? changed
-                                                                : candidate,
+                                                        current.map(
+                                                            (candidate) =>
+                                                                candidate.key ===
+                                                                changed.key
+                                                                    ? changed
+                                                                    : candidate,
                                                         ),
                                                     )
                                                 }
@@ -2173,9 +2271,10 @@ function EditDialog({
                                 </div>
                                 {settled > 0 && (
                                     <div
-                                        className={`rounded-[11px] border p-3 text-xs font-semibold leading-5 ${difference > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : difference < 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-neutral-200 bg-neutral-50 text-neutral-600'}`}
+                                        className={`rounded-[11px] border p-3 text-xs leading-5 font-semibold ${difference > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : difference < 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-neutral-200 bg-neutral-50 text-neutral-600'}`}
                                     >
-                                        Already paid {pesos(settled.toFixed(2))}.{' '}
+                                        Already paid {pesos(settled.toFixed(2))}
+                                        .{' '}
                                         {difference > 0
                                             ? `Additional balance of ${pesos(difference.toFixed(2))} will be due after saving.`
                                             : difference < 0
@@ -2222,7 +2321,8 @@ function EditDialog({
                                     Add item to #{detail.order_number}
                                 </DialogTitle>
                                 <DialogDescription className="sr-only">
-                                    Search the live catalog and customize an item.
+                                    Search the live catalog and customize an
+                                    item.
                                 </DialogDescription>
                                 <span className="w-14" />
                             </header>
@@ -2239,9 +2339,7 @@ function EditDialog({
                                         <button
                                             key={item.id}
                                             type="button"
-                                            onClick={() =>
-                                                setCategory(item.id)
-                                            }
+                                            onClick={() => setCategory(item.id)}
                                             className={`inline-flex h-[42px] shrink-0 items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold ${category === item.id ? 'border-[#111] bg-[#111] text-white' : 'border-neutral-200 bg-white'}`}
                                         >
                                             <CategoryIcon
@@ -2289,7 +2387,9 @@ function EditDialog({
                                                     <span className="flex aspect-3/2 w-full items-center justify-center overflow-hidden rounded-[10px] bg-neutral-100">
                                                         {product.image_url ? (
                                                             <PosProductMedia
-                                                                product={product}
+                                                                product={
+                                                                    product
+                                                                }
                                                             />
                                                         ) : (
                                                             <ImageOff className="size-7 text-neutral-300" />
@@ -2323,7 +2423,8 @@ function EditDialog({
                                         <Search className="size-8 text-neutral-300" />
                                         <strong>No products match</strong>
                                         <p className="text-xs text-neutral-500">
-                                            Try another category or clear the search.
+                                            Try another category or clear the
+                                            search.
                                         </p>
                                     </div>
                                 )}
@@ -2665,7 +2766,9 @@ function ReceiptDialog({
     );
 }
 
-function truthfulCustomer(item: Pick<Summary, 'customer_label' | 'table_name'>) {
+function truthfulCustomer(
+    item: Pick<Summary, 'customer_label' | 'table_name'>,
+) {
     return item.customer_label || item.table_name || null;
 }
 

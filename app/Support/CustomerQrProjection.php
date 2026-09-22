@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Branch;
 use App\Models\Order;
@@ -48,7 +49,7 @@ class CustomerQrProjection
             'submitted_at' => $order->submitted_at?->toIso8601String(), 'committed_at' => $order->committed_at?->toIso8601String(),
             'completed_at' => $order->completed_at?->toIso8601String(), 'archived_at' => $order->archived_at?->toIso8601String(),
             'paid_at' => $paidAt?->toIso8601String(), 'receipt_expires_at' => $expiresAt?->toIso8601String(),
-            'receipt_available' => $expiresAt !== null && $expiresAt->gt(now()),
+            'receipt_available' => $order->commercial_status !== CommercialStatus::Voided && $expiresAt !== null && $expiresAt->gt(now()),
             'version' => $order->version,
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 ...OperationalItemName::fromOrderItem($item), 'quantity' => $item->quantity,
@@ -66,6 +67,7 @@ class CustomerQrProjection
     public function receipt(Order $order): array
     {
         $projection = $this->order($order);
+        abort_if($order->commercial_status === CommercialStatus::Voided, 404);
         abort_unless($order->payment_status === PaymentStatus::Paid, 404);
         abort_unless($projection['receipt_available'], 410, 'Receipt expired. Receipts are available for 24 hours after payment.');
         $order->loadMissing('branch');

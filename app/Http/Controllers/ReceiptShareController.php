@@ -59,7 +59,7 @@ class ReceiptShareController extends Controller
         abort_unless(filled($order->order_number) && filled($order->reference_number), 404);
 
         return Arr::only($projection->receipt($order), [
-            'order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type', 'commercial_status', 'voided_at',
+            'order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type',
             'customer_label', 'table_name', 'items', 'subtotal', 'total', 'branch', 'payments',
         ]);
     }

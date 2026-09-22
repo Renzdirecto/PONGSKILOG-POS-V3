@@ -197,3 +197,63 @@ test('customer display event contains no order or customer details', function ()
             'payment_status',
         ]);
 });
+
+test('JSON transitions return authoritative status version and changed without a redirect or flash', function () {
+    $branch = Branch::factory()->create();
+    [$order] = transitionOrder($branch, KitchenStatus::Preparing);
+    Event::fake([KitchenStatusChanged::class, DisplayOrdersChanged::class]);
+    $this->actingAs(transitionUser($branch));
+
+    foreach ([true, false] as $changed) {
+        $this->patchJson(route('orders.kitchen-status.update', $order), ['status' => 'ready'])
+            ->assertOk()
+            ->assertExactJson(['kitchenTransition' => [
+                'order_id' => $order->id,
+                'from' => $changed ? 'preparing' : 'ready',
+                'to' => 'ready',
+                'changed' => $changed,
+                'version' => 8,
+            ]]);
+    }
+
+    expect($order->fresh()->kitchen_status)->toBe(KitchenStatus::Ready)
+        ->and($order->fresh()->kitchenTicket->status)->toBe(KitchenStatus::Ready)
+        ->and($order->fresh()->version)->toBe(8);
+    Event::assertDispatched(KitchenStatusChanged::class, 1);
+    Event::assertDispatched(DisplayOrdersChanged::class, 1);
+});
+
+test('JSON failures preserve authorization branch and open session boundaries', function (string $failure, int $code) {
+    $branch = Branch::factory()->create();
+    [$order, $session] = transitionOrder($branch, KitchenStatus::Kitchen);
+    $user = transitionUser($branch, $failure === 'role' ? 'cashier' : 'kitchen_staff');
+    Event::fake([KitchenStatusChanged::class, DisplayOrdersChanged::class]);
+
+    if (in_array($failure, ['closed', 'stale'], true)) {
+        $session->update(['status' => 'closed', 'closed_at' => now(), 'closed_by_user_id' => $user->id]);
+        if ($failure === 'stale') {
+            StoreSession::factory()->for($branch)->create();
+        }
+    }
+    if ($failure !== 'guest') {
+        $this->actingAs($user);
+    }
+    if ($failure === 'foreign') {
+        $other = Branch::factory()->create();
+        $user->branches()->attach($other, ['is_active' => true]);
+        $this->withSession([ActiveBranchContext::SESSION_KEY => $other->id]);
+    }
+
+    $response = $this->patchJson(route('orders.kitchen-status.update', $order), ['status' => 'ready']);
+    match ($code) {
+        401 => $response->assertUnauthorized(),
+        403 => $response->assertForbidden(),
+        404 => $response->assertNotFound(),
+        422 => $response->assertUnprocessable()->assertJsonValidationErrors('status'),
+    };
+    expect($order->fresh()->kitchen_status)->toBe(KitchenStatus::Kitchen)
+        ->and($order->fresh()->kitchenTicket->status)->toBe(KitchenStatus::Kitchen)
+        ->and($order->fresh()->version)->toBe(7);
+    Event::assertNotDispatched(KitchenStatusChanged::class);
+    Event::assertNotDispatched(DisplayOrdersChanged::class);
+})->with(['guest' => ['guest', 401], 'role' => ['role', 403], 'foreign' => ['foreign', 404], 'closed' => ['closed', 422], 'stale' => ['stale', 422]]);

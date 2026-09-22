@@ -532,6 +532,17 @@ and time; the client refetches the minimal authoritative projection.
 
 ---
 
+### Phase 8/9 post-merge responsiveness refinement
+
+- Critical lifecycle broadcasts send immediately after the outer commit with rescued transport errors. Compact private signals still trigger authoritative projections; operational coalescing is 35 ms and catalog debounce remains 160 ms.
+- KDS uses concurrent, per-order JSON PATCH mutations with optimistic status/filter/count overlays, independent rollback, version reconciliation, and confirmed-only queued Ready audio. POS redirect compatibility and the approved responsive layout are preserved.
+- Shared OPEN Store Session locking replaces the exclusive transition bottleneck. Order and KitchenTicket exclusive locks still enforce synchronization/idempotency. PostgreSQL verification proves same-order overlap, unrelated-order independence while one row is held, and an exclusive close boundary.
+- Live QA created five labeled orders through Pay Later/Pay Now and submitted all five Preparing actions within 133 ms: five independent pending cards and five successes. A controlled temporary validation rejection rolled back only C; A/B/D/E remained Ready, one toast appeared, and exactly four PA SERVE playbacks followed four confirmations. Mixed transitions and Customer Display Preparing/Ready/Done behavior passed. A new ticket played one TING; reload/hydration did not replay it. Temporary instrumentation and fault injection were removed.
+- Local instrumented measurements: queued Pay Later success to KDS frame 7.64 s (5.21 s to event); after refinement 0.72-2.10 s across Pay Later/Pay Now samples. Isolated confirmed Ready to POS frame improved from 3.37 s to 1.18 s. Five rapid clicks reached their next visual frames in 10-169 ms. Immediate events arrived before HTTP success; remaining variability includes the Windows single-worker PHP development server serializing HTTP requests and browser frame scheduling. A consistent sub-second result is not claimed for this environment.
+- Release gate passed: focused Laravel 32 tests / 272 assertions; 16 focused Node behavioral/presentation tests; full Laravel suite 1,150 tests / 7,333 assertions (one complete run); isolated PostgreSQL concurrency harness; Pint; PHPStan (zero errors); frontend lint; TypeScript; production build; and diff whitespace checks. No migrations were added. Reconnect refresh and branch isolation have automated regression coverage.
+
+---
+
 ## Phase 10 — Customer QR Ordering
 
 - [ ] Branch QR entry

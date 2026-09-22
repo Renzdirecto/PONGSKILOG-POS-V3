@@ -638,3 +638,36 @@ Backend write idempotency remains separate.
 - `product.availability_changed`
 - `display.orders_changed`
 - `branch.status_changed`
+
+
+## Phase 8/9 post-merge operational refinement
+
+`KitchenTicketCreated`, `KitchenStatusChanged`, and `DisplayOrdersChanged` implement
+`ShouldBroadcastNow`, `ShouldDispatchAfterCommit`, and `ShouldRescue`. Laravel 13
+waits for the outer database commit, then sends the compact signal synchronously
+without generic queue pickup. Rollbacks send nothing; transport failures are
+reported without failing the committed business operation. Other catalog events
+retain their existing queued delivery and 160 ms debounce.
+
+Kitchen, POS Ready, and Customer Display coalesce operational invalidations over
+35 ms. A single refresh stays in flight, with one trailing refresh for later
+signals, bounded event-ID deduplication, branch checks, and reconnect recovery.
+All cards, Ready details, and display numbers still come from authoritative server
+projections; Customer Display broadcasts still contain only identity, branch, and
+time. No polling or full-order broadcasts were added.
+
+KDS status writes use independent JSON PATCH requests through Inertia's XHR client
+and Wayfinder, not navigation visits. An order-scoped optimistic overlay updates
+status, filters, and count deltas immediately. Only that order blocks duplicate
+clicks. Confirmed versions protect against stale refreshes; a rejected request
+rolls back only its own overlay and shows a toast. The shared server action remains
+authoritative; existing POS redirect/flash responses remain supported. PA SERVE is
+queued once per successful changed Ready result, never for an optimistic click,
+failure, duplicate target, or projection refresh.
+
+Lock ordering is OPEN Store Session (shared), Order (exclusive), KitchenTicket
+(exclusive). Different orders can proceed while an unrelated order is blocked.
+A future Store Close must acquire the session's exclusive lock before changing
+status or locking orders. Same-order idempotency and one-version-per-change remain
+mandatory. The isolated PostgreSQL harness verifies both concurrency cases and
+that an exclusive close boundary blocks then rejects a transition.

@@ -1,6 +1,7 @@
 ---
 paths:
   - 'app/Actions/Orders/**'
+  - app/Actions/Orders/TransitionKitchenOrder.php
 ---
 
 # Orders
@@ -16,3 +17,6 @@ CommitPayLaterOrder must accept either the current empty POS reservation plus lo
 
 ## Pay Later replay validates the original intent
 An exact-key Pay Later replay may recover only when any supplied local cart still matches the committed snapshot (order type, customer/table, products, quantities, notes, and option IDs). Reject changed payloads with HTTP 409, and never compare current catalog prices when replaying a saved draft.
+
+## Kitchen transitions share the session boundary and serialize only their order
+Lock the current OPEN StoreSession with sharedLock, then Order and KitchenTicket with lockForUpdate, in that order. Future Store Close must take the session exclusive lock first. Keep synchronized statuses and same-target idempotency; unrelated orders must complete while another order row is blocked.

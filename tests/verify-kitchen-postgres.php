@@ -122,7 +122,7 @@ try {
     ];
 
     DB::beginTransaction();
-    StoreSession::query()->whereKey($session->id)->lockForUpdate()->sole();
+    Order::query()->whereKey($order->id)->lockForUpdate()->sole();
 
     foreach ([1, 2] as $workerNumber) {
         $process = new Process([
@@ -159,7 +159,7 @@ try {
             verify($process->isRunning(), 'Worker exited before lock overlap: '.$process->getErrorOutput().$process->getOutput());
         }
 
-        verify(hrtime(true) < $deadline, 'Workers did not overlap at the Store Session lock.');
+        verify(hrtime(true) < $deadline, 'Workers did not overlap at the Order lock.');
         usleep(10_000);
     } while (true);
 
@@ -180,7 +180,76 @@ try {
     verify($order->version === 8, 'Duplicate transition incremented the version more than once.');
     verify(DB::transactionLevel() === 0, 'Parent transaction did not close.');
 
-    echo 'PASS: PostgreSQL row locking serialized two overlapping Ready transitions; both records agree and version advanced once.'.PHP_EOL;
+    echo 'PASS: same-order requests overlap at the Order row; status agrees and version advances once.'.PHP_EOL;
+
+    $otherOrder = Order::factory()->for($branch)->for($session)->create([
+        'commercial_status' => 'active', 'payment_status' => 'paid', 'payment_term' => 'immediate',
+        'kitchen_status' => KitchenStatus::Kitchen, 'committed_at' => now(), 'version' => 7,
+    ]);
+    KitchenTicket::factory()->for($branch)->for($otherOrder)->create(['status' => KitchenStatus::Kitchen]);
+
+    DB::beginTransaction();
+    Order::query()->whereKey($order->id)->lockForUpdate()->sole();
+    $blocked = new Process([
+        PHP_BINARY, __FILE__, '--worker', $schema, (string) $user->id, $branch->id, $order->id, 'blocked',
+    ], dirname(__DIR__), $environment, timeout: 30);
+    $processes[] = $blocked;
+    $blocked->start();
+
+    $deadline = hrtime(true) + 10_000_000_000;
+    do {
+        $waiting = $observer->selectOne(
+            "SELECT pid FROM pg_stat_activity WHERE application_name = ? AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0",
+            [$schema.'_worker_blocked'],
+        );
+        if ($waiting !== null) {
+            break;
+        }
+        verify($blocked->isRunning(), 'Blocked worker exited unexpectedly: '.$blocked->getErrorOutput());
+        verify(hrtime(true) < $deadline, 'Order A never reached its lock barrier.');
+        usleep(10_000);
+    } while (true);
+
+    $independent = new Process([
+        PHP_BINARY, __FILE__, '--worker', $schema, (string) $user->id, $branch->id, $otherOrder->id, 'independent',
+    ], dirname(__DIR__), $environment, timeout: 10);
+    $processes[] = $independent;
+    $independent->start();
+    verify($independent->wait() === 0, 'Order B could not finish while A remained blocked: '.$independent->getErrorOutput().$independent->getOutput());
+    $independentResult = json_decode($independent->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    verify($blocked->isRunning(), 'Order A must still be blocked when B completes.');
+    verify($observer->selectOne('SELECT cardinality(pg_blocking_pids(?)) AS blockers', [$waiting->pid])->blockers > 0, 'Order A lock barrier was released too early.');
+    verify($independentResult['status'] === 'ready' && $independentResult['ticket_status'] === 'ready' && $independentResult['version'] === 8, 'Order B failed independent synchronized transition.');
+    DB::commit();
+    verify($blocked->wait() === 0, 'Order A did not finish after releasing its row: '.$blocked->getErrorOutput());
+    verify($order->fresh()->version === 8, 'Idempotent Order A changed version.');
+    echo 'PASS: Order B committed while Order A remained provably row-blocked in the same OPEN session.'.PHP_EOL;
+
+    DB::beginTransaction();
+    StoreSession::query()->whereKey($session->id)->lockForUpdate()->sole();
+    $closing = new Process([
+        PHP_BINARY, __FILE__, '--worker', $schema, (string) $user->id, $branch->id, $otherOrder->id, 'close-boundary',
+    ], dirname(__DIR__), $environment, timeout: 30);
+    $processes[] = $closing;
+    $closing->start();
+    $deadline = hrtime(true) + 10_000_000_000;
+    do {
+        $waiting = $observer->selectOne(
+            "SELECT pid FROM pg_stat_activity WHERE application_name = ? AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0",
+            [$schema.'_worker_close-boundary'],
+        );
+        if ($waiting !== null) {
+            break;
+        }
+        verify($closing->isRunning(), 'Close boundary worker exited before acquiring the session lock.');
+        verify(hrtime(true) < $deadline, 'Exclusive session boundary did not block the transition.');
+        usleep(10_000);
+    } while (true);
+    $session->update(['status' => 'closed', 'closed_at' => now(), 'closed_by_user_id' => $user->id]);
+    DB::commit();
+    verify($closing->wait() !== 0 && str_contains($closing->getErrorOutput(), 'The store is closed'), 'Transition was not rejected after the exclusive close boundary.');
+    verify($otherOrder->fresh()->version === 8, 'Rejected transition changed the order.');
+    echo 'PASS: exclusive Store Session close boundary blocks then rejects transitions; no version change.'.PHP_EOL;
 } finally {
     while (DB::transactionLevel() > 0) {
         DB::rollBack();

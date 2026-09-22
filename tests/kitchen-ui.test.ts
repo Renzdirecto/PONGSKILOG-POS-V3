@@ -12,6 +12,7 @@ import {
     statusLabel,
 } from '../resources/js/lib/kitchen.ts';
 import type { KitchenTicket } from '../resources/js/types/kitchen.ts';
+import { KitchenTransitionStore } from '../resources/js/lib/kitchen-transitions.ts';
 
 const tickets: KitchenTicket[] = [
     {
@@ -120,7 +121,7 @@ test('POS refreshes both ready orders and kitchen status for ticket lifecycle ev
     ]);
 });
 
-test('KDS audio is local, transition-confirmed, and does not label structured instructions', () => {
+test('KDS audio is local, transition-confirmed, and does not label structured instructions', async () => {
     const kitchenPage = readFileSync(
         new URL(
             '../resources/js/pages/workspaces/kitchen.tsx',
@@ -133,7 +134,25 @@ test('KDS audio is local, transition-confirmed, and does not label structured in
     assert.match(kitchenPage, /\/audio\/kitchen-pa-serve\.mp3/);
     assert.match(kitchenPage, /playNewOrderSounds\(newlyArrivedIds\.length\)/);
     assert.match(kitchenPage, /playAudioToEndSafely/);
-    assert.match(kitchenPage, /result\.changed/);
+    const transitions = new KitchenTransitionStore();
+    let sounds = 0;
+    await transitions.run(
+        tickets[0],
+        'ready',
+        async () => ({
+            order_id: tickets[0].id,
+            from: 'kitchen',
+            to: 'ready',
+            changed: true,
+            version: 3,
+        }),
+        () => {
+            sounds += 1;
+        },
+        assert.fail,
+        () => {},
+    );
+    assert.equal(sounds, 1);
     assert.doesNotMatch(kitchenPage, /Instruction:/);
 
     for (const file of ['kitchen-new-order.mp3', 'kitchen-pa-serve.mp3']) {

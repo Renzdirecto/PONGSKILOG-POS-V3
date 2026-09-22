@@ -1,5 +1,5 @@
 import { useEcho } from '@laravel/echo-react';
-import { router } from '@inertiajs/react';
+import { router, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo } from 'react';
 import { createRealtimeRefresh } from '@/lib/realtime-refresh';
 
@@ -14,10 +14,12 @@ export function useAuditRealtimeRefresh(only: string[]): void {
 
     useEcho<Record<string, unknown>>(
         'audit-trail',
-        ['audit.recorded'],
+        ['.audit.recorded'],
         () => refresh.schedule(),
         [refresh],
     );
+
+    usePoll(3000, { only });
 
     useEffect(() => {
         refresh.activate();

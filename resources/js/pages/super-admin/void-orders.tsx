@@ -14,7 +14,7 @@ import {
     Store,
     UserRound,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     OwnerPage,
     OwnerStatusBadge,
@@ -124,12 +124,29 @@ export default function VoidOrders({
     const [search, setSearch] = useState(filters.search ?? '');
     const realtimeProps = useMemo(() => ['voids', 'pinStatus'], []);
     useAuditRealtimeRefresh(realtimeProps);
-    const apply = (next: Record<string, string>) =>
-        router.get(
-            voidOrders(),
-            { ...filters, ...next },
-            { preserveScroll: true, replace: true },
+    const apply = (next: Record<string, string>) => {
+        const query = Object.fromEntries(
+            Object.entries({ ...filters, ...next }).filter(
+                ([, value]) => value,
+            ),
         );
+
+        router.get(voidOrders(), query, {
+            preserveScroll: true,
+            preserveState: true,
+            replace: true,
+        });
+    };
+
+    useEffect(() => {
+        if (search === (filters.search ?? '')) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => apply({ search }), 350);
+
+        return () => window.clearTimeout(timer);
+    }, [search, filters.search]);
 
     return (
         <>
@@ -188,13 +205,7 @@ function VoidRegister({
     return (
         <div className="flex min-w-0 flex-col gap-3">
             <section className={`${ownerPanelClass} p-3 md:p-4`}>
-                <form
-                    className="flex flex-col gap-3"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        apply({ search });
-                    }}
-                >
+                <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <label className="relative min-w-0 flex-1">
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
@@ -207,12 +218,6 @@ function VoidRegister({
                                 className={`${ownerControlClass} w-full pl-10`}
                             />
                         </label>
-                        <button
-                            type="submit"
-                            className={ownerSecondaryActionClass}
-                        >
-                            Search
-                        </button>
                         <button
                             type="button"
                             onClick={clear}
@@ -271,7 +276,11 @@ function VoidRegister({
                             />
                         </label>
                     </div>
-                </form>
+                    <p className="text-[11px] text-neutral-500">
+                        Search and filters update automatically. New voids
+                        appear live without reloading the page.
+                    </p>
+                </div>
             </section>
             <section className={`${ownerPanelClass} overflow-hidden`}>
                 <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3">

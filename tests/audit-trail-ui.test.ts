@@ -9,6 +9,13 @@ const page = readFileSync(
     ),
     'utf8',
 );
+const realtimeHook = readFileSync(
+    new URL(
+        '../resources/js/hooks/use-audit-realtime-refresh.ts',
+        import.meta.url,
+    ),
+    'utf8',
+);
 
 test('audit trail presents readable activity instead of raw JSON panels', () => {
     assert.match(page, /Activity feed/);
@@ -26,4 +33,24 @@ test('audit trail keeps live refresh and debounced server filters', () => {
     );
     assert.match(page, /preserveState: true/);
     assert.match(page, /Live monitoring/);
+    assert.match(realtimeHook, /\['\.audit\.recorded'\]/);
+    assert.match(realtimeHook, /usePoll\(3000, \{ only \}\)/);
+});
+
+test('void orders updates search automatically and shares live refresh', () => {
+    const voidOrdersPage = readFileSync(
+        new URL(
+            '../resources/js/pages/super-admin/void-orders.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(voidOrdersPage, /useAuditRealtimeRefresh/);
+    assert.match(
+        voidOrdersPage,
+        /window\.setTimeout\(\(\) => apply\(\{ search \}\), 350\)/,
+    );
+    assert.match(voidOrdersPage, /preserveState: true/);
+    assert.match(voidOrdersPage, /New voids\s+appear live/);
 });

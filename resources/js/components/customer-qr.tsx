@@ -38,6 +38,7 @@ import {
 import { qrError, qrRequest } from '@/lib/qr-http';
 import { terms, privacy } from '@/lib/qr-copy';
 import { pesos } from '@/lib/pos-money';
+import { createClientUuid } from '@/lib/client-uuid';
 import { reset } from '@/routes/qr';
 import { store as submitQr } from '@/routes/qr/orders';
 import type { BranchSummary } from '@/types';
@@ -248,7 +249,7 @@ export default function CustomerQr({
         setBusy(true);
         setError('');
         const payload = intent ?? {
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: createClientUuid(),
             order_type: orderType,
             customer_label: name,
             items: cart.map((line) => ({

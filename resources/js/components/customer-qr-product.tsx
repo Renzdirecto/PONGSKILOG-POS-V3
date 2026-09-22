@@ -7,6 +7,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { qrLineCents } from '@/lib/qr-order';
+import { createClientUuid } from '@/lib/client-uuid';
 import { pesos } from '@/lib/pos-money';
 import type { QrLine, QrProduct } from '@/types/qr';
 
@@ -327,7 +328,7 @@ export function CustomerQrProduct({
                             onClick={() =>
                                 onSave({
                                     ...line,
-                                    key: line.key || crypto.randomUUID(),
+                                    key: line.key || createClientUuid(),
                                 })
                             }
                         >

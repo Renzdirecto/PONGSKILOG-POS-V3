@@ -54,3 +54,18 @@ test('void orders updates search automatically and shares live refresh', () => {
     assert.match(voidOrdersPage, /preserveState: true/);
     assert.match(voidOrdersPage, /New voids\s+appear live/);
 });
+
+test('audit and void detail dialogs use a wide landscape layout', () => {
+    const voidOrdersPage = readFileSync(
+        new URL(
+            '../resources/js/pages/super-admin/void-orders.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    const wideDialogClasses =
+        /max-h-\[82dvh\].*sm:max-w-5xl xl:max-w-6xl/;
+
+    assert.match(page, wideDialogClasses);
+    assert.match(voidOrdersPage, wideDialogClasses);
+});

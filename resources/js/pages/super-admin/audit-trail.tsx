@@ -517,7 +517,7 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
 
     return (
         <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-h-[92dvh] max-w-3xl gap-0 overflow-hidden border-0 p-0 shadow-2xl">
+            <DialogContent className="max-h-[82dvh] gap-0 overflow-hidden border-0 p-0 shadow-2xl sm:max-w-5xl xl:max-w-6xl">
                 <div className="border-b border-neutral-100 bg-gradient-to-br from-neutral-50 via-white to-white px-5 py-5 sm:px-6">
                     <div className="flex items-start gap-3">
                         <span
@@ -541,7 +541,7 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
                         </div>
                     </div>
                 </div>
-                <div className="max-h-[calc(92dvh-108px)] space-y-4 overflow-y-auto bg-neutral-50/70 p-4 sm:p-6">
+                <div className="max-h-[calc(82dvh-108px)] space-y-4 overflow-y-auto bg-neutral-50/70 p-4 sm:p-6">
                     <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <DetailStat
                             icon={CircleUserRound}

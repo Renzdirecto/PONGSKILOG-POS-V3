@@ -300,8 +300,7 @@ Audience:
 
 - Kitchen
 - POS
-- Customer tracking
-- Customer Display when relevant
+- Private branch channels only
 
 Payload:
 
@@ -327,25 +326,42 @@ Customer mapping:
 - ready → Ready
 - done → Completed
 
+This event is an operational invalidation signal. Kitchen and POS debounce
+bursts, coalesce overlapping reloads, and refetch their authoritative
+branch/session projections. Customer Display does not receive this payload
+because it contains internal order identifiers and operational detail.
+
 ---
 
 ## 13. Customer Display
 
 ### `display.orders_changed`
 
-Safe projection only.
+Audience:
 
-Example:
+- Authorized same-branch Customer Display only
+
+Payload:
+
 
 ```json
 {
-  "preparing": ["ZAB-000123"],
-  "ready": ["ZAB-000119"]
+  "event_id": "uuid",
+  "event_type": "display.orders_changed",
+  "branch_id": "uuid",
+  "occurred_at": "ISO-8601 timestamp"
 }
 ```
 
+This is a privacy-minimal invalidation signal, not an authoritative order
+projection. It is emitted after a committed Pay Now, committed Pay Later, or
+Kitchen lifecycle transition. The display debounces/coalesces signals and
+refetches its order-number-only projection, including after reconnect.
+
 Never include:
 
+- Internal order IDs
+- Order/customer/table/item details
 - Prices
 - Payment
 - Customer private data
@@ -420,6 +436,27 @@ Payload:
 - version
 
 Public QR should not receive raw stock quantity unless explicitly needed.
+
+### `product.branch_configuration_changed`
+
+Audience:
+
+- Authorized same-branch POS and management clients
+
+Payload:
+
+- branch_id
+- product_id
+- is_available
+- effective_price
+- version
+
+### Product and inventory implementation checkpoint — 2026-09-21
+
+- `inventory.changed`, `product.availability_changed`, and `product.branch_configuration_changed` are implemented on the private `branch.{branch}.inventory` channel. Events implement the after-commit contract and contain compact IDs/state only; PostgreSQL remains authoritative.
+- Inventory movements emit exactly one inventory event after their transaction commits. Product, Category, branch configuration, Group/Option, and Product image mutations emit the applicable compact catalog events after their complete mutation boundary succeeds.
+- Active POS clients subscribe through Laravel Echo, coalesce bursts into one authoritative `catalog` partial reload, prevent simultaneous reloads, and perform a fresh catalog reload after reconnect. Cart, order type, payment state, open Product dialog, selected structured options, and manual notes remain local state.
+- Channel authorization rechecks the authenticated active user, branch access, and an operational catalog/inventory permission. A normal branch event never fans out another branch's stock or configuration, and no public QR inventory subscription was added.
 
 ---
 
@@ -601,3 +638,83 @@ Backend write idempotency remains separate.
 - `product.availability_changed`
 - `display.orders_changed`
 - `branch.status_changed`
+
+
+## Phase 8/9 post-merge operational refinement
+
+`KitchenTicketCreated`, `KitchenStatusChanged`, and `DisplayOrdersChanged` implement
+`ShouldBroadcastNow`, `ShouldDispatchAfterCommit`, and `ShouldRescue`. Laravel 13
+waits for the outer database commit, then sends the compact signal synchronously
+without generic queue pickup. Rollbacks send nothing; transport failures are
+reported without failing the committed business operation. Other catalog events
+retain their existing queued delivery and 160 ms debounce.
+
+Kitchen, POS Ready, and Customer Display coalesce operational invalidations over
+35 ms. A single refresh stays in flight, with one trailing refresh for later
+signals, bounded event-ID deduplication, branch checks, and reconnect recovery.
+All cards, Ready details, and display numbers still come from authoritative server
+projections; Customer Display broadcasts still contain only identity, branch, and
+time. No polling or full-order broadcasts were added.
+
+KDS status writes use independent JSON PATCH requests through Inertia's XHR client
+and Wayfinder, not navigation visits. An order-scoped optimistic overlay updates
+status, filters, and count deltas immediately. Only that order blocks duplicate
+clicks. Confirmed versions protect against stale refreshes; a rejected request
+rolls back only its own overlay and shows a toast. The shared server action remains
+authoritative; existing POS redirect/flash responses remain supported. PA SERVE is
+queued once per successful changed Ready result, never for an optimistic click,
+failure, duplicate target, or projection refresh.
+
+Lock ordering is OPEN Store Session (shared), Order (exclusive), KitchenTicket
+(exclusive). Different orders can proceed while an unrelated order is blocked.
+A future Store Close must acquire the session's exclusive lock before changing
+status or locking orders. Same-order idempotency and one-version-per-change remain
+mandatory. The isolated PostgreSQL harness verifies both concurrency cases and
+that an exclusive close boundary blocks then rejects a transition.
+
+
+## Phase 10/11 customer QR delivery - 2026-09-22
+
+All three new event classes use `ShouldBroadcastNow`, `ShouldDispatchAfterCommit`,
+and `ShouldRescue`: delivery follows the outer commit without queue-worker pickup;
+rolled-back writes emit nothing; transport failures are reported without undoing
+successful business writes. Exact request replays do not emit duplicate lifecycle
+signals.
+
+| Event | Private audience | Payload |
+| --- | --- | --- |
+| `qr.order_submitted` | `branch.{branchId}.pos` | event ID/type, branch ID, Order ID/qr_number/type, submitted time, version |
+| `qr.order_loaded` | same authorized POS branch | same compact identity/version envelope; removes a competing LOAD from waiting queues |
+| `qr.order_archived` | same authorized POS branch | event ID/type, branch ID, Order ID/qr_number, archive reason/time, version |
+| `order.tracking_changed` | `order-tracking.{publicTrackingId}` | event ID/type, public tracking ID, occurrence time, version only |
+| `qr.catalog_changed` | `qr-catalog.{branchId}` | event ID/type, branch ID, occurrence time only |
+
+Tracking invalidates after LOAD, Pay Now, Pay Later commit, later settlement,
+Kitchen transitions, and archive. Customer-safe catalog invalidation follows
+existing product/category/group/option/branch configuration and inventory write
+paths, Store Open, and branch updates. Customer pages do not subscribe to staff
+POS, Kitchen, inventory, management, or Customer Display channels.
+
+`POST /qr/{branch}/broadcasting/auth` uses the encrypted HttpOnly anonymous cookie,
+CSRF protection, expiry, and branch/session ownership. It signs only that branch's
+customer-safe catalog channel or an owned high-entropy tracking channel. Knowing
+an Order number or tracking ID alone grants no access. Event payloads contain no
+customer labels, item lists, payment data, exact stock quantities, session token,
+or token hash for customer audiences.
+
+Customer tracking/catalog and staff queue/badge refreshes coalesce over 35 ms,
+allow one request in flight with a trailing refresh, deduplicate bounded event IDs,
+and refetch authoritative projections after reconnect. Catalog refresh preserves
+unsubmitted cart intent and open customization. Offline/disconnected states expose
+Refresh/Retry and never pretend that a write succeeded. No periodic polling or
+simulated kitchen progress is used. Browser-to-frame latency remains manual QA;
+automated delivery/rollback/failure and PostgreSQL concurrency checks are covered.
+
+
+---
+
+## Approved QR refinement invalidations - 2026-09-22
+
+Before commitment, QR staff events expose qr_number (QR-01), not order_number. Added qr.order_released and qr.order_restored on the same authorized private branch POS channel. Cancel and restore emit customer tracking invalidation as well. QR toggle changes emit customer catalog invalidation. Official committed Order/Kitchen/Display paths continue using operational identity.
+
+Immediate after-commit delivery, transport rescue, compact payloads, event deduplication, bounded coalesced refetch, reconnect refresh and branch/session isolation remain. No HTTP polling was added. The queue has one client clock for all elapsed labels. Normal connected QR queue/tracking/receipt screens omit manual Refresh controls; recovery remains in unavailable/error states.

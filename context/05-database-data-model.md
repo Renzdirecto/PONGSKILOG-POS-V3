@@ -250,8 +250,9 @@ Maps products to modifier groups.
 
 - `id`
 - `branch_id`
-- `store_session_id` nullable until operational commit
-- `order_number`
+- `store_session_id` attached at QR submission; nullable until commitment for direct POS
+- `order_number` nullable for uncommitted Customer QR orders
+- `reference_number` nullable for provisional QR and legacy rows
 - `source`
 - `order_type`
 - `customer_label` nullable
@@ -323,6 +324,16 @@ Pay Later:
 Order number unique scope:
 
 `(branch_id, order_number)`
+
+New POS orders use a numeric `order_number` allocated from a per-branch locked counter. `reference_number` is a globally unique immutable audit identifier composed from the branch code, Asia/Manila business date, and an independent daily sequence (BRANCH-MMDDYY-####). Existing legacy numbers are not rewritten, and legacy rows may retain a null reference.
+
+### `order_number_counters`
+
+- `branch_id` primary/restrictive foreign key
+- `next_number` positive bigint, default 1001
+- timestamps
+
+Allocation locks the persisted branch and its counter row. It does not derive the next number with `MAX(...) + 1`; historical numeric collisions are skipped without changing historical rows. Gaps are allowed when an early POS reservation is abandoned.
 
 ---
 
@@ -717,3 +728,45 @@ Do not hard-delete historical:
 - Completed transfers
 
 Catalog records may be disabled/soft-deleted while historical snapshots remain.
+
+
+## Phase 10/11 implemented schema - 2026-09-22
+
+Migration `2026_09_22_062703_add_customer_qr_sessions_and_tracking` creates the
+frozen UUID `customer_qr_sessions` table. `token_hash` is a unique 64-character
+SHA-256 digest; `active_order_id` is nullable and unique; `expires_at` is indexed.
+Branch and Order foreign keys use restrictive deletion. The application issues a
+seven-day, branch-named anonymous cookie (root path after the kiosk cutover) and enforces expiry on every
+customer mutation/read authorization.
+
+Added to `orders`: nullable `customer_qr_session_id`, unique nullable
+`public_tracking_id` (64 random hexadecimal characters), UUID
+`qr_idempotency_key`, `qr_intent_hash`, and `table_name_snapshot`.
+`(customer_qr_session_id, qr_idempotency_key)` is unique. The queue index covers
+branch/source/commercial status/submitted time. `order_item_modifiers` additionally
+stores `modifier_group_id_snapshot`; existing name, semantic role, option, and
+exact price snapshots remain authoritative.
+
+Submit creates the existing Order aggregate as `customer_qr / submitted / unpaid /
+null payment_term / not_sent`, with `submitted_at`, the current Store Session, and
+no `committed_at`. Submit and LOAD create no Payment, inventory movement, or Kitchen
+Ticket. LOAD records the winning cashier on this same Order; existing Pay Now or
+Pay Later performs the single operational commitment without repricing snapshots.
+Explicit Start new order clears the session pointer only after Done or archival.
+
+Receipt expiry is derived from confirmed payment time plus 24 hours; it does not
+delete the Order or financial records. Archive uses existing status/timestamp/reason
+fields (`stale_30_minutes` or `cashier_archived`). Store Close integration remains
+with the future Store Close implementation, which must honor the session lock
+boundary. No additional order, payment, inventory, or Kitchen aggregate was added.
+
+
+---
+
+## Approved identity, lifecycle and Owner settings migrations - 2026-09-22
+
+- `2026_09_22_093305_refine_customer_qr_identity_and_progress`: nullable orders.order_number with a CHECK allowing null only for uncommitted customer_qr; nullable qr_sequence with unique (store_session_id, qr_sequence); preparing_at/ready_at timestamps; customer_qr_order_counters keyed by store_session_id; order_reference_counters keyed by (branch_id, business_date). Both counters are locked, persisted and independent of each other and the existing short-number counter. Historical order/reference fields are not backfilled or rewritten.
+- `2026_09_22_093958_add_branch_qr_settings_and_visits`: stable unique kiosk_code initialized from branch code; qr_ordering_enabled (default true); optional safe facebook_url/website_url; typed receipt_name/address/contact/footer and receipt_show_logo. customer_qr_visits contains only id, branch_id, customer_qr_session_id, visited_at, with branch/time and session/time indexes. Opens within two minutes deduplicate under the session lock; history returns timestamps only.
+- `2026_09_22_102534_add_receipt_logo_path_to_branches_table`: nullable receipt_logo_path for validated branch-scoped branding stored on the configured S3 disk. Replacement/removal cleans up the old image; transaction failure cleans up the newly uploaded image. Public display streams only the persisted image through the branch logo endpoint.
+- SQLite identity alteration reconstructs the original table DDL while preserving its existing CHECK constraints, foreign keys and explicit indexes. PostgreSQL uses ALTER COLUMN plus a CHECK. Rollback intentionally refuses when provisional null-number Orders exist rather than deleting history or fabricating official numbers; roll forward in that case. Fresh/up/down/reapply tests use isolated databases/schemas.
+- Preparing/Ready represent actual transitions; rollback clears no-longer-reached stages. Receipt expiry remains derived, not a deletion deadline. Existing anonymous-session ownership authorizes prior paid receipts independently of active_order_id.

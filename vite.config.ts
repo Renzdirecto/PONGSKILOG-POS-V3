@@ -13,6 +13,7 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
             fonts: [
+                bunny('Poppins', { weights: [400, 500, 600, 700] }),
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
                 }),
@@ -29,6 +30,12 @@ export default defineConfig({
         }),
     ]),
     server: {
+        host: '127.0.0.1',
+        port: 5173,
+        strictPort: true,
+        hmr: {
+            host: '127.0.0.1',
+        },
         watch: {
             ignored: [
                 '**/.agents/**',

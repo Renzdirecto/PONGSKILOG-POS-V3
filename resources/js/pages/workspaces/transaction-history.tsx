@@ -1585,8 +1585,7 @@ function VoidDialog({
 }) {
     const [reasonCode, setReasonCode] = useState('');
     const [reasonText, setReasonText] = useState('');
-    const [authorizerEmail, setAuthorizerEmail] = useState('');
-    const [authorizerPassword, setAuthorizerPassword] = useState('');
+    const [authorizationPin, setAuthorizationPin] = useState('');
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [idempotencyKey] = useState(createClientUuid);
@@ -1610,6 +1609,12 @@ function VoidDialog({
             return;
         }
 
+        if (!/^\d{4}$/.test(authorizationPin)) {
+            setError('Enter the 4-digit Void PIN.');
+
+            return;
+        }
+
         setProcessing(true);
         setError(null);
 
@@ -1619,8 +1624,7 @@ function VoidDialog({
                 data: {
                     reason_code: reasonCode,
                     reason_text: reasonText.trim() || null,
-                    authorizer_email: authorizerEmail.trim(),
-                    authorizer_password: authorizerPassword,
+                    authorization_pin: authorizationPin,
                     idempotency_key: idempotencyKey,
                     expected_version: detail.version,
                 },
@@ -1649,7 +1653,8 @@ function VoidDialog({
                     errors?: Record<string, string[]>;
                 };
                 setError(
-                    payload.errors?.authorization?.[0] ??
+                    payload.errors?.authorization_pin?.[0] ??
+                        payload.errors?.authorization?.[0] ??
                         payload.message ??
                         'Void could not be authorized.',
                 );
@@ -1719,30 +1724,20 @@ function VoidDialog({
                 )}
                 <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
                     <p className="text-[12px] font-semibold text-amber-900">
-                        A different active Owner or Super Admin must authorize this Void.
+                        Enter the 4-digit Void PIN set in Super Admin.
                     </p>
                     <label className="block space-y-1">
                         <span className="text-[10px] font-semibold tracking-[.09em] text-amber-800 uppercase">
-                            Authorizer email
-                        </span>
-                        <input
-                            type="email"
-                            autoComplete="username"
-                            value={authorizerEmail}
-                            onChange={(event) => setAuthorizerEmail(event.target.value)}
-                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-sm"
-                        />
-                    </label>
-                    <label className="block space-y-1">
-                        <span className="text-[10px] font-semibold tracking-[.09em] text-amber-800 uppercase">
-                            Authorizer password
+                            Void PIN
                         </span>
                         <input
                             type="password"
-                            autoComplete="current-password"
-                            value={authorizerPassword}
-                            onChange={(event) => setAuthorizerPassword(event.target.value)}
-                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-sm"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            maxLength={4}
+                            value={authorizationPin}
+                            onChange={(event) => setAuthorizationPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-3 text-center text-lg tracking-[0.5em]"
                         />
                     </label>
                 </section>
@@ -1757,7 +1752,7 @@ function VoidDialog({
                     </button>
                     <button
                         type="button"
-                        disabled={processing}
+                        disabled={processing || !reasonCode || !/^\d{4}$/.test(authorizationPin)}
                         onClick={() => void submit()}
                         className="h-12 rounded-xl bg-red-700 text-sm font-semibold text-white hover:bg-red-800 disabled:bg-red-300"
                     >

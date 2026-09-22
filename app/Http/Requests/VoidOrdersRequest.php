@@ -36,6 +36,7 @@ class VoidOrdersRequest extends FormRequest
                 'price_or_quantity_error',
                 'other',
             ])],
+            'search' => ['nullable', 'string', 'max:150'],
             'date' => ['nullable', 'date_format:Y-m-d'],
             'page' => ['nullable', 'integer', 'min:1'],
         ];

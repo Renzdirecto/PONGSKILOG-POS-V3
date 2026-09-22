@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Order;
 use App\Models\OrderVoid;
 use App\Models\User;
+use App\Models\VoidAuthorizationSetting;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Inertia\Inertia;
@@ -22,6 +23,7 @@ class VoidOrdersController extends Controller
             'initiated_by_user_id',
             'authorized_by_user_id',
             'reason_code',
+            'search',
             'date',
         ]);
         $voids = OrderVoid::query()
@@ -35,6 +37,18 @@ class VoidOrdersController extends Controller
             ->when($filters['initiated_by_user_id'] ?? null, fn (Builder $query, int $userId) => $query->where('initiated_by_user_id', $userId))
             ->when($filters['authorized_by_user_id'] ?? null, fn (Builder $query, int $userId) => $query->where('authorized_by_user_id', $userId))
             ->when($filters['reason_code'] ?? null, fn (Builder $query, string $reasonCode) => $query->where('reason_code', $reasonCode))
+            ->when($filters['search'] ?? null, function (Builder $query, string $search): void {
+                $term = '%'.mb_strtolower(trim($search)).'%';
+                $query->where(function (Builder $query) use ($term): void {
+                    $query->whereHas('order', fn (Builder $order) => $order
+                        ->whereRaw('LOWER(order_number) LIKE ?', [$term])
+                        ->orWhereRaw('LOWER(reference_number) LIKE ?', [$term]))
+                        ->orWhereHas('initiatedBy', fn (Builder $user) => $user
+                            ->whereRaw('LOWER(name) LIKE ?', [$term]))
+                        ->orWhereHas('authorizedBy', fn (Builder $user) => $user
+                            ->whereRaw('LOWER(name) LIKE ?', [$term]));
+                });
+            })
             ->when($filters['date'] ?? null, function (Builder $query, string $date): void {
                 $day = CarbonImmutable::parse($date, 'Asia/Manila');
                 $query->whereBetween('created_at', [$day->startOfDay()->utc(), $day->endOfDay()->utc()]);
@@ -76,11 +90,20 @@ class VoidOrdersController extends Controller
             ];
         });
 
+        $pinSetting = VoidAuthorizationSetting::query()
+            ->where('scope', 'global')
+            ->with('configuredBy:id,name,email')
+            ->first();
+
         return Inertia::render('super-admin/void-orders', [
             'voids' => $voids,
             'filters' => $filters,
             'branches' => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
             'users' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
+            'pinStatus' => $pinSetting === null ? null : [
+                'configured_at' => $pinSetting->configured_at?->toIso8601String(),
+                'configured_by' => $pinSetting->configuredBy?->only(['id', 'name', 'email']),
+            ],
         ]);
     }
 }

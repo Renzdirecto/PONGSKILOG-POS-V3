@@ -2,6 +2,7 @@
 
 namespace App\Actions\Audit;
 
+use App\Events\AuditLogRecorded;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\User;
@@ -25,7 +26,7 @@ class AuditRecorder
         ?array $metadata = null,
         ?string $idempotencyKey = null,
     ): AuditLog {
-        return AuditLog::query()->create([
+        $audit = AuditLog::query()->create([
             'branch_id' => $branch?->id,
             'user_id' => $actor?->id,
             'module' => $module,
@@ -37,6 +38,10 @@ class AuditRecorder
             'metadata' => $this->redact($metadata),
             'idempotency_key' => $idempotencyKey,
         ]);
+
+        AuditLogRecorded::dispatch($audit);
+
+        return $audit;
     }
 
     /** @param array<string, mixed>|null $values

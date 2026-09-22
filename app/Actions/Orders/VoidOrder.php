@@ -19,6 +19,7 @@ use App\Models\OrderVoid;
 use App\Models\Product;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Models\VoidAuthorizationSetting;
 use App\Support\PosAccess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -59,7 +60,7 @@ class VoidOrder
 
             $branch = Branch::query()->whereKey($branch->id)->firstOrFail();
             $initiator = $this->access->authorize($initiator, $branch);
-            $authorizer = $this->authorizer($data, $branch, $initiator);
+            $authorizer = $this->authorizer($data, $initiator);
             $requestHash = $this->requestHash($requestedOrder, $initiator, $authorizer, $data);
 
             $replay = OrderVoid::query()->where('idempotency_key', $data['idempotency_key'])->first();
@@ -110,7 +111,7 @@ class VoidOrder
                 'reason_code' => $data['reason_code'],
                 'reason_label' => self::REASONS[$data['reason_code']],
                 'reason_text' => $this->reasonText($data),
-                'authorization_method' => 'password_reauth',
+                'authorization_method' => 'super_admin_pin',
                 'idempotency_key' => $data['idempotency_key'],
             ]);
             $order->update([
@@ -134,7 +135,7 @@ class VoidOrder
                     'void_id' => $void->id,
                     'initiated_by_user_id' => $initiator->id,
                     'authorized_by_user_id' => $authorizer->id,
-                    'authorization_method' => 'password_reauth',
+                    'authorization_method' => 'super_admin_pin',
                     'reason_code' => $void->reason_code,
                     'reason_label' => $void->reason_label,
                     'reason_text' => $void->reason_text,
@@ -153,15 +154,21 @@ class VoidOrder
     }
 
     /** @param array<string, mixed> $data */
-    private function authorizer(array $data, Branch $branch, User $initiator): User
+    private function authorizer(array $data, User $initiator): User
     {
-        $authorizer = User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $data['authorizer_email'])])->first();
-        if ($authorizer === null
+        $setting = VoidAuthorizationSetting::query()
+            ->where('scope', 'global')
+            ->with('configuredBy')
+            ->lockForUpdate()
+            ->first();
+        $authorizer = $setting?->configuredBy;
+
+        if ($setting === null
+            || $authorizer === null
             || ! $authorizer->is_active
+            || ! $authorizer->hasRole('super_admin')
             || $authorizer->id === $initiator->id
-            || (! $authorizer->hasRole('owner') && ! $authorizer->hasRole('super_admin'))
-            || ! $authorizer->canAccessBranch($branch)
-            || ! Hash::check((string) $data['authorizer_password'], $authorizer->password)) {
+            || ! Hash::check((string) $data['authorization_pin'], $setting->pin_hash)) {
             throw ValidationException::withMessages(['authorization' => 'Authorization could not be verified.']);
         }
 

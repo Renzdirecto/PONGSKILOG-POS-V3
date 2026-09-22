@@ -6,7 +6,7 @@ use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class AuditTrailRequest extends FormRequest
+class SetVoidAuthorizationPinRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -14,7 +14,8 @@ class AuditTrailRequest extends FormRequest
     public function authorize(): bool
     {
         return $this->user() instanceof User
-            && $this->user()->hasPermission('audit.view');
+            && $this->user()->is_active
+            && $this->user()->hasRole('super_admin');
     }
 
     /**
@@ -25,13 +26,7 @@ class AuditTrailRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'branch_id' => ['nullable', 'uuid', 'exists:branches,id'],
-            'user_id' => ['nullable', 'integer', 'exists:users,id'],
-            'module' => ['nullable', 'string', 'max:80'],
-            'action' => ['nullable', 'string', 'max:100'],
-            'search' => ['nullable', 'string', 'max:150'],
-            'date' => ['nullable', 'date_format:Y-m-d'],
-            'page' => ['nullable', 'integer', 'min:1'],
+            'pin' => ['required', 'string', 'digits:4', 'confirmed'],
         ];
     }
 }

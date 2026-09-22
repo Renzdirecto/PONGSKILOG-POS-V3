@@ -101,6 +101,12 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
     $this->assertDatabaseCount('payments', $count);
     $this->assertDatabaseCount('kitchen_tickets', 1);
     $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseHas('audit_logs', [
+        'auditable_id' => $order->id,
+        'user_id' => $user->id,
+        'action' => 'order.paid',
+        'idempotency_key' => strtolower($payload['idempotency_key']),
+    ]);
 })->with(['cashier', 'cashier_kitchen'])->with([
     'cash exact' => ['cash', '235.00', null, '0.00', 1],
     'cash change' => ['cash', '500.00', null, '265.00', 1],

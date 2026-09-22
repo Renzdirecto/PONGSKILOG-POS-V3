@@ -23,3 +23,7 @@ Broadcast::channel('branch.{branch}.inventory', function (User $user, Branch $br
         && $user->canAccessBranch($branch)
         && ($user->hasPermission('pos.access') || $user->hasPermission('inventory.manage') || $user->hasPermission('products.manage'));
 });
+
+Broadcast::channel('audit-trail', function (User $user): bool {
+    return $user->is_active && $user->hasPermission('audit.view');
+});

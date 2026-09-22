@@ -12,8 +12,10 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Models\VoidAuthorizationSetting;
 use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -24,6 +26,13 @@ beforeEach(function () {
     $this->cashier->branches()->attach($this->branch, ['is_active' => true]);
     $this->owner = User::factory()->create(['email' => 'owner@pongskilog.test']);
     $this->owner->roles()->attach(Role::query()->where('name', 'owner')->sole());
+    $this->superAdmin = User::factory()->create(['email' => 'super-admin@pongskilog.test']);
+    $this->superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+    VoidAuthorizationSetting::query()->create([
+        'pin_hash' => Hash::make('1234'),
+        'configured_by_user_id' => $this->superAdmin->id,
+        'configured_at' => now(),
+    ]);
     $this->session = StoreSession::factory()->for($this->branch)->create(['opened_by_user_id' => $this->cashier->id]);
     $this->product = Product::factory()->create(['default_price' => '100.00']);
     BranchProduct::factory()->for($this->branch)->for($this->product)->create(['tracks_inventory' => true]);
@@ -53,15 +62,14 @@ function voidPayload(object $test, Order $order, array $overrides = []): array
     return [
         'reason_code' => 'wrong_item',
         'reason_text' => null,
-        'authorizer_email' => $test->owner->email,
-        'authorizer_password' => 'password',
+        'authorization_pin' => '1234',
         'idempotency_key' => (string) Str::uuid(),
         'expected_version' => $order->version,
         ...$overrides,
     ];
 }
 
-test('cashier voids a current-session pay later order with separate owner re-authentication', function () {
+test('cashier voids a current-session pay later order with the configured super admin PIN', function () {
     $order = voidOrderFixture($this, 2);
     $payload = voidPayload($this, $order);
 
@@ -81,9 +89,9 @@ test('cashier voids a current-session pay later order with separate owner re-aut
     $this->assertDatabaseHas('order_voids', [
         'order_id' => $order->id,
         'initiated_by_user_id' => $this->cashier->id,
-        'authorized_by_user_id' => $this->owner->id,
+        'authorized_by_user_id' => $this->superAdmin->id,
         'reason_code' => 'wrong_item',
-        'authorization_method' => 'password_reauth',
+        'authorization_method' => 'super_admin_pin',
     ]);
     $this->assertDatabaseHas('inventory_movements', [
         'order_id' => $order->id,
@@ -97,16 +105,20 @@ test('cashier voids a current-session pay later order with separate owner re-aut
         'action' => 'order.voided',
         'idempotency_key' => strtolower($payload['idempotency_key']),
     ]);
+    $this->assertDatabaseHas('audit_logs', [
+        'auditable_id' => $order->id,
+        'user_id' => $this->cashier->id,
+        'action' => 'order.pay_later_committed',
+    ]);
 });
 
-test('void rejects self authorization even when the cashier also holds owner privileges', function () {
+test('void rejects an incorrect configured PIN', function () {
     $order = voidOrderFixture($this);
-    $this->cashier->roles()->attach(Role::query()->where('name', 'owner')->sole());
 
     $this->actingAs($this->cashier)
         ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
         ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order, [
-            'authorizer_email' => $this->cashier->email,
+            'authorization_pin' => '9999',
         ]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['authorization']);
@@ -114,10 +126,25 @@ test('void rejects self authorization even when the cashier also holds owner pri
     expect($order->fresh()->commercial_status->value)->toBe('active')
         ->and($this->balance->fresh()->on_hand)->toBe(9);
     $this->assertDatabaseCount('order_voids', 0);
-    $this->assertDatabaseCount('audit_logs', 0);
+    $this->assertDatabaseHas('audit_logs', ['auditable_id' => $order->id, 'action' => 'order.pay_later_committed']);
 });
 
-test('void rejects a blank other reason and never stores the authorizer password', function () {
+test('void rejects a PIN configured by the initiating cashier even when they are also a super admin', function () {
+    $order = voidOrderFixture($this);
+    $this->cashier->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+    VoidAuthorizationSetting::query()->sole()->update(['configured_by_user_id' => $this->cashier->id]);
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['authorization']);
+
+    expect($order->fresh()->commercial_status->value)->toBe('active');
+    $this->assertDatabaseCount('order_voids', 0);
+});
+
+test('void rejects a blank other reason and never stores the authorization PIN', function () {
     $order = voidOrderFixture($this);
     $payload = voidPayload($this, $order, [
         'reason_code' => 'other',
@@ -130,21 +157,19 @@ test('void rejects a blank other reason and never stores the authorizer password
         ->assertUnprocessable()
         ->assertJsonValidationErrors('reason_text');
 
-    $this->owner->update(['password' => 'super-secret-reauth-password']);
     $payload = voidPayload($this, $order, [
         'reason_code' => 'other',
         'reason_text' => 'Customer changed their mind.',
-        'authorizer_password' => 'super-secret-reauth-password',
     ]);
     $this->actingAs($this->cashier)
         ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
         ->postJson(route('pos.transactions.void', $order), $payload)
         ->assertOk();
 
-    $audit = AuditLog::query()->where('auditable_id', $order->id)->sole();
+    $audit = AuditLog::query()->where('auditable_id', $order->id)->where('action', 'order.voided')->sole();
 
     expect(json_encode($audit->toArray(), JSON_THROW_ON_ERROR))
-        ->not->toContain('super-secret-reauth-password');
+        ->not->toContain('1234');
 });
 
 test('void restores the net tracked inventory effect after an edited order and replays exactly once', function () {

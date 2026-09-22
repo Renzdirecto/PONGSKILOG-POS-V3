@@ -33,8 +33,7 @@ class VoidOrderRequest extends FormRequest
                 'other',
             ])],
             'reason_text' => ['nullable', 'string', 'max:1000', 'required_if:reason_code,other'],
-            'authorizer_email' => ['required', 'string', 'email:filter', 'max:255'],
-            'authorizer_password' => ['required', 'string', 'max:255'],
+            'authorization_pin' => ['required', 'string', 'digits:4'],
             'idempotency_key' => ['required', 'uuid'],
             'expected_version' => ['required', 'integer', 'min:0'],
         ];

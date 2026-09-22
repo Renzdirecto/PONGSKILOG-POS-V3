@@ -28,6 +28,7 @@ use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
+use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
@@ -93,6 +94,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('workspaces/void-orders', VoidOrdersController::class)
         ->middleware('permission:void_orders.manage')
         ->name('workspaces.void-orders');
+    Route::put('workspaces/void-orders/pin', SetVoidAuthorizationPinController::class)
+        ->middleware(['permission:void_orders.manage', 'throttle:5,1'])
+        ->name('workspaces.void-orders.pin.update');
 
     Route::inertia('workspaces/owner', 'workspaces/show', [
         'workspace' => 'Owner',

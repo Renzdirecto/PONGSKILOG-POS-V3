@@ -97,6 +97,12 @@ test('cash cashless and split settle a pay later order without repeating invento
     }
 
     $this->postJson(route('pos.orders.settlements.store', $order), $payload)->assertExactJson($response->json());
+    $this->assertDatabaseHas('audit_logs', [
+        'auditable_id' => $order->id,
+        'user_id' => $user->id,
+        'action' => 'order.settled',
+        'idempotency_key' => strtolower($payload['idempotency_key']),
+    ]);
     expect($order->fresh()->version)->toBe(3)
         ->and($balance->fresh()->on_hand)->toBe(4)
         ->and($order->inventoryMovements()->count())->toBe($movementCount)

@@ -16,6 +16,24 @@ class TransactionProjection
     {
         $totals = $this->money->totals($order);
         $firstGroup = $this->paymentGroups($order)[0] ?? null;
+        $initialCash = null;
+        $initialCashless = null;
+        $firstPayments = $firstGroup['payments'] ?? [];
+        if (is_array($firstPayments)) {
+            foreach ($firstPayments as $payment) {
+                if (! is_array($payment) || ! is_string($payment['method'] ?? null) || ! is_string($payment['amount'] ?? null)) {
+                    continue;
+                }
+
+                if ($payment['method'] === 'cash') {
+                    $initialCash = $payment['amount'];
+                }
+
+                if ($payment['method'] === 'cashless') {
+                    $initialCashless = $payment['amount'];
+                }
+            }
+        }
 
         return [
             'id' => $order->id,
@@ -27,6 +45,9 @@ class TransactionProjection
             'kitchen_status' => $order->kitchen_status->value,
             'payment_status' => $totals['status']->value,
             'payment_method' => $firstGroup['method'] ?? null,
+            'initial_cash' => $initialCash,
+            'initial_cashless' => $initialCashless,
+            'cashier' => $firstGroup['cashier'] ?? null,
             'total' => $order->total,
             'original_total' => $order->original_total,
             'amount_paid' => ExactMoney::decimal($totals['payments']),
@@ -36,7 +57,18 @@ class TransactionProjection
             'edited_at' => $order->edited_at?->toIso8601String(),
             'version' => $order->version,
             'item_count' => $order->items->sum('quantity'),
-            'items_preview' => $order->items->take(3)->map(fn (OrderItem $item): string => $item->quantity.'× '.$item->product_name_snapshot)->values()->all(),
+            'items_preview' => $order->items->map(fn (OrderItem $item): array => [
+                'id' => $item->id,
+                ...OperationalItemName::fromOrderItem($item),
+                'quantity' => $item->quantity,
+                'line_total' => $item->line_total,
+                'notes' => $item->notes,
+                'modifiers' => $item->modifiers->map(fn (OrderItemModifier $modifier): array => [
+                    'group_name' => $modifier->group_name_snapshot,
+                    'semantic_role' => $modifier->semantic_role_snapshot,
+                    'name' => $modifier->option_name_snapshot,
+                ])->values()->all(),
+            ])->values()->all(),
         ];
     }
 
@@ -52,7 +84,7 @@ class TransactionProjection
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 'id' => $item->id,
                 'product_id' => $item->product_id,
-                'name' => $item->product_name_snapshot,
+                ...OperationalItemName::fromOrderItem($item),
                 'unit_price' => $item->unit_price,
                 'quantity' => $item->quantity,
                 'line_total' => $item->line_total,
@@ -61,6 +93,7 @@ class TransactionProjection
                     'group_id' => $modifier->modifier_group_id_snapshot,
                     'option_id' => $modifier->modifier_option_id,
                     'group_name' => $modifier->group_name_snapshot,
+                    'semantic_role' => $modifier->semantic_role_snapshot,
                     'name' => $modifier->option_name_snapshot,
                     'price_delta' => $modifier->price_delta_snapshot,
                 ])->values()->all(),

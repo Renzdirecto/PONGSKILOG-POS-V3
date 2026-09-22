@@ -31,7 +31,7 @@ class TransactionHistoryRequest extends FormRequest
     {
         return [
             'search' => ['nullable', 'string', 'max:150'],
-            'date' => ['nullable', Rule::in(['today', 'yesterday', 'week', 'month', 'custom'])],
+            'date' => ['nullable', Rule::in(['today', 'yesterday', 'last_7_days', 'month', 'custom'])],
             'from' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d'],
             'to' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d', 'after_or_equal:from'],
             'kitchen_status' => ['nullable', Rule::enum(KitchenStatus::class)],

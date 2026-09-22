@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
 use App\Support\PosAccess;
+use App\Support\PosReceipt;
 use App\Support\TransactionHistory;
 use App\Support\TransactionProjection;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +35,7 @@ class TransactionHistoryController extends Controller
         ]);
     }
 
-    public function show(Request $request, Order $order, ActiveBranchContext $context, PosAccess $access, TransactionProjection $projection): JsonResponse
+    public function show(Request $request, Order $order, ActiveBranchContext $context, PosAccess $access, TransactionProjection $projection, PosReceipt $receipt): JsonResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -45,6 +46,11 @@ class TransactionHistoryController extends Controller
         $canMutate = $order->commercial_status->value === 'active'
             && $branch->storeSessions()->where('status', StoreSessionStatus::Open)->whereKey($order->store_session_id)->exists();
 
-        return response()->json(['transaction' => $projection->detail($order, $canMutate)])->header('Cache-Control', 'no-store');
+        return response()->json([
+            'transaction' => [
+                ...$projection->detail($order, $canMutate),
+                'receipt' => $receipt->summary($order),
+            ],
+        ])->header('Cache-Control', 'no-store');
     }
 }

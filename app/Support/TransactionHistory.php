@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Order;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 
 class TransactionHistory
 {
@@ -18,31 +19,52 @@ class TransactionHistory
      */
     public function for(Branch $branch, array $filters): array
     {
-        $query = Order::query()
-            ->where('branch_id', $branch->id)
-            ->whereNotNull('committed_at')
-            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed])
-            ->with(['items', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable']);
+        $query = $this->baseQuery($branch)
+            ->with(['items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable']);
 
         $this->applyFilters($query, $filters);
-        $metricsQuery = clone $query;
+        $metricsQuery = $this->baseQuery($branch);
+        $this->applyFilters($metricsQuery, Arr::except($filters, ['kitchen_status', 'payment_status']));
+        $metrics = $metricsQuery->toBase()
+            ->selectRaw("SUM(CASE WHEN kitchen_status = 'kitchen' THEN 1 ELSE 0 END) AS in_kitchen")
+            ->selectRaw("SUM(CASE WHEN kitchen_status = 'preparing' THEN 1 ELSE 0 END) AS preparing")
+            ->selectRaw("SUM(CASE WHEN kitchen_status = 'done' THEN 1 ELSE 0 END) AS done")
+            ->selectRaw("SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid")
+            ->selectRaw("SUM(CASE WHEN payment_status = 'unpaid' THEN 1 ELSE 0 END) AS pending")
+            ->first();
         $openSessionId = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->value('id');
         $page = $query->orderByDesc('committed_at')->orderByDesc('id')->paginate(10)->withQueryString();
-        $page->through(fn (Order $order): array => [
-            ...$this->projection->summary($order),
-            'can_edit' => $openSessionId !== null && $order->store_session_id === $openSessionId,
-        ]);
+        $page->through(function (Order $order) use ($openSessionId): array {
+            $canMutate = $openSessionId !== null && $order->store_session_id === $openSessionId;
+            $summary = $this->projection->summary($order);
+
+            return [
+                ...$summary,
+                'can_edit' => $canMutate,
+                'can_settle' => $canMutate && (float) $summary['outstanding'] > 0,
+            ];
+        });
 
         return [
             'transactions' => $page,
+            'history_total' => $this->baseQuery($branch)->count(),
             'metrics' => [
-                'total' => (clone $metricsQuery)->count(),
-                'paid' => (clone $metricsQuery)->where('payment_status', 'paid')->count(),
-                'pending' => (clone $metricsQuery)->where('payment_status', 'unpaid')->count(),
-                'balance' => (clone $metricsQuery)->where('payment_status', 'partial')->count(),
-                'sales' => (string) (clone $metricsQuery)->sum('total'),
+                'in_kitchen' => (int) ($metrics->in_kitchen ?? 0),
+                'preparing' => (int) ($metrics->preparing ?? 0),
+                'done' => (int) ($metrics->done ?? 0),
+                'paid' => (int) ($metrics->paid ?? 0),
+                'pending' => (int) ($metrics->pending ?? 0),
             ],
         ];
+    }
+
+    /** @return Builder<Order> */
+    private function baseQuery(Branch $branch): Builder
+    {
+        return Order::query()
+            ->where('branch_id', $branch->id)
+            ->whereNotNull('committed_at')
+            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed]);
     }
 
     /** @param Builder<Order> $query
@@ -100,7 +122,7 @@ class TransactionHistory
         return match ($filters['date'] ?? null) {
             'today' => [$now->startOfDay(), $now->endOfDay()],
             'yesterday' => [$now->subDay()->startOfDay(), $now->subDay()->endOfDay()],
-            'week' => [$now->startOfWeek(), $now->endOfDay()],
+            'last_7_days' => [$now->subDays(6)->startOfDay(), $now->endOfDay()],
             'month' => [$now->startOfMonth(), $now->endOfDay()],
             'custom' => [CarbonImmutable::parse($filters['from'], 'Asia/Manila')->startOfDay(), CarbonImmutable::parse($filters['to'], 'Asia/Manila')->endOfDay()],
             default => [null, null],

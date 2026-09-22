@@ -16,7 +16,7 @@ import { PosModifierDetails } from '@/components/pos-modifier-details';
 import { TransactionInvoiceDialog } from '@/components/transaction-invoice-dialog';
 import { customerDisplayLabel } from '@/lib/pos-order';
 import { showsInvoiceProof } from '@/lib/pos-payment-proof';
-import type { PaidReceipt } from '@/types/pos';
+import type { PaidReceipt, ReceiptSummary } from '@/types/pos';
 
 export function PosPaid({
     receipt,
@@ -24,12 +24,14 @@ export function PosPaid({
     onReceipt,
     onBack,
     onNewOrder,
+    showNewOrderAction = true,
 }: {
-    receipt: PaidReceipt;
+    receipt: ReceiptSummary;
     showReceipt: boolean;
     onReceipt: () => void;
     onBack: () => void;
     onNewOrder: () => void;
+    showNewOrderAction?: boolean;
 }) {
     const [showQr, setShowQr] = useState(false);
     const [invoiceOpen, setInvoiceOpen] = useState(false);
@@ -50,17 +52,17 @@ export function PosPaid({
         (payment) => payment.method === 'cashless',
     );
     const paymentMethod =
-        cash && cashless ? 'split' : cash ? 'cash' : 'cashless';
+        cash && cashless ? 'split' : cash ? 'cash' : cashless ? 'cashless' : null;
     const method = {
         cash: 'Cash',
         cashless: 'Cashless',
         split: 'Split · Cash + Cashless',
-    }[paymentMethod];
+    }[paymentMethod ?? 'cash'] ?? 'Pending';
     const customer = customerDisplayLabel(
         receipt.customer_label,
         receipt.table_name,
     );
-    const paidAt = new Date(receipt.paid_at).toLocaleString('en-PH', {
+    const paidAt = new Date(receipt.paid_at ?? receipt.committed_at).toLocaleString('en-PH', {
         timeZone: 'Asia/Manila',
     });
 
@@ -68,7 +70,7 @@ export function PosPaid({
         return (
             <PosReceiptQr
                 key={receipt.id}
-                receipt={receipt}
+                receipt={receipt as PaidReceipt}
                 onBack={() => setShowQr(false)}
             />
         );
@@ -117,8 +119,8 @@ export function PosPaid({
                             <p className="text-[20px] font-bold tracking-tight text-red-700">
                                 ORDER #{receipt.order_number}
                             </p>
-                            <span className="rounded-full bg-neutral-950 px-3 py-1 text-[10px] font-bold tracking-widest text-white">
-                                PAID
+                            <span className={`rounded-full px-3 py-1 text-[10px] font-bold tracking-widest ${receipt.payment_status === 'paid' ? 'bg-neutral-950 text-white' : receipt.payment_status === 'partial' ? 'border border-amber-200 bg-amber-50 text-amber-800' : 'border border-red-200 bg-red-50 text-red-700'}`}>
+                                {receipt.payment_status === 'partial' ? 'BALANCE DUE' : receipt.payment_status.toUpperCase()}
                             </span>
                             {receipt.reference_number && (
                                 <p className="mt-1 text-[10.5px] break-all text-neutral-500">
@@ -131,7 +133,7 @@ export function PosPaid({
                             <ReceiptRow label="Date / time" value={paidAt} />
                             <ReceiptRow
                                 label="Cashier"
-                                value={receipt.cashier}
+                                value={receipt.cashier ?? '—'}
                             />
                             <ReceiptRow
                                 label="Order type"
@@ -246,20 +248,24 @@ export function PosPaid({
                         Print receipt
                     </button>
                     <div className="flex gap-2">
-                        <button
-                            onClick={() => setShowQr(true)}
-                            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
-                        >
-                            <QrCode className="size-4" />
-                            Show QR
-                        </button>
-                        <button
-                            onClick={onNewOrder}
-                            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
-                        >
-                            <Plus className="size-4" />
-                            New order
-                        </button>
+                        {receipt.payment_status === 'paid' && (
+                            <button
+                                onClick={() => setShowQr(true)}
+                                className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
+                            >
+                                <QrCode className="size-4" />
+                                Show QR
+                            </button>
+                        )}
+                        {showNewOrderAction && (
+                            <button
+                                onClick={onNewOrder}
+                                className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
+                            >
+                                <Plus className="size-4" />
+                                New order
+                            </button>
+                        )}
                     </div>
                 </div>
             </>
@@ -345,7 +351,8 @@ export function PosPaid({
                         <ReceiptText className="size-4" />
                         View receipt
                     </button>
-                    {showsInvoiceProof(paymentMethod) && (
+                    {paymentMethod !== null &&
+                        showsInvoiceProof(paymentMethod) && (
                         <button
                             type="button"
                             onClick={() => setInvoiceOpen(true)}
@@ -359,7 +366,7 @@ export function PosPaid({
                                 <span className="mt-1 text-[9px] font-medium tracking-wide uppercase">Add proof</span>
                             </span>
                         </button>
-                    )}
+                        )}
                 </div>
             </div>
             {cashless && (

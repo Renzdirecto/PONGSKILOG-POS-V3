@@ -94,11 +94,12 @@ export type PaymentAttempt = PaymentInput & {
         modifiers: CartLine['modifiers'];
     }[];
 };
-export type PaidReceipt = OrderSummary & {
-    payment_status: 'paid';
+export type ReceiptSummary = OrderSummary & {
+    payment_status: 'paid' | 'unpaid' | 'partial';
     store_session_id: string;
-    paid_at: string;
-    cashier: string;
+    committed_at: string;
+    paid_at: string | null;
+    cashier: string | null;
     branch: {
         name: string;
         code: string;
@@ -118,4 +119,10 @@ export type PaidReceipt = OrderSummary & {
         payment_context: string | null;
         invoice: { name: string; url: string } | null;
     }[];
+};
+
+export type PaidReceipt = ReceiptSummary & {
+    payment_status: 'paid';
+    paid_at: string;
+    cashier: string;
 };

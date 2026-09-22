@@ -7,6 +7,7 @@ use App\Actions\Orders\SettlePayLaterOrder;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
+use App\Models\BranchTable;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Role;
@@ -74,6 +75,31 @@ test('same-total edit creates no money or inventory side effect', function () {
     expect($edited->total)->toBe('100.00')->and($edited->payments()->count())->toBe(0)
         ->and($edited->adjustments()->count())->toBe(0)->and($this->balance->fresh()->on_hand)->toBe(9);
     expect($edited->inventoryMovements()->where('movement_type', 'order_edit_delta')->count())->toBe(0);
+});
+
+test('take out edits retain an optional active table', function () {
+    $table = BranchTable::factory()->for($this->branch)->create(['name' => 'Table 3']);
+    $order = committedEditFixture($this);
+    $item = $order->items()->sole();
+
+    $edited = app(EditCommittedOrder::class)->execute($this->cashier, $this->branch, $order, [
+        'idempotency_key' => (string) Str::uuid(),
+        'expected_version' => $order->version,
+        'order_type' => 'take_out',
+        'customer_label' => 'Ana',
+        'branch_table_id' => $table->id,
+        'items' => [[
+            'existing_order_item_id' => $item->id,
+            'product_id' => $this->product->id,
+            'quantity' => 1,
+            'notes' => null,
+            'modifiers' => [],
+        ]],
+    ]);
+
+    expect($edited->order_type->value)->toBe('take_out')
+        ->and($edited->branch_table_id)->toBe($table->id)
+        ->and($edited->table_name_snapshot)->toBe('Table 3');
 });
 
 test('product swap writes one compensating delta for each tracked product', function () {

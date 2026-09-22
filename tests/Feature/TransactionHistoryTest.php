@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -43,8 +44,68 @@ test('cashier sees only committed transactions in the assigned active branch wit
             ->component('workspaces/transaction-history')
             ->has('transactions.data', 10)
             ->where('transactions.total', 12)
-            ->where('metrics.total', 12)
-            ->where('metrics.balance', 1));
+            ->where('history_total', 12)
+            ->where('metrics.in_kitchen', 12)
+            ->where('metrics.preparing', 0)
+            ->where('metrics.done', 0)
+            ->where('metrics.paid', 0)
+            ->where('metrics.pending', 11));
+});
+
+test('last seven days includes today and the previous six Manila dates', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-22 12:00:00', 'Asia/Manila'));
+
+    foreach ([
+        'included' => CarbonImmutable::parse('2026-09-16 00:00:00', 'Asia/Manila')->utc(),
+        'excluded' => CarbonImmutable::parse('2026-09-15 23:59:59', 'Asia/Manila')->utc(),
+    ] as $orderNumber => $committedAt) {
+        Order::factory()->for($this->branch)->create([
+            'store_session_id' => $this->session->id,
+            'order_number' => $orderNumber,
+            'commercial_status' => 'active',
+            'payment_status' => 'unpaid',
+            'payment_term' => 'pay_later',
+            'kitchen_status' => 'kitchen',
+            'subtotal' => '100.00',
+            'total' => '100.00',
+            'committed_at' => $committedAt,
+        ]);
+    }
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->get(route('workspaces.transaction-history', ['date' => 'last_7_days']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions.total', 1)
+            ->where('transactions.data.0.order_number', 'included'));
+});
+
+test('kpi counts remain authoritative when a status kpi filter is active', function () {
+    foreach (['kitchen', 'preparing', 'done'] as $status) {
+        Order::factory()->for($this->branch)->create([
+            'store_session_id' => $this->session->id,
+            'commercial_status' => 'active',
+            'payment_status' => $status === 'done' ? 'paid' : 'unpaid',
+            'payment_term' => 'pay_later',
+            'kitchen_status' => $status,
+            'subtotal' => '100.00',
+            'total' => '100.00',
+            'committed_at' => now(),
+        ]);
+    }
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->get(route('workspaces.transaction-history', ['kitchen_status' => 'preparing']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions.total', 1)
+            ->where('metrics.in_kitchen', 1)
+            ->where('metrics.preparing', 1)
+            ->where('metrics.done', 1)
+            ->where('metrics.paid', 1)
+            ->where('metrics.pending', 2));
 });
 
 test('history filters search and payment state on the server and excludes owners', function () {
@@ -63,6 +124,33 @@ test('history filters search and payment state on the server and excludes owners
     $owner->branches()->attach($this->branch, ['is_active' => true]);
     $this->actingAs($owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
         ->get(route('workspaces.transaction-history'))->assertForbidden();
+});
+
+test('transaction details include the canonical receipt projection', function () {
+    $order = Order::factory()->for($this->branch)->create([
+        'store_session_id' => $this->session->id,
+        'order_number' => 'TX-RECEIPT',
+        'commercial_status' => 'active',
+        'payment_status' => 'unpaid',
+        'payment_term' => 'pay_later',
+        'kitchen_status' => 'kitchen',
+        'subtotal' => '100.00',
+        'total' => '100.00',
+        'committed_at' => now(),
+    ]);
+    OrderItem::factory()->for($order)->create([
+        'product_name_snapshot' => 'Tapsilog',
+        'quantity' => 1,
+        'line_total' => '100.00',
+    ]);
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->getJson(route('pos.transactions.show', $order))
+        ->assertOk()
+        ->assertJsonPath('transaction.receipt.order_number', 'TX-RECEIPT')
+        ->assertJsonPath('transaction.receipt.payment_status', 'unpaid')
+        ->assertJsonPath('transaction.receipt.items.0.name', 'Tapsilog');
 });
 
 test('method filter classifies the first grouped attempt instead of accumulated payment rows', function () {

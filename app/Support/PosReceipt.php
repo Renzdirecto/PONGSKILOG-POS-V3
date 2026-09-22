@@ -27,6 +27,7 @@ class PosReceipt
             'adjustment_total' => ExactMoney::decimal($money['adjustments']),
             'outstanding' => ExactMoney::decimal($money['outstanding']),
             'store_session_id' => $order->store_session_id,
+            'committed_at' => $order->committed_at?->toIso8601String(),
             'paid_at' => $payments->first()?->paid_at?->toIso8601String(),
             'cashier' => $payments->first()?->createdBy?->name,
             'branch' => ['name' => $order->branch->receipt_name ?? $order->branch->name, 'code' => $order->branch->code, 'address' => $order->branch->receipt_address ?? $order->branch->address, 'contact' => $order->branch->receipt_contact ?? $order->branch->contact, 'footer' => $order->branch->receipt_footer, 'show_logo' => $order->branch->receipt_show_logo, 'logo_url' => $order->branch->receipt_logo_path ? route('branches.receipt-logo', $order->branch, false).'?v='.md5($order->branch->receipt_logo_path) : '/images/branding/logo.png'],

@@ -7,12 +7,13 @@ use App\Http\Requests\EditCommittedOrderRequest;
 use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\PosReceipt;
 use App\Support\TransactionProjection;
 use Illuminate\Http\JsonResponse;
 
 class CommittedOrderEditController extends Controller
 {
-    public function __invoke(EditCommittedOrderRequest $request, Order $order, ActiveBranchContext $context, EditCommittedOrder $edit, TransactionProjection $projection): JsonResponse
+    public function __invoke(EditCommittedOrderRequest $request, Order $order, ActiveBranchContext $context, EditCommittedOrder $edit, TransactionProjection $projection, PosReceipt $receipt): JsonResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -20,6 +21,13 @@ class CommittedOrderEditController extends Controller
         abort_if($branch === null, 403);
         $order = $edit->execute($user, $branch, $order, $request->validated());
 
-        return response()->json(['transaction' => $projection->detail($order->fresh(), true)])->header('Cache-Control', 'no-store');
+        $order = $order->fresh();
+
+        return response()->json([
+            'transaction' => [
+                ...$projection->detail($order, true),
+                'receipt' => $receipt->summary($order),
+            ],
+        ])->header('Cache-Control', 'no-store');
     }
 }

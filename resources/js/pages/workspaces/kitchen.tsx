@@ -113,15 +113,6 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                     typeof event.order_id === 'string' ? event.order_id : null;
                 if (orderId) {
                     setUpdatedOrderIds((current) => new Set(current).add(orderId));
-                    window.setTimeout(
-                        () =>
-                            setUpdatedOrderIds((current) => {
-                                const next = new Set(current);
-                                next.delete(orderId);
-                                return next;
-                            }),
-                        8_000,
-                    );
                 }
                 return;
             }
@@ -414,20 +405,18 @@ function TicketCard({
             >
                 <div className="min-w-0 flex-1">
                     <p className="text-xs leading-4 font-black tracking-tight wrap-anywhere">
-                        <span className="whitespace-nowrap">#{ticket.number}</span>{' '}
+                        <span className="whitespace-nowrap">#{ticket.number}</span>
+                        {ticket.customer && (
+                            <span className="text-red-700">
+                                {' | '}
+                                {ticket.customer}
+                            </span>
+                        )}{' '}
                         {disabled && (
                             <span className="text-[9px] font-normal text-neutral-500">
                                 Saving...{' '}
                             </span>
                         )}
-                        {updated && (
-                            <span className="ml-1 rounded-full bg-amber-200 px-1.5 py-0.5 text-[8px] text-amber-900">
-                                UPDATED
-                            </span>
-                        )}
-                        <span className="text-red-700">
-                            {ticket.customer || ''}
-                        </span>
                     </p>
                     <p className="text-[9px] leading-3 font-bold tabular-nums">
                         <span className="text-neutral-500">
@@ -438,11 +427,18 @@ function TicketCard({
                         </span>
                     </p>
                 </div>
-                <span
-                    className={`shrink-0 rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
-                >
-                    {orderTypeLabel(ticket.order_type)}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                    {updated && (
+                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[8px] font-black tracking-wide text-amber-900 uppercase">
+                            Updated
+                        </span>
+                    )}
+                    <span
+                        className={`rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
+                    >
+                        {orderTypeLabel(ticket.order_type)}
+                    </span>
+                </div>
             </header>
             <div className={`space-y-3 ${compact ? 'p-2.5' : 'p-3'}`}>
                 {ticket.items.map((item) => (

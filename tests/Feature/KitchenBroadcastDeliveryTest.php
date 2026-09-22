@@ -2,6 +2,7 @@
 
 use App\Enums\KitchenStatus;
 use App\Events\DisplayOrdersChanged;
+use App\Events\KitchenOrderUpdated;
 use App\Events\KitchenStatusChanged;
 use App\Events\KitchenTicketCreated;
 use App\Models\Branch;
@@ -17,10 +18,10 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
     $branch = Branch::factory()->create();
     $order = Order::factory()->for($branch)->create(['kitchen_status' => KitchenStatus::Kitchen, 'committed_at' => now()]);
     $ticket = KitchenTicket::factory()->for($order)->for($branch)->create();
-    $events = [new KitchenTicketCreated($order, $ticket), new KitchenStatusChanged($order, KitchenStatus::Kitchen, KitchenStatus::Ready, now()), new DisplayOrdersChanged($branch, now())];
+    $events = [new KitchenTicketCreated($order, $ticket), new KitchenStatusChanged($order, KitchenStatus::Kitchen, KitchenStatus::Ready, now()), new KitchenOrderUpdated($order), new DisplayOrdersChanged($branch, now())];
     $delivered = [];
     $broadcaster = Mockery::mock(Broadcaster::class);
-    $broadcaster->shouldReceive('broadcast')->times(3)->andReturnUsing(function ($channels, $name, $payload) use (&$delivered): void {
+    $broadcaster->shouldReceive('broadcast')->times(4)->andReturnUsing(function ($channels, $name, $payload) use (&$delivered): void {
         $delivered[] = $name;
     });
     Broadcast::extend('kitchen-test', fn () => $broadcaster);
@@ -36,7 +37,7 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
         expect($delivered)->toBe([]);
     });
 
-    expect($delivered)->toBe(['kitchen.ticket_created', 'kitchen.status_changed', 'display.orders_changed']);
+    expect($delivered)->toBe(['kitchen.ticket_created', 'kitchen.status_changed', 'kitchen.order_updated', 'display.orders_changed']);
     Queue::assertNothingPushed();
 
     DB::beginTransaction();
@@ -44,7 +45,7 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
         event($event);
     }
     DB::rollBack();
-    expect($delivered)->toHaveCount(3);
+    expect($delivered)->toHaveCount(4);
 });
 
 test('a realtime transport failure is reported without undoing the committed write', function () {

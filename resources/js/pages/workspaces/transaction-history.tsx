@@ -33,7 +33,10 @@ import { toast } from 'sonner';
 import { CategoryIcon } from '@/components/category-icon';
 import { PosPaid } from '@/components/pos-paid';
 import { PosPaymentPreview } from '@/components/pos-payment-preview';
-import { PosProductDialog } from '@/components/pos-product-dialog';
+import {
+    PosProductDialog,
+    posDialogClass,
+} from '@/components/pos-product-dialog';
 import { PosProductMedia } from '@/components/pos-product-media';
 import { TransactionInvoiceDialog } from '@/components/transaction-invoice-dialog';
 import {
@@ -192,6 +195,13 @@ const KITCHEN_STYLES: Record<KitchenStatus, string> = {
     done: 'border-neutral-200 bg-neutral-100 text-neutral-500',
 };
 
+const HISTORY_REALTIME_EVENTS = [
+    '.order.committed',
+    '.order.updated',
+    '.kitchen.ticket_created',
+    '.kitchen.status_changed',
+] as const;
+
 export default function TransactionHistory({
     transactions,
     history_total: historyTotal,
@@ -252,9 +262,16 @@ export default function TransactionHistory({
     useBranchRealtimeRefresh({
         branchId: branch?.id ?? '',
         channel: 'pos',
-        events: ['order.committed', 'order.updated'],
+        events: HISTORY_REALTIME_EVENTS,
         only: ['transactions', 'history_total', 'metrics'],
         debounceMs: 120,
+        onEvent: (event) => {
+            const orderId = event.order_id ?? event.entity_id;
+
+            if (selected && orderId === selected.id) {
+                void loadDetail(selected.id);
+            }
+        },
     });
 
     async function loadDetail(id: string): Promise<Detail | null> {
@@ -598,7 +615,10 @@ export default function TransactionHistory({
                     catalog={catalog}
                     tables={tables}
                     canManageKitchen={canManageKitchen}
-                    onClose={() => setEditing(false)}
+                    onClose={() => {
+                        setEditing(false);
+                        setSelected(null);
+                    }}
                     onSaved={(detail) => {
                         setSelected(detail);
                         setEditing(false);
@@ -616,7 +636,10 @@ export default function TransactionHistory({
                 <SettlementDialog
                     detail={selected}
                     tables={tables}
-                    onClose={() => setSettling(false)}
+                    onClose={() => {
+                        setSettling(false);
+                        setSelected(null);
+                    }}
                     onPaid={(detail) => {
                         setSelected(detail);
                         setSettling(false);
@@ -642,7 +665,10 @@ export default function TransactionHistory({
             {selected && receiptOpen && (
                 <ReceiptDialog
                     detail={selected}
-                    onClose={() => setReceiptOpen(false)}
+                    onClose={() => {
+                        setReceiptOpen(false);
+                        setSelected(null);
+                    }}
                 />
             )}
             {invoicePayment && selected && (
@@ -979,7 +1005,7 @@ function TransactionCard({
                             <strong className="shrink-0 text-xs text-red-700 tabular-nums">
                                 {line.quantity}×
                             </strong>
-                            <span className="min-w-0 flex-1 text-xs leading-[1.4]">
+                            <span className="min-w-0 flex-1 text-xs leading-[1.4] font-semibold">
                                 {line.size_prefix && (
                                     <SizeBadge>{line.size_prefix}</SizeBadge>
                                 )}
@@ -1025,7 +1051,7 @@ function TransactionCard({
                             ? undefined
                             : 'Earlier Store Sessions are read-only'
                     }
-                    className="inline-flex h-[46px] w-full items-center justify-center gap-2 rounded-[11px] bg-[#111] text-[13.5px] font-semibold text-white disabled:bg-neutral-400"
+                    className="inline-flex h-[46px] w-full items-center justify-center gap-2 rounded-[11px] bg-green-700 text-[13.5px] font-semibold text-white hover:bg-green-800 disabled:bg-neutral-400"
                 >
                     <CreditCard className="size-4" />
                     {item.payment_status === 'partial'
@@ -1101,7 +1127,7 @@ function SemanticChip({ kind }: { kind: string }) {
     };
     return (
         <span
-            className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[10.5px] font-bold tracking-[.04em] uppercase ${styles[kind] ?? styles.edited}`}
+            className={`inline-flex h-5 items-center rounded-full border px-2 text-[9.5px] font-bold tracking-[.04em] uppercase ${styles[kind] ?? styles.edited}`}
         >
             {labels[kind] ?? kind}
         </span>
@@ -1370,7 +1396,7 @@ function TransactionDetailDialog({
                             <button
                                 type="button"
                                 onClick={onSettle}
-                                className="col-span-3 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#111] text-[13.5px] font-semibold text-white"
+                                className="col-span-3 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-green-700 text-[13.5px] font-semibold text-white hover:bg-green-800"
                             >
                                 <CreditCard className="size-4" />
                                 {detail.payment_status === 'partial'
@@ -1580,6 +1606,34 @@ function EditDialog({
             const updated = (
                 JSON.parse(response.data) as { transaction: Detail }
             ).transaction;
+
+            if (kitchenStatus !== updated.kitchen_status) {
+                try {
+                    const kitchenResponse = await http.getClient().request({
+                        ...updateKitchenStatus(detail.id),
+                        data: { status: kitchenStatus },
+                        headers: { Accept: 'application/json' },
+                    });
+                    const transition = (
+                        JSON.parse(kitchenResponse.data) as {
+                            kitchenTransition: {
+                                to: KitchenStatus;
+                                version: number;
+                            };
+                        }
+                    ).kitchenTransition;
+                    updated.kitchen_status = transition.to;
+                    updated.version = transition.version;
+                } catch {
+                    toast.error(
+                        'Order changes were saved, but the kitchen status could not be changed.',
+                    );
+                    onSaved(updated);
+
+                    return;
+                }
+            }
+
             toast.success('Committed order updated.');
             onSaved(updated);
         } catch (error) {
@@ -1596,27 +1650,15 @@ function EditDialog({
         }
     }
 
-    async function transitionKitchen(status: KitchenStatus) {
+    function stageKitchenStatus(status: KitchenStatus) {
         if (!canManageKitchen || status === kitchenStatus) return;
-        if (!canTransitionKitchenStatus(kitchenStatus, status)) return;
-        try {
-            const response = await http.getClient().request({
-                ...updateKitchenStatus(detail.id),
-                data: { status },
-                headers: { Accept: 'application/json' },
-            });
-            const result = JSON.parse(response.data) as {
-                kitchenTransition: { status: KitchenStatus; changed: boolean };
-            };
-            setKitchenStatus(result.kitchenTransition.status);
-            if (result.kitchenTransition.changed) {
-                toast.success(
-                    `Order moved to ${KITCHEN_LABELS[status].toLowerCase()}.`,
-                );
-            }
-        } catch {
-            toast.error('The kitchen status could not be changed.');
-        }
+        if (
+            status !== detail.kitchen_status &&
+            !canTransitionKitchenStatus(detail.kitchen_status, status)
+        )
+            return;
+
+        setKitchenStatus(status);
     }
 
     if (confirmLower) {
@@ -1670,7 +1712,7 @@ function EditDialog({
     return (
         <>
             <Dialog open onOpenChange={(value) => !value && onClose()}>
-                <DialogContent className="pos-surface flex max-h-[94dvh] max-w-4xl flex-col gap-0 overflow-hidden p-0 max-md:h-dvh max-md:max-h-dvh max-md:max-w-full max-md:rounded-none">
+                <DialogContent className="pos-surface flex max-h-[94dvh] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px] max-md:h-dvh max-md:max-h-dvh max-md:max-w-full max-md:rounded-none">
                     {screen === 'edit' ? (
                         <>
                             <header className="flex items-center justify-between border-b border-neutral-200 px-3.5 py-3">
@@ -1765,10 +1807,12 @@ function EditDialog({
                                                 status === kitchenStatus;
                                             const allowed =
                                                 canManageKitchen &&
-                                                canTransitionKitchenStatus(
-                                                    kitchenStatus,
-                                                    status,
-                                                );
+                                                (status ===
+                                                    detail.kitchen_status ||
+                                                    canTransitionKitchenStatus(
+                                                        detail.kitchen_status,
+                                                        status,
+                                                    ));
                                             return (
                                                 <button
                                                     key={status}
@@ -1777,7 +1821,7 @@ function EditDialog({
                                                         !current && !allowed
                                                     }
                                                     onClick={() =>
-                                                        void transitionKitchen(
+                                                        stageKitchenStatus(
                                                             status,
                                                         )
                                                     }
@@ -2101,10 +2145,15 @@ function EditLineRow({
 }) {
     const chosen = selectedModifierDetails(line);
     return (
-        <div className="flex flex-wrap items-center gap-2.5 border-b border-neutral-100 p-3 last:border-b-0">
-            <div className="min-w-[150px] flex-1 space-y-1">
+        <div className="grid grid-cols-[minmax(0,1fr)_44px] items-center gap-3 border-b border-neutral-100 p-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_128px_72px_44px]">
+            <button
+                type="button"
+                onClick={onEdit}
+                className="min-w-0 space-y-1 text-left"
+                aria-label={`Edit ${line.product.name}`}
+            >
                 <p className="text-[13px] font-semibold">
-                    {chosen.size && <SizeBadge>{chosen.size}</SizeBadge>}
+                    {chosen.size ? `${chosen.size} ` : ''}
                     {line.product.name}
                 </p>
                 {chosen.standard.length > 0 && (
@@ -2122,8 +2171,8 @@ function EditLineRow({
                         Note: {line.notes}
                     </p>
                 )}
-            </div>
-            <div className="flex shrink-0 overflow-hidden rounded-[10px] border border-neutral-300">
+            </button>
+            <div className="col-span-2 row-start-2 flex w-32 shrink-0 overflow-hidden rounded-[10px] border border-neutral-300 sm:col-span-1 sm:row-auto">
                 <button
                     type="button"
                     aria-label="Decrease quantity"
@@ -2131,11 +2180,11 @@ function EditLineRow({
                     onClick={() =>
                         onChange({ ...line, quantity: line.quantity - 1 })
                     }
-                    className="inline-flex size-11 items-center justify-center disabled:opacity-35"
+                    className="inline-flex h-11 flex-1 items-center justify-center disabled:opacity-35"
                 >
                     <Minus className="size-4" />
                 </button>
-                <strong className="inline-flex h-11 w-9 items-center justify-center border-x border-neutral-200 text-sm tabular-nums">
+                <strong className="inline-flex h-11 w-9 shrink-0 items-center justify-center border-x border-neutral-200 text-sm tabular-nums">
                     {line.quantity}
                 </strong>
                 <button
@@ -2144,26 +2193,19 @@ function EditLineRow({
                     onClick={() =>
                         onChange({ ...line, quantity: line.quantity + 1 })
                     }
-                    className="inline-flex size-11 items-center justify-center"
+                    className="inline-flex h-11 flex-1 items-center justify-center"
                 >
                     <Plus className="size-4" />
                 </button>
             </div>
-            <strong className="min-w-[74px] text-right text-[13px] tabular-nums">
+            <strong className="col-start-1 row-start-3 text-left text-[13px] tabular-nums sm:col-start-auto sm:row-auto sm:text-right">
                 {pesos(editLineCents(line))}
             </strong>
             <button
                 type="button"
-                onClick={onEdit}
-                className="inline-flex h-11 items-center gap-1.5 rounded-[10px] border border-neutral-200 px-3 text-xs font-semibold"
-            >
-                <Pencil className="size-3.5" /> Edit
-            </button>
-            <button
-                type="button"
                 aria-label="Remove item"
                 onClick={onRemove}
-                className="inline-flex size-11 items-center justify-center rounded-[10px] border border-neutral-200 text-red-700"
+                className="col-start-2 row-start-1 inline-flex size-11 items-center justify-center rounded-[10px] border border-neutral-200 text-red-700 sm:col-start-auto sm:row-auto"
             >
                 <Trash2 className="size-4" />
             </button>
@@ -2243,15 +2285,7 @@ function SettlementDialog({
 }) {
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState('');
-    const attempt = useMemo(
-        () => ({
-            idempotency_key: createClientUuid(),
-            payment_method: 'cash' as const,
-            cash_received: null,
-            cashless_amount: null,
-        }),
-        [detail.id],
-    );
+    const idempotencyKey = useMemo(() => createClientUuid(), [detail.id]);
     const saved: OrderSummary = {
         id: detail.id,
         order_number: detail.order_number,
@@ -2286,7 +2320,7 @@ function SettlementDialog({
         try {
             await http.getClient().request({
                 ...settle(detail.id),
-                data: { ...payment, idempotency_key: attempt.idempotency_key },
+                data: { ...payment, idempotency_key: idempotencyKey },
                 headers: { Accept: 'application/json' },
             });
             const response = await http.getClient().request({
@@ -2308,17 +2342,19 @@ function SettlementDialog({
     }
     return (
         <Dialog open onOpenChange={(value) => !value && onClose()}>
-            <DialogContent className="pos-surface max-h-[94dvh] max-w-3xl overflow-y-auto">
-                <DialogTitle>
-                    {detail.payment_status === 'unpaid'
-                        ? 'Take payment'
-                        : 'Settle balance'}{' '}
-                    #{detail.order_number}
-                </DialogTitle>
-                <DialogDescription>
-                    Balance due {pesos(detail.outstanding)}. This payment
-                    collects the exact delta only.
-                </DialogDescription>
+            <DialogContent className={`${posDialogClass} pos-payment-dialog`}>
+                <div className="shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14">
+                    <DialogTitle className="text-[15px] font-bold">
+                        {detail.payment_status === 'unpaid'
+                            ? 'Take payment'
+                            : 'Settle balance'}{' '}
+                        #{detail.order_number}
+                    </DialogTitle>
+                    <DialogDescription className="mt-1 text-xs text-neutral-500">
+                        Balance due {pesos(detail.outstanding)}. This payment
+                        collects the exact delta only.
+                    </DialogDescription>
+                </div>
                 <PosPaymentPreview
                     orderType={detail.order_type}
                     lines={[]}
@@ -2332,7 +2368,7 @@ function SettlementDialog({
                     onConfirm={(payment) => void pay(payment)}
                     processing={processing}
                     error={error}
-                    attempt={attempt}
+                    attempt={null}
                 />
             </DialogContent>
         </Dialog>
@@ -2498,7 +2534,11 @@ function selectedModifierDetails(line: EditLine) {
                     (modifier) => modifier.option_id === option.id,
                 ),
             )
-            .map((option) => ({ ...option, role: group.semantic_role })),
+            .map((option) => ({
+                ...option,
+                role: group.semantic_role,
+                groupName: group.name,
+            })),
     );
     return {
         size: selected.find((option) => option.role === 'size')?.name ?? null,
@@ -2510,6 +2550,6 @@ function selectedModifierDetails(line: EditLine) {
                 (option) =>
                     option.role !== 'size' && option.role !== 'instruction',
             )
-            .map((option) => option.name),
+            .map((option) => `${option.groupName}: ${option.name}`),
     };
 }

@@ -770,3 +770,12 @@ boundary. No additional order, payment, inventory, or Kitchen aggregate was adde
 - `2026_09_22_102534_add_receipt_logo_path_to_branches_table`: nullable receipt_logo_path for validated branch-scoped branding stored on the configured S3 disk. Replacement/removal cleans up the old image; transaction failure cleans up the newly uploaded image. Public display streams only the persisted image through the branch logo endpoint.
 - SQLite identity alteration reconstructs the original table DDL while preserving its existing CHECK constraints, foreign keys and explicit indexes. PostgreSQL uses ALTER COLUMN plus a CHECK. Rollback intentionally refuses when provisional null-number Orders exist rather than deleting history or fabricating official numbers; roll forward in that case. Fresh/up/down/reapply tests use isolated databases/schemas.
 - Preparing/Ready represent actual transitions; rollback clears no-longer-reached stages. Receipt expiry remains derived, not a deletion deadline. Existing anonymous-session ownership authorizes prior paid receipts independently of active_order_id.
+
+## Phase 12 additive transaction schema - 2026-09-22
+
+- `orders.original_total` stores the first pre-edit committed total; `orders.edited_at` marks the latest committed edit. Existing `version` is the optimistic concurrency token.
+- `payments.payment_group_id` groups the Cash and Cashless legs of one attempt; `payment_context` distinguishes initial, Pay Later settlement, and edit-balance settlement. Historical rows remain intact and can derive their group from the idempotency-key root.
+- `order_adjustments` is append-only and records positive lower-total corrections with branch, Store Session, Order, actor, reason, and unique idempotency key.
+- `payment_invoice_proofs` has exactly one private object per Cashless Payment row and stores disk/path plus safe file metadata and uploader. Replacement swaps the object without changing Payment history; failed DB work removes the new object.
+- `audit_logs` is the canonical append-only mutation record with branch/user/module/action/auditable identity, before/after JSON, metadata, and an optional unique idempotency key.
+- Migration `2026_09_22_125245_add_transaction_history_editing_support` is additive and has verified PostgreSQL up/down/reapply behavior.

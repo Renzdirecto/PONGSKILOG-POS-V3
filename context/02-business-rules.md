@@ -270,7 +270,7 @@ Rules:
 - Manual confirmation
 - No provider reference required in MVP
 - No automatic provider verification assumed
-- The Phase 6 invoice field is an explicit placeholder only. Invoice capture and management belong to Transaction History & Editing in Phase 12.
+- Cashless Payment rows may carry one private, manually supplied invoice proof. It is evidence only, not gateway verification; replacement and removal are authorized, audited operations.
 
 ---
 
@@ -673,4 +673,10 @@ Customer availability requires active branch AND qr_ordering_enabled AND open St
 
 Preparing/Ready timestamps record actual transitions; rollback clears downstream timestamps. Browse Menu with a current Order is read-only, and New Order is available only after Done/archive. Receipt access remains paid_at + 24 hours, even after another Order begins in the same anonymous session. Internal records persist.
 
-Owner Settings is a partial Phase 16 slice: existing Branch Management, QR toggle/link/history, and typed receipt name/address/contact/footer/show-brand-logo settings plus approved social URLs. Unconfigured social URLs are visibly disabled. Visit history records kiosk link opens (not verified camera scans), deduplicates the same session/branch for two minutes, and stores no IP, user agent or fingerprint. Phase 12 and full Phase 16 remain unimplemented.
+Owner Settings is a partial Phase 16 slice: existing Branch Management, QR toggle/link/history, and typed receipt name/address/contact/footer/show-brand-logo settings plus approved social URLs. Unconfigured social URLs are visibly disabled. Visit history records kiosk link opens (not verified camera scans), deduplicates the same session/branch for two minutes, and stores no IP, user agent or fingerprint. Full Phase 16 remains unimplemented.
+
+## 35. Phase 12 committed transaction rules
+
+History is cashier-only, branch-scoped, server-paginated, and includes committed Orders across prior Store Sessions. Historical reading remains available while mutations require the Order's current OPEN Store Session. Committed edits use an expected Order version and an idempotency UUID. Retained item configurations keep committed snapshots; new or materially reconfigured lines use the current branch catalog.
+
+Tracked inventory changes are aggregated to one net `order_edit_delta` movement per Product and applied in deterministic Product order. Payments and inventory movements are never rewritten. A higher total creates an outstanding balance, the same total creates no Payment, and a lower paid total appends a `lower_total_correction` adjustment. Settlement appends an exact Cash, Cashless, or Split Payment group against authoritative outstanding. Every edit and proof mutation appends an Audit Log.

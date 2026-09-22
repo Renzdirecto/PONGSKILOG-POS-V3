@@ -13,7 +13,15 @@ class OrderPaymentLegs
      */
     public function for(Order $order, array $data): array
     {
-        $total = ExactMoney::cents($order->total);
+        return $this->forAmount($order->total, $data);
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array<string, array{amount: string, amount_received: string|null, change_amount: string|null}>
+     */
+    public function forAmount(string $amount, array $data): array
+    {
+        $total = ExactMoney::cents($amount);
         $method = $data['payment_method'];
         $cashless = $method === 'cashless' ? $total : ($method === 'split' ? ExactMoney::cents($data['cashless_amount']) : 0);
         if ($method === 'split' && ($cashless <= 0 || $cashless >= $total)) {

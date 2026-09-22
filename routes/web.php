@@ -7,6 +7,7 @@ use App\Http\Controllers\BranchQrSettingsController;
 use App\Http\Controllers\BranchSelectionController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CommittedOrderEditController;
 use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
+use App\Http\Controllers\PaymentInvoiceProofController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
 use App\Http\Controllers\PosPayLaterController;
@@ -26,6 +28,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\StaffQrOrderController;
+use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -89,6 +92,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
         ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier');
 
+    Route::get('workspaces/transaction-history', [TransactionHistoryController::class, 'index'])
+        ->middleware(['permission:transactions.view', 'branch'])->name('workspaces.transaction-history');
+
     Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware('permission:pos.access')->name('pos.payments.store');
 
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
@@ -103,6 +109,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
         Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
+        Route::get('pos/transactions/{order}', [TransactionHistoryController::class, 'show'])->whereUuid('order')->name('pos.transactions.show');
+        Route::patch('pos/transactions/{order}', CommittedOrderEditController::class)->whereUuid('order')->name('pos.transactions.update');
+        Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->name('pos.payments.invoice.store');
+        Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
+        Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->name('pos.payments.invoice.destroy');
     });
 
     Route::patch('orders/{order}/kitchen-status', KitchenStatusController::class)

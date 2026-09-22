@@ -5,6 +5,7 @@ import {
     LogOut,
     MonitorUp,
     QrCode,
+    ReceiptText,
     UtensilsCrossed,
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
@@ -12,7 +13,12 @@ import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
-import { cashier, customerDisplay, kitchen } from '@/routes/workspaces';
+import {
+    cashier,
+    customerDisplay,
+    kitchen,
+    transactionHistory,
+} from '@/routes/workspaces';
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
@@ -73,7 +79,8 @@ export default function WorkspaceLayout({
         isPos &&
         new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
     const isKitchen = page.component === 'workspaces/kitchen';
-    const isOperational = isPos || isKitchen;
+    const isHistory = page.component === 'workspaces/transaction-history';
+    const isOperational = isPos || isKitchen || isHistory;
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
@@ -134,10 +141,10 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'History',
-                icon: LayoutDashboard,
-                available: false,
-                href: null,
-                active: false,
+                icon: ReceiptText,
+                available: auth.permissions.includes('transactions.view'),
+                href: transactionHistory(),
+                active: isHistory,
             },
             {
                 label: 'Display',
@@ -210,6 +217,8 @@ export default function WorkspaceLayout({
                             <h1 className="truncate text-[15px] font-bold">
                                 {isKitchen
                                     ? 'Kitchen display'
+                                    : isHistory
+                                      ? 'Transaction history'
                                     : isQr
                                       ? 'QR Orders'
                                       : 'POS / Order'}
@@ -275,7 +284,7 @@ export default function WorkspaceLayout({
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] grid-cols-6 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
                             ({ label, icon: Icon, available, href, active }) =>

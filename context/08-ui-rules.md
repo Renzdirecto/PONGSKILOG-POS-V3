@@ -298,7 +298,7 @@ Show Total, Received, Remaining and a prominent dark Change surface (including z
 
 Once the order type is selected, show the server-reserved numeric operational number consistently as `#number` in Cart, Payment, paid-success, and receipt. Show the longer immutable reference as secondary audit metadata, never as the primary display number.
 
-For Cashless and Split, show `Invoice: —` as a deliberate placeholder. Capturing or editing an invoice is Phase 12 work.
+For Cashless and the Cashless leg of Split, show the saved invoice filename when present and the working Invoice action for camera/file capture, view, replacement, or removal. Cash rows never show an invoice action.
 
 The Phase 6 receipt follows an 80mm thermal hierarchy: its own top Back action, branch identity and contact, prominent order number and PAID state, secondary full reference, order/customer metadata, item/modifier/note detail, subtotal/total, payment breakdown, received/change where applicable, and footer. Print styling removes application chrome, colors, shadows, and controls. `Show QR` opens a clearly labelled placeholder surface only; real receipt QR links/tokens belong to Phase 10 and must not be fabricated.
 
@@ -588,3 +588,9 @@ Every visible control in the implemented app must do one of:
 - Be intentionally disabled with a clear reason
 
 No decorative dead buttons in production UI.
+
+## Phase 12 History UI
+
+Operational navigation order is Dashboard, POS, QR Orders, Kitchen, History, Display. History uses standalone-aligned metric cards, server search/date/status/type/method filters, 10-row pagination, and a local-only Tiled/List preference. Detail always fetches fresh authoritative state before edit, balance payment, proof, print, or share actions. Editing uses current catalog customization while explaining snapshot pricing.
+
+For Cashless and the Cashless leg of Split, show the real Invoice action. Camera capture is progressive enhancement; an image file picker remains available. Never show an invoice control for a Cash Payment row. Void remains visibly disabled and labeled `Phase 13`; there is no PIN prototype or hidden void mutation.

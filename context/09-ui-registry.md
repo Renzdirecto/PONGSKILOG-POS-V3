@@ -843,6 +843,16 @@ POS paid receipt -> Show QR -> temporary signed public digital receipt. This rep
 
 The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
 
-The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states.
 
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
+
+## Transaction History workspace
+
+| Surface | Registered behavior |
+|---|---|
+| History collection | Metric filters, server query, date preset/custom range, Kitchen/Payment/Order Type/Method filters, 10-row pagination, local Tiled/List preference. |
+| Transaction card/row | Official number, label/table, committed time, type/status/method/edited chips, item preview, total/balance, Details/Edit/Print; Void is disabled as Phase 13. |
+| Detail dialog | Fresh items/modifiers, original/current money, grouped Payment attempts, adjustments, proof actions, receipt print/share eligibility. |
+| Edit dialog | Current metadata, reusable Product customization, retained snapshot disclosure, versioned save, explicit lower-total reconciliation and higher-total balance path. |
+| Invoice proof dialog | Authorized private view plus camera/file capture, replace and remove on the actual Cashless Payment row. |

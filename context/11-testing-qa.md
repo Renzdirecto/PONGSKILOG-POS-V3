@@ -566,3 +566,12 @@ A feature/release cannot be considered production-ready until:
 - No unresolved financial/inventory integrity defect
 - Required audit evidence exists
 - CI passes
+
+## Phase 12 focused verification matrix
+
+- History authorization/branch isolation, committed-only scope, server pagination, search/filter boundaries, and metrics independent of the current page.
+- Same-total, higher-total, lower-total, unpaid Pay Later, and repeated-edit reconciliation with append-only Payment/Adjustment/Audit histories.
+- Retained-price versus current-price item snapshots; aggregate tracked inventory delta, untracked no-op, insufficient-stock rollback, idempotent replay, stale version 409, closed/prior-session denial, and unchanged KitchenTicket lifecycle.
+- Cash/Cashless/Split grouped attempts; exact outstanding settlement; duplicate replay; invoice allowlist/dimensions/size, private authorized stream, replace/remove cleanup, cash-row denial, and earlier-session read-only behavior.
+- Compact after-commit POS/Kitchen events, reconnect refetch, temporary KDS UPDATED indicator, local-only view preference, camera fallback, and disabled Phase 13 Void.
+- Required gates: focused Pest suite, adjacent Pay Now/Pay Later/Kitchen/receipt regression suite, PostgreSQL harness, Pint, PHPStan, frontend check, TypeScript, production build, migration fresh/up/down/reapply, whitespace and secret/artifact review.

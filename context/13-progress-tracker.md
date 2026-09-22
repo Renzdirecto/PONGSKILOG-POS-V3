@@ -631,27 +631,29 @@ inspect 360/390/430px phones, iPad Mini 768/1024px sidebar, tablet and desktop.
 
 ## Phase 12 — Transaction History & Editing
 
-- [ ] Transaction list
-- [ ] Search
-- [ ] Filters
-- [ ] Transaction detail
-- [ ] Pay Later settlement from history
-- [ ] Edit committed order
-- [ ] Inventory delta calculation
-- [ ] Inventory compensating movement
-- [ ] Higher-total delta payment
-- [ ] Higher-total Pay Later delta
-- [ ] Lower-total correction
-- [ ] Receipt actions
-- [ ] Edit audit trail
-- [ ] Kitchen update after relevant edit
-- [ ] Cashless / Split invoice proof capture
-- [ ] Camera / image upload for invoice proof
-- [ ] Persist invoice proof against payment/transaction
-- [ ] View invoice proof in transaction detail
-- [ ] Replace/remove invoice proof with authorization
+- [x] Transaction list
+- [x] Search
+- [x] Filters
+- [x] Transaction detail
+- [x] Pay Later settlement from history
+- [x] Edit committed order
+- [x] Inventory delta calculation
+- [x] Inventory compensating movement
+- [x] Higher-total delta payment
+- [x] Higher-total Pay Later delta
+- [x] Lower-total correction
+- [x] Receipt actions
+- [x] Edit audit trail
+- [x] Kitchen update after relevant edit
+- [x] Cashless / Split invoice proof capture
+- [x] Camera / image upload for invoice proof
+- [x] Persist invoice proof against payment/transaction
+- [x] View invoice proof in transaction detail
+- [x] Replace/remove invoice proof with authorization
 
-Phase 6 provides the post-payment visual placeholder only. Actual Cashless/Split proof capture, private storage and authorized viewing are deferred to Phase 12. The proof attaches to the Cashless Payment leg: Cash-only payments have none, while Split attaches it only to the Cashless leg. Phase 12 must support camera or file upload, keep images private, require authorization to view or change them, and treat them as manual proof rather than payment-gateway verification; no fake provider confirmation is permitted.
+The Phase 6 placeholder is now replaced by Phase 12 proof management. The proof attaches to the Cashless Payment row: Cash-only payments have none, while Split attaches it only to the Cashless leg. Camera or file upload is supported, images remain private and authorization-gated, and proofs are manual evidence rather than payment-gateway verification.
+
+**Phase 12 is complete on `feature/transaction-history`.** The cashier-only, branch-scoped History workspace, versioned committed-order editing, net inventory deltas, append-only reconciliation, balance settlement, grouped Payment attempts, private Cashless invoice proofs, canonical edit/proof audits, and compact POS/Kitchen invalidations are implemented. Void remains disabled for Phase 13. User manual device/visual QA and the final implementation audit are accepted.
 
 ---
 
@@ -900,3 +902,17 @@ The standalone receipt-only page reuses the customer receipt card, persisted bra
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
 
 Verification: focused receipt/payment/Customer QR regression passed 206 tests / 1,747 assertions; focused frontend receipt/PNG passed 5 tests; full Laravel passed 1,240 tests / 8,117 assertions with zero failures/errors; complete Node frontend suite passed 51 tests. Pint, PHPStan, frontend lint (zero warnings), TypeScript, production build and diff check passed. An initial full-suite run overlapped the build removing a font CSS asset; the log confirmed that transient rendering failure, the affected 20-test file passed independently, and the full suite passed with assets stable. No payment/concurrency logic changed, so the PostgreSQL concurrency harness was not rerun. Status: READY FOR MANUAL QA; device scan/PNG visual acceptance remains pending.
+
+## Phase 12 implementation delivery - 2026-09-22
+
+Implemented cashier-only, active-branch Transaction History with server pagination/search/date/Kitchen/Payment/Order Type/Method filtering, full-dataset metrics, local Tiled/List preference, fresh detail reads, receipt print/share eligibility, and intentionally disabled Phase 13 Void. Historical committed Orders remain readable across Store Sessions; edits, balance settlement, and proof mutation require the Order's current OPEN Store Session.
+
+Committed edits retain unchanged item/modifier/name/price snapshots, price new or reconfigured lines from the current catalog, aggregate deterministic tracked inventory deltas, append `order_edit_delta` movements, preserve the KitchenTicket and lifecycle timestamps, and use Order version plus idempotency replay. Same-total edits add no money row; higher totals become authoritative outstanding balance; lower paid totals append explicit adjustments while original Payments remain. Payment attempts have stable grouping/context, and invoice proofs attach only to real Cashless Payment rows in private storage with authorized camera/file add, view, replace, remove, cleanup, and audit.
+
+Automated delivery gates passed: focused Phase 12 Pest tests, 180 adjacent Pay Now/Pay Later/Kitchen/receipt regression tests, 54 Node frontend tests, Pint, PHPStan (1 GB runner, zero errors), frontend lint (zero warnings), TypeScript, production build, PostgreSQL fresh/rollback/reapply and concurrency cases A-I. The separate user device/visual walkthrough and final implementation audit remain pending, so **Phase 12 is not marked complete**. Status: READY FOR USER MANUAL QA.
+
+### Phase 12 final audit and release gates - 2026-09-22
+
+User manual UI/UX QA was accepted before this audit; no broad browser pass or speculative redesign was performed. The complete `dev...HEAD` Phase 12 diff and the decoded `context/design/pos.html` bundle were source-reviewed. The audit corrected two integrity defects: payment-method filtering and display now use the persisted payment context rather than same-second timestamps, so an original Cash payment plus a later Cashless balance payment is not reported as Split; KDS prunes UPDATED IDs that no longer exist on its authoritative board while retaining the badge for tickets still present until reload.
+
+The complete Laravel suite passed **1,255 tests / 8,267 assertions** with zero failures, errors, or skips. The complete frontend behavioral suite passed **62 tests**. Pint, PHPStan (zero errors), frontend lint (zero warnings), TypeScript, production build, whitespace checks, and the isolated local PostgreSQL Phase 12 migration/concurrency harness (fresh, rollback, reapply, cases A-I, schema cleanup) passed. No Supabase access/reset, Phase 13 Void implementation, dependency change, secrets/artifacts, or PR was created. **Phase 12 is COMPLETE and ready for PR.**

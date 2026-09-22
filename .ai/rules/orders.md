@@ -23,3 +23,6 @@ Lock the current OPEN StoreSession with sharedLock, then Order and KitchenTicket
 
 ## QR numbers are provisional until commercial commitment
 Customer QR submission allocates only a per-Store-Session qr_sequence from customer_qr_order_counters. LOAD and Cancel LOAD never consume official identity. Pay Now/Pay Later atomically assign both official identifiers with payment/stock/Kitchen; direct POS keeps early reservation. New references use an independent branch/Manila-date counter and BRANCH-MMDDYY-####; preserve legacy identifiers.
+
+## Committed order edits preserve histories and lock order
+Committed-order mutations require the Order's current OPEN Store Session, then lock Session shared -> Order exclusive -> tracked Product inventory rows in sorted Product ID order. Retained item/modifier configurations keep committed price/name snapshots; only new or materially reconfigured lines use current catalog values. Reconcile stock with one append-only order_edit_delta per tracked Product, money with append-only Payments/order_adjustments, and require expected version plus idempotency key.

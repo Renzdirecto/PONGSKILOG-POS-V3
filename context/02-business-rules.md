@@ -237,7 +237,7 @@ On successful new-order payment:
 The POS reserves the real operational order identity when a new order type is selected so the same numeric order number is visible in the cart, Payment modal, paid-success state, and receipt. Allocation is server-owned, branch-serialized, and may contain gaps when an abandoned reservation is never paid. Clients cannot choose or replace either identifier.
 
 - `order_number` is the short numeric operational number used by staff and customers, such as `1043` / `#1043`.
-- `reference_number` is the immutable full audit reference, such as `MAIN-260919-1043`.
+- `reference_number` is the immutable full audit reference, such as `MAIN-092226-0001` (new branch/Manila-date sequence; legacy references are retained).
 - Existing legacy orders retain their historical order numbers and may have no reference number.
 
 Failed payment does not deduct inventory or create a Kitchen ticket.
@@ -655,3 +655,22 @@ Broadcast only after successful database commit.
 - Heavy reports must not block POS
 - Optimize images
 - Scope realtime subscriptions by branch
+
+
+---
+
+## Approved Phase 10/11 refinement cutover - 2026-09-22
+
+This section supersedes earlier QR identity and reference rules. New Customer QR submissions have `qr_sequence` only, displayed by one backend helper as QR-01, QR-02, ... (minimum two digits). The explicit counter is keyed by Store Session, which belongs to one branch; a new Store Session starts at 1. Submit, LOAD, Cancel LOAD, archive and restore never allocate official identity or create Payment/inventory/Kitchen effects.
+
+Both Pay Now and Pay Later assign official `order_number` and `reference_number` atomically at commercial commitment. The model permits the one null-to-official transition for a submitted Customer QR Order at commitment; identifiers are immutable afterward. Direct POS still reserves a real identity early and permits documented abandoned-reservation gaps. New references use `BRANCH-MMDDYY-####`, with an independent locked branch/Asia-Manila-date counter starting at 1. Historical identifiers are never rewritten.
+
+Only the owning cashier may cancel a still-submitted loaded QR Order. Cancellation releases the claim and preserves the original submitted snapshots. Cashier name/table changes remain temporary until commitment; both payment flows accept optional name and active current-branch table, preserving order type. No fabricated Walk-in name is introduced.
+
+DELETE means archival. Restore requires an open current Store Session, valid unexpired anonymous session, no conflicting current Order, no load owner or operational effects, and no official identity. It clears archive fields, reattaches the session pointer and renews submitted_at. Legacy archived Orders that already consumed official identity remain retained and are not eligible for restore.
+
+Customer availability requires active branch AND qr_ordering_enabled AND open Store Session. A permanent kiosk_code, initialized from branch code, keeps /kiosk/{kiosk_code} stable if the business code later changes; /qr/{branchUuid} redirects compatibly. Branch-specific encrypted HttpOnly cookies now use / to cover both entry and existing QR APIs; branch/session authorization remains server-enforced.
+
+Preparing/Ready timestamps record actual transitions; rollback clears downstream timestamps. Browse Menu with a current Order is read-only, and New Order is available only after Done/archive. Receipt access remains paid_at + 24 hours, even after another Order begins in the same anonymous session. Internal records persist.
+
+Owner Settings is a partial Phase 16 slice: existing Branch Management, QR toggle/link/history, and typed receipt name/address/contact/footer/show-brand-logo settings plus approved social URLs. Unconfigured social URLs are visibly disabled. Visit history records kiosk link opens (not verified camera scans), deduplicates the same session/branch for two minutes, and stores no IP, user agent or fingerprint. Phase 12 and full Phase 16 remain unimplemented.

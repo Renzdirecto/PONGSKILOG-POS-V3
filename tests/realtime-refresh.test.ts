@@ -2,9 +2,47 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     createBranchEventGuard,
+    createQrVersionRecovery,
     createRealtimeRefresh,
 } from '../resources/js/lib/realtime-refresh.ts';
 import { shouldRefetchCatalogAfterConnectionChange } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+test('submitted order tracking recovers once when background refresh finds new assets', () => {
+    let reloads = 0;
+    let prevented = 0;
+    const recover = createQrVersionRecovery('submitted-order', () => reloads++);
+    const event = {
+        detail: { versionChange: true },
+        preventDefault: () => prevented++,
+    };
+
+    recover(event);
+    recover(event);
+
+    assert.equal(reloads, 1);
+    assert.equal(prevented, 2);
+});
+
+test('asset recovery preserves unsent carts and leaves ordinary redirects alone', () => {
+    let reloads = 0;
+    let prevented = 0;
+    const event = {
+        detail: { versionChange: true },
+        preventDefault: () => prevented++,
+    };
+
+    createQrVersionRecovery(undefined, () => reloads++)(event);
+    createQrVersionRecovery(
+        'submitted-order',
+        () => reloads++,
+    )({
+        ...event,
+        detail: { versionChange: false },
+    });
+
+    assert.equal(reloads, 0);
+    assert.equal(prevented, 0);
+});
 
 for (const delay of [35, 160]) {
     test(`refresh coalesces bursts at ${delay}ms and queues one refresh while in flight`, (t) => {

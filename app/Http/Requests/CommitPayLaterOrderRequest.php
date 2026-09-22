@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Support\LoadedQrOrder;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 class CommitPayLaterOrderRequest extends StorePosDraftOrderRequest
@@ -48,6 +49,7 @@ class CommitPayLaterOrderRequest extends StorePosDraftOrderRequest
             ]),
             'reserved_order_id' => ['prohibited'],
             'idempotency_key' => ['required', 'uuid'],
+            ...LoadedQrOrder::metadataRules(),
             'branch_id' => ['prohibited'],
             'store_session_id' => ['prohibited'],
             'subtotal' => ['prohibited'],

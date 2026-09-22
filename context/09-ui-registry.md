@@ -784,3 +784,65 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 **Usage:** Reuse this lifecycle and projection boundary for future Kitchen and customer-status enhancements.
 
 **Avoid:** Trusting client status, broadcasting customer-display order lists or internal IDs, leaking shared employee props into the customer surface, remounting POS state during refresh, or adding card-internal scrolling in fullscreen.
+
+
+## 12.5 Customer QR and staff QR retrieval
+
+- **Status:** Implemented; latest UI/UX direction manually accepted by the user before final release audit.
+- **Reference:** Decoded `customer-qr.html`, `pos.html`, and `PONGSKILOG-OWNER.html`.
+- **Canonical implementation:** `customer-qr.tsx`, `customer-qr-product.tsx`,
+  `customer-qr-tracking.tsx`, `staff-qr-orders.tsx`, existing `cashier-pos.tsx`, and
+  `pages/branches/index.tsx`.
+- **Last updated:** 2026-09-22.
+
+| Surface | Implemented behavior |
+| --- | --- |
+| Customer entry | Existing branch QR route, no employee shell/props, authoritative Closed state, logo/branch, three reference steps and Terms/Privacy tabs. |
+| Menu | Search, categories, available reference favorites matched by real product name, responsive favorites tiles and menu rows, product images/fallbacks, availability labels, cart/current-order bar, and reference social actions. No invented favorites or sales ranking. |
+| Customization/cart | Quantity, required/optional Groups, Size, zero-price Instructions, separate notes, edit/remove confirmation, exact totals, required Dine In/Take Out, optional name. The current customer reference has no table picker. |
+| Submit | Stable retry intent, confirmed success/order number, no optimistic payment/Kitchen state, clear validation/offline conflicts and preserved input. |
+| Active order | Browse-only product views and current-order return; truthful payment and kitchen stages; explicit Start new order only after Done or archive. Pay Later can progress through Kitchen while Payment remains pending. |
+| Receipt | Owned paid snapshots, cash/cashless/split legs, cash received/change, real 24-hour expiry, receipt-card-only PNG save at 2x resolution with configured branding. |
+| Cashier | Existing operational navigation and QR badge, Waiting/Archived queue, search, detail, LOAD and Delete confirmation; paginated server data and realtime claim removal. |
+| Owner | Existing Branch management with real scannable QR display, View QR, ordering link and Copy link; existing BaconQrCode dependency, no permanent customer identity encoded. No analytics/hours/settings expansion or unsupported QR download/print control. |
+
+The standalone LOAD routine replaces its demo cart directly. The explicit
+no-data-loss requirement takes precedence: a current POS cart blocks LOAD and is
+preserved. The loaded QR uses the existing persisted-order POS path with immutable
+submitted selections/prices; unrestricted demo-cart editing is not reproduced.
+Committed editing remains Phase 12. New Closed/Archived/expiry/error states use
+the frozen requirements where the reference only simulated or omitted them.
+
+**User-directed tablet adjustment:** From 768px upward, the operational POS/Kitchen
+shell retains its compact 94px sidebar, including iPad Mini portrait and landscape.
+Only phones below 768px use the floating navigation dock and its bottom clearance.
+Normal Kitchen uses one column below 768px, two columns from 768px, and three
+columns from 1180px, matching the user-requested iPad layout. Fullscreen remains
+independent.
+
+The user supplied manual acceptance of the latest UI/UX direction. The final audit
+uses source and automated checks without repeating a broad browser visual sweep.
+
+
+---
+
+## Approved manual-QA refinement slice - 2026-09-22
+
+Primary decoded references remain customer-qr.html, pos.html and PONGSKILOG-OWNER.html; customer-qr-old.html is legacy only. Cashier cards now use provisional red QR identity, optional black name, green Dine In / sky Take Out badge, clock + shared elapsed timer, compact item summary, UNPAID/total, and LOAD | VIEW | DELETE. Archived cards expose VIEW/RESTORE. Delete confirmation uses the reference's Keep it / Delete order hierarchy and backend archival.
+
+Customer updates include configured/disabled welcome social links, allowlisted category icons, cart icon/quantity count, top-scoped success toast, Confirm Order CTA, green/blue order-type selection, Track/View icons, green top View Order action, actual timestamped colored timeline, rounded Browse/New Order + View Order + Receipt actions, and Stay connected on tracking/receipt. Existing browse-only protection and terminal-only reset remain.
+
+Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
+
+Visual acceptance comes from the user's manual QA. No broad browser sweep was performed during the final audit.
+
+
+## Phase 10 correction: POS digital receipt QR handoff
+
+POS paid receipt -> Show QR -> temporary signed public digital receipt. This replaces the Phase 6 placeholder for direct POS and Customer QR-origin paid Orders, including Pay Later after settlement. The cashier endpoint requires authentication, pos.access and authorized active-branch ownership, paid status and both official identifiers.
+
+The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
+
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+
+USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.

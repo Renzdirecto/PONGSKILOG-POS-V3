@@ -116,7 +116,7 @@ export function PosPaymentPreview({
                         Order number
                     </p>
                     <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
-                        #{orderNumber}
+                        {orderNumber.startsWith('QR-') ? orderNumber : `#${orderNumber}`}
                     </p>
                 </div>
                 <div
@@ -129,7 +129,7 @@ export function PosPaymentPreview({
                     )}
                     {orderType === 'dine_in' ? 'Dine in' : 'Take out'}
                 </div>
-                {saved ? (
+                {saved && saved.source !== 'customer_qr' ? (
                     <p className="text-center text-[13px] font-semibold wrap-anywhere text-red-700">
                         {customerDisplayLabel(
                             saved.customer_label,

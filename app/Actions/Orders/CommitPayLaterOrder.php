@@ -9,6 +9,7 @@ use App\Enums\OrderSource;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerTrackingChanged;
 use App\Events\DisplayOrdersChanged;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
@@ -18,6 +19,8 @@ use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Support\LoadedQrOrder;
+use App\Support\OrderNumber;
 use App\Support\PosAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -29,6 +32,7 @@ class CommitPayLaterOrder
         private CreatePosDraftOrder $drafts,
         private ApplyOrderInventory $inventory,
         private PosAccess $access,
+        private LoadedQrOrder $loadedQr,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -50,6 +54,8 @@ class CommitPayLaterOrder
                 if ($claimed->id !== $requestedOrder->id || $claimed->branch_id !== $branch->id) {
                     abort(409, 'This Pay Later attempt belongs to another order.');
                 }
+
+                abort_if($claimed->source === OrderSource::CustomerQr && $claimed->loaded_by_user_id !== $user->id, 403);
 
                 return $this->replay($claimed, $data, $hasLocalCart);
             }
@@ -74,19 +80,30 @@ class CommitPayLaterOrder
 
                 return $this->replay($order, $data, $hasLocalCart);
             }
+            if ($hasLocalCart && $order->source === OrderSource::CustomerQr) {
+                abort(409, 'Submitted QR snapshots cannot be replaced.');
+            }
             if ($hasLocalCart) {
                 $order = $this->drafts->execute($user, $branch, $data, $order);
                 $order = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             }
-            if ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Draft
+            if ((! $this->loadedQr->eligible($order, $user)
+                    && ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Draft))
                 || $order->payment_status !== PaymentStatus::Unpaid || $order->payment_term !== null
                 || $order->kitchen_status !== KitchenStatus::NotSent || $order->committed_at !== null) {
-                throw ValidationException::withMessages(['order' => 'Only an unpaid, uncommitted POS order can be saved as Pay Later.']);
+                throw ValidationException::withMessages(['order' => 'Only an unpaid POS draft or your loaded QR order can be saved as Pay Later.']);
             }
-            if ($order->branch_table_id !== null && ! $branch->tables()->whereKey($order->branch_table_id)->where('is_active', true)->exists()) {
+            if ($order->source !== OrderSource::CustomerQr && $order->branch_table_id !== null && ! $branch->tables()->whereKey($order->branch_table_id)->where('is_active', true)->exists()) {
                 throw ValidationException::withMessages(['table' => 'The selected table is no longer active in this branch.']);
             }
 
+            if ($order->source === OrderSource::CustomerQr) {
+                abort_unless($order->store_session_id === $session->id, 409, 'This QR order belongs to an earlier store session.');
+                $this->loadedQr->applyMetadata($order, $branch, $data);
+            }
+            if ($order->source === OrderSource::CustomerQr && $order->order_number === null) {
+                $order->forceFill(app(OrderNumber::class)->allocate($branch, now()));
+            }
             $committedAt = now();
             $this->inventory->execute(
                 $order,
@@ -111,6 +128,7 @@ class CommitPayLaterOrder
                 'version' => $order->version + 1,
             ]);
             OrderCommitted::dispatch($order);
+            CustomerTrackingChanged::dispatch($order);
             KitchenTicketCreated::dispatch($order, $ticket);
             DisplayOrdersChanged::dispatch($branch, $committedAt);
 
@@ -121,12 +139,13 @@ class CommitPayLaterOrder
     /** @param array<string, mixed> $data */
     private function replay(Order $order, array $data, bool $hasLocalCart): Order
     {
-        if ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Active
+        if ($order->commercial_status !== CommercialStatus::Active
             || $order->payment_status !== PaymentStatus::Unpaid || $order->payment_term !== PaymentTerm::PayLater
             || $order->kitchen_status !== KitchenStatus::Kitchen || $order->committed_at === null
             || $order->store_session_id === null || $order->kitchenTicket()->doesntExist()) {
             abort(409, 'This Pay Later attempt is not in a recoverable committed state.');
         }
+        $this->loadedQr->validateReplay($order, $data);
         if ($hasLocalCart && ! $this->matchesCart($order, $data)) {
             abort(409, 'This Pay Later attempt has already been used with different order details.');
         }

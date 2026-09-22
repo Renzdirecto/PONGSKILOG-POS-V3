@@ -19,6 +19,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property string|null $order_number
+ * @property string|null $reference_number
+ * @property int|null $qr_sequence
+ * @property Carbon|null $preparing_at
+ * @property Carbon|null $ready_at
+ * @property Carbon|null $submitted_at
+ * @property Carbon|null $archived_at
+ * @property Carbon|null $completed_at
  * @property Carbon|null $committed_at
  * @property string|null $store_session_id
  * @property int $version
@@ -30,7 +38,7 @@ use Illuminate\Support\Carbon;
  * @property KitchenStatus $kitchen_status
  * @property KitchenTicket|null $kitchenTicket
  */
-#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'pay_later_idempotency_key', 'version'])]
+#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'preparing_at', 'ready_at', 'voided_at', 'pay_later_idempotency_key', 'version', 'customer_qr_session_id', 'public_tracking_id', 'qr_idempotency_key', 'qr_intent_hash', 'table_name_snapshot'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
@@ -39,7 +47,18 @@ class Order extends Model
     protected static function booted(): void
     {
         static::updating(function (Order $order): void {
-            if ($order->isDirty(['order_number', 'reference_number'])) {
+            if ($order->isDirty('qr_sequence')) {
+                throw new \LogicException('QR sequence is immutable.');
+            }
+            if ($order->isDirty(['order_number', 'reference_number']) && ! (
+                $order->getRawOriginal('source') === OrderSource::CustomerQr->value
+                && $order->getRawOriginal('commercial_status') === CommercialStatus::Submitted->value
+                && $order->getRawOriginal('committed_at') === null
+                && $order->getRawOriginal('order_number') === null
+                && $order->getRawOriginal('reference_number') === null
+                && $order->order_number !== null && $order->reference_number !== null
+                && $order->committed_at !== null
+            )) {
                 throw new \LogicException('Order identifiers are immutable.');
             }
         });
@@ -58,6 +77,9 @@ class Order extends Model
             'subtotal' => 'decimal:2',
             'total' => 'decimal:2',
             'version' => 'integer',
+            'qr_sequence' => 'integer',
+            'preparing_at' => 'datetime',
+            'ready_at' => 'datetime',
             'submitted_at' => 'datetime',
             'archived_at' => 'datetime',
             'committed_at' => 'datetime',

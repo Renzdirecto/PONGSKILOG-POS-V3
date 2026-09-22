@@ -410,10 +410,10 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 
 - New POS order types now reserve a real persisted empty draft and a branch-serialized numeric operational number before cart interaction. Cart, Payment, paid-success and receipt retain that same short number; the immutable `BRANCH-YYMMDD-number` reference is secondary audit metadata. Per-branch counters use row locks, skip historical numeric collisions, allow abandoned-number gaps, and never rewrite legacy random order numbers or backfill their nullable references.
 - Product customization receives exact on-hand only for inventory-tracked products in the active branch and renders in-stock, low-stock and zero-stock quantities. Untracked products show `Available` without a number. Threshold, version, history and other-branch balances remain outside the Cashier projection.
-- Receipt now has its own Back header, compact 80mm print hierarchy, complete persisted order/item/tender details, and explicit Print receipt / Show QR / New order actions. Show QR is a labelled Phase 10 placeholder with no fake token, link or QR code. Cashless and Split show an invoice dash placeholder; real invoice capture remains recommended Phase 12 work and Phase 12 is not started.
+- Receipt now has its own Back header, compact 80mm print hierarchy, complete persisted order/item/tender details, and explicit Print receipt / Show QR / New order actions. The historical Show QR placeholder is superseded by the Phase 10 signed digital receipt handoff below. Cashless and Split show an invoice dash placeholder; real invoice capture remains recommended Phase 12 work and Phase 12 is not started.
 - Focused order/payment/catalog verification passed **221 tests / 1,592 assertions**; the final full suite passed **1,002 tests / 6,000 assertions**. Six frontend money/identity/stock-label tests, Pint, PHPStan with 1G, frontend lint (91 files), TypeScript, production build and diff whitespace checks pass. The existing optional fontaine and build-plugin timing notices, plus Node's experimental type-stripping notice, remain non-blocking.
 - Fresh SQLite in-memory migration and isolated PostgreSQL migrations pass. The updated POS PostgreSQL harness observed four independent workers allocate exactly 1001–1020, preserved a legacy collision, and left every connection reusable. Pay Now duplicate Cash/Split, last-unit, cross-branch root, rollback and after-commit event races still pass; the inventory concurrency harness also passes. Every random schema was removed. The additive migration was applied to the normal local PostgreSQL database without a reset.
-- Live component QA at 390, 820 and 1024px verified the receipt Back header, order/reference hierarchy, long item/modifier/note wrapping, full Split tender and invoice placeholder, fixed reachable actions and no visible horizontal overflow. The Phase 10 QR placeholder contains no public URL, token or generated code. Temporary QA route/component files were removed and the browser viewport restored. Native print preview and physical 80mm printer output remain manual QA.
+- Live component QA at 390, 820 and 1024px verified the receipt Back header, order/reference hierarchy, long item/modifier/note wrapping, full Split tender and invoice placeholder, fixed reachable actions and no visible horizontal overflow. That historical placeholder has since been replaced by the Phase 10 signed digital receipt handoff below. Temporary QA route/component files were removed and the browser viewport restored. Native print preview and physical 80mm printer output remain manual QA.
 
 ### Phase 6 final independent acceptance — 2026-09-20
 
@@ -423,7 +423,7 @@ This evidence supersedes the prior mandatory Dine In / prohibited Take Out table
 - Customer/order label and active-branch table are optional for both order types in rules, flows, UI guidance and validation. Selecting Table 2 auto-fills `Table 2`; identical label/table display is deduplicated; deselecting removes only an auto-derived label and preserves unrelated custom text. Inactive and foreign tables remain rejected.
 - The isolated PostgreSQL harness observed independent overlapping processes for same-cashier Dine In/Take Out reservation reuse, two-cashier distinct `#1001/#1002` reservations, independent branches each starting at `#1001`, duplicate Cash and Split, last-unit contention, reversed multi-product carts, cross-branch root-key conflict, and Kitchen failure rollback. It verified stable identity, one counter advance where applicable, no deadlocks or partial effects, reusable connections, after-commit-only events, and complete random-schema cleanup.
 - Cash, Cashless, Split, zero-total, underpayment, replay/different-key rejection and simulated lost-response recovery retain exact persisted money semantics. Inventory deducts once with aggregate per-product Sale movements; untracked products create no balance mutation. Each successful Pay Now creates one Kitchen ticket and replay creates none. Order number/reference remain unchanged from reservation through draft, payment, Kitchen and receipt; legacy random identifiers remain untouched.
-- Receipt retains the approved hierarchy, top Back action, persisted item/modifier/note and tender projection, short Order Number, secondary full Reference, Cashless/Split `Invoice: —`, and no Cash invoice placeholder. Show QR remains a Phase 10 placeholder without a token, public URL or fake code. Print DOM/CSS hides application chrome/actions and provides compact black 80mm content; native print preview and physical-printer output remain a non-blocking manual/staging check because the browser tool cannot inspect them.
+- Receipt retains the approved hierarchy, top Back action, persisted item/modifier/note and tender projection, short Order Number, secondary full Reference, Cashless/Split `Invoice: —`, and no Cash invoice placeholder. Show QR now uses the Phase 10 signed digital receipt handoff documented below. Print DOM/CSS hides application chrome/actions and provides compact black 80mm content; native print preview and physical-printer output remain a non-blocking manual/staging check because the browser tool cannot inspect them.
 - Live Payment QA passed table/label interaction, Exact cash and reachable confirmation without submitting a payment. Responsive measurements at 390, 430, 820, 1024 and 1440px showed document and dialog `scrollWidth === clientWidth`; normal Payment content stayed within the dialog. The previously accepted long-content component stress and standalone comparison remain valid; no redesign was introduced and the temporary viewport override was reset.
 - Query regressions pass at 1/30/100 Products: Cashier catalog remains at most four queries, Phase 5 customization/draft loading remains bounded, and new Pay Now coverage stays at 34 SELECTs with at most four Product and two OrderItem reads as a 1/30/100-item cart grows. Reservation refresh reuses the persisted empty order rather than adding Orders or counter increments.
 - Fresh SQLite in-memory migration and isolated PostgreSQL migration/metadata checks pass for UUIDs, `numeric(14,2)`, checks, idempotency/Kitchen/reference uniqueness, branch counters, indexes and restrictive history FKs. Normal local PostgreSQL was not reset, Supabase was not accessed, and all temporary schemas were removed.
@@ -545,39 +545,87 @@ and time; the client refetches the minimal authoritative projection.
 
 ## Phase 10 — Customer QR Ordering
 
-- [ ] Branch QR entry
-- [ ] Store Closed state
-- [ ] Welcome
-- [ ] Menu
-- [ ] Product customization
-- [ ] Cart
-- [ ] Dine In / Take Out
-- [ ] QR submission
-- [ ] No stock deduction on initial submission
-- [ ] No Kitchen ticket on initial submission
-- [ ] Anonymous QR session
-- [ ] One active order/session
-- [ ] Active tracking
-- [ ] Receipt
-- [ ] 24-hour receipt expiry
-- [ ] 30-minute Archived / Unclaimed behavior
-- [ ] Customer tracking security tests
+**Implementation delivered; latest UI/UX direction manually accepted by the user.**
+Release readiness is determined by the final audit gates below.
 
----
+- [x] Branch QR entry and anonymous session authorization
+- [x] Store Closed state - implemented; user manual QA accepted
+- [x] Welcome/Menu parity - user manual QA accepted
+- [x] Product customization - user manual QA accepted
+- [x] Cart / Dine In / Take Out - user manual QA accepted
+- [x] QR submission and exact submitted snapshot state
+- [x] No stock deduction, Payment, or Kitchen ticket on initial submission
+- [x] Anonymous QR session, hashed token, secure branch cookie, server expiry
+- [x] One active order/session and idempotent submission recovery
+- [x] Active tracking - server/event tested; user manual QA accepted
+- [x] Receipt / Save receipt PNG - implemented; user manual QA accepted
+- [x] Owned receipt authorization and exact 24-hour expiry
+- [x] 30-minute Archived / Unclaimed scheduler and preserved history
+- [x] Customer tracking security / branch isolation tests
 
 ## Phase 11 — QR Orders Staff Flow
 
-- [ ] Active QR queue
-- [ ] Search
-- [ ] Realtime arrival
-- [ ] QR order detail
-- [ ] LOAD
-- [ ] Branch-safe LOAD
-- [ ] Archived / Unclaimed handling
-- [ ] Archive/Delete confirmation
-- [ ] Pay Now after LOAD
-- [ ] Pay Later after LOAD
-- [ ] Duplicate LOAD protection
+**Implementation delivered; latest UI/UX direction manually accepted by the user.** No Phase 12+ work is marked complete.
+
+- [x] Active QR queue / search / detail - user manual QA accepted
+- [x] Realtime arrival and claim removal - automated contracts pass; user manual QA accepted
+- [x] LOAD preserves the existing Order, provisional QR number, snapshots and source without allocating official identity
+- [x] Branch-safe authorized LOAD with no Payment/stock/Kitchen side effects
+- [x] Duplicate LOAD protection verified with PostgreSQL workers
+- [x] Active cashier cart preserved by a clean-cart LOAD guard
+- [x] Archive/Delete confirmation - user manual QA accepted
+- [x] Archive preserves history and rejects claimed/committed/inconsistent orders
+- [x] Pay Now after LOAD reuses the existing atomic payment action
+- [x] Pay Later after LOAD and subsequent settlement preserve single stock/ticket effects
+- [x] Size/Instructions/notes survive through normal KDS and customer tracking
+- [x] Owner branch QR display/view/copy - user manual QA accepted
+- [x] iPad Mini/sidebar adjustment - sidebar from 768px, phone-only floating dock, two-column normal Kitchen at tablet widths; source regression passes, user manual QA accepted
+
+### Phase 10/11 implementation and verification - 2026-09-22
+
+- One anonymous branch-bound cookie session and the existing Order aggregate;
+  one shared server snapshot builder reused by POS/QR, no parallel payment/inventory/Kitchen engine.
+- LOAD only claims. Existing Pay Now/Pay Later commit the same Order ID with newly allocated official identity and exact
+  submitted prices. Submit/LOAD/archive have zero operational effects; commitment
+  deducts once and creates one ticket; Pay Later settlement creates payments only.
+- Staff queue has bounded eager-loaded projections, search, detail, realtime badge,
+  claim invalidation and retained archive history. An active cashier cart blocks LOAD.
+  Claimed QR snapshots are read-only in the persisted-order POS path.
+- Public tracking and receipt enforce cookie ownership; private customer channels
+  never expose staff data. Receipt expires after payment + 24 hours. Start new order
+  is explicit after Done/archive. Public catalog contains availability labels, not quantities.
+- Reference-defined customer screens and legal/social surfaces are implemented;
+  Pay Later's payment-pending status is truthful even after Kitchen commit.
+  Source alignment is not a substitute for final user visual acceptance.
+- Realtime is immediate after commit, rescued on transport failure, with 35ms
+  coalescing and authoritative reconnect refresh. Reverb must be running; Laravel's
+  scheduler must run for the every-minute stale-order archive task.
+- PostgreSQL harness: all six required scenarios passed using independent workers
+  and observed database lock waits, plus both Store Close and branch-state boundaries.
+  Temporary schema removed. SQLite and PostgreSQL fresh/rollback/reapply passed.
+- Local feature migration applied without resetting existing data. No dependency
+  changes, fake public tracking data, prototype assets, or browser QA files added.
+- Initial full release gate exposed nine SQLite Order CHECK-constraint regressions
+  caused by a foreign-key table rebuild. The QR migration now uses a native nullable
+  inline REFERENCES addition on SQLite; original checks survive up/down/up. The
+  affected Order foundation and QR tests passed after correction.
+- Final full Laravel release gate passed: **1,197 tests / 7,733 assertions**.
+  Focused Customer QR coverage passed **44 tests / 355 assertions**; focused
+  frontend coverage passed **29 tests**, including the tablet navigation/grid rule.
+  Pint, PHPStan (zero errors), frontend lint (123 files), TypeScript, production
+  build, and whitespace checks passed. PostgreSQL concurrency and isolated
+  fresh/rollback/reapply checks passed after the SQLite correction.
+  The existing optional fontaine and build timing notices remain non-blocking.
+
+Manual QA checklist: scan the Owner branch QR; confirm Closed/Welcome/legal/menu;
+customize Size/Instructions/notes; edit/remove cart lines; choose Dine In/Take Out;
+submit twice and retain one number; inspect two same-branch cashier queues; confirm
+active-cart LOAD guard and single-claim winner; complete Pay Now and Pay Later;
+advance normal KDS and verify customer tracking; settle Pay Later without extra
+stock/tickets; save the owned paid receipt and verify expiry; leave an untouched
+submission for 30 minutes with scheduler running; confirm archive and Start new order;
+disconnect/reconnect during browse/tracking; test foreign branch/session denial;
+inspect 360/390/430px phones, iPad Mini 768/1024px sidebar, tablet and desktop.
 
 ---
 
@@ -798,3 +846,57 @@ A checkbox may be marked complete only when:
 - Realtime behavior is verified where relevant
 
 Do not check items merely because the standalone prototype already contains the UI.
+
+
+### Phase 10/11 manual-QA refinement and architecture correction - 2026-09-22
+
+Implementation refined on feature/qr-ordering, preserving the later LAN HTTP UUID fix at 3c4bde0. The user has manually accepted the latest Phase 10/11 UI/UX direction. Phase 12 and full Phase 16 remain incomplete.
+
+- New QR submissions use a locked per-Store-Session counter and QR-01 display. Official short number/reference remain null through submit, LOAD and Cancel LOAD, and are assigned inside Pay Now/Pay Later's existing atomic commitment. New references are BRANCH-MMDDYY-#### from a separate branch/Manila-date counter. Direct POS reservation, snapshots and historical identifiers remain intact.
+- Added owned Cancel Loaded Order and eligible Archived RESTORE, with renewed deadline, session-conflict checks and compact staff/customer invalidations. No Payment, stock or Kitchen effects occur on submit/load/cancel/archive/restore. Pay Now creates payment/stock/ticket once; Pay Later activation creates stock/ticket once; settlement creates only payment.
+- Cashier hierarchy is Dashboard/POS/QR Orders/Kitchen/History/Display, with permission checks and disabled History. Queue cards use provisional identity, optional names, order-type badges, one elapsed clock and LOAD/VIEW/DELETE; archived cards expose VIEW/RESTORE. Normal refresh is removed. Pay Now/Pay Later accept the same temporary loaded-QR name/table edits at commitment. Fabricated Walk-in labels were removed from the affected KDS/Ready/POS surfaces.
+- Customer welcome/social links, category icons, cart icon/count, scoped top success toast, Confirm Order, order-type colors, tracking icons/actions and timestamped timeline were refined. Active-order browsing remains read-only; terminal reset and unpaid receipt restrictions remain authoritative. Tracking and receipt include Stay connected, and receipt returns to tracking. Prior paid receipts remain authorized after a new Order until their own exact 24-hour expiry.
+- Partial Owner Settings reuses Branch Management and adds typed Receipt settings. Branch QR has QR/History tabs, stable kiosk link/image, independent QR toggle, open/copy controls, date filtering and bounded activity. The kiosk code is initialized from branch code and remains stable on later business-code edits; old UUID entry redirects. Anonymous credentials remain encrypted HttpOnly cookies, never kiosk URL content. Visit records exclude IP/device metadata and deduplicate opens for two minutes.
+- LOAD now shares the branch state boundary, locks the cashier claim boundary and Order exclusively, and keeps the Store Session shared lock. Post-LOAD navigation requests only loadedQr/qrWaitingCount, avoiding a full catalog projection. Temporary instrumentation measured the local PostgreSQL action at 16.35, 15.10, 11.31, 12.05 and 11.65 ms, 16 queries each, with null broadcast transport. Instrumentation was removed. The user's approximately 3-second observation is an end-to-end baseline; its exact transport/browser cause was not reproduced, so a measured end-to-end before/after improvement or guaranteed sub-second UI is not claimed.
+
+Verification:
+
+- Focused QR/direct POS/payment/foundation run: 207 tests / 1,521 assertions passed. Later focused QR/draft coverage: 153 tests / 1,116 assertions passed. Owner branch correction: 29 tests / 237 assertions passed. Customer Store State: 11 tests / 138 assertions passed. These overlap and must not be summed.
+- Full Laravel suite ran ONCE: 1,213 tests, 7,856 assertions; 1,212 passed and one old branch-list QR URL assertion failed. The assertion was updated to the approved canonical kiosk URL; all 29 affected BranchManagement tests then passed. The full suite was not repeated, honoring the requested single full run.
+- Frontend behavior tests: 43 passed. PHPStan: zero errors. Pint, frontend lint (124 files), TypeScript, production build and git diff --check passed. Existing optional fontaine/build timing and Node experimental warnings are non-blocking.
+- PostgreSQL independent-worker harness passed duplicate submit/LOAD, concurrent provisional numbering, LOAD versus stale archive, Cancel LOAD versus Pay Now/Pay Later, concurrent official short/daily-reference allocation for both payment paths, restore versus new submission, restore versus Store Close, and branch/Store Close submission boundaries. Exactly-once stock/payment/ticket effects verified. All workers and temporary schemas cleaned up.
+- SQLite and isolated PostgreSQL fresh/up/down/reapply passed with historical references preserved; SQLite's original Order CHECK constraints survived. Both additive migrations were applied to the local database without reset. No Supabase access/reset, dependency change, broad browser sweep or PR.
+
+Known limits: pre-cutover QR Orders retain their already-issued official identity; archived legacy Orders with an official identity are intentionally not restorable. Downgrade refuses while null-identity provisional Orders exist, preserving their history. Unconfigured Facebook/Website links are disabled until configured. Receipt settings support a default brand logo and validated custom upload/replacement/removal with a visibility toggle; customer receipts save as PNG. Printer hardware, Phase 12 proof/history and the rest of Phase 16 remain deferred. No new end-to-end LOAD latency measurement is claimed.
+
+Manual QA: open the permanent branch QR and verify legacy-link redirect; toggle QR OFF while store remains open; inspect welcome links/menu/category icons/cart/Confirm Order; submit and verify QR-01 without official identifiers; test existing-cart LOAD protection, Cancel LOAD, DELETE/RESTORE and conflicts; exercise Pay Now and Pay Later name/table edits and identifier transition; advance and roll back Kitchen stages while watching customer tracking; browse without adding another Order; settle Pay Later once; open/save a paid receipt and begin another Order; inspect receipt settings and dated QR history; disconnect/reconnect; check phone/tablet/desktop composition. The user accepted the latest UI/UX direction before this final audit.
+
+
+### Phase 10/11 final audit and release gates - 2026-09-22
+
+This record supersedes the earlier incomplete full-suite and pending-manual-QA reports. The user accepted the latest UI/UX direction; this audit did not redesign it or run broad browser visual QA. Phase 12, Close Store, and full Phase 16 remain incomplete; Owner Settings remains the partial Branch Management/Receipt slice.
+
+- Audited all six feature commits and the complete 88-file feature diff from `dev`, starting at `30d64432ab44ccbefb72cc18a5b50286042f4931`. Refreshed origin: the starting branch was six commits ahead and zero behind `origin/dev`, and matched its remote feature branch.
+- Corrected QR Pay Later metadata validation so an inactive original table can be replaced or cleared at commitment, matching Pay Now; retaining an inactive table is still rejected atomically. Disabled QR submissions now truthfully distinguish QR unavailability from Store Closed. Owner Orders Placed uses original creation time so restore cannot move historical counts to another date.
+- The user's tablet report reproduced in browser logs as `crypto.randomUUID is not a function` on the Cashier IP/HTTP page. POS Add to cart, Pay Now and Pay Later now reuse the existing cryptographically random LAN-compatible UUID helper. Production assets were rebuilt, and the user was told to refresh the tablet. A live tablet retest is not claimed.
+- Corrected the migration harness to roll back all four Phase 10/11 migrations, explicitly verify receipt-logo column removal/reapplication, and exercise the identity migration with historical rows. Added the missing overlapping same-cashier/two-LOAD case with exact winner, claim, identity and side-effect assertions.
+- Identity architecture remains intact: per-Store-Session QR sequence only at submission; official short number and branch/Manila-date reference allocated in the shared Pay Now/Pay Later transaction; direct POS early reservation preserved. Submit/LOAD/cancel/archive/restore have no payment, stock or Kitchen effects. Snapshots are preserved; commitment and settlement remain exactly once.
+- Anonymous cookie hashing/expiry/branch ownership, narrow tracking authorization, customer-safe projections, branch/RBAC enforcement, receipt settings/logo validation and cleanup, exact 24-hour receipt access including prior owned receipts, after-commit rescued realtime and reconnect refetch were reviewed. PNG captures only the receipt card with solid background, images and 2x resolution; export failures are caught by the UI.
+- Focused QR suite: **72 passed / 607 assertions**. The first complete Laravel gate found seven stale exact Store payload assertions missing the accepted `is_open` field; those were corrected without weakening privacy checks. Focused Store-state suite then passed **11 tests / 138 assertions**. The required final complete rerun of `php artisan test --compact` passed **1,225 tests / 7,991 assertions; 0 failures, 0 errors, 0 skipped**.
+- Complete frontend verification: **47 Node tests passed**, zero failures/skips; `npm run check:frontend` passed with no warnings/errors across **125 files**; `npm run types:check` passed; `npm run build` succeeded. `vendor/bin/pint --dirty --format agent` passed. `vendor/bin/phpstan analyse --no-progress --memory-limit=1G` passed with **zero errors**. Whitespace checks passed.
+- SQLite fresh/up/down/reapply preserved historical identifiers and existing Order CHECK constraints. PostgreSQL fresh/up/down/reapply and **15 independent-worker concurrency scenarios** passed, covering duplicate submit/LOAD/commit, same-cashier claims, provisional numbering, LOAD/archive, cancel versus both commitment paths, both official-identity allocation paths, restore conflicts and Store/branch boundaries. Temporary schema cleanup passed. Only isolated local/test databases were used; Supabase was not accessed or reset.
+- Queue/history pagination and eager loading avoid obvious N+1 queries. Catalog and Owner branch lists retain existing full-collection behavior; no speculative optimization or new latency claim. Existing localhost strings in UI are URL-parsing bases, not network destinations. No new secrets, environment files, debug instrumentation, screenshots, binaries or database credentials were found in the commit diff.
+- Non-blocking limits remain: legacy officially numbered archived QR orders cannot restore; downgrade refuses while provisional rows exist; unconfigured social links remain disabled; printer hardware and later phases remain deferred. Reverb and the scheduler remain runtime requirements. Optional fontaine/build-timing and Node mock-timer notices are non-blocking. No PR was opened.
+
+
+## Phase 10 correction: POS digital receipt QR handoff
+
+POS paid receipt -> Show QR -> temporary signed public digital receipt. This replaces the Phase 6 placeholder for direct POS and Customer QR-origin paid Orders, including Pay Later after settlement. The cashier endpoint requires authentication, pos.access and authorized active-branch ownership, paid status and both official identifiers.
+
+The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
+
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+
+USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
+
+Verification: focused receipt/payment/Customer QR regression passed 206 tests / 1,747 assertions; focused frontend receipt/PNG passed 5 tests; full Laravel passed 1,240 tests / 8,117 assertions with zero failures/errors; complete Node frontend suite passed 51 tests. Pint, PHPStan, frontend lint (zero warnings), TypeScript, production build and diff check passed. An initial full-suite run overlapped the build removing a font CSS asset; the log confirmed that transient rendering failure, the affected 20-test file passed independently, and the full suite passed with assets stable. No payment/concurrency logic changed, so the PostgreSQL concurrency harness was not rerun. Status: READY FOR MANUAL QA; device scan/PNG visual acceptance remains pending.

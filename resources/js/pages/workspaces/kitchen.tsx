@@ -322,7 +322,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                     </div>
                 ) : (
                     <main
-                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 min-[1180px]:grid-cols-3'}`}
+                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 md:grid-cols-2 min-[1180px]:grid-cols-3'}`}
                     >
                         {tickets.map((ticket) => (
                             <TicketCard
@@ -387,27 +387,29 @@ function TicketCard({
             className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
             <header
-                className={`flex items-center gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
+                className={`flex items-start gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
             >
-                <p className="mr-auto flex min-w-0 items-center gap-1 truncate text-sm font-black tracking-tight">
-                    <span>#{ticket.number}</span>
-                    {disabled && (
-                        <span className="text-[9px] font-normal text-neutral-500">
-                            Saving...
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs leading-4 font-black tracking-tight wrap-anywhere">
+                        <span className="whitespace-nowrap">#{ticket.number}</span>{' '}
+                        {disabled && (
+                            <span className="text-[9px] font-normal text-neutral-500">
+                                Saving...{' '}
+                            </span>
+                        )}
+                        <span className="text-red-700">
+                            {ticket.customer || ''}
                         </span>
-                    )}
-                    <span className="text-red-700">
-                        {ticket.customer || 'Walk-in'}
-                    </span>
-                </p>
-                <p className="shrink-0 text-[9px] font-bold whitespace-nowrap tabular-nums">
-                    <span className="text-neutral-500">
-                        {placedTimeLabel(ticket.placed_at)} ·{' '}
-                    </span>
-                    <span className="text-red-700">
-                        {relativePlacedTime(ticket.placed_at, now)}
-                    </span>
-                </p>
+                    </p>
+                    <p className="text-[9px] leading-3 font-bold tabular-nums">
+                        <span className="text-neutral-500">
+                            {placedTimeLabel(ticket.placed_at)} ·{' '}
+                        </span>
+                        <span className="text-red-700">
+                            {relativePlacedTime(ticket.placed_at, now)}
+                        </span>
+                    </p>
+                </div>
                 <span
                     className={`shrink-0 rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
                 >

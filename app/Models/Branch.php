@@ -14,11 +14,25 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property BranchStatus $status
  */
-#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours'])]
+#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])]
 class Branch extends Model
 {
+    protected $attributes = ['qr_ordering_enabled' => true, 'receipt_show_logo' => true];
+
     /** @use HasFactory<BranchFactory> */
     use HasFactory, HasUuids;
+
+    protected static function booted(): void
+    {
+        static::creating(function (Branch $branch): void {
+            $branch->kiosk_code = $branch->code;
+        });
+        static::updating(function (Branch $branch): void {
+            if ($branch->isDirty('kiosk_code')) {
+                throw new \LogicException('The public kiosk address is immutable.');
+            }
+        });
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -29,6 +43,8 @@ class Branch extends Model
     {
         return [
             'status' => BranchStatus::class,
+            'qr_ordering_enabled' => 'boolean',
+            'receipt_show_logo' => 'boolean',
             'operating_hours' => 'array',
         ];
     }

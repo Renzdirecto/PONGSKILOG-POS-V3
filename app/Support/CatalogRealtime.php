@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Events\CustomerCatalogChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
 use App\Models\Branch;
@@ -20,6 +21,7 @@ class CatalogRealtime
         $version = (int) now()->format('Uu');
 
         foreach ($branches as $targetBranch) {
+            CustomerCatalogChanged::dispatch($targetBranch->id);
             $loadedProduct = $this->catalog->productsForOrder($targetBranch, [$product->getKey()])->first();
 
             if ($loadedProduct === null) {

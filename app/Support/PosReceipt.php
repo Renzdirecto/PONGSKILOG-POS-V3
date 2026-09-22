@@ -22,7 +22,7 @@ class PosReceipt
             'store_session_id' => $order->store_session_id,
             'paid_at' => $order->payments->first()?->paid_at?->toIso8601String(),
             'cashier' => $order->payments->first()?->createdBy?->name,
-            'branch' => ['name' => $order->branch->name, 'code' => $order->branch->code, 'address' => $order->branch->address, 'contact' => $order->branch->contact],
+            'branch' => ['name' => $order->branch->receipt_name ?? $order->branch->name, 'code' => $order->branch->code, 'address' => $order->branch->receipt_address ?? $order->branch->address, 'contact' => $order->branch->receipt_contact ?? $order->branch->contact, 'footer' => $order->branch->receipt_footer, 'show_logo' => $order->branch->receipt_show_logo, 'logo_url' => $order->branch->receipt_logo_path ? route('branches.receipt-logo', $order->branch, false).'?v='.md5($order->branch->receipt_logo_path) : '/images/branding/logo.png'],
             'payments' => $order->payments->map(fn (Payment $payment): array => [
                 'method' => $payment->method->value, 'amount' => $payment->amount,
                 'amount_received' => $payment->amount_received, 'change_amount' => $payment->change_amount,

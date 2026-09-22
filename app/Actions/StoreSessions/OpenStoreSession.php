@@ -4,6 +4,7 @@ namespace App\Actions\StoreSessions;
 
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerCatalogChanged;
 use App\Models\Branch;
 use App\Models\StoreSession;
 use App\Models\User;
@@ -62,13 +63,16 @@ class OpenStoreSession
 
             try {
                 /** A savepoint permits recovery without querying an aborted PostgreSQL transaction. */
-                return DB::transaction(fn (): StoreSession => $branch->storeSessions()->create([
+                $session = DB::transaction(fn (): StoreSession => $branch->storeSessions()->create([
                     'status' => StoreSessionStatus::Open,
                     'opened_by_user_id' => $user->id,
                     'opened_at' => now(),
                     'opening_cash_amount' => $openingCashAmount,
                     'opening_cashless_amount' => $openingCashlessAmount,
                 ]));
+                CustomerCatalogChanged::dispatch($branch->id);
+
+                return $session;
             } catch (UniqueConstraintViolationException $exception) {
                 if (($exception->errorInfo[0] ?? null) !== '23505'
                     || ! str_contains($exception->errorInfo[2] ?? '', '"store_sessions_one_open_per_branch_unique"')) {

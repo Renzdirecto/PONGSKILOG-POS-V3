@@ -32,6 +32,7 @@ type SharedProps = {
     storeContext: StoreContext;
     workspace?: string;
     readyOrders?: PosReadyOrder[];
+    qrWaitingCount?: number;
 };
 
 function roleLabel(role?: string): string {
@@ -68,6 +69,9 @@ export default function WorkspaceLayout({
             auth.roles.some(
                 (role) => role === 'cashier' || role === 'cashier_kitchen',
             ));
+    const isQr =
+        isPos &&
+        new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
     const isKitchen = page.component === 'workspaces/kitchen';
     const isOperational = isPos || isKitchen;
     const isOwnerManagement =
@@ -108,11 +112,18 @@ export default function WorkspaceLayout({
                 active: false,
             },
             {
-                label: 'POS / Order',
+                label: 'POS',
                 icon: UtensilsCrossed,
                 available: auth.permissions.includes('pos.access'),
                 href: cashier(),
-                active: isPos,
+                active: isPos && !isQr,
+            },
+            {
+                label: 'QR Orders',
+                icon: QrCode,
+                available: auth.permissions.includes('pos.access'),
+                href: cashier({ query: { view: 'qr' } }),
+                active: isQr,
             },
             {
                 label: 'Kitchen',
@@ -122,23 +133,23 @@ export default function WorkspaceLayout({
                 active: isKitchen,
             },
             {
+                label: 'History',
+                icon: LayoutDashboard,
+                available: false,
+                href: null,
+                active: false,
+            },
+            {
                 label: 'Display',
                 icon: MonitorUp,
                 available: canOpenCustomerDisplay(auth.permissions),
                 href: customerDisplay(),
                 active: false,
             },
-            {
-                label: 'QR Orders',
-                icon: QrCode,
-                available: false,
-                href: null,
-                active: false,
-            },
         ];
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
-                <aside className="hidden w-[94px] shrink-0 flex-col min-[1180px]:flex">
+                <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
                         <img
                             src="/images/branding/logo.png"
@@ -165,6 +176,13 @@ export default function WorkspaceLayout({
                                     >
                                         <Icon className="size-5" />
                                         {label}
+                                        {label === 'QR Orders' &&
+                                            (page.props.qrWaitingCount ?? 0) >
+                                                0 && (
+                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                    {page.props.qrWaitingCount}
+                                                </span>
+                                            )}
                                     </Link>
                                 ) : (
                                     <button
@@ -190,7 +208,11 @@ export default function WorkspaceLayout({
                     <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 min-[1180px]:h-[66px] min-[1180px]:px-4">
                         <div className="min-w-0 flex-1">
                             <h1 className="truncate text-[15px] font-bold">
-                                {isKitchen ? 'Kitchen display' : 'POS / Order'}
+                                {isKitchen
+                                    ? 'Kitchen display'
+                                    : isQr
+                                      ? 'QR Orders'
+                                      : 'POS / Order'}
                             </h1>
                             <p className="truncate text-[11px] text-neutral-500">
                                 {branchContext.current?.name}
@@ -248,12 +270,12 @@ export default function WorkspaceLayout({
                         loading={storeSessionRequest.processing}
                         unavailable={storeSessionUnavailable}
                     />
-                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] min-[1180px]:pb-0">
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
                         {children}
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl min-[1180px]:hidden"
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[520px] grid-cols-5 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
                             ({ label, icon: Icon, available, href, active }) =>
@@ -270,6 +292,13 @@ export default function WorkspaceLayout({
                                     >
                                         <Icon className="size-5" />
                                         {label}
+                                        {label === 'QR Orders' &&
+                                            (page.props.qrWaitingCount ?? 0) >
+                                                0 && (
+                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                    {page.props.qrWaitingCount}
+                                                </span>
+                                            )}
                                     </Link>
                                 ) : (
                                     <button

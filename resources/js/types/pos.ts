@@ -18,7 +18,9 @@ export type CartLine = {
 };
 export type OrderSummary = {
     id: string;
-    order_number: string;
+    order_number: string | null;
+    qr_number?: string | null;
+    source?: string;
     reference_number: string | null;
     order_type: OrderType;
     table_name: string | null;
@@ -58,6 +60,7 @@ export type PayLaterOrder = OrderSummary & {
 export type PayLaterAttempt = {
     order_id: string;
     idempotency_key: string;
+    qr_metadata?: { customer_label: string; branch_table_id: string | null };
     order_type?: OrderType;
     customer_label?: string;
     branch_table_id?: string | null;
@@ -78,6 +81,7 @@ export type PaymentInput = {
 };
 export type PaymentAttempt = PaymentInput & {
     idempotency_key: string;
+    qr_metadata?: { customer_label: string; branch_table_id: string | null };
     draft_order_id?: string;
     reserved_order_id?: string;
     order_type?: OrderType;
@@ -100,6 +104,9 @@ export type PaidReceipt = OrderSummary & {
         code: string;
         address: string | null;
         contact: string | null;
+        footer?: string | null;
+        show_logo?: boolean;
+        logo_url?: string;
     };
     payments: {
         method: 'cash' | 'cashless';

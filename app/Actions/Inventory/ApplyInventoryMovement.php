@@ -3,6 +3,7 @@
 namespace App\Actions\Inventory;
 
 use App\Enums\InventoryMovementType;
+use App\Events\CustomerCatalogChanged;
 use App\Events\InventoryChanged;
 use App\Models\Branch;
 use App\Models\BranchInventory;
@@ -113,6 +114,8 @@ class ApplyInventoryMovement
                 $state['status'],
                 $balance->version,
             );
+
+            CustomerCatalogChanged::dispatch($branch->id);
 
             return $movement;
         });

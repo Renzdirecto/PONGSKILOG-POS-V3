@@ -1,9 +1,10 @@
 import type { PayLaterAttempt } from '@/types/pos';
+import { createClientUuid } from './client-uuid';
 
 export function payLaterAttemptForOrder(
     current: PayLaterAttempt | null,
     details: Omit<PayLaterAttempt, 'idempotency_key'>,
-    createUuid: () => string = () => crypto.randomUUID(),
+    createUuid: () => string = createClientUuid,
 ): PayLaterAttempt {
     if (current?.order_id === details.order_id) return current;
 

@@ -11,11 +11,12 @@ class PayLaterOrderSummary
     /** @return array<string, mixed> */
     public function summary(Order $order): array
     {
-        $order->load('items.modifiers', 'branchTable', 'createdBy');
+        $order->loadMissing('items.modifiers', 'branchTable', 'createdBy');
 
         return [
             'id' => $order->id,
             'order_number' => $order->order_number,
+            'qr_number' => CustomerQrNumber::display($order->qr_sequence),
             'reference_number' => $order->reference_number,
             'order_type' => $order->order_type->value,
             'customer_label' => $order->customer_label,
@@ -46,5 +47,14 @@ class PayLaterOrderSummary
                 ])->all(),
             ])->all(),
         ];
+    }
+
+    /** @return array<string, mixed> */
+    public function qr(Order $order): array
+    {
+        return [...$this->summary($order), 'source' => $order->source->value,
+            'branch_table_id' => $order->branch_table_id, 'submitted_at' => $order->submitted_at?->toIso8601String(),
+            'archived_at' => $order->archived_at?->toIso8601String(), 'archive_reason' => $order->archive_reason,
+            'table_name' => $order->table_name_snapshot, 'version' => $order->version];
     }
 }

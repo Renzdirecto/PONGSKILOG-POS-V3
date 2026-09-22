@@ -12,5 +12,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/** | .ai/rules/js.md |
 | resources/js/{layouts,components,pages}/**/*.tsx | .ai/rules/layoutscomponentspages.md |
 | app/Actions/Orders/**, app/Actions/Orders/TransitionKitchenOrder.php | .ai/rules/orders.md |
+| {app/Http/Controllers/**,resources/js/components/pos-paid.tsx,resources/js/pages/public-receipt.tsx} | .ai/rules/pages.md |
 | database/seeders/Local*Seeder.php | .ai/rules/seeders.md |
 | resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |

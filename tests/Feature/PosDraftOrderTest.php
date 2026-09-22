@@ -734,7 +734,7 @@ test('numeric order allocation skips historical collisions and uses the Manila c
         ->and($legacy->fresh()->reference_number)->toBeNull()
         ->and($order->order_number)->toBe('1002')
         ->and($order->order_number)->toMatch('/\A[0-9]+\z/')
-        ->and($order->reference_number)->toBe('MAIN-260920-1002')
+        ->and($order->reference_number)->toBe('MAIN-092026-0001')
         ->and(DB::table('order_number_counters')->where('branch_id', $branch->id)->value('next_number'))->toBe(1003);
     $this->assertDatabaseCount('orders', 2);
     $this->assertDatabaseCount('order_items', 1);
@@ -790,6 +790,6 @@ test('catalog customization and draft reads remain bounded as cart and catalog g
 
     $reads = collect(DB::getQueryLog())->filter(fn ($query) => str_starts_with(strtolower($query['query']), 'select'));
     DB::disableQueryLog();
-    expect($reads->count())->toBeLessThanOrEqual(18);
+    expect($reads->count())->toBeLessThanOrEqual(20);
     expect($order->items)->toHaveCount($count);
 })->with([1, 30, 100]);

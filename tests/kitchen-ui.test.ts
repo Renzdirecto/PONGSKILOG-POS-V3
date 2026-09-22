@@ -186,7 +186,7 @@ test('KDS renders one-row controls and split ticket timing', () => {
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
 });
 
-test('operational shell and normal KDS follow the standalone tablet breakpoint', () => {
+test('operational sidebar stays visible on iPad Mini and floating navigation is phone only', () => {
     const kitchenPage = readFileSync(
         new URL(
             '../resources/js/pages/workspaces/kitchen.tsx',
@@ -202,9 +202,10 @@ test('operational shell and normal KDS follow the standalone tablet breakpoint',
         'utf8',
     );
 
-    assert.match(workspaceLayout, /min-\[1180px\]:flex/);
-    assert.match(workspaceLayout, /min-\[1180px\]:hidden/);
-    assert.match(kitchenPage, /grid-cols-1 min-\[1180px\]:grid-cols-3/);
+    assert.match(workspaceLayout, /w-\[94px\][^"\n]*md:flex/);
+    assert.match(workspaceLayout, /shadow-xl md:hidden/);
+    assert.match(workspaceLayout, /pb-\[76px\] md:pb-0/);
+    assert.match(kitchenPage, /grid-cols-1 md:grid-cols-2 min-\[1180px\]:grid-cols-3/);
     assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });
 

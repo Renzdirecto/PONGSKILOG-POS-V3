@@ -43,11 +43,26 @@ class OrderNumber
                 'updated_at' => $timestamp,
             ]);
 
-            $date = CarbonImmutable::instance($createdAt)->setTimezone('Asia/Manila')->format('ymd');
+            $date = CarbonImmutable::instance($createdAt)->setTimezone('Asia/Manila')->format('Y-m-d');
+
+            DB::table('order_reference_counters')->insertOrIgnore([
+                'branch_id' => $branch->id, 'business_date' => $date, 'next_number' => 1,
+            ]);
+            $daily = DB::table('order_reference_counters')->where('branch_id', $branch->id)->where('business_date', $date);
+            $dailyCounter = (clone $daily)->lockForUpdate()->first();
+            if ($dailyCounter === null) {
+                throw new \LogicException('Reference counter was not created.');
+            }
+            $referenceSequence = (int) $dailyCounter->next_number;
+            $prefix = $branch->code.'-'.CarbonImmutable::instance($createdAt)->setTimezone('Asia/Manila')->format('mdy').'-';
+            while (Order::query()->where('reference_number', $prefix.str_pad((string) $referenceSequence, 4, '0', STR_PAD_LEFT))->exists()) {
+                $referenceSequence++;
+            }
+            $daily->update(['next_number' => $referenceSequence + 1]);
 
             return [
                 'order_number' => (string) $number,
-                'reference_number' => $branch->code.'-'.$date.'-'.$number,
+                'reference_number' => $prefix.str_pad((string) $referenceSequence, 4, '0', STR_PAD_LEFT),
             ];
         });
     }

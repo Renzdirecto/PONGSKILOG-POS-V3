@@ -1,3 +1,6 @@
+import { cancelLoad } from '@/routes/pos/qr-orders';
+import { qrRequest, qrError } from '@/lib/qr-http';
+import { createClientUuid } from '@/lib/client-uuid';
 import {
     router,
     useForm,
@@ -14,6 +17,10 @@ import {
     UtensilsCrossed,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { StaffQrOrders } from '@/components/staff-qr-orders';
+import type { StaffQrOrder } from '@/types/qr';
+import { cashier } from '@/routes/workspaces';
 import { CashierCatalog } from '@/components/cashier-catalog';
 import { OperationalItemName } from '@/components/operational-item-name';
 import { PosTableSelection } from '@/components/pos-table-selection';
@@ -36,6 +43,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { savedItemName } from '@/lib/pos-item-name';
 import {
@@ -80,7 +88,13 @@ export function CashierPos({
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
     const realtimeStatus = usePosCatalogRealtime(branch.id);
-    const initialDraft = usePage().flash.posDraft as OrderSummary | undefined;
+    usePosQrRealtime(branch.id);
+    const loadedQr = usePage().props.loadedQr as StaffQrOrder | null;
+    const qrView =
+        new URL(usePage().url, 'http://localhost').searchParams.get('view') ===
+        'qr';
+    const initialDraft =
+        loadedQr ?? (usePage().flash.posDraft as OrderSummary | undefined);
     const [orderType, setOrderType] = useRemember<OrderType | null>(
         initialDraft?.order_type ?? null,
         `${rememberKey}:type`,
@@ -162,10 +176,13 @@ export function CashierPos({
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
-    const form = useForm(`${rememberKey}:details`, freshOrderDetails());
+    const form = useForm(`${rememberKey}:details`, {...freshOrderDetails(), customer_label: initialDraft?.customer_label ?? '', branch_table_id: loadedQr?.branch_table_id ?? ''});
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber =
-        saved?.order_number ?? reservation?.order_number ?? null;
+        saved?.order_number ??
+        saved?.qr_number ??
+        reservation?.order_number ??
+        null;
     const editingProduct = editing
         ? (catalog.products.find(
               (product) => product.id === editing.product.id,
@@ -214,6 +231,12 @@ export function CashierPos({
         form.clearErrors();
     }
     function beginOrder(type: OrderType | null) {
+        if ((saved as StaffQrOrder | null)?.source === 'customer_qr') {
+            toast.error(
+                'Finish the loaded QR order before starting another order.',
+            );
+            return;
+        }
         setReceipt(null);
         setPayLaterSuccess(null);
         setPayLaterAttempt(null);
@@ -248,9 +271,20 @@ export function CashierPos({
         }
         const payload: PaymentAttempt = attempt ?? {
             ...input,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: createClientUuid(),
             ...(saved
-                ? { draft_order_id: saved.id }
+                ? {
+                      draft_order_id: saved.id,
+                      ...(saved.source === 'customer_qr'
+                          ? {
+                                qr_metadata: {
+                                    customer_label: form.data.customer_label,
+                                    branch_table_id:
+                                        form.data.branch_table_id || null,
+                                },
+                            }
+                          : {}),
+                  }
                 : {
                       reserved_order_id: reservedOrder?.id,
                       order_type: orderType,
@@ -281,7 +315,7 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('paid');
-            router.reload({ only: ['catalog', 'storeSession'] });
+            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -342,7 +376,15 @@ export function CashierPos({
         const activation = payLaterAttemptForOrder(payLaterAttempt, {
             order_id: targetOrder.id,
             ...(saved
-                ? {}
+                ? saved.source === 'customer_qr'
+                    ? {
+                          qr_metadata: {
+                              customer_label: form.data.customer_label,
+                              branch_table_id:
+                                  form.data.branch_table_id || null,
+                          },
+                      }
+                    : {}
                 : {
                       order_type: orderType,
                       customer_label: form.data.customer_label,
@@ -374,7 +416,7 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('payLaterSuccess');
-            router.reload({ only: ['catalog', 'storeSession'] });
+            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -474,8 +516,83 @@ export function CashierPos({
         />
     );
 
+    if (qrView)
+        return (
+            <StaffQrOrders
+                branchId={branch.id}
+                loaded={loadedQr}
+                hasCurrentCart={
+                    lines.length > 0 ||
+                    saved !== null ||
+                    attempt !== null ||
+                    payLaterAttempt !== null
+                }
+                onLoad={(order) => {
+                    if (
+                        lines.length ||
+                        (saved && saved.id !== order.id) ||
+                        attempt ||
+                        payLaterAttempt
+                    ) {
+                        toast.error(
+                            'Finish or clear the current POS order first.',
+                        );
+                        return;
+                    }
+                    setSaved(order);
+                    setOrderType(order.order_type);
+                    setReservation(null);
+                    setReceipt(null);
+                    setPayLaterSuccess(null);
+                    setDialog(null);
+                    form.setData({
+                        customer_label: order.customer_label ?? '',
+                        branch_table_id: order.branch_table_id ?? '',
+                    });
+                    router.visit(cashier(), {
+                        only: ['loadedQr', 'qrWaitingCount'],
+                        preserveState: true,
+                        preserveScroll: true,
+                    });
+                }}
+            />
+        );
+
     return (
         <div className="pos-surface flex min-h-0 min-w-0 flex-1 flex-col text-[13px]">
+            {saved?.source === 'customer_qr' && (
+                <div className="flex items-center justify-between gap-3 border-b bg-red-50 px-4 py-2 text-xs">
+                    <strong>From {saved.qr_number}</strong>
+                    <button
+                        className="rounded-lg border border-red-200 px-3 py-2 font-bold text-red-700 disabled:opacity-50"
+                        disabled={
+                            payment.processing ||
+                            payLater.processing ||
+                            attempt !== null ||
+                            payLaterAttempt !== null
+                        }
+                        onClick={async () => {
+                            try {
+                                await qrRequest(cancelLoad(saved.id));
+                                setSaved(null);
+                                setLines([]);
+                                setReservation(null);
+                                setOrderType(null);
+                                form.setData(freshOrderDetails());
+                                setDialog(null);
+                                router.visit(
+                                    cashier({ query: { view: 'qr' } }),
+                                    { preserveState: true },
+                                );
+                            } catch (reason) {
+                                toast.error(qrError(reason).message);
+                            }
+                        }}
+                    >
+                        CANCEL LOADED ORDER
+                    </button>
+                </div>
+            )}
             {realtimeStatus !== 'connected' && (
                 <div
                     role="status"
@@ -819,7 +936,7 @@ export function CashierPos({
                                                             customerDisplayLabel(
                                                                 payLaterSuccess.customer_label,
                                                                 payLaterSuccess.table_name,
-                                                            ) || 'Walk-in',
+                                                            ) || '',
                                                         ],
                                                         [
                                                             'Reference',
@@ -983,7 +1100,11 @@ export function CashierPos({
                                                 </p>
                                                 <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
                                                     {orderNumber
-                                                        ? `#${orderNumber}`
+                                                        ? orderNumber.startsWith(
+                                                              'QR-',
+                                                          )
+                                                            ? orderNumber
+                                                            : `#${orderNumber}`
                                                         : 'Preparing…'}
                                                 </p>
                                             </div>
@@ -999,7 +1120,8 @@ export function CashierPos({
                                                     ? 'DINE IN'
                                                     : 'TAKE OUT'}
                                             </div>
-                                            {saved ? (
+                                            {saved &&
+                                            saved.source !== 'customer_qr' ? (
                                                 <>
                                                     <p className="text-center text-sm font-semibold wrap-anywhere">
                                                         {customer}

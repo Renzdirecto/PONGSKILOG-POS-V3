@@ -472,7 +472,7 @@ function VoidDetail({
 
     return (
         <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-h-[82dvh] gap-0 overflow-hidden border-0 p-0 shadow-2xl sm:max-w-5xl xl:max-w-6xl">
+            <DialogContent className="max-h-[82dvh] w-[calc(100vw-2rem)] gap-0 overflow-hidden border-0 p-0 shadow-2xl sm:max-w-5xl xl:max-w-6xl">
                 <div className="border-b border-red-100 bg-gradient-to-br from-red-50 via-white to-white px-5 py-5 sm:px-6">
                     <div className="flex items-start gap-3">
                         <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-red-600 text-white shadow-sm">

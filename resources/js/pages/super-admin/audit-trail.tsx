@@ -517,7 +517,7 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
 
     return (
         <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-h-[82dvh] gap-0 overflow-hidden border-0 p-0 shadow-2xl sm:max-w-5xl xl:max-w-6xl">
+            <DialogContent className="max-h-[82dvh] w-[calc(100vw-2rem)] gap-0 overflow-hidden border-0 p-0 shadow-2xl sm:max-w-5xl xl:max-w-6xl">
                 <div className="border-b border-neutral-100 bg-gradient-to-br from-neutral-50 via-white to-white px-5 py-5 sm:px-6">
                     <div className="flex items-start gap-3">
                         <span

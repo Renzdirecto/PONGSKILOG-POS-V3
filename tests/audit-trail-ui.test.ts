@@ -64,7 +64,7 @@ test('audit and void detail dialogs use a wide landscape layout', () => {
         'utf8',
     );
     const wideDialogClasses =
-        /max-h-\[82dvh\].*sm:max-w-5xl xl:max-w-6xl/;
+        /max-h-\[82dvh\] w-\[calc\(100vw-2rem\)\].*sm:max-w-5xl xl:max-w-6xl/;
 
     assert.match(page, wideDialogClasses);
     assert.match(voidOrdersPage, wideDialogClasses);

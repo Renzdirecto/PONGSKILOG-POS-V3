@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { lineCents, pesos } from '@/lib/pos-money';
+import { createClientUuid } from '@/lib/client-uuid';
 import { stockAvailabilityLabel } from '@/lib/pos-order';
 import type { CartLine, PosProduct } from '@/types/pos';
 
@@ -335,7 +336,7 @@ export function PosProductDialog({
                         onClick={() =>
                             onSave({
                                 ...line,
-                                key: initial?.key ?? crypto.randomUUID(),
+                                key: initial?.key ?? createClientUuid(),
                             })
                         }
                     >

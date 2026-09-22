@@ -295,7 +295,7 @@ Submit
 ↓  
 Create unpaid QR order  
 ↓  
-Return branch order number
+Return provisional QR number; official Order number/reference are assigned at Pay Now or Pay Later commitment
 
 At submission:
 
@@ -748,4 +748,4 @@ Customer: permanent kiosk link -> welcome/social links -> menu/category icons ->
 
 Cashier: QR queue -> server-confirmed LOAD -> optional name/table -> Pay Now or Pay Later. An unrelated POS cart blocks LOAD. Cancel Loaded Order releases only the loaded QR, discards its temporary metadata and returns to the waiting queue. DELETE opens the standalone confirmation and archives; Archived exposes VIEW/RESTORE, never LOAD. Eligible RESTORE renews the archive timer and invalidates staff/customer projections. Navigation is Dashboard, POS, QR Orders, Kitchen, History, Display with existing permission checks and unavailable History.
 
-Owner: Settings -> Branch Management -> EDIT or VIEW QR -> QR/History tabs. QR shows the permanent public link, image, availability, independent toggle, VIEW QR and COPY LINK. History defaults to today's Manila date, shows bounded link-open activity and supports date selection. Receipt settings save typed customer-visible identity fields per branch. Final responsive and interaction acceptance remains USER MANUAL QA REQUIRED.
+Owner: Settings -> Branch Management -> EDIT or VIEW QR -> QR/History tabs. QR shows the permanent public link, image, availability, independent toggle, VIEW QR and COPY LINK. History defaults to today's Manila date, shows bounded link-open activity and supports date selection. Orders Placed stays on the original creation date when restore renews the archive timer. Receipt settings save typed customer-visible identity fields and validated custom logos per branch. Customer receipts support PNG download. The user accepted the latest UI/UX direction before the final audit.

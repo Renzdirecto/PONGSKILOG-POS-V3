@@ -75,7 +75,7 @@ class BranchQrSettingsController extends Controller
         $date = $data['date'] ?? now('Asia/Manila')->toDateString();
         $start = CarbonImmutable::parse($date, 'Asia/Manila')->startOfDay()->setTimezone(config('app.timezone'));
         $query = DB::table('customer_qr_visits')->where('branch_id', $branch->id)->where('visited_at', '>=', $start)->where('visited_at', '<', $start->addDay());
-        $orders = $branch->orders()->where('source', OrderSource::CustomerQr)->where('submitted_at', '>=', $start)->where('submitted_at', '<', $start->addDay());
+        $orders = $branch->orders()->where('source', OrderSource::CustomerQr)->where('created_at', '>=', $start)->where('created_at', '<', $start->addDay());
 
         return response()->json(['date' => $date, 'count' => (clone $query)->count(),
             'orders_placed' => (clone $orders)->count(),

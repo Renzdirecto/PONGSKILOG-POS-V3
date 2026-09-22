@@ -788,7 +788,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 
 ## 12.5 Customer QR and staff QR retrieval
 
-- **Status:** Implemented; USER MANUAL QA REQUIRED for visual/responsive acceptance.
+- **Status:** Implemented; latest UI/UX direction manually accepted by the user before final release audit.
 - **Reference:** Decoded `customer-qr.html`, `pos.html`, and `PONGSKILOG-OWNER.html`.
 - **Canonical implementation:** `customer-qr.tsx`, `customer-qr-product.tsx`,
   `customer-qr-tracking.tsx`, `staff-qr-orders.tsx`, existing `cashier-pos.tsx`, and
@@ -802,7 +802,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 | Customization/cart | Quantity, required/optional Groups, Size, zero-price Instructions, separate notes, edit/remove confirmation, exact totals, required Dine In/Take Out, optional name. The current customer reference has no table picker. |
 | Submit | Stable retry intent, confirmed success/order number, no optimistic payment/Kitchen state, clear validation/offline conflicts and preserved input. |
 | Active order | Browse-only product views and current-order return; truthful payment and kitchen stages; explicit Start new order only after Done or archive. Pay Later can progress through Kitchen while Payment remains pending. |
-| Receipt | Owned paid snapshots, cash/cashless/split legs, cash received/change, real 24-hour expiry, text-file Save receipt as in the reference. |
+| Receipt | Owned paid snapshots, cash/cashless/split legs, cash received/change, real 24-hour expiry, receipt-card-only PNG save at 2x resolution with configured branding. |
 | Cashier | Existing operational navigation and QR badge, Waiting/Archived queue, search, detail, LOAD and Delete confirmation; paginated server data and realtime claim removal. |
 | Owner | Existing Branch management with real scannable QR display, View QR, ordering link and Copy link; existing BaconQrCode dependency, no permanent customer identity encoded. No analytics/hours/settings expansion or unsupported QR download/print control. |
 
@@ -820,10 +820,8 @@ Normal Kitchen uses one column below 768px, two columns from 768px, and three
 columns from 1180px, matching the user-requested iPad layout. Fullscreen remains
 independent.
 
-Remaining acceptance: inspect 360/390/430px phones, iPad Mini 768/1024px, and desktop
-for wrapping, reachable dialogs/actions, actual QR scanning and receipt download,
-live reconnect behavior, and the complete customer / cashier / Kitchen journey.
-No full browser visual acceptance is claimed from source or automated checks.
+The user supplied manual acceptance of the latest UI/UX direction. The final audit
+uses source and automated checks without repeating a broad browser visual sweep.
 
 
 ---
@@ -834,6 +832,6 @@ Primary decoded references remain customer-qr.html, pos.html and PONGSKILOG-OWNE
 
 Customer updates include configured/disabled welcome social links, allowlisted category icons, cart icon/quantity count, top-scoped success toast, Confirm Order CTA, green/blue order-type selection, Track/View icons, green top View Order action, actual timestamped colored timeline, rounded Browse/New Order + View Order + Receipt actions, and Stay connected on tracking/receipt. Existing browse-only protection and terminal-only reset remain.
 
-Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity and visibility of the existing brand logo; custom logo upload/printer integration and full Phase 16 remain deferred. Receipt is still the existing customer-safe text export.
+Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
 
-Source tracing and automated checks do not constitute visual acceptance: USER MANUAL QA REQUIRED. No broad browser sweep was performed.
+Visual acceptance comes from the user's manual QA. No broad browser sweep was performed during the final audit.

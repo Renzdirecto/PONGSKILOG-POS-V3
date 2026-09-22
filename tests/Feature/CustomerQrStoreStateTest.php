@@ -25,7 +25,7 @@ test('public QR availability follows branch status and its current session', fun
     $this->get(route('kiosk.show', ['branch' => $branch->kiosk_code]))->assertInertia(fn (Assert $page) => $page
         ->component('qr/show')
         ->where('branch', $branch->only(['id', 'name', 'code', 'facebook_url', 'website_url']))
-        ->where('store', ['status' => $expected])
+        ->where('store', ['status' => $expected, 'is_open' => $expected === 'open'])
         ->missing('auth')->missing('branchContext')->missing('storeContext'));
 
     expect(StoreSession::query()->orderBy('id')->get()->toArray())->toBe($before);
@@ -73,7 +73,7 @@ test('QR never shares internal props even for a signed in user with private sess
     $props = $response->viewData('page')['props'];
     expect(array_keys($props))->toEqualCanonicalizing(['branch', 'store', 'catalog', 'order'])
         ->and($props['branch'])->toBe($branch->only(['id', 'name', 'code', 'facebook_url', 'website_url']))
-        ->and($props['store'])->toBe(['status' => 'open']);
+        ->and($props['store'])->toBe(['status' => 'open', 'is_open' => true]);
 });
 
 test('missing and malformed QR branches return a safe 404', function (string $id) {

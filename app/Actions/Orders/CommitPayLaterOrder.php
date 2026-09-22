@@ -93,7 +93,7 @@ class CommitPayLaterOrder
                 || $order->kitchen_status !== KitchenStatus::NotSent || $order->committed_at !== null) {
                 throw ValidationException::withMessages(['order' => 'Only an unpaid POS draft or your loaded QR order can be saved as Pay Later.']);
             }
-            if ($order->branch_table_id !== null && ! $branch->tables()->whereKey($order->branch_table_id)->where('is_active', true)->exists()) {
+            if ($order->source !== OrderSource::CustomerQr && $order->branch_table_id !== null && ! $branch->tables()->whereKey($order->branch_table_id)->where('is_active', true)->exists()) {
                 throw ValidationException::withMessages(['table' => 'The selected table is no longer active in this branch.']);
             }
 

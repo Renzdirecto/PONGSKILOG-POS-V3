@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import { test } from 'node:test';
-import {
-    confirmedPayLaterState,
-    payLaterAttemptForOrder,
-} from '../resources/js/lib/pos-pay-later.ts';
+
+registerHooks({
+    resolve(specifier, context, nextResolve) {
+        return nextResolve(
+            specifier === './client-uuid' && context.parentURL?.endsWith('/pos-pay-later.ts')
+                ? './client-uuid.ts'
+                : specifier,
+            context,
+        );
+    },
+});
+const { confirmedPayLaterState, payLaterAttemptForOrder } =
+    await import('../resources/js/lib/pos-pay-later.ts');
 
 test('Pay Later retries keep one stable key and local-cart payload', () => {
     const details = {
@@ -38,6 +48,15 @@ test('Pay Later retries keep one stable key and local-cart payload', () => {
         order_id: 'order-1044',
         idempotency_key: 'key-3',
     });
+});
+
+test('Pay Later creates and retains its retry key on LAN HTTP without randomUUID', (context) => {
+    context.mock.getter(globalThis, 'crypto', () => ({
+        getRandomValues: (bytes: Uint8Array) => bytes.fill(7),
+    }));
+    const first = payLaterAttemptForOrder(null, { order_id: 'order-1043' });
+    assert.equal(first.idempotency_key, '07070707-0707-4707-8707-070707070707');
+    assert.equal(payLaterAttemptForOrder(first, { order_id: 'order-1043' }), first);
 });
 
 test('Pay Later success requires the complete committed operational state', () => {

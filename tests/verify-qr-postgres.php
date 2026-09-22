@@ -98,13 +98,14 @@ if (($argv[1] ?? '') === '--sqlite-migrations') {
     DB::purge('sqlite');
     try {
         qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'SQLite fresh failed');
-        qrVerify(Schema::hasTable('customer_qr_sessions'), 'QR session table missing');
+        qrVerify(Schema::hasTable('customer_qr_sessions') && Schema::hasColumn('branches', 'receipt_logo_path'), 'QR schema or receipt logo column missing');
         $originalChecks = substr_count(strtolower(DB::selectOne("SELECT sql FROM sqlite_master WHERE name = 'orders'")->sql), 'check');
         qrVerify($originalChecks >= 9, 'SQLite migration lost existing Order CHECK constraints');
         $legacy = Order::factory()->create(['order_number' => '1043', 'reference_number' => 'MAIN-260919-1043']);
-        qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'SQLite rollback failed');
-        qrVerify(! Schema::hasTable('customer_qr_sessions') && ! Schema::hasColumn('orders', 'public_tracking_id'), 'SQLite rollback left QR fields');
+        qrVerify(Artisan::call('migrate:rollback', ['--step' => 4, '--force' => true, '--no-interaction' => true]) === 0, 'SQLite rollback failed');
+        qrVerify(! Schema::hasTable('customer_qr_sessions') && ! Schema::hasColumn('orders', 'public_tracking_id') && ! Schema::hasColumn('branches', 'receipt_logo_path'), 'SQLite rollback left QR fields');
         qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'SQLite reapply failed');
+        qrVerify(Schema::hasColumn('branches', 'receipt_logo_path'), 'SQLite reapply omitted receipt logo');
         qrVerify(substr_count(strtolower(DB::selectOne("SELECT sql FROM sqlite_master WHERE name = 'orders'")->sql), 'check') === $originalChecks, 'SQLite rollback/reapply lost Order CHECK constraints');
         qrVerify($legacy->fresh()->order_number === '1043' && $legacy->fresh()->reference_number === 'MAIN-260919-1043', 'SQLite historical identity rewritten');
         echo 'SQLITE PASS: isolated fresh / rollback / reapply with existing Order CHECK constraints.'.PHP_EOL;
@@ -223,11 +224,12 @@ try {
     $createdSchema = true;
     qrVerify(DB::selectOne('SELECT current_schema() AS schema')->schema === $schema, 'Schema isolation failed');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL fresh migration failed');
-    qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
-    qrVerify(! Schema::hasTable('customer_qr_sessions'), 'PostgreSQL rollback left QR schema');
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => 4, '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
+    qrVerify(! Schema::hasTable('customer_qr_sessions') && ! Schema::hasColumn('branches', 'receipt_logo_path'), 'PostgreSQL rollback left QR schema');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL reapply failed');
+    qrVerify(Schema::hasColumn('branches', 'receipt_logo_path'), 'PostgreSQL reapply omitted receipt logo');
     $legacy = Order::factory()->create(['order_number' => '1043', 'reference_number' => 'MAIN-260919-1043']);
-    qrVerify(Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true, '--no-interaction' => true]) === 0, 'Historical migration rollback failed');
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'Historical migration rollback failed');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Historical migration reapply failed');
     qrVerify($legacy->fresh()->order_number === '1043' && $legacy->fresh()->reference_number === 'MAIN-260919-1043', 'Historical identity rewritten');
     (new RbacSeeder)->run();
@@ -250,6 +252,20 @@ try {
     qrVerify(in_array($order->fresh()->loaded_by_user_id, [$user->id, $other->id], true), 'No durable LOAD owner');
     qrRaceEffects($order, 0, 0, 0);
     echo 'B PASS: two cashiers LOAD concurrently; one claim, no operational effects.'.PHP_EOL;
+
+    [$branch, $user, $product, $stock, , $session] = qrRaceFixture();
+    $first = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));
+    $second = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrRacePayload($product));
+    $job = ['mode' => 'load', 'branch' => $branch->id, 'user' => $user->id, 'order' => $first->id];
+    $results = qrOverlap($schema, $connection, $observer, [$job, [...$job, 'order' => $second->id]], fn () => Branch::whereKey($branch->id)->lockForUpdate()->sole());
+    $statuses = array_column($results, 'status');
+    sort($statuses);
+    qrVerify($statuses === ['rejected', 'success'], 'One cashier claimed multiple QR orders');
+    qrVerify(Order::where('branch_id', $branch->id)->where('loaded_by_user_id', $user->id)->count() === 1, 'Multiple durable cashier claims');
+    qrVerify($first->fresh()->order_number === null && $second->fresh()->order_number === null && $stock->fresh()->on_hand === 10, 'LOAD consumed identity or stock');
+    qrRaceEffects($first, 0, 0, 0);
+    qrRaceEffects($second, 0, 0, 0);
+    echo 'B2 PASS: one cashier concurrently loading two orders retains exactly one claim without effects.'.PHP_EOL;
 
     [$branch, $user, $product, , , $session] = qrRaceFixture();
     $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrRacePayload($product));

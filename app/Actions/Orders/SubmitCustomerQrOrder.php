@@ -47,8 +47,11 @@ class SubmitCustomerQrOrder
 
                 return $existing;
             }
-            if (! $branch->qr_ordering_enabled || $branch->status !== BranchStatus::Active || $store === null) {
+            if ($branch->status !== BranchStatus::Active || $store === null) {
                 throw ValidationException::withMessages(['store' => 'STORE IS CURRENTLY CLOSED']);
+            }
+            if (! $branch->qr_ordering_enabled) {
+                throw ValidationException::withMessages(['store' => 'QR ordering is currently unavailable. Please order at the counter.']);
             }
             abort_if($session->active_order_id !== null, 409, 'You already have a current order. Return to tracking before starting another order.');
             $orderId = (string) Str::uuid();

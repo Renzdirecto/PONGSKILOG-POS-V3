@@ -250,9 +250,9 @@ Maps products to modifier groups.
 
 - `id`
 - `branch_id`
-- `store_session_id` nullable until operational commit
-- `order_number`
-- `reference_number` nullable for legacy rows
+- `store_session_id` attached at QR submission; nullable until commitment for direct POS
+- `order_number` nullable for uncommitted Customer QR orders
+- `reference_number` nullable for provisional QR and legacy rows
 - `source`
 - `order_type`
 - `customer_label` nullable
@@ -767,5 +767,6 @@ boundary. No additional order, payment, inventory, or Kitchen aggregate was adde
 
 - `2026_09_22_093305_refine_customer_qr_identity_and_progress`: nullable orders.order_number with a CHECK allowing null only for uncommitted customer_qr; nullable qr_sequence with unique (store_session_id, qr_sequence); preparing_at/ready_at timestamps; customer_qr_order_counters keyed by store_session_id; order_reference_counters keyed by (branch_id, business_date). Both counters are locked, persisted and independent of each other and the existing short-number counter. Historical order/reference fields are not backfilled or rewritten.
 - `2026_09_22_093958_add_branch_qr_settings_and_visits`: stable unique kiosk_code initialized from branch code; qr_ordering_enabled (default true); optional safe facebook_url/website_url; typed receipt_name/address/contact/footer and receipt_show_logo. customer_qr_visits contains only id, branch_id, customer_qr_session_id, visited_at, with branch/time and session/time indexes. Opens within two minutes deduplicate under the session lock; history returns timestamps only.
+- `2026_09_22_102534_add_receipt_logo_path_to_branches_table`: nullable receipt_logo_path for validated branch-scoped branding stored on the configured S3 disk. Replacement/removal cleans up the old image; transaction failure cleans up the newly uploaded image. Public display streams only the persisted image through the branch logo endpoint.
 - SQLite identity alteration reconstructs the original table DDL while preserving its existing CHECK constraints, foreign keys and explicit indexes. PostgreSQL uses ALTER COLUMN plus a CHECK. Rollback intentionally refuses when provisional null-number Orders exist rather than deleting history or fabricating official numbers; roll forward in that case. Fresh/up/down/reapply tests use isolated databases/schemas.
 - Preparing/Ready represent actual transitions; rollback clears no-longer-reached stages. Receipt expiry remains derived, not a deletion deadline. Existing anonymous-session ownership authorizes prior paid receipts independently of active_order_id.

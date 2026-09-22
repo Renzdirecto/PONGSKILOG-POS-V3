@@ -1,5 +1,6 @@
 import { cancelLoad } from '@/routes/pos/qr-orders';
 import { qrRequest, qrError } from '@/lib/qr-http';
+import { createClientUuid } from '@/lib/client-uuid';
 import {
     router,
     useForm,
@@ -270,7 +271,7 @@ export function CashierPos({
         }
         const payload: PaymentAttempt = attempt ?? {
             ...input,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: createClientUuid(),
             ...(saved
                 ? {
                       draft_order_id: saved.id,

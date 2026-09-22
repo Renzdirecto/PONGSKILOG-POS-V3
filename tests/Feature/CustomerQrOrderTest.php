@@ -5,6 +5,7 @@ use App\Actions\Orders\CancelLoadedCustomerQrOrder;
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\LoadCustomerQrOrder;
 use App\Actions\Orders\PayNowOrder;
+use App\Actions\Orders\RestoreCustomerQrOrder;
 use App\Actions\Orders\SubmitCustomerQrOrder;
 use App\Actions\Orders\TransitionKitchenOrder;
 use App\Enums\BranchStatus;
@@ -493,6 +494,42 @@ test('loaded QR metadata commits with either payment path and rejects changed re
     $this->postJson(route('pos.qr-orders.cancel-load', $order))->assertConflict();
 })->with(['now', 'later']);
 
+test('QR commitment validates the replacement table after the original table becomes inactive', function (string $method, string $selection) {
+    [$branch, $session, , $product, $user, , $stock] = qrFixture();
+    $original = BranchTable::factory()->for($branch)->create();
+    $replacement = BranchTable::factory()->for($branch)->create();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, [...qrPayload($product), 'branch_table_id' => $original->id]);
+    app(LoadCustomerQrOrder::class)->execute($user, $branch, $order);
+    $original->update(['is_active' => false]);
+    $selected = match ($selection) {
+        'replace' => $replacement->id,
+        'clear' => null,
+        default => $original->id,
+    };
+    $data = ['idempotency_key' => (string) Str::uuid(), 'qr_metadata' => ['customer_label' => '', 'branch_table_id' => $selected]];
+    if ($method === 'now') {
+        $data += ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00'];
+    }
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+
+    $response = $this->postJson($method === 'now' ? route('pos.payments.store') : route('pos.orders.pay-later.store', $order), $data);
+
+    if ($selection === 'retain') {
+        $response->assertUnprocessable()->assertJsonValidationErrors('table');
+        expect($order->fresh()->order_number)->toBeNull();
+        expect($stock->fresh()->on_hand)->toBe(10);
+        qrNoEffects();
+    } else {
+        $response->assertOk();
+        expect($order->fresh()->branch_table_id)->toBe($selected);
+        expect($order->fresh()->table_name_snapshot)->toBe($selected === null ? null : $replacement->name);
+        expect($stock->fresh()->on_hand)->toBe(8);
+        $this->assertDatabaseCount('kitchen_tickets', 1);
+        $this->assertDatabaseCount('inventory_movements', 1);
+        $this->assertDatabaseCount('payments', $method === 'now' ? 1 : 0);
+    }
+})->with(['now', 'later'])->with(['replace', 'clear', 'retain']);
+
 test('previous paid receipt remains owned after a new QR order until its own exact expiry', function () {
     $this->travelTo(now()->startOfSecond());
     [$branch, $session, $token, $product, $user] = qrFixture('cashier_kitchen');
@@ -644,8 +681,24 @@ test('QR activity counts only selected branch date orders and distinguishes load
     $this->getJson(route('branches.qr-history', [$branch, 'date' => '2026-09-21']))->assertOk()->assertJsonPath('orders_placed', 0)->assertJsonPath('waiting_retrieval', 0);
 });
 
+test('restoring a QR order on another date does not move its orders placed history', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-22 23:55:00', 'Asia/Manila'));
+    [$branch, $session, , $product, $cashier] = qrFixture();
+    $order = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    app(ArchiveCustomerQrOrder::class)->execute($order, 'cashier_archived');
+    $this->travel(10)->minutes();
+    app(RestoreCustomerQrOrder::class)->execute($cashier, $branch, $order);
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::query()->where('name', 'owner')->sole());
+
+    $this->actingAs($owner)->getJson(route('branches.qr-history', [$branch, 'date' => '2026-09-22']))
+        ->assertOk()->assertJsonPath('orders_placed', 1)->assertJsonPath('waiting_retrieval', 1);
+    $this->getJson(route('branches.qr-history', [$branch, 'date' => '2026-09-23']))
+        ->assertOk()->assertJsonPath('orders_placed', 0)->assertJsonPath('waiting_retrieval', 0);
+});
+
 test('disabled QR ordering distinguishes an open store from a closed store', function (bool $open) {
-    [$branch, , , , , $store] = qrFixture();
+    [$branch, , $token, $product, , $store] = qrFixture();
     $branch->update(['qr_ordering_enabled' => false]);
     if (! $open) {
         $store->update(['status' => 'closed']);
@@ -655,4 +708,11 @@ test('disabled QR ordering distinguishes an open store from a closed store', fun
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->where('store.status', 'closed')
             ->where('store.is_open', $open));
+    $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)
+        ->postJson(route('qr.orders.store', $branch), qrPayload($product))
+        ->assertUnprocessable()->assertJsonPath('errors.store.0', $open
+            ? 'QR ordering is currently unavailable. Please order at the counter.'
+            : 'STORE IS CURRENTLY CLOSED');
+    $this->assertDatabaseCount('orders', 0);
+    qrNoEffects();
 })->with([true, false]);

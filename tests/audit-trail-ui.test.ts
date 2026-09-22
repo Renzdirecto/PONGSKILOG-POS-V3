@@ -25,7 +25,7 @@ test('audit trail presents readable activity instead of raw JSON panels', () => 
     assert.doesNotMatch(page, /<pre/);
 });
 
-test('audit trail keeps live refresh and debounced server filters', () => {
+test('audit trail keeps websocket-first refresh and debounced server filters', () => {
     assert.match(page, /useAuditRealtimeRefresh/);
     assert.match(
         page,
@@ -34,7 +34,20 @@ test('audit trail keeps live refresh and debounced server filters', () => {
     assert.match(page, /preserveState: true/);
     assert.match(page, /Live monitoring/);
     assert.match(realtimeHook, /\['\.audit\.recorded'\]/);
-    assert.match(realtimeHook, /usePoll\(3000, \{ only \}\)/);
+    assert.match(realtimeHook, /useConnectionStatus\(\)/);
+    assert.match(realtimeHook, /10_000/);
+    assert.match(realtimeHook, /autoStart: false/);
+    assert.match(realtimeHook, /\(\) => scheduleRefresh\(\)/);
+    assert.match(
+        realtimeHook,
+        /const recover = \(\) => scheduleRefresh\(0\)/,
+    );
+    assert.match(realtimeHook, /window\.addEventListener\('online', recover\)/);
+    assert.match(
+        realtimeHook,
+        /window\.removeEventListener\('online', recover\)/,
+    );
+    assert.doesNotMatch(realtimeHook, /usePoll\(3000/);
 });
 
 test('void orders updates search automatically and shares live refresh', () => {

@@ -24,11 +24,13 @@ use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
+use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
+Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:60,1')->name('receipt.show');
 Route::get('branches/{branch}/receipt-logo', [BranchQrSettingsController::class, 'logo'])->whereUuid('branch')->name('branches.receipt-logo');
 
 Route::get('kiosk/{branch:kiosk_code}', CustomerQrController::class)->middleware('throttle:60,1')->name('kiosk.show');
@@ -90,6 +92,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware('permission:pos.access')->name('pos.payments.store');
 
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
+        Route::post('pos/orders/{order}/receipt-share', [ReceiptShareController::class, 'store'])->whereUuid('order')->name('pos.orders.receipt-share');
         Route::post('pos/qr-orders/{order}/cancel-load', [StaffQrOrderController::class, 'cancelLoad'])->whereUuid('order')->name('pos.qr-orders.cancel-load');
         Route::post('pos/qr-orders/{order}/restore', [StaffQrOrderController::class, 'restore'])->whereUuid('order')->name('pos.qr-orders.restore');
         Route::get('pos/qr-orders', [StaffQrOrderController::class, 'index'])->name('pos.qr-orders.index');

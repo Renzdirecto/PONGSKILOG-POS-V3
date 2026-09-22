@@ -62,3 +62,19 @@ export type StaffQrOrder = OrderSummary & {
     branch_table_id: string | null;
     version: number;
 };
+
+export type PublicReceipt = Pick<
+    QrReceipt,
+    | 'order_number'
+    | 'reference_number'
+    | 'paid_at'
+    | 'receipt_expires_at'
+    | 'order_type'
+    | 'customer_label'
+    | 'table_name'
+    | 'items'
+    | 'subtotal'
+    | 'total'
+    | 'branch'
+    | 'payments'
+>;

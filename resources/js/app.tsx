@@ -21,6 +21,7 @@ void createInertiaApp({
         switch (true) {
             case name === 'welcome':
             case name.startsWith('qr/'):
+            case name === 'public-receipt':
             case name === 'workspaces/customer-display':
                 return null;
             case name === 'auth/login':

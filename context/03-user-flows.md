@@ -749,3 +749,14 @@ Customer: permanent kiosk link -> welcome/social links -> menu/category icons ->
 Cashier: QR queue -> server-confirmed LOAD -> optional name/table -> Pay Now or Pay Later. An unrelated POS cart blocks LOAD. Cancel Loaded Order releases only the loaded QR, discards its temporary metadata and returns to the waiting queue. DELETE opens the standalone confirmation and archives; Archived exposes VIEW/RESTORE, never LOAD. Eligible RESTORE renews the archive timer and invalidates staff/customer projections. Navigation is Dashboard, POS, QR Orders, Kitchen, History, Display with existing permission checks and unavailable History.
 
 Owner: Settings -> Branch Management -> EDIT or VIEW QR -> QR/History tabs. QR shows the permanent public link, image, availability, independent toggle, VIEW QR and COPY LINK. History defaults to today's Manila date, shows bounded link-open activity and supports date selection. Orders Placed stays on the original creation date when restore renews the archive timer. Receipt settings save typed customer-visible identity fields and validated custom logos per branch. Customer receipts support PNG download. The user accepted the latest UI/UX direction before the final audit.
+
+
+## Phase 10 correction: POS digital receipt QR handoff
+
+POS paid receipt -> Show QR -> temporary signed public digital receipt. This replaces the Phase 6 placeholder for direct POS and Customer QR-origin paid Orders, including Pay Later after settlement. The cashier endpoint requires authentication, pos.access and authorized active-branch ownership, paid status and both official identifiers.
+
+The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
+
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+
+USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.

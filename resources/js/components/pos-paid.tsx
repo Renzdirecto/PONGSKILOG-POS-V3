@@ -2,13 +2,13 @@ import {
     ArrowLeft,
     Camera,
     Check,
-    Clock3,
     Plus,
     Printer,
     QrCode,
     ReceiptText,
 } from 'lucide-react';
 import { useState } from 'react';
+import { PosReceiptQr } from './pos-receipt-qr';
 import { pesos } from '@/lib/pos-money';
 import { savedItemName } from '@/lib/pos-item-name';
 import { OperationalItemName } from '@/components/operational-item-name';
@@ -33,7 +33,7 @@ export function PosPaid({
     onBack: () => void;
     onNewOrder: () => void;
 }) {
-    const [showQrPlaceholder, setShowQrPlaceholder] = useState(false);
+    const [showQr, setShowQr] = useState(false);
     const cash = receipt.payments.find((payment) => payment.method === 'cash');
     const cashless = receipt.payments.find(
         (payment) => payment.method === 'cashless',
@@ -53,35 +53,13 @@ export function PosPaid({
         timeZone: 'Asia/Manila',
     });
 
-    if (showQrPlaceholder) {
+    if (showQr) {
         return (
-            <>
-                <ReceiptHeader
-                    title="Digital receipt"
-                    onBack={() => setShowQrPlaceholder(false)}
-                />
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-10 text-center">
-                    <span className="flex size-16 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-500">
-                        <QrCode className="size-8" />
-                    </span>
-                    <div className="space-y-2">
-                        <h2 className="text-base font-bold">
-                            Customer QR receipt is not available yet
-                        </h2>
-                        <p className="mx-auto max-w-72 text-xs leading-5 text-neutral-500">
-                            Receipt access by QR will be enabled with Customer
-                            QR in Phase 10. No public link or customer token has
-                            been created for this order.
-                        </p>
-                    </div>
-                    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-left text-[11.5px] leading-5 text-amber-800">
-                        <Clock3 className="mt-0.5 size-4 shrink-0" />
-                        <span>
-                            Use Print receipt for the current Phase 6 flow.
-                        </span>
-                    </div>
-                </div>
-            </>
+            <PosReceiptQr
+                key={receipt.id}
+                receipt={receipt}
+                onBack={() => setShowQr(false)}
+            />
         );
     }
 
@@ -252,7 +230,7 @@ export function PosPaid({
                     </button>
                     <div className="flex gap-2">
                         <button
-                            onClick={() => setShowQrPlaceholder(true)}
+                            onClick={() => setShowQr(true)}
                             className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"
                         >
                             <QrCode className="size-4" />

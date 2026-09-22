@@ -47,7 +47,7 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        if ($request->routeIs('qr.*', 'kiosk.*', 'workspaces.customer-display')) {
+        if ($request->routeIs('qr.*', 'kiosk.*', 'receipt.*', 'workspaces.customer-display')) {
             return [];
         }
 

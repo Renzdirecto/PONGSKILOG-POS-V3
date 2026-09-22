@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { open } from '@/routes/store-sessions';
 import type { BranchSummary, StoreContext } from '@/types';
 import type { CashierCatalog as CashierCatalogData } from '@/types/catalog';
+import type { KitchenStatusSummary } from '@/types/kitchen';
 
 export type CashierStoreState = {
     branchStatus: 'active' | 'temporarily_closed' | 'inactive';
@@ -24,12 +25,14 @@ export function CashierStore({
     storeContext,
     catalog,
     tables,
+    kitchenStatus,
 }: {
     branch: BranchSummary;
     store: CashierStoreState;
     storeContext: StoreContext;
     catalog: CashierCatalogData;
     tables: BranchTable[];
+    kitchenStatus: KitchenStatusSummary;
 }) {
     const [view, setView] = useState<'store' | 'browse' | 'opening'>('store');
     const isOpen = storeContext.isOpen;
@@ -37,7 +40,14 @@ export function CashierStore({
     const buttonClass = 'min-h-12 rounded-xl px-6';
 
     if (isOpen && isAvailable) {
-        return <CashierPos branch={branch} catalog={catalog} tables={tables} />;
+        return (
+            <CashierPos
+                branch={branch}
+                catalog={catalog}
+                tables={tables}
+                kitchenStatus={kitchenStatus}
+            />
+        );
     }
 
     return (

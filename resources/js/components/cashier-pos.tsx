@@ -51,6 +51,7 @@ import {
 import { store as commitPayLater } from '@/routes/pos/orders/pay-later';
 import type { BranchSummary } from '@/types';
 import type { CashierCatalog as Catalog } from '@/types/catalog';
+import type { KitchenStatusSummary } from '@/types/kitchen';
 import type {
     BranchTable,
     CartLine,
@@ -70,10 +71,12 @@ export function CashierPos({
     branch,
     catalog,
     tables,
+    kitchenStatus,
 }: {
     branch: BranchSummary;
     catalog: Catalog;
     tables: BranchTable[];
+    kitchenStatus: KitchenStatusSummary;
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
     const realtimeStatus = usePosCatalogRealtime(branch.id);
@@ -122,10 +125,9 @@ export function CashierPos({
         { order_type: OrderType },
         { order: OrderReservation }
     >({ order_type: 'take_out' });
-    const payLater = useHttp<
-        PayLaterInput,
-        { order: PayLaterOrder }
-    >({ idempotency_key: '' });
+    const payLater = useHttp<PayLaterInput, { order: PayLaterOrder }>({
+        idempotency_key: '',
+    });
     const reservationSubmitting = useRef(false);
     const [reservationError, setReservationError] = useState('');
     const [paymentError, setPaymentError] = useState('');
@@ -146,14 +148,14 @@ export function CashierPos({
         payLaterSuccess
             ? 'payLaterSuccess'
             : attempt
-            ? 'payment'
-            : receipt
-              ? 'paid'
-              : initialDraft
-                ? 'information'
-                : orderType
-                  ? null
-                  : 'type',
+              ? 'payment'
+              : receipt
+                ? 'paid'
+                : initialDraft
+                  ? 'information'
+                  : orderType
+                    ? null
+                    : 'type',
     );
     const [pendingType, setPendingType] = useState<OrderType | null>(null);
     const [editing, setEditing] = useState<{
@@ -162,7 +164,8 @@ export function CashierPos({
     } | null>(null);
     const form = useForm(`${rememberKey}:details`, freshOrderDetails());
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
-    const orderNumber = saved?.order_number ?? reservation?.order_number ?? null;
+    const orderNumber =
+        saved?.order_number ?? reservation?.order_number ?? null;
     const editingProduct = editing
         ? (catalog.products.find(
               (product) => product.id === editing.product.id,
@@ -336,26 +339,22 @@ export function CashierPos({
             return;
         }
 
-        const activation = payLaterAttemptForOrder(
-            payLaterAttempt,
-            {
-                order_id: targetOrder.id,
-                ...(saved
-                    ? {}
-                    : {
-                          order_type: orderType,
-                          customer_label: form.data.customer_label,
-                          branch_table_id:
-                              form.data.branch_table_id || null,
-                          items: lines.map((line) => ({
-                              product_id: line.product.id,
-                              quantity: line.quantity,
-                              notes: line.notes,
-                              modifiers: line.modifiers,
-                          })),
-                      }),
-            },
-        );
+        const activation = payLaterAttemptForOrder(payLaterAttempt, {
+            order_id: targetOrder.id,
+            ...(saved
+                ? {}
+                : {
+                      order_type: orderType,
+                      customer_label: form.data.customer_label,
+                      branch_table_id: form.data.branch_table_id || null,
+                      items: lines.map((line) => ({
+                          product_id: line.product.id,
+                          quantity: line.quantity,
+                          notes: line.notes,
+                          modifiers: line.modifiers,
+                      })),
+                  }),
+        });
         payLaterSubmitting.current = true;
         setPayLaterAttempt(activation);
         setPayLaterError('');
@@ -576,7 +575,7 @@ export function CashierPos({
                                 ? `${posDialogClass} pos-payment-dialog`
                                 : dialog === 'cart'
                                   ? `${posDialogClass} sm:max-w-[480px]`
-                                : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&:has([data-pay-later-success])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
+                                  : 'pos-surface flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-[20px] border-neutral-200 bg-white p-0 text-neutral-950 max-md:top-auto max-md:bottom-0 max-md:max-w-full max-md:translate-y-0 max-md:rounded-b-none sm:max-w-[480px] [&:has([data-order-type-gate])>button:last-child]:hidden [&:has([data-pay-later-success])>button:last-child]:hidden [&>button:last-child]:top-2 [&>button:last-child]:right-2 [&>button:last-child]:flex [&>button:last-child]:size-11 [&>button:last-child]:items-center [&>button:last-child]:justify-center'
                         }
                         onInteractOutside={(event) => {
                             if (
@@ -685,11 +684,12 @@ export function CashierPos({
                                                                 ? 'Dine in'
                                                                 : 'Take out'}
                                                         </p>
-                                                        <p
-                                                            aria-label="Not yet available"
-                                                            className="text-[15px] font-bold"
-                                                        >
-                                                            &mdash;
+                                                        <p className="text-[15px] leading-[1.2] font-bold tabular-nums">
+                                                            {kitchenStatus.is_open
+                                                                ? kitchenStatus[
+                                                                      type
+                                                                  ]
+                                                                : 'Closed'}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -715,14 +715,14 @@ export function CashierPos({
                                             : dialog === 'payment'
                                               ? 'Payment'
                                               : dialog === 'paid'
-                                              ? 'Payment successful'
-                                              : dialog === 'payLaterSuccess'
-                                                ? 'Saved as Pay Later'
-                                                : dialog === 'receipt'
-                                                  ? 'Receipt'
-                                                  : dialog === 'discard'
-                                                    ? 'Clear this order?'
-                                                    : 'Order information'}
+                                                ? 'Payment successful'
+                                                : dialog === 'payLaterSuccess'
+                                                  ? 'Saved as Pay Later'
+                                                  : dialog === 'receipt'
+                                                    ? 'Receipt'
+                                                    : dialog === 'discard'
+                                                      ? 'Clear this order?'
+                                                      : 'Order information'}
                                     </DialogTitle>
                                     <DialogDescription className="sr-only">
                                         {dialog === 'discard'
@@ -878,27 +878,27 @@ export function CashierPos({
                                                                                     'size',
                                                                             )
                                                                             .map(
-                                                                            (
-                                                                                modifier,
-                                                                            ) => (
-                                                                                <span
-                                                                                    key={
-                                                                                        modifier.id
-                                                                                    }
-                                                                                    className="block text-[11px] leading-4 text-neutral-500 wrap-anywhere"
-                                                                                >
-                                                                                    {
-                                                                                        modifier.group_name
-                                                                                    }
-                                                                                    :{' '}
-                                                                                    {
-                                                                                        modifier.name
-                                                                                    }
-                                                                                </span>
-                                                                            ),
+                                                                                (
+                                                                                    modifier,
+                                                                                ) => (
+                                                                                    <span
+                                                                                        key={
+                                                                                            modifier.id
+                                                                                        }
+                                                                                        className="block text-[11px] leading-4 wrap-anywhere text-neutral-500"
+                                                                                    >
+                                                                                        {
+                                                                                            modifier.group_name
+                                                                                        }
+                                                                                        :{' '}
+                                                                                        {
+                                                                                            modifier.name
+                                                                                        }
+                                                                                    </span>
+                                                                                ),
                                                                             )}
                                                                         {item.notes && (
-                                                                            <span className="block text-[11px] leading-4 text-amber-800 wrap-anywhere">
+                                                                            <span className="block text-[11px] leading-4 wrap-anywhere text-amber-800">
                                                                                 Note:{' '}
                                                                                 {
                                                                                     item.notes
@@ -1042,29 +1042,29 @@ export function CashierPos({
                                                                                 'size',
                                                                         )
                                                                         .map(
-                                                                        (
-                                                                            modifier,
-                                                                        ) => (
-                                                                            <p
-                                                                                key={
-                                                                                    modifier.id
-                                                                                }
-                                                                                className="text-[11px] text-amber-800"
-                                                                            >
-                                                                                {
-                                                                                    modifier.group_name
-                                                                                }
-                                                                                :{' '}
-                                                                                {
-                                                                                    modifier.name
-                                                                                }{' '}
-                                                                                (+
-                                                                                {pesos(
-                                                                                    modifier.price_delta,
-                                                                                )}
-                                                                                )
-                                                                            </p>
-                                                                        ),
+                                                                            (
+                                                                                modifier,
+                                                                            ) => (
+                                                                                <p
+                                                                                    key={
+                                                                                        modifier.id
+                                                                                    }
+                                                                                    className="text-[11px] text-amber-800"
+                                                                                >
+                                                                                    {
+                                                                                        modifier.group_name
+                                                                                    }
+                                                                                    :{' '}
+                                                                                    {
+                                                                                        modifier.name
+                                                                                    }{' '}
+                                                                                    (+
+                                                                                    {pesos(
+                                                                                        modifier.price_delta,
+                                                                                    )}
+                                                                                    )
+                                                                                </p>
+                                                                            ),
                                                                         )}
                                                                     {item.notes && (
                                                                         <p className="rounded-md bg-orange-50 p-2 text-[11px] wrap-anywhere text-amber-800">
@@ -1134,7 +1134,8 @@ export function CashierPos({
                                                         }
                                                         disabled={
                                                             payLater.processing ||
-                                                            payLaterAttempt !== null
+                                                            payLaterAttempt !==
+                                                                null
                                                         }
                                                         onChange={changeTable}
                                                     />
@@ -1149,8 +1150,8 @@ export function CashierPos({
                                                 <p className="leading-5 text-neutral-500">
                                                     Proceed deducts stock
                                                     immediately and sends this
-                                                    order to the kitchen. Payment
-                                                    remains unpaid.
+                                                    order to the kitchen.
+                                                    Payment remains unpaid.
                                                 </p>
                                             </div>
                                             {payLaterError && (
@@ -1161,8 +1162,9 @@ export function CashierPos({
                                                     <p>{payLaterError}</p>
                                                     <p>
                                                         Your cart and order
-                                                        details are kept. Fix the
-                                                        issue, then retry safely.
+                                                        details are kept. Fix
+                                                        the issue, then retry
+                                                        safely.
                                                     </p>
                                                 </div>
                                             )}

@@ -6,6 +6,7 @@ use App\Enums\BranchStatus;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
+use App\Support\KitchenBoard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,8 +17,12 @@ class CashierWorkspaceController extends Controller
     /**
      * Handle the incoming request.
      */
-    public function __invoke(Request $request, ActiveBranchContext $activeBranchContext, BranchCatalog $catalog): RedirectResponse|Response
-    {
+    public function __invoke(
+        Request $request,
+        ActiveBranchContext $activeBranchContext,
+        BranchCatalog $catalog,
+        KitchenBoard $kitchenBoard,
+    ): RedirectResponse|Response {
         $user = $request->user();
 
         abort_unless($user instanceof User, 401);
@@ -37,6 +42,8 @@ class CashierWorkspaceController extends Controller
                 ? $catalog->browse($branch, customization: true)
                 : ['categories' => [], 'products' => []],
             'tables' => fn () => $branch->tables()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
+            'readyOrders' => fn (): array => $kitchenBoard->readyForPos($branch),
+            'kitchenStatus' => fn (): array => $kitchenBoard->statusForPos($branch),
             'store' => [
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active

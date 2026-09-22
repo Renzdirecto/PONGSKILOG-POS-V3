@@ -292,6 +292,12 @@ Show:
 
 # 3. Kitchen Workspace
 
+**Implementation status:** Approved and implemented in Phase 8 (2026-09-22).
+
+**Canonical implementation:** `resources/js/pages/workspaces/kitchen.tsx`,
+`resources/js/lib/kitchen.ts`, and
+`resources/js/hooks/use-branch-realtime-refresh.ts`.
+
 ## 3.1 KDS
 
 Required:
@@ -336,6 +342,12 @@ For edited committed order:
 # 4. Customer Display
 
 Branch-specific public display.
+
+**Implementation status:** Approved and implemented in Phase 9 (2026-09-22).
+
+**Canonical implementation:**
+`resources/js/pages/workspaces/customer-display.tsx`. This surface deliberately
+does not render the employee workspace shell or shared auth/profile props.
 
 Required states:
 
@@ -751,3 +763,24 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 **Usage:** Reuse semantic Instructions for future Kitchen and Customer QR rendering; keep the stored structured selections distinct from manual notes.
 
 **Avoid:** Inferring behavior from names, copying instruction labels into the notes textarea, attaching prices to instruction options, remounting the Product dialog during catalog refresh, or treating a realtime payload as authoritative catalog data.
+
+## 12.4 Kitchen lifecycle, Customer Display, and POS Ready queue
+
+- **Status:** Approved
+- **Purpose:** Keep Kitchen, cashier handoff, and customer-facing order status synchronized without exposing financial or private operational data.
+- **Canonical implementation:** `resources/js/pages/workspaces/kitchen.tsx`, `resources/js/pages/workspaces/customer-display.tsx`, `resources/js/components/pos-ready-notifications.tsx`, and `resources/js/hooks/use-branch-realtime-refresh.ts`
+- **Reference:** `context/design/pos.html` and `context/06-realtime-contracts.md`
+- **Last updated:** 2026-09-22
+
+| Property | Approved pattern |
+| --- | --- |
+| Kitchen board | Use the operational shell, status tabs/counts, order/customer search, colored lifecycle cards, immutable item/modifier/instruction/note snapshots, summary footer, and a bounded Done view. Never include financial data. |
+| Lifecycle controls | Allow forward jumps and one-step rollback for Kitchen users. Cashier handoff permits only Ready to Done. Duplicate targets are idempotent no-ops and server state remains authoritative. |
+| Fullscreen | Use the browser Fullscreen API with a fixed dense board, responsive 2/3/4/5/6-column progression, page-level scrolling, and a visible Exit action; hide employee navigation, search, and footer while fullscreen. |
+| Customer Display | Render a full-canvas, order-number-only Preparing/Ready surface. Map Kitchen into Preparing, remove Done, stack on phones, retain two readable columns on tablet/desktop, and show truthful empty/closed states. Do not render employee chrome, profile, customer names, tables, items, money, or internal IDs. |
+| POS Ready | Keep the bell/list, lower-left Ready queue, detail dialog, Not yet, and Mark as done outside the cart component so realtime refresh does not discard cart, dialog, or payment state. |
+| Realtime | Treat compact branch-private events as invalidation signals. Debounce/coalesce partial authoritative reloads and refetch after reconnect rather than applying payloads as source data. |
+
+**Usage:** Reuse this lifecycle and projection boundary for future Kitchen and customer-status enhancements.
+
+**Avoid:** Trusting client status, broadcasting customer-display order lists or internal IDs, leaking shared employee props into the customer surface, remounting POS state during refresh, or adding card-internal scrolling in fullscreen.

@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Bell, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -33,28 +33,6 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
         'pos-surface w-[320px] max-w-[calc(100vw-24px)] rounded-[14px] border-neutral-200 bg-white p-0 text-neutral-950 shadow-xl';
     return (
         <>
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <button
-                        aria-label="Notifications"
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-white"
-                    >
-                        <Bell className="size-[18px]" />
-                    </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                    align="end"
-                    sideOffset={8}
-                    className={popover}
-                >
-                    <h2 className="border-b border-neutral-200 px-4 py-3 text-[13px] font-semibold">
-                        Notifications
-                    </h2>
-                    <p className="px-4 py-8 text-center text-[12px] text-neutral-500">
-                        No notifications yet.
-                    </p>
-                </DropdownMenuContent>
-            </DropdownMenu>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <button

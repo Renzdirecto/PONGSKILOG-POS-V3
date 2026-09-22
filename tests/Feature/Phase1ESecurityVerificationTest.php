@@ -73,7 +73,7 @@ test('direct workspace access is forbidden without the required permission', fun
     'owner to super admin' => ['owner', 'workspaces.super-admin'],
 ]);
 
-test('cashier kitchen can access both intended branch workspaces', function (string $routeName, string $workspace) {
+test('cashier kitchen can access both intended branch workspaces', function (string $routeName, string $component, ?string $workspace) {
     $user = phase1EUser('cashier_kitchen');
     $branch = phase1EAssignBranch($user);
 
@@ -82,12 +82,16 @@ test('cashier kitchen can access both intended branch workspaces', function (str
         ->withSession([ActiveBranchContext::SESSION_KEY => $branch->getKey()])
         ->get(route($routeName));
 
-    $response->assertInertia(fn (Assert $page) => $page
-        ->component('workspaces/show')
-        ->where('workspace', $workspace));
+    $response->assertInertia(function (Assert $page) use ($component, $workspace): void {
+        $page->component($component);
+
+        if ($workspace !== null) {
+            $page->where('workspace', $workspace);
+        }
+    });
 })->with([
-    'cashier workspace' => ['workspaces.cashier', 'Cashier / POS'],
-    'kitchen workspace' => ['workspaces.kitchen', 'Kitchen'],
+    'cashier workspace' => ['workspaces.cashier', 'workspaces/show', 'Cashier / POS'],
+    'kitchen workspace' => ['workspaces.kitchen', 'workspaces/kitchen', null],
 ]);
 
 test('stale branch context is cleared after an assignment is removed', function () {

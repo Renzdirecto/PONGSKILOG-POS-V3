@@ -10,6 +10,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property KitchenStatus $status
+ */
 #[Fillable(['branch_id', 'order_id', 'status'])]
 class KitchenTicket extends Model
 {

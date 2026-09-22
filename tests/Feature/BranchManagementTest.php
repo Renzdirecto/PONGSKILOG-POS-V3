@@ -158,7 +158,10 @@ test('branch listing uses bounded queries and exposes only core fields and curre
     $initialQueryCount = count(DB::getQueryLog());
     DB::disableQueryLog();
     $response->assertInertia(fn (Assert $page) => $page->has('branches', 2)
-        ->where('branches.0', [...$open->only(['id', 'code', 'name', 'address', 'contact']), 'status' => 'active', 'store_is_open' => true])
+        ->where('branches.0.id', $open->id)->where('branches.0.name', 'Alpha')
+        ->where('branches.0.qr_url', route('qr.show', $open))
+        ->where('branches.0.qr_image', fn (string $image): bool => str_starts_with($image, 'data:image/svg+xml;base64,') && str_contains(base64_decode(substr($image, strlen('data:image/svg+xml;base64,'))), '<svg'))
+        ->where('branches.0.store_is_open', true)->missing('branches.0.opening_cash_amount')
         ->where('branches.1.store_is_open', false));
 
     Branch::factory()->count(12)->create();

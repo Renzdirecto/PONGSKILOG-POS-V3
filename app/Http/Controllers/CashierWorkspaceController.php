@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BranchStatus;
+use App\Enums\CommercialStatus;
+use App\Enums\OrderSource;
+use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
 use App\Support\KitchenBoard;
+use App\Support\PayLaterOrderSummary;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -35,6 +39,17 @@ class CashierWorkspaceController extends Controller
         }
 
         return Inertia::render('workspaces/show', [
+            'qrWaitingCount' => fn (): int => Order::query()->where('branch_id', $branch->id)
+                ->where('source', OrderSource::CustomerQr)->where('commercial_status', CommercialStatus::Submitted)
+                ->whereNull('loaded_by_user_id')->whereIn('store_session_id', $branch->storeSessions()->where('status', 'open')->select('id'))->count(),
+            'loadedQr' => function () use ($branch, $user): ?array {
+                $order = Order::query()->where('branch_id', $branch->id)
+                    ->where('source', OrderSource::CustomerQr)
+                    ->where('commercial_status', CommercialStatus::Submitted)
+                    ->where('loaded_by_user_id', $user->id)->first();
+
+                return $order === null ? null : app(PayLaterOrderSummary::class)->qr($order);
+            },
             'workspace' => 'Cashier / POS',
             'eyebrow' => 'Branch Operations',
             'description' => 'Branch-scoped cashier and point-of-sale workspace.',

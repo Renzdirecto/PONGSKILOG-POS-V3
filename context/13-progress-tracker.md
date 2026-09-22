@@ -545,39 +545,88 @@ and time; the client refetches the minimal authoritative projection.
 
 ## Phase 10 — Customer QR Ordering
 
-- [ ] Branch QR entry
-- [ ] Store Closed state
-- [ ] Welcome
-- [ ] Menu
-- [ ] Product customization
-- [ ] Cart
-- [ ] Dine In / Take Out
-- [ ] QR submission
-- [ ] No stock deduction on initial submission
-- [ ] No Kitchen ticket on initial submission
-- [ ] Anonymous QR session
-- [ ] One active order/session
-- [ ] Active tracking
-- [ ] Receipt
-- [ ] 24-hour receipt expiry
-- [ ] 30-minute Archived / Unclaimed behavior
-- [ ] Customer tracking security tests
+**Implementation delivered; USER MANUAL QA REQUIRED.**
+Visual/responsive items remain unchecked until user acceptance. Phase 10 is not
+marked fully complete merely from source inspection.
 
----
+- [x] Branch QR entry and anonymous session authorization
+- [ ] Store Closed state - implemented; manual responsive QA pending
+- [ ] Welcome/Menu parity - implemented from decoded source; visual QA pending
+- [ ] Product customization - implemented; touch/modal QA pending
+- [ ] Cart / Dine In / Take Out - implemented; user flow QA pending
+- [x] QR submission and exact submitted snapshot state
+- [x] No stock deduction, Payment, or Kitchen ticket on initial submission
+- [x] Anonymous QR session, hashed token, secure branch cookie, server expiry
+- [x] One active order/session and idempotent submission recovery
+- [ ] Active tracking - implemented and server/event tested; live device QA pending
+- [ ] Receipt / Save receipt - implemented; browser download QA pending
+- [x] Owned receipt authorization and exact 24-hour expiry
+- [x] 30-minute Archived / Unclaimed scheduler and preserved history
+- [x] Customer tracking security / branch isolation tests
 
 ## Phase 11 — QR Orders Staff Flow
 
-- [ ] Active QR queue
-- [ ] Search
-- [ ] Realtime arrival
-- [ ] QR order detail
-- [ ] LOAD
-- [ ] Branch-safe LOAD
-- [ ] Archived / Unclaimed handling
-- [ ] Archive/Delete confirmation
-- [ ] Pay Now after LOAD
-- [ ] Pay Later after LOAD
-- [ ] Duplicate LOAD protection
+**Implementation delivered; USER MANUAL QA REQUIRED.** No Phase 12+ work is marked complete.
+
+- [ ] Active QR queue / search / detail - implemented; responsive QA pending
+- [ ] Realtime arrival and claim removal - automated contracts pass; live-device QA pending
+- [x] LOAD preserves the existing Order, number, snapshots and source
+- [x] Branch-safe authorized LOAD with no Payment/stock/Kitchen side effects
+- [x] Duplicate LOAD protection verified with PostgreSQL workers
+- [x] Active cashier cart preserved by a clean-cart LOAD guard
+- [ ] Archive/Delete confirmation - implemented; interaction QA pending
+- [x] Archive preserves history and rejects claimed/committed/inconsistent orders
+- [x] Pay Now after LOAD reuses the existing atomic payment action
+- [x] Pay Later after LOAD and subsequent settlement preserve single stock/ticket effects
+- [x] Size/Instructions/notes survive through normal KDS and customer tracking
+- [ ] Owner branch QR display/view/copy - implemented; scanning/copy QA pending
+- [ ] iPad Mini/sidebar adjustment - sidebar from 768px, phone-only floating dock, two-column normal Kitchen at tablet widths; source regression passes, device QA pending
+
+### Phase 10/11 implementation and verification - 2026-09-22
+
+- One anonymous branch-bound cookie session and the existing Order aggregate;
+  one shared server snapshot builder reused by POS/QR, no parallel payment/inventory/Kitchen engine.
+- LOAD only claims. Existing Pay Now/Pay Later commit the same ID/number and exact
+  submitted prices. Submit/LOAD/archive have zero operational effects; commitment
+  deducts once and creates one ticket; Pay Later settlement creates payments only.
+- Staff queue has bounded eager-loaded projections, search, detail, realtime badge,
+  claim invalidation and retained archive history. An active cashier cart blocks LOAD.
+  Claimed QR snapshots are read-only in the persisted-order POS path.
+- Public tracking and receipt enforce cookie ownership; private customer channels
+  never expose staff data. Receipt expires after payment + 24 hours. Start new order
+  is explicit after Done/archive. Public catalog contains availability labels, not quantities.
+- Reference-defined customer screens and legal/social surfaces are implemented;
+  Pay Later's payment-pending status is truthful even after Kitchen commit.
+  Source alignment is not a substitute for final user visual acceptance.
+- Realtime is immediate after commit, rescued on transport failure, with 35ms
+  coalescing and authoritative reconnect refresh. Reverb must be running; Laravel's
+  scheduler must run for the every-minute stale-order archive task.
+- PostgreSQL harness: all six required scenarios passed using independent workers
+  and observed database lock waits, plus both Store Close and branch-state boundaries.
+  Temporary schema removed. SQLite and PostgreSQL fresh/rollback/reapply passed.
+- Local feature migration applied without resetting existing data. No dependency
+  changes, fake public tracking data, prototype assets, or browser QA files added.
+- Initial full release gate exposed nine SQLite Order CHECK-constraint regressions
+  caused by a foreign-key table rebuild. The QR migration now uses a native nullable
+  inline REFERENCES addition on SQLite; original checks survive up/down/up. The
+  affected Order foundation and QR tests passed after correction.
+- Final full Laravel release gate passed: **1,197 tests / 7,733 assertions**.
+  Focused Customer QR coverage passed **44 tests / 355 assertions**; focused
+  frontend coverage passed **29 tests**, including the tablet navigation/grid rule.
+  Pint, PHPStan (zero errors), frontend lint (123 files), TypeScript, production
+  build, and whitespace checks passed. PostgreSQL concurrency and isolated
+  fresh/rollback/reapply checks passed after the SQLite correction.
+  The existing optional fontaine and build timing notices remain non-blocking.
+
+Manual QA checklist: scan the Owner branch QR; confirm Closed/Welcome/legal/menu;
+customize Size/Instructions/notes; edit/remove cart lines; choose Dine In/Take Out;
+submit twice and retain one number; inspect two same-branch cashier queues; confirm
+active-cart LOAD guard and single-claim winner; complete Pay Now and Pay Later;
+advance normal KDS and verify customer tracking; settle Pay Later without extra
+stock/tickets; save the owned paid receipt and verify expiry; leave an untouched
+submission for 30 minutes with scheduler running; confirm archive and Start new order;
+disconnect/reconnect during browse/tracking; test foreign branch/session denial;
+inspect 360/390/430px phones, iPad Mini 768/1024px sidebar, tablet and desktop.
 
 ---
 

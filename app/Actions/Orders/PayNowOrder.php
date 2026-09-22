@@ -9,6 +9,7 @@ use App\Enums\OrderSource;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerTrackingChanged;
 use App\Events\DisplayOrdersChanged;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
@@ -19,6 +20,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\User;
+use App\Support\LoadedQrOrder;
 use App\Support\OrderPaymentLegs;
 use App\Support\PosAccess;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -33,6 +35,7 @@ class PayNowOrder
         private ApplyOrderInventory $inventory,
         private OrderPaymentLegs $paymentLegs,
         private PosAccess $access,
+        private LoadedQrOrder $loadedQr,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -72,10 +75,15 @@ class PayNowOrder
                 if ($order->payment_status === PaymentStatus::Paid) {
                     throw ValidationException::withMessages(['order' => 'Order has already been paid.']);
                 }
-                if ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Draft
+                if ((! $this->loadedQr->eligible($order, $user)
+                    && ($order->source !== OrderSource::Pos || $order->commercial_status !== CommercialStatus::Draft))
                     || $order->payment_status !== PaymentStatus::Unpaid || $order->payment_term !== null
                     || $order->kitchen_status !== KitchenStatus::NotSent || $order->committed_at !== null) {
-                    throw ValidationException::withMessages(['order' => 'Only an unpaid, uncommitted POS draft can be paid here.']);
+                    throw ValidationException::withMessages(['order' => 'Only an unpaid POS draft or your loaded QR order can be paid here.']);
+                }
+                if ($order->source === OrderSource::CustomerQr) {
+                    abort_unless($order->store_session_id === $session->id, 409, 'This QR order belongs to an earlier store session.');
+                    $this->loadedQr->validateTable($order, $branch);
                 }
                 $paidAt = now();
                 foreach ($this->paymentLegs->for($order, $data) as $method => $leg) {
@@ -100,6 +108,7 @@ class PayNowOrder
                     'kitchen_status' => KitchenStatus::Kitchen, 'committed_at' => $paidAt, 'version' => $order->version + 1,
                 ]);
                 OrderCommitted::dispatch($order);
+                CustomerTrackingChanged::dispatch($order);
                 KitchenTicketCreated::dispatch($order, $ticket);
                 DisplayOrdersChanged::dispatch($branch, $paidAt);
 

@@ -3,9 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerCatalogChanged;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -23,7 +28,14 @@ class BranchController extends Controller
             ->withExists(['storeSessions as store_is_open' => fn (Builder $query) => $query->where('status', StoreSessionStatus::Open)])
             ->orderBy('name')->orderBy('code')->get();
 
-        return Inertia::render('branches/index', ['branches' => $branches]);
+        return Inertia::render('branches/index', ['branches' => $branches->map(function (Branch $branch): array {
+            $url = route('qr.show', $branch);
+            $writer = new Writer(new ImageRenderer(
+                new RendererStyle(320), new SvgImageBackEnd,
+            ));
+
+            return [...$branch->toArray(), 'qr_url' => $url, 'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url))];
+        })]);
     }
 
     public function store(StoreBranchRequest $request): RedirectResponse
@@ -36,6 +48,7 @@ class BranchController extends Controller
     public function update(UpdateBranchRequest $request, Branch $branch): RedirectResponse
     {
         $branch->update($request->validated());
+        CustomerCatalogChanged::dispatch($branch->id);
 
         return to_route('branches.index');
     }

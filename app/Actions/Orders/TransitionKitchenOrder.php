@@ -5,6 +5,7 @@ namespace App\Actions\Orders;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerTrackingChanged;
 use App\Events\DisplayOrdersChanged;
 use App\Events\KitchenStatusChanged;
 use App\Models\Branch;
@@ -81,6 +82,7 @@ class TransitionKitchenOrder
             $lockedOrder->refresh();
             KitchenStatusChanged::dispatch($lockedOrder, $from, $target, $changedAt);
             DisplayOrdersChanged::dispatch($branch, $changedAt);
+            CustomerTrackingChanged::dispatch($lockedOrder);
 
             return [
                 'order' => $lockedOrder->load('kitchenTicket'),

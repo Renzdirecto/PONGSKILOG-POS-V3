@@ -9,6 +9,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
+use App\Http\Controllers\CustomerQrOrderController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
+use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +31,14 @@ Route::inertia('/', 'welcome')->name('home');
 
 Route::get('qr/{branch}', CustomerQrController::class)
     ->whereUuid('branch')->middleware('throttle:60,1')->name('qr.show');
+
+Route::prefix('qr/{branch}')->whereUuid('branch')->middleware('throttle:120,1')->group(function (): void {
+    Route::post('orders', [CustomerQrOrderController::class, 'store'])->middleware('throttle:15,1')->name('qr.orders.store');
+    Route::get('orders/{tracking}', [CustomerQrOrderController::class, 'show'])->name('qr.orders.show');
+    Route::get('orders/{tracking}/receipt', [CustomerQrOrderController::class, 'receipt'])->name('qr.orders.receipt');
+    Route::post('new-order', [CustomerQrOrderController::class, 'reset'])->name('qr.reset');
+    Route::post('broadcasting/auth', [CustomerQrOrderController::class, 'authorizeChannel'])->name('qr.broadcasting.auth');
+});
 
 Route::middleware(['auth'])->group(function () {
     Route::get('workspace', WorkspaceController::class)->name('workspace');
@@ -74,6 +84,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware('permission:pos.access')->name('pos.payments.store');
 
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
+        Route::get('pos/qr-orders', [StaffQrOrderController::class, 'index'])->name('pos.qr-orders.index');
+        Route::post('pos/qr-orders/{order}/load', [StaffQrOrderController::class, 'load'])->whereUuid('order')->name('pos.qr-orders.load');
+        Route::delete('pos/qr-orders/{order}', [StaffQrOrderController::class, 'destroy'])->whereUuid('order')->name('pos.qr-orders.destroy');
         Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
         Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');

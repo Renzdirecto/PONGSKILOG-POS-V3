@@ -19,6 +19,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property Carbon|null $submitted_at
+ * @property Carbon|null $archived_at
+ * @property Carbon|null $completed_at
  * @property Carbon|null $committed_at
  * @property string|null $store_session_id
  * @property int $version
@@ -30,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property KitchenStatus $kitchen_status
  * @property KitchenTicket|null $kitchenTicket
  */
-#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'pay_later_idempotency_key', 'version'])]
+#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'voided_at', 'pay_later_idempotency_key', 'version', 'customer_qr_session_id', 'public_tracking_id', 'qr_idempotency_key', 'qr_intent_hash', 'table_name_snapshot'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */

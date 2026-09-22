@@ -322,7 +322,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                     </div>
                 ) : (
                     <main
-                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 min-[1180px]:grid-cols-3'}`}
+                        className={`grid items-start gap-3 p-3 pb-24 md:p-4 md:pb-24 ${fullscreen ? 'grid-cols-2 min-[480px]:grid-cols-3 min-[768px]:grid-cols-4 min-[1100px]:grid-cols-5 min-[1500px]:grid-cols-6' : 'grid-cols-1 md:grid-cols-2 min-[1180px]:grid-cols-3'}`}
                     >
                         {tickets.map((ticket) => (
                             <TicketCard

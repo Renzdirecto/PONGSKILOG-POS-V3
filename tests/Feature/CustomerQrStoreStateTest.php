@@ -68,7 +68,7 @@ test('QR never shares internal props even for a signed in user with private sess
     ])->get(route('qr.show', $branch));
 
     $props = $response->viewData('page')['props'];
-    expect(array_keys($props))->toEqualCanonicalizing(['branch', 'store'])
+    expect(array_keys($props))->toEqualCanonicalizing(['branch', 'store', 'catalog', 'order'])
         ->and($props['branch'])->toBe($branch->only(['id', 'name', 'code']))
         ->and($props['store'])->toBe(['status' => 'open']);
 });
@@ -77,7 +77,7 @@ test('missing and malformed QR branches return a safe 404', function (string $id
     $this->get(route('qr.show', $id))->assertNotFound();
 })->with(['00000000-0000-4000-8000-000000000000', 'not-a-uuid']);
 
-test('QR is a read only entry with no submission endpoint or operational effects', function () {
+test('QR entry creates only anonymous identity and exposes the protected submission route without operational effects', function () {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
     Queue::fake();
@@ -87,11 +87,13 @@ test('QR is a read only entry with no submission endpoint or operational effects
 
     $queries = collect(DB::getQueryLog())->pluck('query');
     DB::disableQueryLog();
-    expect($queries->filter(fn (string $query): bool => preg_match('/^\s*(insert|update|delete|replace|alter|drop)\b/i', $query) === 1))->toBeEmpty()
-        ->and($queries)->toHaveCount(2);
+    expect($queries->filter(fn (string $query): bool => preg_match('/^\s*(insert|update|delete|replace|alter|drop)\b/i', $query) === 1 && ! str_contains($query, 'customer_qr_sessions')))->toBeEmpty();
+    $this->assertDatabaseCount('customer_qr_sessions', 1);
+    foreach (['orders', 'payments', 'inventory_movements', 'kitchen_tickets'] as $table) {
+        $this->assertDatabaseCount($table, 0);
+    }
     Queue::assertNothingPushed();
     $qrRoutes = collect(Route::getRoutes()->getRoutes())->filter(fn ($route): bool => str_starts_with($route->uri(), 'qr/'));
-    expect($qrRoutes)->toHaveCount(1)
-        ->and($qrRoutes->first()->methods())->toBe(['GET', 'HEAD']);
+    expect($qrRoutes->firstWhere(fn ($route): bool => $route->getName() === 'qr.orders.store')->methods())->toBe(['POST']);
     $this->post(route('qr.show', $branch))->assertMethodNotAllowed();
 });

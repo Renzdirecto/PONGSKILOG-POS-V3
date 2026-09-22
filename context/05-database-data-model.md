@@ -728,3 +728,34 @@ Do not hard-delete historical:
 - Completed transfers
 
 Catalog records may be disabled/soft-deleted while historical snapshots remain.
+
+
+## Phase 10/11 implemented schema - 2026-09-22
+
+Migration `2026_09_22_062703_add_customer_qr_sessions_and_tracking` creates the
+frozen UUID `customer_qr_sessions` table. `token_hash` is a unique 64-character
+SHA-256 digest; `active_order_id` is nullable and unique; `expires_at` is indexed.
+Branch and Order foreign keys use restrictive deletion. The application issues a
+seven-day, branch-path-scoped anonymous cookie and enforces expiry on every
+customer mutation/read authorization.
+
+Added to `orders`: nullable `customer_qr_session_id`, unique nullable
+`public_tracking_id` (64 random hexadecimal characters), UUID
+`qr_idempotency_key`, `qr_intent_hash`, and `table_name_snapshot`.
+`(customer_qr_session_id, qr_idempotency_key)` is unique. The queue index covers
+branch/source/commercial status/submitted time. `order_item_modifiers` additionally
+stores `modifier_group_id_snapshot`; existing name, semantic role, option, and
+exact price snapshots remain authoritative.
+
+Submit creates the existing Order aggregate as `customer_qr / submitted / unpaid /
+null payment_term / not_sent`, with `submitted_at`, the current Store Session, and
+no `committed_at`. Submit and LOAD create no Payment, inventory movement, or Kitchen
+Ticket. LOAD records the winning cashier on this same Order; existing Pay Now or
+Pay Later performs the single operational commitment without repricing snapshots.
+Explicit Start new order clears the session pointer only after Done or archival.
+
+Receipt expiry is derived from confirmed payment time plus 24 hours; it does not
+delete the Order or financial records. Archive uses existing status/timestamp/reason
+fields (`stale_30_minutes` or `cashier_archived`). Store Close integration remains
+with the future Store Close implementation, which must honor the session lock
+boundary. No additional order, payment, inventory, or Kitchen aggregate was added.

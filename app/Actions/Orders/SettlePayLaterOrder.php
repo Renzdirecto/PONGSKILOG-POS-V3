@@ -6,6 +6,7 @@ use App\Enums\CommercialStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
 use App\Enums\StoreSessionStatus;
+use App\Events\CustomerTrackingChanged;
 use App\Http\Requests\SettlePayLaterOrderRequest;
 use App\Models\Branch;
 use App\Models\Order;
@@ -80,6 +81,8 @@ class SettlePayLaterOrder
                 'payment_status' => PaymentStatus::Paid,
                 'version' => $order->version + 1,
             ]);
+
+            CustomerTrackingChanged::dispatch($order);
 
             return $order;
         });

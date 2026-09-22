@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { Building2, Pencil, Plus, QrCode } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -24,7 +24,7 @@ import {
     primaryActionClass,
 } from '@/components/catalog-ui';
 import { store, update } from '@/routes/branches';
-import { show as showQr } from '@/routes/qr';
+import { toast } from 'sonner';
 import type { BranchSummary } from '@/types';
 
 type BranchStatus = 'active' | 'temporarily_closed' | 'inactive';
@@ -33,6 +33,8 @@ type Branch = BranchSummary & {
     address: string | null;
     contact: string | null;
     store_is_open: boolean;
+    qr_url: string;
+    qr_image: string;
 };
 
 const statusLabels: Record<BranchStatus, string> = {
@@ -41,6 +43,7 @@ const statusLabels: Record<BranchStatus, string> = {
     inactive: 'Inactive',
 };
 export default function Branches({ branches }: { branches: Branch[] }) {
+    const [qrBranch, setQrBranch] = useState<Branch | null>(null);
     const [editing, setEditing] = useState<Branch | null | undefined>(
         undefined,
     );
@@ -144,12 +147,9 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                                     <Button
                                         variant="outline"
                                         className={actionClass}
-                                        asChild
+                                        onClick={() => setQrBranch(branch)}
                                     >
-                                        <Link href={showQr(branch.id)}>
-                                            <QrCode className="size-3.5" /> QR
-                                            page
-                                        </Link>
+                                        <QrCode className="size-3.5" /> View QR
                                     </Button>
                                 </div>
                             </li>
@@ -161,6 +161,56 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                     branch status does not open or close a session.
                 </p>
             </OwnerPage>
+            <Dialog
+                open={qrBranch !== null}
+                onOpenChange={(open) => {
+                    if (!open) setQrBranch(null);
+                }}
+            >
+                <DialogContent className="owner-surface max-h-[90dvh] overflow-y-auto rounded-[18px] bg-white text-neutral-950">
+                    <DialogTitle>Customer QR</DialogTitle>
+                    <DialogDescription>
+                        Pongskilog ? {qrBranch?.name}
+                    </DialogDescription>
+                    {qrBranch && (
+                        <div className="flex flex-col items-center gap-4">
+                            <img
+                                src={qrBranch.qr_image}
+                                alt={`Scan to order at ${qrBranch.name}`}
+                                className="size-60 min-[520px]:size-[280px]"
+                            />
+                            <p className="text-sm font-semibold">
+                                Scan to order
+                            </p>
+                            <a
+                                className="max-w-full text-center text-xs wrap-anywhere underline"
+                                href={qrBranch.qr_url}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                {qrBranch.qr_url}
+                            </a>
+                            <Button
+                                className={primaryActionClass}
+                                onClick={async () => {
+                                    try {
+                                        await navigator.clipboard.writeText(
+                                            qrBranch.qr_url,
+                                        );
+                                        toast.success('Ordering link copied');
+                                    } catch {
+                                        toast.error(
+                                            'Copy blocked by the browser. Select and copy the link above.',
+                                        );
+                                    }
+                                }}
+                            >
+                                Copy link
+                            </Button>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
             <Dialog
                 open={editing !== undefined}
                 onOpenChange={(open) => {

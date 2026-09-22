@@ -7,11 +7,14 @@ use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerTrackingChanged;
+use App\Events\OrderUpdated;
 use App\Http\Requests\SettlePayLaterOrderRequest;
 use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\User;
+use App\Support\ExactMoney;
+use App\Support\OrderMoney;
 use App\Support\OrderPaymentLegs;
 use App\Support\PosAccess;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +23,7 @@ use Illuminate\Validation\ValidationException;
 
 class SettlePayLaterOrder
 {
-    public function __construct(private OrderPaymentLegs $paymentLegs, private PosAccess $access) {}
+    public function __construct(private OrderPaymentLegs $paymentLegs, private OrderMoney $money, private PosAccess $access) {}
 
     /** @param array<string, mixed> $input */
     public function execute(User $user, Branch $branch, Order $requestedOrder, array $input): Order
@@ -33,7 +36,7 @@ class SettlePayLaterOrder
                 DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [$data['idempotency_key']]);
             }
 
-            $branch = Branch::query()->whereKey($branch->getKey())->lockForUpdate()->firstOrFail();
+            $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
             $user = $this->access->authorize($user, $branch);
             if ($replay = $this->replay($user, $branch, $requestedOrder, $data)) {
                 return $replay;
@@ -41,7 +44,7 @@ class SettlePayLaterOrder
 
             $session = $branch->storeSessions()
                 ->where('status', StoreSessionStatus::Open)
-                ->lockForUpdate()
+                ->sharedLock()
                 ->first();
             if ($session === null) {
                 throw ValidationException::withMessages(['store' => 'Store is closed. Open the original store session before settling this order.']);
@@ -51,21 +54,22 @@ class SettlePayLaterOrder
                 ->whereKey($requestedOrder->id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            if ($order->payment_status === PaymentStatus::Paid) {
-                throw ValidationException::withMessages(['order' => 'This Pay Later order has already been paid.']);
+            $order->load('payments', 'adjustments');
+            $money = $this->money->totals($order);
+            if ($money['outstanding'] === 0) {
+                throw ValidationException::withMessages(['order' => 'This order has no outstanding balance.']);
             }
             if ($order->commercial_status !== CommercialStatus::Active
-                || $order->payment_status !== PaymentStatus::Unpaid
-                || $order->payment_term !== PaymentTerm::PayLater
                 || $order->committed_at === null) {
-                throw ValidationException::withMessages(['order' => 'Only a committed unpaid Pay Later order can be settled.']);
+                throw ValidationException::withMessages(['order' => 'Only a committed active order can be settled.']);
             }
             if ($order->store_session_id !== $session->id) {
                 throw ValidationException::withMessages(['store_session' => 'This order belongs to a different store session and cannot be settled here.']);
             }
 
             $paidAt = now();
-            foreach ($this->paymentLegs->for($order, $data) as $method => $leg) {
+            $outstanding = ExactMoney::decimal($money['outstanding']);
+            foreach ($this->paymentLegs->forAmount($outstanding, $data) as $method => $leg) {
                 Payment::query()->create([
                     ...$leg,
                     'method' => $method,
@@ -74,6 +78,9 @@ class SettlePayLaterOrder
                     'order_id' => $order->id,
                     'created_by_user_id' => $user->id,
                     'idempotency_key' => $data['idempotency_key'].':'.$method,
+                    'payment_group_id' => $data['idempotency_key'],
+                    'payment_context' => $order->payments->isEmpty() && $order->payment_term === PaymentTerm::PayLater
+                        ? 'pay_later_settlement' : 'edit_balance_settlement',
                     'paid_at' => $paidAt,
                 ]);
             }
@@ -83,6 +90,7 @@ class SettlePayLaterOrder
             ]);
 
             CustomerTrackingChanged::dispatch($order);
+            OrderUpdated::dispatch($order, ['payment']);
 
             return $order;
         });
@@ -104,11 +112,11 @@ class SettlePayLaterOrder
             || $payments->contains(fn (Payment $payment): bool => $payment->order_id !== $first->order_id)) {
             abort(409, 'This settlement attempt belongs to another order or cashier.');
         }
-        $order = Order::query()->where('branch_id', $branch->id)->findOrFail($first->order_id);
-        $legs = $this->paymentLegs->for($order, $data);
+        $order = Order::query()->where('branch_id', $branch->id)->with('payments', 'adjustments')->findOrFail($first->order_id);
+        $paidByAttempt = $payments->sum(fn (Payment $payment): int => ExactMoney::cents($payment->amount));
+        $legs = $this->paymentLegs->forAmount(ExactMoney::decimal($paidByAttempt), $data);
         if ($order->commercial_status !== CommercialStatus::Active
             || $order->payment_status !== PaymentStatus::Paid
-            || $order->payment_term !== PaymentTerm::PayLater
             || count($legs) !== $payments->count()) {
             abort(409, 'This settlement attempt has already been used with different details.');
         }

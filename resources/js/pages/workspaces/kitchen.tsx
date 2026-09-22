@@ -101,10 +101,30 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         new Set(kitchenBoard.tickets.map((ticket) => ticket.id)),
     );
     const pendingNewTicketIds = useRef(new Set<string>());
+    const [updatedOrderIds, setUpdatedOrderIds] = useState<Set<string>>(
+        () => new Set(),
+    );
     const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
         (event: Record<string, unknown>) => {
+            if (event.event_type === 'kitchen.order_updated') {
+                const orderId =
+                    typeof event.order_id === 'string' ? event.order_id : null;
+                if (orderId) {
+                    setUpdatedOrderIds((current) => new Set(current).add(orderId));
+                    window.setTimeout(
+                        () =>
+                            setUpdatedOrderIds((current) => {
+                                const next = new Set(current);
+                                next.delete(orderId);
+                                return next;
+                            }),
+                        8_000,
+                    );
+                }
+                return;
+            }
             if (event.event_type !== 'kitchen.ticket_created') {
                 return;
             }
@@ -334,6 +354,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     pendingTransitions[ticket.id]?.pending ??
                                     false
                                 }
+                                updated={updatedOrderIds.has(ticket.id)}
                                 onTransition={transition}
                             />
                         ))}
@@ -373,12 +394,14 @@ function TicketCard({
     compact,
     now,
     disabled,
+    updated,
     onTransition,
 }: {
     ticket: KitchenTicket;
     compact: boolean;
     now: number;
     disabled: boolean;
+    updated: boolean;
     onTransition: (ticket: KitchenTicket, status: KitchenStatus) => void;
 }) {
     return (
@@ -395,6 +418,11 @@ function TicketCard({
                         {disabled && (
                             <span className="text-[9px] font-normal text-neutral-500">
                                 Saving...{' '}
+                            </span>
+                        )}
+                        {updated && (
+                            <span className="ml-1 rounded-full bg-amber-200 px-1.5 py-0.5 text-[8px] text-amber-900">
+                                UPDATED
                             </span>
                         )}
                         <span className="text-red-700">

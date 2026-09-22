@@ -9,13 +9,14 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
  * @property PaymentMethod $method
  * @property Carbon $paid_at
  */
-#[Fillable(['branch_id', 'store_session_id', 'order_id', 'method', 'amount', 'amount_received', 'change_amount', 'created_by_user_id', 'idempotency_key', 'paid_at'])]
+#[Fillable(['branch_id', 'store_session_id', 'order_id', 'method', 'amount', 'amount_received', 'change_amount', 'created_by_user_id', 'idempotency_key', 'payment_group_id', 'payment_context', 'paid_at'])]
 class Payment extends Model
 {
     /** @use HasFactory<PaymentFactory> */
@@ -49,5 +50,11 @@ class Payment extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /** @return HasOne<PaymentInvoiceProof, $this> */
+    public function invoiceProof(): HasOne
+    {
+        return $this->hasOne(PaymentInvoiceProof::class);
     }
 }

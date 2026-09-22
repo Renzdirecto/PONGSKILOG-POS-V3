@@ -94,7 +94,8 @@ class PayNowOrder
                     Payment::query()->create([
                         ...$leg, 'method' => $method, 'branch_id' => $branch->id, 'store_session_id' => $session->id,
                         'order_id' => $order->id, 'created_by_user_id' => $user->id,
-                        'idempotency_key' => $data['idempotency_key'].':'.$method, 'paid_at' => $paidAt,
+                        'idempotency_key' => $data['idempotency_key'].':'.$method,
+                        'payment_group_id' => $data['idempotency_key'], 'payment_context' => 'initial', 'paid_at' => $paidAt,
                     ]);
                 }
 

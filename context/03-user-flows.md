@@ -757,6 +757,12 @@ POS paid receipt -> Show QR -> temporary signed public digital receipt. This rep
 
 The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
 
-The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states.
 
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
+
+## Phase 12 transaction history flow
+
+Cashier opens History, server filters the assigned branch's committed Orders, then Details fetches fresh authoritative state. A current-session edit revalidates version, catalog and stock, commits item snapshots plus net inventory deltas, reconciles money, appends Audit Log, then broadcasts compact POS/Kitchen invalidations. A resulting balance opens the shared Cash/Cashless/Split collection experience and appends a new Payment group only.
+
+For a Cashless Payment row, Invoice opens authorized private proof management. The cashier can choose an image or use `getUserMedia` camera capture where supported, then view, replace, or remove that one proof. File selection/capture remains the fallback. Prior-session details and proofs are readable but not mutable.

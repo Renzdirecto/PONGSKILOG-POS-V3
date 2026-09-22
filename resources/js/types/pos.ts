@@ -109,9 +109,13 @@ export type PaidReceipt = OrderSummary & {
         logo_url?: string;
     };
     payments: {
+        id: string;
         method: 'cash' | 'cashless';
         amount: string;
         amount_received: string | null;
         change_amount: string | null;
+        payment_group_id: string | null;
+        payment_context: string | null;
+        invoice: { name: string; url: string } | null;
     }[];
 };

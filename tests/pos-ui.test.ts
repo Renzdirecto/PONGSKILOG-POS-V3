@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-    invoiceProofDeferredLabel,
     showsInvoiceProof,
 } from '../resources/js/lib/pos-payment-proof.ts';
 import {
@@ -82,11 +81,16 @@ test('Store Session detail rows render persisted opening money and Manila time',
     );
 });
 
-test('invoice proof placeholder is limited to the Cashless payment leg and clearly deferred', () => {
+test('invoice proof capture is limited to transactions with a Cashless payment leg', () => {
     assert.equal(showsInvoiceProof('cash'), false);
     assert.equal(showsInvoiceProof('cashless'), true);
     assert.equal(showsInvoiceProof('split'), true);
-    assert.equal(invoiceProofDeferredLabel, 'Coming in Transaction History');
+    const paid = readFileSync(
+        new URL('../resources/js/components/pos-paid.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.match(paid, /TransactionInvoiceDialog/);
+    assert.doesNotMatch(paid, /Phase 12/);
 });
 
 test('POS subscribes to the compact catalog events and refetches after reconnect', () => {

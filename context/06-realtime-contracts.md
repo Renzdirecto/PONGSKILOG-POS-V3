@@ -718,3 +718,9 @@ automated delivery/rollback/failure and PostgreSQL concurrency checks are covere
 Before commitment, QR staff events expose qr_number (QR-01), not order_number. Added qr.order_released and qr.order_restored on the same authorized private branch POS channel. Cancel and restore emit customer tracking invalidation as well. QR toggle changes emit customer catalog invalidation. Official committed Order/Kitchen/Display paths continue using operational identity.
 
 Immediate after-commit delivery, transport rescue, compact payloads, event deduplication, bounded coalesced refetch, reconnect refresh and branch/session isolation remain. No HTTP polling was added. The queue has one client clock for all elapsed labels. Normal connected QR queue/tracking/receipt screens omit manual Refresh controls; recovery remains in unavailable/error states.
+
+## Phase 12 transaction invalidations - 2026-09-22
+
+`order.updated` is a compact after-commit event on the branch POS private channel with event/entity/order IDs, Order version, changed-domain names, and occurred time. It carries no item, finance, proof, or Audit payload; History coalesces and refetches server projections and also refetches after reconnect.
+
+`kitchen.order_updated` is a compact after-commit event on the branch Kitchen private channel. KDS refetches its authoritative ticket and briefly marks the affected Order `UPDATED`; the existing KitchenTicket identity, status, and lifecycle timestamps are unchanged. Settlement emits `order.updated` for the payment domain and the existing customer tracking invalidation.

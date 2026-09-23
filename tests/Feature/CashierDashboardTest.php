@@ -105,7 +105,7 @@ test('dashboard is forbidden to roles outside the cashier workspace', function (
         ->get(route('workspaces.cashier-dashboard'));
 
     $response->assertForbidden();
-})->with(['owner', 'kitchen_staff', 'super_admin']);
+})->with(['owner', 'kitchen_staff']);
 
 test('dashboard does not open a branch the cashier is not assigned to', function () {
     $user = dashboardStaff(Branch::factory()->create());

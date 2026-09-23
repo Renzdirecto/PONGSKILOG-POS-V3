@@ -6,12 +6,14 @@ import {
     MonitorUp,
     QrCode,
     ReceiptText,
+    ShieldCheck,
     UtensilsCrossed,
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
+import { SuperAdminShell } from '@/components/super-admin-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
 import { StoreSessionDetailsContext } from '@/hooks/use-store-session-details';
@@ -20,6 +22,7 @@ import {
     cashierDashboard,
     customerDisplay,
     kitchen,
+    superAdmin,
     transactionHistory,
 } from '@/routes/workspaces';
 import { logout } from '@/routes';
@@ -94,12 +97,16 @@ export default function WorkspaceLayout({
         useState<StoreSessionLoadState>('idle');
     /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
     const ownClosedSessionId = useRef<string | null>(null);
+    const isSuperAdmin = auth.roles.includes('super_admin');
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
             page.props.workspace === 'Cashier / POS' &&
             auth.roles.some(
-                (role) => role === 'cashier' || role === 'cashier_kitchen',
+                (role) =>
+                    role === 'cashier' ||
+                    role === 'cashier_kitchen' ||
+                    role === 'super_admin',
             ));
     const isQr =
         isPos &&
@@ -328,6 +335,19 @@ export default function WorkspaceLayout({
                                 orders={page.props.readyOrders ?? []}
                             />
                         )}
+                        {isSuperAdmin && (
+                            <Link
+                                href={superAdmin()}
+                                aria-label="Back to Super Admin Control Center"
+                                title="Super Admin Control Center"
+                                className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-white text-[12px] font-semibold text-neutral-700 hover:border-neutral-400 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none min-[1180px]:w-auto min-[1180px]:px-3"
+                            >
+                                <ShieldCheck className="size-4" />
+                                <span className="hidden min-[1180px]:inline">
+                                    Control Center
+                                </span>
+                            </Link>
+                        )}
                         <PosProfileControls auth={auth} />
                     </header>
                     {storeSessionDialogOpen && branchContext.current && (
@@ -423,7 +443,11 @@ export default function WorkspaceLayout({
     }
 
     if (isOwnerManagement) {
-        return <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>;
+        return isSuperAdmin ? (
+            <SuperAdminShell>{children}</SuperAdminShell>
+        ) : (
+            <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+        );
     }
 
     return (

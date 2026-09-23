@@ -712,7 +712,15 @@ Audit includes:
 - Variances
 - Store Close
 
-For Void approval, a Super Admin configures the single global four-digit PIN. An active assigned Cashier or Cashier+Kitchen operator supplies that PIN with a reason from the current Store Session transaction. The configuring Super Admin is recorded as authorizer, the operator is recorded separately as initiator, and the two identities must differ. The PIN is never returned or audited in plaintext.
+For Void approval, a Super Admin configures the single global four-digit PIN. An active assigned Cashier or Cashier+Kitchen operator, or another full-access Super Admin on the selected Branch, supplies that PIN with a reason from the current Store Session transaction. The configuring Super Admin is recorded as authorizer, the operator is recorded separately as initiator, and the two identities must differ. The PIN is never returned or audited in plaintext.
+
+### Staff account creation (2026-09-24)
+
+Super Admin -> Control -> Staff -> Add Staff -> full name, email, temporary password + confirmation, role, Branch access, Active/Inactive -> Create Staff -> "Staff account created."
+
+The Super Admin chooses the temporary password and hands the credentials to the staff member directly. The staff member signs in with them immediately. There is no invite email, forced password change, first-login setup, or self-service profile editing in this slice. Operational roles need at least one active Branch; Owner and Super Admin are business-wide.
+
+Operational workspaces: Super Admin selects a Branch from the header, then opens Cashier Dashboard, POS, QR Orders, Transaction History, Kitchen, or Customer Display in their existing operational shells, with a Control Center link back.
 
 ---
 

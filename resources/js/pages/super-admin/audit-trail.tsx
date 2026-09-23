@@ -105,6 +105,11 @@ const actionStyles: Record<
         iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
         badge: 'blue',
     },
+    'staff.created': {
+        icon: CircleUserRound,
+        iconClass: 'bg-blue-50 text-blue-700 ring-blue-100',
+        badge: 'blue',
+    },
 };
 
 export function auditActionLabel(action: string): string {
@@ -114,6 +119,7 @@ export function auditActionLabel(action: string): string {
         'order.paid': 'Order paid',
         'order.voided': 'Order voided',
         'void_pin.configured': 'Void PIN configured',
+        'staff.created': 'Staff account created',
     };
 
     return (

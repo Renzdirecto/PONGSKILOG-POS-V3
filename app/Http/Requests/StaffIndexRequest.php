@@ -3,10 +3,12 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Support\StaffRoles;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
-class OpenStoreSessionRequest extends FormRequest
+class StaffIndexRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -16,7 +18,8 @@ class OpenStoreSessionRequest extends FormRequest
         $user = $this->user();
 
         return $user instanceof User
-            && $user->hasCashierOperationsRole();
+            && $user->is_active
+            && $user->hasPermission('access_control.manage');
     }
 
     /**
@@ -27,8 +30,10 @@ class OpenStoreSessionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'opening_cash_amount' => ['required', 'string'],
-            'opening_cashless_amount' => ['required', 'string'],
+            'search' => ['nullable', 'string', 'max:150'],
+            'role' => ['nullable', 'string', Rule::in(StaffRoles::names())],
+            'status' => ['nullable', 'string', Rule::in(['active', 'inactive'])],
+            'page' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

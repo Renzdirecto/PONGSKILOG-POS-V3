@@ -28,7 +28,8 @@ Broadcast::channel('branch.{branch}.store-session', function (User $user, Branch
     return $user->is_active
         && $user->canAccessBranch($branch)
         && $user->hasPermission('store_expenses.manage')
-        && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+        && $user->hasCashierOperationsRole()
+        && $user->hasOperationalBranchAccess($branch);
 });
 
 Broadcast::channel('audit-trail', function (User $user): bool {

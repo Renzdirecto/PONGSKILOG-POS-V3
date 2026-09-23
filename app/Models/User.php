@@ -80,6 +80,36 @@ class User extends Authenticatable
             ->exists();
     }
 
+    /**
+     * Cashier operational surfaces belong to assigned Cashiers and to Super Admin, whose full-access role
+     * covers every operational workspace. Owner business-wide scope alone never grants Cashier operations.
+     */
+    public function hasCashierOperationsRole(): bool
+    {
+        return $this->roles()
+            ->whereIn('roles.name', ['cashier', 'cashier_kitchen', 'super_admin'])
+            ->exists();
+    }
+
+    /**
+     * Operational Branch access requires an active assignment, except for business-wide Super Admin,
+     * which is never given fabricated Branch assignments.
+     */
+    public function hasOperationalBranchAccess(Branch $branch): bool
+    {
+        return self::query()
+            ->whereKey($this->getKey())
+            ->where(function (Builder $query) use ($branch): void {
+                $query->whereHas('roles', function (Builder $roles): void {
+                    $roles->where('roles.name', 'super_admin');
+                })->orWhereHas('branches', function (Builder $branches) use ($branch): void {
+                    $branches->whereKey($branch->getKey())
+                        ->where('user_branch_assignments.is_active', true);
+                });
+            })
+            ->exists();
+    }
+
     public function canAccessBranch(Branch $branch): bool
     {
         if (! $this->is_active) {

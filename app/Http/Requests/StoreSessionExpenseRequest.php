@@ -20,7 +20,7 @@ class StoreSessionExpenseRequest extends FormRequest
         return $user instanceof User
             && $user->is_active
             && $user->hasPermission('store_expenses.manage')
-            && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+            && $user->hasCashierOperationsRole();
     }
 
     /**

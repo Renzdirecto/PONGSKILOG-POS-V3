@@ -551,7 +551,7 @@ After close:
 Void requires:
 
 - One global four-digit approval PIN configured by an active Super Admin and stored only as a hash
-- The configuring Super Admin recorded as authorizer and a distinct active assigned Cashier/Cashier+Kitchen user recorded as initiator
+- The configuring Super Admin recorded as authorizer and a distinct active assigned Cashier/Cashier+Kitchen user, or another full-access Super Admin on the selected Branch, recorded as initiator
 - Reason
 - Confirmation
 - Audit

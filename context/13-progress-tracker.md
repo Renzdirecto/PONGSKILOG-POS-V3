@@ -832,6 +832,18 @@ Owner workspace UI alignment slice (2026-09-21):
 
 ## Phase 18 — Super Admin Workspace
 
+### Super Admin foundation, navigation, and Staff creation — 2026-09-24
+
+Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No migration or dependency change.
+
+- The obsolete `context/design/PONGSKILOG Super Admin (standalone).html` was deleted. No Super Admin standalone is authoritative; Super Admin UI is product-designed in the Owner/POS language (`08-ui-rules.md`, `09-ui-registry.md`).
+- New `SuperAdminShell` with a collapsible four-section sidebar (Overview, Cashier + Kitchen, Owner, Control), driven by the permission-aware registry `resources/js/lib/super-admin-navigation.ts`. It has a tablet rail and a mobile dock, each with a collapsible drawer, and the Owner shell is now Owner-only. Operational pages keep their POS shell and gain a Control Center link for Super Admin.
+- Real destinations link to existing pages. Notifications, Reports, and Access Control are protected Planned placeholders with no fake data or toggles. The Super Admin Dashboard is a Control Center landing with real quick links only. Settings reuses Branch Management under Control.
+- Full operational parity for Super Admin, approved by the product owner, superseding the Phase 14/15 denials. It works through `User::hasCashierOperationsRole()` / `hasOperationalBranchAccess()` on the selected active Branch with no fabricated assignments. Store Session and business invariants are unchanged, actions are audited as the Super Admin, and Void keeps two-person approval. Owner gains no Cashier operations.
+- Real Staff page (`access_control.manage`): list/search/filter and an atomic Add Staff flow. The Super Admin chooses the temporary password, which is hashed and never re-shown or audited. Operational roles require an active Branch; Owner and Super Admin are business-wide. The flow writes one `staff.created` Audit record. There is no invite email, forced password change, or self-service profile work.
+- Automated gates: focused backend regression **1,148 tests / 8,466 assertions** (including the new SuperAdminWorkspaceTest and StaffManagementTest), frontend Node tests **113 passed**, Pint, PHPStan (zero errors), frontend lint (zero warnings), TypeScript, production build, and `git diff --check` all passed. Tests use in-memory SQLite; the normal local development database was not reset.
+- Not complete: the Access Control matrix, Notifications service, Owner Reports, Super Admin analytics, editing or deactivating existing staff, and profile settings. Final visual and device acceptance is **USER MANUAL QA**. No checkbox below is marked by this slice.
+
 - [ ] Dashboard
 - [ ] Audit Trail
 - [ ] Void Orders

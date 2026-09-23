@@ -397,6 +397,9 @@ Super Admin-only control surfaces:
 - Audit Trail
 - Void Orders
 - Access Control
+- Staff account creation
+
+Super Admin is the full-access role (2026-09-24). It can use every Cashier, Cashier + Kitchen, Kitchen, and Owner surface for the Branch it selects, under the same Store Session and business rules, audited as itself. See `07-security-rbac.md`, Super Admin foundation.
 
 ---
 

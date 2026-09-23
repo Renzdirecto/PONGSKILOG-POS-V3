@@ -31,6 +31,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
+use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
 use App\Http\Controllers\StoreSessionExpenseController;
@@ -87,11 +88,19 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])
         ->name('branch-context.destroy');
 
-    Route::inertia('workspaces/super-admin', 'workspaces/show', [
-        'workspace' => 'Super Admin',
-        'eyebrow' => 'PONGSKILOG Control Center',
-        'description' => 'Business-wide system administration workspace.',
-    ])->middleware('permission:access_control.manage')->name('workspaces.super-admin');
+    Route::inertia('workspaces/super-admin', 'super-admin/dashboard')
+        ->middleware('permission:access_control.manage')->name('workspaces.super-admin');
+
+    Route::prefix('workspaces/super-admin')->name('super-admin.')->middleware('permission:access_control.manage')->group(function () {
+        Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
+        Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('staff.store');
+        Route::inertia('notifications', 'super-admin/placeholder', ['destination' => 'notifications'])
+            ->name('notifications');
+        Route::inertia('reports', 'super-admin/placeholder', ['destination' => 'reports'])
+            ->middleware('permission:reports.view')->name('reports');
+        Route::inertia('access-control', 'super-admin/placeholder', ['destination' => 'access-control'])
+            ->name('access-control');
+    });
 
     Route::get('workspaces/audit-trail', AuditTrailController::class)
         ->middleware('permission:audit.view')

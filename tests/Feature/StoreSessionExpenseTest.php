@@ -236,6 +236,23 @@ test('private receipt is accepted and another branch receives not found', functi
         ->assertNotFound();
 });
 
+test('supported receipt raster formats are stored privately', function (string $filename) {
+    Storage::fake('receipts');
+    config()->set('filesystems.store_expense_receipts_disk', 'receipts');
+    $branch = Branch::factory()->create();
+    $cashier = storeExpenseUser($branch);
+    StoreSession::factory()->for($branch)->create();
+
+    $this->actingAs($cashier)->post(route('store-session-expenses.store'), storeExpensePayload([
+        'receipt' => UploadedFile::fake()->image($filename, 320, 320),
+    ]), ['Accept' => 'application/json'])->assertOk();
+
+    $expense = StoreSessionExpense::query()->sole();
+    Storage::disk('receipts')->assertExists($expense->receipt_image_path);
+    expect($expense->receipt_image_path)->not->toBeNull()
+        ->and($expense->receipt_mime_type)->toStartWith('image/');
+})->with(['receipt.jpg', 'receipt.jpeg', 'receipt.png', 'receipt.webp']);
+
 test('receipt validation rejects unsupported and oversized files without persistence', function (UploadedFile $receipt) {
     $branch = Branch::factory()->create();
     $cashier = storeExpenseUser($branch);
@@ -251,6 +268,8 @@ test('receipt validation rejects unsupported and oversized files without persist
 })->with([
     'svg' => fn () => UploadedFile::fake()->create('receipt.svg', 20, 'image/svg+xml'),
     'oversized jpg' => fn () => UploadedFile::fake()->image('receipt.jpg', 320, 320)->size(2049),
+    'too narrow' => fn () => UploadedFile::fake()->image('receipt.jpg', 63, 320),
+    'too wide' => fn () => UploadedFile::fake()->image('receipt.jpg', 8001, 320),
 ]);
 
 test('expense realtime payload is compact and branch channel authorization is scoped', function () {

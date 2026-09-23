@@ -124,6 +124,7 @@ export function CustomerQrTracking({
             </main>
         );
     const archived = order.commercial_status === 'archived_unclaimed';
+    const voided = order.commercial_status === 'voided';
     const done = order.kitchen_status === 'done';
     const stage = ['not_sent', 'kitchen', 'preparing', 'ready', 'done'].indexOf(
         order.kitchen_status,
@@ -226,12 +227,14 @@ export function CustomerQrTracking({
                             </p>
                         )}
                         <span
-                            className={`rounded-full px-4 py-2 text-sm font-semibold ${archived ? 'bg-neutral-100' : 'bg-amber-50 text-amber-800'}`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold ${voided ? 'bg-red-50 text-red-800' : archived ? 'bg-neutral-100' : 'bg-amber-50 text-amber-800'}`}
                         >
                             {qrStatus(order)}
                         </span>
                         <p className="text-xs leading-5 text-neutral-500">
-                            {archived
+                            {voided
+                                ? 'This order was voided. Please speak with the counter if you need help.'
+                                : archived
                                 ? 'This unclaimed order was archived. Start a new order when you are ready.'
                                 : done
                                   ? 'Salamat! We hope you enjoyed your order.'
@@ -245,7 +248,7 @@ export function CustomerQrTracking({
                                         : 'Payment confirmed. Hintayin ang live update ng order mo.'}
                         </p>
                     </div>
-                    {!archived && (
+                    {!archived && !voided && (
                         <div className={`${qrPanel} space-y-5`}>
                             <div className="flex items-center gap-3">
                                 <Check className="size-8 rounded-full bg-green-50 p-2 text-green-700" />

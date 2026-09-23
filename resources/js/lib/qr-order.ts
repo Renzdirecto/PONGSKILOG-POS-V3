@@ -25,6 +25,7 @@ export function qrLineCents(line: QrLine): bigint {
     );
 }
 export function qrStatus(order: QrOrder): string {
+    if (order.commercial_status === 'voided') return 'Voided';
     if (order.commercial_status === 'archived_unclaimed')
         return 'Archived / Unclaimed';
     return (
@@ -44,6 +45,7 @@ export function qrStatus(order: QrOrder): string {
 export function canStartQrOrder(order: QrOrder): boolean {
     return (
         order.kitchen_status === 'done' ||
+        order.commercial_status === 'voided' ||
         order.commercial_status === 'archived_unclaimed'
     );
 }

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSemanticRole;
 use App\Enums\StoreSessionStatus;
@@ -175,6 +176,7 @@ class KitchenBoard
             ->whereBelongsTo($branch)
             ->whereBelongsTo($session, 'storeSession')
             ->whereNotNull('committed_at')
+            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed])
             ->whereHas('kitchenTicket');
     }
 

@@ -20,12 +20,12 @@ class TransactionHistory
     public function for(Branch $branch, array $filters): array
     {
         $query = $this->baseQuery($branch)
-            ->with(['items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable']);
+            ->with(['items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable', 'voidRecord.initiatedBy', 'voidRecord.authorizedBy']);
 
         $this->applyFilters($query, $filters);
         $metricsQuery = $this->baseQuery($branch);
         $this->applyFilters($metricsQuery, Arr::except($filters, ['kitchen_status', 'payment_status']));
-        $metrics = $metricsQuery->toBase()
+        $metrics = $metricsQuery->where('commercial_status', '!=', CommercialStatus::Voided->value)->toBase()
             ->selectRaw("SUM(CASE WHEN kitchen_status = 'kitchen' THEN 1 ELSE 0 END) AS in_kitchen")
             ->selectRaw("SUM(CASE WHEN kitchen_status = 'preparing' THEN 1 ELSE 0 END) AS preparing")
             ->selectRaw("SUM(CASE WHEN kitchen_status = 'done' THEN 1 ELSE 0 END) AS done")
@@ -35,13 +35,16 @@ class TransactionHistory
         $openSessionId = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->value('id');
         $page = $query->orderByDesc('committed_at')->orderByDesc('id')->paginate(10)->withQueryString();
         $page->through(function (Order $order) use ($openSessionId): array {
-            $canMutate = $openSessionId !== null && $order->store_session_id === $openSessionId;
+            $canMutate = $openSessionId !== null
+                && $order->store_session_id === $openSessionId
+                && $order->commercial_status === CommercialStatus::Active;
             $summary = $this->projection->summary($order);
 
             return [
                 ...$summary,
                 'can_edit' => $canMutate,
                 'can_settle' => $canMutate && (float) $summary['outstanding'] > 0,
+                'can_void' => $canMutate,
             ];
         });
 

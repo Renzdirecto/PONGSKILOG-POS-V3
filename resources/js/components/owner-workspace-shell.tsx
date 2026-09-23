@@ -3,11 +3,13 @@ import {
     BarChart3,
     Bell,
     Boxes,
+    ClipboardList,
     LayoutDashboard,
     Menu,
     PackageSearch,
     ReceiptText,
     Settings,
+    ShieldBan,
     UserRound,
     Users,
 } from 'lucide-react';
@@ -33,7 +35,7 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
-import { owner, superAdmin } from '@/routes/workspaces';
+import { auditTrail, owner, superAdmin, voidOrders } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
@@ -125,6 +127,8 @@ export function OwnerWorkspaceShell({
     const isCatalog = page.component.startsWith('catalog/');
     const isInventory = page.component.startsWith('inventory/');
     const isBranches = page.component === 'branches/index';
+    const isAuditTrail = page.component === 'super-admin/audit-trail';
+    const isVoidOrders = page.component === 'super-admin/void-orders';
     const isDashboard =
         page.component === 'workspaces/show' && !isCatalog && !isInventory;
     const canProducts = auth.permissions.includes('products.manage');
@@ -166,6 +170,27 @@ export function OwnerWorkspaceShell({
                 },
             ],
         },
+        ...(isSuperAdmin
+            ? [{
+                  label: 'Control',
+                  items: [
+                      {
+                          label: 'Audit Trail',
+                          shortLabel: 'Audit',
+                          icon: ClipboardList,
+                          href: auditTrail(),
+                          active: isAuditTrail,
+                      },
+                      {
+                          label: 'Void Orders',
+                          shortLabel: 'Voids',
+                          icon: ShieldBan,
+                          href: voidOrders(),
+                          active: isVoidOrders,
+                      },
+                  ],
+              }]
+            : []),
         {
             label: 'Catalog',
             items: [
@@ -221,6 +246,10 @@ export function OwnerWorkspaceShell({
           ? 'Inventory'
           : isBranches
             ? 'Branch management'
+            : isAuditTrail
+              ? 'Audit trail'
+              : isVoidOrders
+                ? 'Void orders'
             : `${workspaceLabel} workspace`;
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`

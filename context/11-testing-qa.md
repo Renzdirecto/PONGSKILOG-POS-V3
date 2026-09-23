@@ -332,13 +332,18 @@ All:
 
 Test:
 
-- Authorization required
+- Active assigned Cashier/Cashier+Kitchen initiator and current Store Session required
+- Global four-digit hashed PIN required; wrong/missing PIN and inactive/non-Super-Admin PIN owner rejected
+- Initiator and configuring Super Admin authorizer remain distinct
 - Reason required
 - Original order retained
 - Payment history retained
 - Compensating inventory movement created
 - Audit created
 - Super Admin Void Orders protected
+- Exact replay produces one Void/audit/restoration; changed intent conflicts
+- PostgreSQL races cover duplicate/distinct Void, edit, settlement, Kitchen, sorted Product restoration, and Store Session close boundary
+- Inventory, Void row, Order update, or audit failure rolls back every critical effect
 
 ---
 

@@ -91,8 +91,8 @@ export function DigitalReceiptCard({
                 <p className="mt-2 text-xs text-neutral-500">
                     REF: {receipt.reference_number}
                 </p>
-                <span className="mt-3 inline-block rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-                    PAID
+                <span className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-bold ${receipt.commercial_status === 'voided' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-700'}`}>
+                    {receipt.commercial_status === 'voided' ? 'VOIDED' : 'PAID'}
                 </span>
             </div>
             <dl className="my-5 grid grid-cols-2 gap-2 text-xs">

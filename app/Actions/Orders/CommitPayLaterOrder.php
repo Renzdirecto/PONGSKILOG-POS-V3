@@ -2,6 +2,7 @@
 
 namespace App\Actions\Orders;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\CommercialStatus;
 use App\Enums\InventoryMovementType;
 use App\Enums\KitchenStatus;
@@ -33,6 +34,7 @@ class CommitPayLaterOrder
         private ApplyOrderInventory $inventory,
         private PosAccess $access,
         private LoadedQrOrder $loadedQr,
+        private AuditRecorder $audit,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -117,6 +119,7 @@ class CommitPayLaterOrder
                 'order_id' => $order->id,
                 'status' => KitchenStatus::Kitchen,
             ]);
+            $before = $this->auditSnapshot($order);
             $order->update([
                 'store_session_id' => $session->id,
                 'commercial_status' => CommercialStatus::Active,
@@ -127,6 +130,18 @@ class CommitPayLaterOrder
                 'pay_later_idempotency_key' => $key,
                 'version' => $order->version + 1,
             ]);
+            $this->audit->record(
+                branch: $branch,
+                actor: $user,
+                module: 'transactions',
+                action: 'order.pay_later_committed',
+                auditableType: Order::class,
+                auditableId: $order->id,
+                before: $before,
+                after: $this->auditSnapshot($order),
+                metadata: ['store_session_id' => $session->id],
+                idempotencyKey: $key,
+            );
             OrderCommitted::dispatch($order);
             CustomerTrackingChanged::dispatch($order);
             KitchenTicketCreated::dispatch($order, $ticket);
@@ -134,6 +149,19 @@ class CommitPayLaterOrder
 
             return $order;
         });
+    }
+
+    /** @return array<string, string|int|null> */
+    private function auditSnapshot(Order $order): array
+    {
+        return [
+            'commercial_status' => $order->commercial_status->value,
+            'payment_status' => $order->payment_status->value,
+            'payment_term' => $order->payment_term?->value,
+            'kitchen_status' => $order->kitchen_status->value,
+            'committed_at' => $order->committed_at?->toIso8601String(),
+            'version' => $order->version,
+        ];
     }
 
     /** @param array<string, mixed> $data */

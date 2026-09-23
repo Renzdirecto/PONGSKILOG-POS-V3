@@ -659,15 +659,26 @@ The Phase 6 placeholder is now replaced by Phase 12 proof management. The proof 
 
 ## Phase 13 — Void & Audit
 
-- [ ] Void authorization
-- [ ] Void reason
-- [ ] Re-auth / protected confirmation
-- [ ] Compensating inventory restoration
-- [ ] Original order retained
-- [ ] Payment history retained
-- [ ] Audit Trail
-- [ ] Super Admin Void Orders
-- [ ] Void authorization tests
+- [x] Void authorization
+- [x] Void reason
+- [x] Re-auth / protected confirmation
+- [x] Compensating inventory restoration
+- [x] Original order retained
+- [x] Payment history retained
+- [x] Audit Trail
+- [x] Super Admin Void Orders
+- [x] Void authorization tests
+
+Phase 13 final release-gate implementation (2026-09-23):
+
+- The accepted approval model is one global four-digit PIN configured by an authenticated active Super Admin, stored only as a hash. The configuring Super Admin is the authorizer; the active assigned Cashier/Cashier+Kitchen operator is the distinct initiator. Wrong/missing PIN, inactive or no-longer-Super-Admin PIN owner, and self-authorization fail safely. PostgreSQL advisory serialization protects concurrent first-time and replacement configuration while the database unique scope preserves one global row.
+- Void follows the Store Session shared → Order exclusive → remaining locks order in one transaction. It retains the complete Order/Payment/Kitchen history, appends one OrderVoid and canonical audit, increments version, and restores only the net negative `sale`, `pay_later_commit`, and `order_edit_delta` ledger effect through sorted `void_restore` movements. Exact retry is side-effect-free and changed intent conflicts.
+- Normal Cashier History/detail and every receipt path deny voided Orders. KDS, Customer Display, and Customer QR tracking refetch authoritative safe state through compact after-commit invalidations. Audit Trail and Void Orders remain read-only, 30-per-page, Super Admin-only registers; the private audit channel applies the same permission boundary.
+- The canonical recorder now drives committed-edit and invoice-proof audits and recursively redacts PIN/password/secret/token/credential keys. Frozen current audit obligations now cover successful login, Store Open/opening balances, Pay Now, Pay Later, settlement, edit/correction context, Void, PIN changes, manual inventory adjustment, invoice-proof changes, Branch changes, and implemented Branch QR/receipt settings. Audit models reject normal update/delete operations. Catalog Product/Category/Group/Option/image and branch-product configuration mutations are explicitly deferred audit expansion because the frozen audit list does not require catalog changes; no future Phase 14/15/17 entries were fabricated.
+- Isolated PostgreSQL verification covers same-key and competing Void, Void versus edit/settlement/Kitchen, reverse Product restoration order, the future Store Close Session boundary, concurrent PIN changes, and fresh/rollback/reapply schema cleanup. Focused failure injection verifies inventory restoration, OrderVoid creation, Order update, and audit failure each roll back all effects and emit no success invalidation.
+- `cashier@gmail.com` remains `cashier_kitchen` on MAIN. Local/testing seeders retain their production guards and idempotent, preservation-first behavior; no Void PIN is seeded. User manual UI acceptance remains the visual authority, with final source review performed against the decoded standalone templates rather than a new broad browser pass.
+
+**Phase 13 is complete.** This does not mark Phase 14, Phase 15, Phase 17, or the full Phase 18 workspace complete.
 
 ---
 

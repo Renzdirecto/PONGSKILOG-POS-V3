@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Branch;
 use App\Models\Order;
@@ -43,12 +44,12 @@ class CustomerQrProjection
             'ready_at' => $order->ready_at?->toIso8601String(),
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->table_name_snapshot, 'subtotal' => $order->subtotal, 'total' => $order->total,
-            'commercial_status' => $order->commercial_status->value, 'payment_status' => $order->payment_status->value,
+            'commercial_status' => $order->commercial_status->value, 'voided_at' => $order->voided_at?->toIso8601String(), 'payment_status' => $order->payment_status->value,
             'payment_term' => $order->payment_term?->value, 'kitchen_status' => $order->kitchen_status->value,
             'submitted_at' => $order->submitted_at?->toIso8601String(), 'committed_at' => $order->committed_at?->toIso8601String(),
             'completed_at' => $order->completed_at?->toIso8601String(), 'archived_at' => $order->archived_at?->toIso8601String(),
             'paid_at' => $paidAt?->toIso8601String(), 'receipt_expires_at' => $expiresAt?->toIso8601String(),
-            'receipt_available' => $expiresAt !== null && $expiresAt->gt(now()),
+            'receipt_available' => $order->commercial_status !== CommercialStatus::Voided && $expiresAt !== null && $expiresAt->gt(now()),
             'version' => $order->version,
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 ...OperationalItemName::fromOrderItem($item), 'quantity' => $item->quantity,
@@ -66,6 +67,7 @@ class CustomerQrProjection
     public function receipt(Order $order): array
     {
         $projection = $this->order($order);
+        abort_if($order->commercial_status === CommercialStatus::Voided, 404);
         abort_unless($order->payment_status === PaymentStatus::Paid, 404);
         abort_unless($projection['receipt_available'], 410, 'Receipt expired. Receipts are available for 24 hours after payment.');
         $order->loadMissing('branch');

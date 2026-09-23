@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
+use App\Enums\InventoryMovementType;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
@@ -35,6 +37,8 @@ class TransactionProjection
             }
         }
 
+        $void = $order->voidRecord;
+
         return [
             'id' => $order->id,
             'order_number' => $order->order_number,
@@ -43,6 +47,7 @@ class TransactionProjection
             'order_type' => $order->order_type->value,
             'table_name' => $order->table_name_snapshot ?? $order->branchTable?->name,
             'kitchen_status' => $order->kitchen_status->value,
+            'commercial_status' => $order->commercial_status->value,
             'payment_status' => $totals['status']->value,
             'payment_method' => $firstGroup['method'] ?? null,
             'initial_cash' => $initialCash,
@@ -55,6 +60,16 @@ class TransactionProjection
             'outstanding' => ExactMoney::decimal($totals['outstanding']),
             'committed_at' => $order->committed_at?->toIso8601String(),
             'edited_at' => $order->edited_at?->toIso8601String(),
+            'voided_at' => $order->voided_at?->toIso8601String(),
+            'void' => $void === null ? null : [
+                'reason_code' => $void->reason_code,
+                'reason_label' => $void->reason_label,
+                'reason_text' => $void->reason_text,
+                'initiated_by' => $void->initiatedBy?->name,
+                'authorized_by' => $void->authorizedBy?->name,
+                'authorization_method' => $void->authorization_method,
+                'created_at' => $void->created_at->toIso8601String(),
+            ],
             'version' => $order->version,
             'item_count' => $order->items->sum('quantity'),
             'items_preview' => $order->items->map(fn (OrderItem $item): array => [
@@ -75,12 +90,13 @@ class TransactionProjection
     /** @return array<string, mixed> */
     public function detail(Order $order, bool $canMutate): array
     {
-        $order->loadMissing('items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments.createdBy', 'branchTable');
+        $order->loadMissing('items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments.createdBy', 'branchTable', 'voidRecord.initiatedBy', 'voidRecord.authorizedBy');
 
         return [
             ...$this->summary($order),
             'can_edit' => $canMutate,
             'can_settle' => $canMutate && $this->money->totals($order)['outstanding'] > 0,
+            'can_void' => $canMutate,
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 'id' => $item->id,
                 'product_id' => $item->product_id,
@@ -107,6 +123,16 @@ class TransactionProjection
                 'created_at' => $adjustment->created_at?->toIso8601String(),
                 'created_by' => $adjustment->createdBy?->name,
             ])->values()->all(),
+            'inventory_restorations' => $order->commercial_status === CommercialStatus::Voided
+                ? $order->inventoryMovements()
+                    ->where('movement_type', InventoryMovementType::VoidRestore)
+                    ->with('product:id,name')
+                    ->get()
+                    ->map(fn ($movement): array => [
+                        'product_name' => $movement->product?->name,
+                        'quantity_restored' => $movement->quantity_delta,
+                    ])->values()->all()
+                : [],
         ];
     }
 

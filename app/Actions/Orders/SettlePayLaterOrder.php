@@ -2,6 +2,7 @@
 
 namespace App\Actions\Orders;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\CommercialStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
@@ -23,7 +24,12 @@ use Illuminate\Validation\ValidationException;
 
 class SettlePayLaterOrder
 {
-    public function __construct(private OrderPaymentLegs $paymentLegs, private OrderMoney $money, private PosAccess $access) {}
+    public function __construct(
+        private OrderPaymentLegs $paymentLegs,
+        private OrderMoney $money,
+        private PosAccess $access,
+        private AuditRecorder $audit,
+    ) {}
 
     /** @param array<string, mixed> $input */
     public function execute(User $user, Branch $branch, Order $requestedOrder, array $input): Order
@@ -84,16 +90,41 @@ class SettlePayLaterOrder
                     'paid_at' => $paidAt,
                 ]);
             }
+            $before = $this->auditSnapshot($order);
             $order->update([
                 'payment_status' => PaymentStatus::Paid,
                 'version' => $order->version + 1,
             ]);
+            $this->audit->record(
+                branch: $branch,
+                actor: $user,
+                module: 'transactions',
+                action: 'order.settled',
+                auditableType: Order::class,
+                auditableId: $order->id,
+                before: $before,
+                after: $this->auditSnapshot($order),
+                metadata: ['payment_method' => $data['payment_method'], 'store_session_id' => $session->id],
+                idempotencyKey: $data['idempotency_key'],
+            );
 
             CustomerTrackingChanged::dispatch($order);
             OrderUpdated::dispatch($order, ['payment']);
 
             return $order;
         });
+    }
+
+    /** @return array<string, string|int|null> */
+    private function auditSnapshot(Order $order): array
+    {
+        return [
+            'commercial_status' => $order->commercial_status->value,
+            'payment_status' => $order->payment_status->value,
+            'payment_term' => $order->payment_term?->value,
+            'kitchen_status' => $order->kitchen_status->value,
+            'version' => $order->version,
+        ];
     }
 
     /** @param array<string, mixed> $data */

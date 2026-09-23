@@ -2,6 +2,7 @@
 
 namespace App\Actions\StoreSessions;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerCatalogChanged;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Validator;
 
 class OpenStoreSession
 {
+    public function __construct(private AuditRecorder $audit) {}
+
     public function execute(
         User $user,
         Branch $branch,
@@ -70,6 +73,20 @@ class OpenStoreSession
                     'opening_cash_amount' => $openingCashAmount,
                     'opening_cashless_amount' => $openingCashlessAmount,
                 ]));
+                $this->audit->record(
+                    branch: $branch,
+                    actor: $user,
+                    module: 'store_sessions',
+                    action: 'store.opened',
+                    auditableType: StoreSession::class,
+                    auditableId: $session->id,
+                    after: [
+                        'status' => $session->status->value,
+                        'opening_cash_amount' => $session->opening_cash_amount,
+                        'opening_cashless_amount' => $session->opening_cashless_amount,
+                        'opened_at' => $session->opened_at->toIso8601String(),
+                    ],
+                );
                 CustomerCatalogChanged::dispatch($branch->id);
 
                 return $session;

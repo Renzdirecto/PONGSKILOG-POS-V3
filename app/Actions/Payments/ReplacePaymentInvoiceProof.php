@@ -2,9 +2,9 @@
 
 namespace App\Actions\Payments;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\PaymentMethod;
 use App\Enums\StoreSessionStatus;
-use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Payment;
 use App\Models\PaymentInvoiceProof;
@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class ReplacePaymentInvoiceProof
 {
-    public function __construct(private PosAccess $access) {}
+    public function __construct(private PosAccess $access, private AuditRecorder $audit) {}
 
     public function execute(User $actor, Branch $branch, Payment $payment, UploadedFile $invoice): PaymentInvoiceProof
     {
@@ -50,13 +50,16 @@ class ReplacePaymentInvoiceProof
                     'mime_type' => (string) $invoice->getMimeType(), 'size_bytes' => $invoice->getSize(),
                     'uploaded_by_user_id' => $actor->id,
                 ]);
-                AuditLog::query()->create([
-                    'branch_id' => $branch->id, 'user_id' => $actor->id, 'module' => 'transactions',
-                    'action' => $old === null ? 'invoice_proof_added' : 'invoice_proof_replaced',
-                    'auditable_type' => Payment::class, 'auditable_id' => $locked->id,
-                    'before' => $old === null ? null : ['name' => $old->original_name, 'mime_type' => $old->mime_type, 'size_bytes' => $old->size_bytes],
-                    'after' => ['name' => $proof->original_name, 'mime_type' => $proof->mime_type, 'size_bytes' => $proof->size_bytes],
-                ]);
+                $this->audit->record(
+                    branch: $branch,
+                    actor: $actor,
+                    module: 'transactions',
+                    action: $old === null ? 'invoice_proof_added' : 'invoice_proof_replaced',
+                    auditableType: Payment::class,
+                    auditableId: $locked->id,
+                    before: $old === null ? null : ['name' => $old->original_name, 'mime_type' => $old->mime_type, 'size_bytes' => $old->size_bytes],
+                    after: ['name' => $proof->original_name, 'mime_type' => $proof->mime_type, 'size_bytes' => $proof->size_bytes],
+                );
                 if ($old !== null) {
                     DB::afterCommit(fn () => Storage::disk($old->disk)->delete($old->path));
                 }
@@ -83,11 +86,15 @@ class ReplacePaymentInvoiceProof
             $disk = $proof->disk;
             $path = $proof->path;
             $proof->delete();
-            AuditLog::query()->create([
-                'branch_id' => $branch->id, 'user_id' => $actor->id, 'module' => 'transactions',
-                'action' => 'invoice_proof_removed', 'auditable_type' => Payment::class,
-                'auditable_id' => $payment->id, 'before' => $snapshot,
-            ]);
+            $this->audit->record(
+                branch: $branch,
+                actor: $actor,
+                module: 'transactions',
+                action: 'invoice_proof_removed',
+                auditableType: Payment::class,
+                auditableId: $payment->id,
+                before: $snapshot,
+            );
             DB::afterCommit(fn () => Storage::disk($disk)->delete($path));
         });
     }

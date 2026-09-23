@@ -95,6 +95,8 @@ export type PaymentAttempt = PaymentInput & {
     }[];
 };
 export type ReceiptSummary = OrderSummary & {
+    commercial_status: 'active' | 'completed' | 'voided';
+    voided_at: string | null;
     payment_status: 'paid' | 'unpaid' | 'partial';
     store_session_id: string;
     committed_at: string;

@@ -268,9 +268,10 @@ Backend must prevent:
 
 Void requires:
 
-- Authorized action
+- An active assigned Cashier or Cashier+Kitchen initiator with POS access
 - Reason
-- Re-auth/PIN mechanism where configured
+- The one global four-digit PIN configured by an active Super Admin and stored only as a hash
+- Attribution of the configuring Super Admin as a distinct authorizer
 - Correct branch
 - Valid order state
 - Audit
@@ -282,6 +283,8 @@ If stock was previously deducted:
 - restore through compensating inventory movement.
 
 Dedicated Void Orders history is Super Admin-only.
+
+Kitchen-only, Owner-only, and Super Admin-only identities do not gain the operational Cashier Void action. Owner is denied Audit Trail, Void Orders, and PIN configuration. Possession of the configured PIN is intentionally delegated approval authority; it is not per-user password re-authentication. The plaintext PIN is never persisted, audited, returned, logged, or broadcast.
 
 ---
 

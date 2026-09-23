@@ -478,6 +478,8 @@ Payload:
 
 Do not broadcast sensitive authorization/reason details to normal operational clients.
 
+The implemented event is `.order.voided` on private branch POS and Kitchen channels. It is dispatched only after commit and carries compact Order identity/version/time data. Audit management uses `.audit.recorded` on the private Super Admin-only `audit-trail` channel with only Audit identity and nullable Branch identity. Audit Trail and Void Orders use Echo as primary transport, poll every 10 seconds only while Echo is not connected, perform one authoritative refresh after reconnect/browser-online, and stop fallback polling while connected.
+
 ---
 
 ## 17. Payment Events

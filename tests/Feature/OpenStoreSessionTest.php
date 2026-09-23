@@ -3,6 +3,7 @@
 use App\Actions\StoreSessions\OpenStoreSession;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
@@ -44,6 +45,11 @@ test('an assigned cashier opens an active branch with exact balances and opener 
     expect($session->opened_by_user_id)->toBe($user->id);
     expect($session->opened_at->equalTo(now()))->toBeTrue();
     $this->assertDatabaseCount('store_sessions', 1);
+    $this->assertDatabaseHas('audit_logs', [
+        'action' => 'store.opened',
+        'auditable_id' => $session->id,
+        'user_id' => $user->id,
+    ]);
 })->with(['cashier', 'cashier_kitchen']);
 
 test('a later cashier reuses the session without changing any original opening data', function () {
@@ -61,6 +67,7 @@ test('a later cashier reuses the session without changing any original opening d
     expect($reused->id)->toBe($original->id);
     expect($reused->refresh()->getAttributes())->toBe($attributes);
     expect($branch->storeSessions()->where('status', StoreSessionStatus::Open)->count())->toBe(1);
+    expect(AuditLog::query()->where('action', 'store.opened')->count())->toBe(1);
 });
 
 test('inactive users are rejected even when the supplied model still appears active', function () {

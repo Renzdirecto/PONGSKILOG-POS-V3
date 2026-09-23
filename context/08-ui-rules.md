@@ -81,6 +81,8 @@ Use consistently:
 
 Visible generic payment label is **Cashless**, never generic `GCash`.
 
+Void uses an explicit irreversible danger confirmation with a canonical reason selector, conditional text for Other, and the four-digit approval PIN. On mobile, Audit/Void detail sheets retain viewport side gutters and bounded height; on wider screens they use centered, readable multi-column layouts without a raw JSON wall.
+
 ---
 
 ## 4. Typography

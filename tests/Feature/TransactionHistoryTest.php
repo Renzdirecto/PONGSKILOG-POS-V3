@@ -153,6 +153,35 @@ test('transaction details include the canonical receipt projection', function ()
         ->assertJsonPath('transaction.receipt.items.0.name', 'Tapsilog');
 });
 
+test('voided transactions disappear from cashier history and cannot be reopened', function () {
+    $visible = Order::factory()->for($this->branch)->create([
+        'store_session_id' => $this->session->id,
+        'order_number' => 'TX-VISIBLE',
+        'commercial_status' => 'active',
+        'payment_status' => 'paid',
+        'committed_at' => now(),
+    ]);
+    $voided = Order::factory()->for($this->branch)->create([
+        'store_session_id' => $this->session->id,
+        'order_number' => 'TX-VOIDED',
+        'commercial_status' => 'voided',
+        'payment_status' => 'paid',
+        'committed_at' => now()->subMinute(),
+        'voided_at' => now(),
+    ]);
+
+    $this->actingAs($this->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->get(route('workspaces.transaction-history'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('transactions.total', 1)
+            ->where('history_total', 1)
+            ->where('transactions.data.0.id', $visible->id));
+
+    $this->getJson(route('pos.transactions.show', $voided))->assertNotFound();
+});
+
 test('method filter classifies the first grouped attempt instead of accumulated payment rows', function () {
     $split = Order::factory()->for($this->branch)->create([
         'store_session_id' => $this->session->id, 'commercial_status' => 'active', 'payment_status' => 'paid',

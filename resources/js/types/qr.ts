@@ -24,6 +24,7 @@ export type QrOrder = {
     committed_at: string | null;
     completed_at: string | null;
     archived_at: string | null;
+    voided_at: string | null;
     paid_at: string | null;
     receipt_available: boolean;
     receipt_expires_at: string | null;
@@ -70,6 +71,8 @@ export type PublicReceipt = Pick<
     | 'paid_at'
     | 'receipt_expires_at'
     | 'order_type'
+    | 'commercial_status'
+    | 'voided_at'
     | 'customer_label'
     | 'table_name'
     | 'items'

@@ -4,8 +4,46 @@ import {
     createBranchEventGuard,
     createQrVersionRecovery,
     createRealtimeRefresh,
+    getAuditRealtimeFallbackAction,
 } from '../resources/js/lib/realtime-refresh.ts';
 import { shouldRefetchCatalogAfterConnectionChange } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+test('audit realtime stops fallback polling while Echo is connected', () => {
+    const action = getAuditRealtimeFallbackAction('connected', 'connected');
+
+    assert.deepEqual(action, {
+        shouldPoll: false,
+        shouldRefresh: false,
+    });
+});
+
+test('audit realtime starts fallback polling while Echo is unavailable', () => {
+    for (const status of [
+        'connecting',
+        'reconnecting',
+        'disconnected',
+        'failed',
+    ]) {
+        const action = getAuditRealtimeFallbackAction('connected', status);
+
+        assert.deepEqual(action, {
+            shouldPoll: true,
+            shouldRefresh: false,
+        });
+    }
+});
+
+test('audit realtime refreshes once and stops polling after reconnecting', () => {
+    const action = getAuditRealtimeFallbackAction(
+        'reconnecting',
+        'connected',
+    );
+
+    assert.deepEqual(action, {
+        shouldPoll: false,
+        shouldRefresh: true,
+    });
+});
 
 test('submitted order tracking recovers once when background refresh finds new assets', () => {
     let reloads = 0;
@@ -44,7 +82,7 @@ test('asset recovery preserves unsent carts and leaves ordinary redirects alone'
     assert.equal(prevented, 0);
 });
 
-for (const delay of [35, 160]) {
+for (const delay of [35, 160, 200]) {
     test(`refresh coalesces bursts at ${delay}ms and queues one refresh while in flight`, (t) => {
         t.mock.timers.enable({ apis: ['setTimeout'] });
         let requests = 0;

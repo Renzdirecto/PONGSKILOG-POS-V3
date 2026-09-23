@@ -4,6 +4,7 @@ export const KITCHEN_REALTIME_EVENTS = [
     '.kitchen.ticket_created',
     '.kitchen.status_changed',
     '.kitchen.order_updated',
+    '.order.voided',
 ] as const;
 
 export const POS_READY_REALTIME_EVENTS = [

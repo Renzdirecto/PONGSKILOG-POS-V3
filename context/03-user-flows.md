@@ -712,6 +712,8 @@ Audit includes:
 - Variances
 - Store Close
 
+For Void approval, a Super Admin configures the single global four-digit PIN. An active assigned Cashier or Cashier+Kitchen operator supplies that PIN with a reason from the current Store Session transaction. The configuring Super Admin is recorded as authorizer, the operator is recorded separately as initiator, and the two identities must differ. The PIN is never returned or audited in plaintext.
+
 ---
 
 ## 31. Branch Realtime

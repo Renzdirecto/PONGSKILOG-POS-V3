@@ -4,6 +4,7 @@ use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\SettlePayLaterOrder;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
@@ -60,7 +61,7 @@ test('edit preserves retained snapshots and applies one net inventory delta idem
 
     $replay = app(EditCommittedOrder::class)->execute($this->cashier, $this->branch, $order, $input);
     expect($replay->version)->toBe(3)->and($this->balance->fresh()->on_hand)->toBe(8);
-    $this->assertDatabaseCount('audit_logs', 1);
+    expect(AuditLog::query()->where('action', 'committed_order_edited')->count())->toBe(1);
 });
 
 test('same-total edit creates no money or inventory side effect', function () {
@@ -161,5 +162,5 @@ test('stale and closed-session edits are rejected without side effects', functio
         expect($exception)->not->toBeNull();
     }
     expect($order->fresh()->total)->toBe('100.00')->and($this->balance->fresh()->on_hand)->toBe(9);
-    $this->assertDatabaseCount('audit_logs', 0);
+    expect(AuditLog::query()->where('action', 'committed_order_edited')->count())->toBe(0);
 })->with(['stale', 'closed']);

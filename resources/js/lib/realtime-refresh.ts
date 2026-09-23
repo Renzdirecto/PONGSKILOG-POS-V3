@@ -80,3 +80,15 @@ export function createBranchEventGuard(branchId: string) {
         return true;
     };
 }
+
+export function getAuditRealtimeFallbackAction(
+    previousStatus: string,
+    connectionStatus: string,
+): { shouldPoll: boolean; shouldRefresh: boolean } {
+    return {
+        shouldPoll: connectionStatus !== 'connected',
+        shouldRefresh:
+            previousStatus !== 'connected' &&
+            connectionStatus === 'connected',
+    };
+}

@@ -54,8 +54,15 @@ test('cards provide direct payment, balance, receipt, and Phase 13 void actions'
     assert.match(page, /detail \? setReceiptOpen\(true\)/);
     assert.match(page, /<PosPaid/);
     assert.match(page, /showNewOrderAction=\{false\}/);
-    assert.match(page, /title="Available in Phase 13"/);
+    assert.match(page, /disabled=\{!item\.can_void\}/);
+    assert.match(page, /\? 'Void transaction'/);
     assert.match(page, /<AlertTriangle[^>]*\/> Void/);
+    assert.match(page, /function VoidDialog/);
+    assert.match(page, /reason_code: reasonCode/);
+    assert.match(page, /authorization_pin: authorizationPin/);
+    assert.match(page, /inputMode="numeric"/);
+    assert.match(page, /This permanently marks the transaction as voided/);
+    assert.doesNotMatch(page, /authorizationPin\s*=\s*['"]\d{4}['"]/);
     assert.match(page, /bg-green-700[^"]*hover:bg-green-800/);
     assert.match(page, /text-xs leading-\[1\.4\] font-semibold/);
     assert.match(page, /h-5 items-center rounded-full border px-2 text-\[9\.5px\]/);
@@ -89,8 +96,12 @@ test('edit stages kitchen status until Save changes is clicked', () => {
 });
 
 test('null customers never receive a fabricated display label', () => {
-    assert.match(page, /return item\.customer_label \|\| item\.table_name \|\| null/);
-    assert.doesNotMatch(page, /Walk-in|No customer label/);
+    const helper = page.match(
+        /function truthfulCustomer[\s\S]*?\n}/,
+    )?.[0];
+    assert.ok(helper);
+    assert.match(helper, /return item\.customer_label \|\| item\.table_name \|\| null/);
+    assert.doesNotMatch(helper, /Walk-in|No customer label/);
 });
 
 test('invoice selection and capture create a local preview before confirm uploads', () => {

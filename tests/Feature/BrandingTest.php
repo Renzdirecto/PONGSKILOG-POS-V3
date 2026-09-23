@@ -5,7 +5,8 @@ test('every page head carries the Pongskilog icons and link preview instead of L
 
     expect($html)
         ->toContain('<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">')
-        ->toContain('<link rel="icon" href="/images/branding/icons/icon-192.png" type="image/png" sizes="192x192">')
+        ->toContain('<link rel="icon" href="/images/branding/icons/favicon-192.png" type="image/png" sizes="192x192">')
+        ->toContain('<meta property="og:title" content="'.e(config('app.name')).' POS System">')
         ->toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">')
         ->toContain('<meta name="theme-color" content="#111111">')
         ->toContain('<meta property="og:image" content="'.asset('images/branding/og-image.jpg').'">')
@@ -25,7 +26,8 @@ test('brand icons are derived at the sizes browsers and home screens expect', fu
         ->and([$size[0], $size[1], $size['mime']])->toBe([$width, $height, $mime]);
 })->with([
     'apple touch icon' => ['apple-touch-icon.png', 180, 180, 'image/png'],
-    'browser icon' => ['images/branding/icons/favicon-32.png', 32, 32, 'image/png'],
+    'browser tab icon' => ['images/branding/icons/favicon-32.png', 32, 32, 'image/png'],
+    'browser tab icon 192' => ['images/branding/icons/favicon-192.png', 192, 192, 'image/png'],
     'pwa-ready icon 192' => ['images/branding/icons/icon-192.png', 192, 192, 'image/png'],
     'pwa-ready icon 512' => ['images/branding/icons/icon-512.png', 512, 512, 'image/png'],
     'maskable icon 192' => ['images/branding/icons/icon-maskable-192.png', 192, 192, 'image/png'],
@@ -43,6 +45,15 @@ test('the favicon is a multi-size icon file', function () {
 
     expect($header)->toBe(['reserved' => 0, 'type' => 1, 'count' => 3])
         ->and($sizes)->toBe([16, 32, 48]);
+});
+
+test('the browser tab icon is the round emblem with transparent corners', function () {
+    $tab = imagecreatefrompng(public_path('images/branding/icons/favicon-192.png'));
+    $centre = imagecolorsforindex($tab, imagecolorat($tab, 96, 96));
+
+    expect(imagecolorsforindex($tab, imagecolorat($tab, 0, 0))['alpha'])->toBe(127)
+        ->and(imagecolorsforindex($tab, imagecolorat($tab, 191, 191))['alpha'])->toBe(127)
+        ->and($centre['alpha'])->toBe(0);
 });
 
 test('the maskable icon keeps a full-bleed opaque background for launcher masks', function () {

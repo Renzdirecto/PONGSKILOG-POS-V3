@@ -244,11 +244,10 @@ export function OwnerWorkspaceShell({
         <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
             <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
                 <div className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4">
-                    <AppLogoIcon alt="" className="size-11 shrink-0" />
                     <img
                         src="/images/branding/logo.png"
                         alt="PONGSKILOG"
-                        className="w-[150px] min-w-0"
+                        className="w-[168px]"
                     />
                 </div>
                 <div className="border-b border-white/10 p-3">
@@ -316,7 +315,11 @@ export function OwnerWorkspaceShell({
                     href={dashboardRoute}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
                 >
-                    <AppLogoIcon className="size-11" />
+                    <img
+                        src="/images/branding/logo.png"
+                        alt="PONGSKILOG"
+                        className="max-w-[70px]"
+                    />
                     <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
                         Owner
                     </span>

@@ -16,11 +16,13 @@ test('one brand mark component renders the official round emblem', () => {
     assert.doesNotMatch(logoIcon, /<svg|<path/);
 });
 
-test('owner and super admin shells use the emblem in the sidebar, rail and mobile header', () => {
+test('owner and super admin sidebars keep only the wordmark; the emblem stays in the mobile header', () => {
     for (const shell of [ownerShell, superAdminShell]) {
         assert.match(shell, /import AppLogoIcon from '@\/components\/app-logo-icon';/);
-        assert.match(shell, /<AppLogoIcon alt="" className="size-11 shrink-0" \/>\s+<img\s+src="\/images\/branding\/logo\.png"/);
-        assert.match(shell, /<AppLogoIcon className="size-11" \/>/);
+        assert.doesNotMatch(shell, /<AppLogoIcon alt="" className="size-11 shrink-0" \/>/);
+        assert.doesNotMatch(shell, /<AppLogoIcon className="size-11" \/>/);
+        assert.match(shell, /src="\/images\/branding\/logo\.png"\s+alt="PONGSKILOG"\s+className="w-\[168px\]"/);
+        assert.match(shell, /src="\/images\/branding\/logo\.png"\s+alt="PONGSKILOG"\s+className="max-w-\[70px\]"/);
         assert.match(shell, /<AppLogoIcon className="size-9 shrink-0 md:hidden" \/>/);
     }
     assert.match(layout, /<AppLogoIcon alt="" className="size-11 shrink-0" \/>/);

@@ -61,6 +61,8 @@ test('authorized cashier retrieves only the current branch open session detail',
             'expense_count' => 0,
             'expenses_truncated' => false,
             'restock_products' => [],
+            'inventory_adjustments' => [],
+            'inventory_adjustment_count' => 0,
         ]);
 })->with(['cashier', 'cashier_kitchen']);
 

@@ -31,6 +31,7 @@ class EditCommittedOrderRequest extends FormRequest
             'idempotency_key' => ['required', 'uuid'],
             'expected_version' => ['required', 'integer:strict', 'min:0'],
             'reason' => ['nullable', 'string', 'max:1000'],
+            'refund_cash_amount' => ['nullable', 'string', 'regex:/\A[0-9]{1,12}(?:\.[0-9]{1,2})?\z/'],
             'items.*.existing_order_item_id' => ['nullable', 'uuid', 'distinct'],
         ];
     }

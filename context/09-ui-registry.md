@@ -871,3 +871,14 @@ USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt
 | Expense detail | Read-only amount/source/actor/time/Branch/Session, note, Product/quantity/movement reference, and authorized private receipt action. |
 | State preservation | Dialog close returns to the same POS/cart/loaded-QR/order/payment state; authoritative realtime refresh updates only Store Session data. |
 | Future extension | Phase 15 adds reconciliation and Close Store to this same surface; none of those controls or calculations exist in Phase 14. |
+
+## Phase 15 Close Store surface
+
+| Surface | Registered behavior |
+|---|---|
+| Entry | Close Store section inside the Current Store Session overview (supersedes the Phase 14 "Future extension" row); no navigation item. |
+| Review & reconcile | Server preview with blockers, Recheck, debounced realtime refetch, correction allocation cards, session money table, unfilled closing inputs, variance cards and overage explanation. |
+| Final confirmation | Expected/actual/variance per channel, QR archive count and cart warning; stable idempotency key for ambiguous retries. |
+| Store Closed | Closed time/by, closing balances, variances, archived QR count and Done; Store state reloads and other clients leave the stale dialog on `store.closed`. |
+| Edit correction source | Adjustment to return asks `Returned in Cash` only when the refund source is not deterministic. |
+| Adjust inventory | Store Session sub-view beside Add expense / purchase: reason cards, searchable tracked products with current stock, whole-number quantity, note (required for Other), integer stock preview, compact confirmation, inventory-only save with no Cash/Cashless effect. |

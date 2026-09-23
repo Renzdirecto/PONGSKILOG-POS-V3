@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Support\ExactMoney;
 use App\Support\OrderMoney;
 use App\Support\OrderSnapshots;
+use App\Support\PaymentCorrectionAllocation;
 use App\Support\PosAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -39,6 +40,7 @@ class EditCommittedOrder
         private ApplyInventoryMovement $inventory,
         private OrderMoney $money,
         private AuditRecorder $audit,
+        private PaymentCorrectionAllocation $allocation,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -122,6 +124,10 @@ class EditCommittedOrder
             $moneyBefore = $this->money->totals($order);
             $newTotal = ExactMoney::cents($snapshot['attributes']['total']);
             $adjustment = max(0, $moneyBefore['settled'] - $newTotal);
+            /** The refund source is captured with the correction so Store Close never has to guess it. */
+            $refundSource = $adjustment > 0
+                ? $this->allocation->resolve($order, $adjustment, isset($data['refund_cash_amount']) ? (string) $data['refund_cash_amount'] : null)
+                : null;
             $status = $adjustment > 0 ? PaymentStatus::Paid : match (true) {
                 $moneyBefore['settled'] >= $newTotal => PaymentStatus::Paid,
                 $moneyBefore['settled'] > 0 => PaymentStatus::Partial,
@@ -138,6 +144,8 @@ class EditCommittedOrder
                 OrderAdjustment::query()->create([
                     'branch_id' => $branch->id, 'store_session_id' => $session->id, 'order_id' => $order->id,
                     'type' => 'lower_total_correction', 'amount' => ExactMoney::decimal($adjustment),
+                    'cash_amount' => ExactMoney::decimal($refundSource['cash'] ?? 0),
+                    'cashless_amount' => ExactMoney::decimal($refundSource['cashless'] ?? 0),
                     'reason' => $data['reason'] ?? null, 'created_by_user_id' => $actor->id, 'idempotency_key' => $key,
                 ]);
             }

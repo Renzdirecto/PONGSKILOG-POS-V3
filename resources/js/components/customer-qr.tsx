@@ -192,6 +192,11 @@ export default function CustomerQr({
         branch.id,
         order?.public_tracking_id,
     );
+    /** An uncommitted order is only shown after Store close when the customer explicitly asks for it. */
+    const [closedOrderViewed, setClosedOrderViewed] = useState(false);
+    useEffect(() => {
+        if (store.status === 'open') setClosedOrderViewed(false);
+    }, [store.status]);
     useEffect(() => {
         setOrder(serverOrder);
         if (serverOrder && ['cart', 'review'].includes(view)) {
@@ -362,7 +367,9 @@ export default function CustomerQr({
     );
     const closed =
         store.status === 'closed' &&
-        (!order || ['welcome', 'menu', 'cart', 'review'].includes(view));
+        (!order ||
+            ['welcome', 'menu', 'cart', 'review'].includes(view) ||
+            (order.committed_at === null && !closedOrderViewed));
     return (
         <div className="pos-surface min-h-dvh bg-[#fafafa] [font-family:Poppins,sans-serif] text-[#111]">
             <Head title={`${branch.name} · Order`} />
@@ -496,7 +503,10 @@ export default function CustomerQr({
                     {order && (
                         <button
                             className={qrButton}
-                            onClick={() => go('track')}
+                            onClick={() => {
+                                setClosedOrderViewed(true);
+                                go('track');
+                            }}
                         >
                             View current order
                         </button>

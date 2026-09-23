@@ -50,12 +50,24 @@ export function formatStoreSessionOpenedAt(openedAt: string): string {
     return manilaDateTimeFormatter.format(new Date(openedAt));
 }
 
-export function openStoreSessionDialogState(): StoreSessionDialogState {
+/** Reopening shows the last confirmed session instantly while the server refresh runs. */
+export function openStoreSessionDialogState(
+    cached: CurrentStoreSession | null = null,
+): StoreSessionDialogState {
     return {
         open: true,
-        session: null,
+        session: cached,
         loadState: 'loading',
     };
+}
+
+/** A missing, forbidden or expired session must never keep showing cached details. */
+export function discardsStoreSession(state: StoreSessionLoadState): boolean {
+    return (
+        state === 'not_found' ||
+        state === 'forbidden' ||
+        state === 'session_expired'
+    );
 }
 
 export function storeSessionLoadFailure(reason: unknown): StoreSessionLoadState {

@@ -5,6 +5,8 @@ import {
     Camera,
     ChevronRight,
     FileImage,
+    LockKeyhole,
+    PackageMinus,
     PackagePlus,
     Plus,
     ReceiptText,
@@ -25,6 +27,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { StoreCloseFlow } from '@/components/store-close-flow';
+import {
+    InventoryAdjustmentRow,
+    StoreInventoryAdjustmentForm,
+} from '@/components/store-inventory-adjustment-form';
+import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
@@ -41,10 +49,11 @@ import {
 import { store } from '@/routes/store-session-expenses';
 import type {
     CurrentStoreSession,
+    StoreCloseResult,
     StoreSessionExpense,
 } from '@/types';
 
-type View = 'overview' | 'add' | 'detail';
+type View = 'overview' | 'add' | 'adjust' | 'detail' | 'close';
 
 const manilaTime = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
@@ -99,7 +108,7 @@ function ExpenseDetail({
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+            <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                 <button
                     type="button"
                     onClick={onBack}
@@ -244,7 +253,7 @@ function ExpenseForm({
 
     return (
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-            <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+            <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                 <button
                     type="button"
                     onClick={onBack}
@@ -475,6 +484,11 @@ export function StoreSessionDetailsDialog({
     branchId,
     loadState,
     refreshSession,
+    canCloseStore = false,
+    canOpenKitchen = false,
+    canOpenHistory = false,
+    onStoreClosing,
+    onStoreClosed,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -482,9 +496,15 @@ export function StoreSessionDetailsDialog({
     branchId: string;
     loadState: StoreSessionLoadState;
     refreshSession: () => Promise<void>;
+    canCloseStore?: boolean;
+    canOpenKitchen?: boolean;
+    canOpenHistory?: boolean;
+    onStoreClosing?: (storeSessionId: string | null) => void;
+    onStoreClosed?: (result: StoreCloseResult) => void;
 }) {
     const [view, setView] = useState<View>('overview');
     const [selected, setSelected] = useState<StoreSessionExpense | null>(null);
+    const [closeBusy, setCloseBusy] = useState(false);
     const connectionStatus = useStoreExpenseRealtime(
         branchId,
         refreshSession,
@@ -492,6 +512,10 @@ export function StoreSessionDetailsDialog({
     const loadMessage = storeSessionLoadMessage(loadState);
 
     function changeOpen(next: boolean) {
+        /** The modal stays open until the server confirms or rejects Close Store. */
+        if (!next && closeBusy) {
+            return;
+        }
         if (!next) {
             setView('overview');
             setSelected(null);
@@ -501,10 +525,15 @@ export function StoreSessionDetailsDialog({
 
     return (
         <Dialog open={open} onOpenChange={changeOpen}>
-            <DialogContent className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[760px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
-                {view === 'overview' && (
+            <DialogContent
+                onEscapeKeyDown={(event) => closeBusy && event.preventDefault()}
+                onInteractOutside={(event) => closeBusy && event.preventDefault()}
+                className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[calc(100%-16px)] sm:max-w-[614px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-3 [&>button]:right-3 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-[10px] [&>button]:text-[#767676] [&>button]:opacity-100 [&>button]:transition-colors [&>button]:hover:bg-[#F2F2F2] [&>button]:hover:text-[#111111] [&>button]:focus:ring-0 [&>button]:focus:ring-offset-0 [&>button]:focus-visible:ring-2 [&>button]:focus-visible:ring-neutral-950 sm:[&>button]:top-5 sm:[&>button]:right-5 [&>button>svg]:!size-5">
+                {/* A discarded session (404/403/401/419) falls back to the overview load message. */}
+                {(view === 'overview' ||
+                    (view !== 'close' && session === null)) && (
                     <>
-                        <DialogHeader className="shrink-0 pr-9 text-left">
+                        <DialogHeader className="shrink-0 pr-12 text-left">
                             <div className="flex items-center gap-3">
                                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700">
                                     <Store className="size-5" />
@@ -529,11 +558,40 @@ export function StoreSessionDetailsDialog({
                         </DialogHeader>
 
                         {loadState === 'loading' && !session && (
-                            <div className="flex min-h-52 flex-1 items-center justify-center gap-2 text-sm text-neutral-500" role="status">
-                                <Spinner /> Loading Store Session…
+                            <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-hidden" role="status" aria-label="Loading Store Session">
+                                <span className="sr-only">Loading Store Session…</span>
+                                <div className="grid gap-3 rounded-xl border border-neutral-200 p-3 sm:grid-cols-3">
+                                    {[0, 1, 2, 3, 4].map((cell) => (
+                                        <div key={cell} className="space-y-1.5">
+                                            <div className="h-2 w-16 animate-pulse rounded bg-neutral-100" />
+                                            <div className="h-3 w-24 animate-pulse rounded bg-neutral-200" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="h-3 w-32 animate-pulse rounded bg-neutral-200" />
+                                    <div className="h-11 w-44 animate-pulse rounded-xl bg-neutral-200" />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {[0, 1, 2].map((card) => (
+                                        <div key={card} className="h-[62px] animate-pulse rounded-xl bg-neutral-100" />
+                                    ))}
+                                </div>
+                                <div className="overflow-hidden rounded-xl border border-neutral-200">
+                                    {[0, 1, 2].map((row) => (
+                                        <div key={row} className="flex min-h-16 items-center gap-3 border-b border-neutral-100 px-3 py-2.5 last:border-0">
+                                            <div className="size-9 shrink-0 animate-pulse rounded-xl bg-neutral-100" />
+                                            <div className="flex-1 space-y-1.5">
+                                                <div className="h-3 w-2/5 animate-pulse rounded bg-neutral-200" />
+                                                <div className="h-2 w-1/4 animate-pulse rounded bg-neutral-100" />
+                                            </div>
+                                            <div className="h-3 w-14 animate-pulse rounded bg-neutral-200" />
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
-                        {loadMessage && !session && (
+                        {loadMessage && (
                             <div role="alert" className="my-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
                                 <p>{loadMessage}</p>
                                 {canRetryStoreSessionLoad(loadState) && (
@@ -559,14 +617,19 @@ export function StoreSessionDetailsDialog({
                                     ))}
                                 </dl>
                                 <section>
-                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                         <div>
                                             <p className="text-[10px] font-bold tracking-[0.14em] text-neutral-500 uppercase">Purchases & expenses</p>
                                             <p className="mt-0.5 text-xs text-neutral-500">Current Store Session only</p>
                                         </div>
-                                        <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 rounded-xl bg-neutral-950 px-3 text-white hover:bg-black">
-                                            <Plus className="size-4" /> Add expense / purchase
-                                        </Button>
+                                        <div className="grid gap-2 sm:flex sm:shrink-0">
+                                            <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl bg-neutral-950 px-3 text-white hover:bg-black sm:w-auto">
+                                                <Plus className="size-4" /> Add expense / purchase
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={() => setView('adjust')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
+                                                <PackageMinus className="size-4" /> Adjust inventory
+                                            </Button>
+                                        </div>
                                     </div>
                                     {!isExpenseWriteOnline() ? (
                                         <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -584,14 +647,18 @@ export function StoreSessionDetailsDialog({
                                     </div>
                                 </section>
                                 <section className="overflow-hidden rounded-xl border border-neutral-200">
-                                    {session.expenses.length === 0 ? (
+                                    {session.expenses.length === 0 && (session.inventory_adjustments ?? []).length === 0 ? (
                                         <div className="flex min-h-36 flex-col items-center justify-center gap-2 p-6 text-center text-neutral-500">
                                             <ReceiptText className="size-6" />
-                                            <p className="text-sm font-semibold text-neutral-700">No purchases or expenses recorded for this Store Session.</p>
+                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses or stock adjustments recorded for this Store Session.</p>
                                         </div>
                                     ) : (
                                         <ul className="divide-y divide-neutral-100">
-                                            {session.expenses.map((expense) => (
+                                            {sessionActivity(session.expenses, session.inventory_adjustments).map((entry) => entry.kind === 'adjustment' ? (
+                                                <li key={`adjustment-${entry.item.id}`}>
+                                                    <InventoryAdjustmentRow adjustment={entry.item} />
+                                                </li>
+                                            ) : ((expense) => (
                                                 <li key={expense.id}>
                                                     <button type="button" onClick={() => { setSelected(expense); setView('detail'); }} className="flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-950 focus-visible:outline-none">
                                                         <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${expense.payment_source === 'cash' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-700'}`}>
@@ -614,15 +681,38 @@ export function StoreSessionDetailsDialog({
                                                         <ChevronRight className="size-4 shrink-0 text-neutral-400" />
                                                     </button>
                                                 </li>
-                                            ))}
+                                            ))(entry.item))}
                                         </ul>
                                     )}
-                                    {session.expenses_truncated && (
+                                    {(session.expenses_truncated || session.inventory_adjustment_count > 50) && (
                                         <p className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-500">
-                                            Showing the newest 50 of {session.expense_count} records.
+                                            Showing the newest 50 of {session.expense_count} expenses and {session.inventory_adjustment_count} stock adjustments.
                                         </p>
                                     )}
                                 </section>
+                                {canCloseStore && (
+                                    <section className="rounded-xl border border-red-200 bg-red-50/60 p-3.5" aria-labelledby="close-store-heading">
+                                        <div className="flex items-start gap-3">
+                                            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-red-700 ring-1 ring-red-200">
+                                                <LockKeyhole className="size-4" />
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p id="close-store-heading" className="text-sm font-bold text-red-900">Close Store</p>
+                                                <p className="mt-0.5 text-xs leading-5 text-red-900/80">
+                                                    Review the current session, resolve blockers, and reconcile Cash / Cashless before closing.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => setView('close')}
+                                            className="mt-3 min-h-11 w-full rounded-xl border-red-300 bg-white font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 sm:w-auto"
+                                        >
+                                            Review &amp; Close Store
+                                        </Button>
+                                    </section>
+                                )}
                             </div>
                         )}
                     </>
@@ -637,8 +727,32 @@ export function StoreSessionDetailsDialog({
                         }}
                     />
                 )}
+                {view === 'adjust' && session && (
+                    <StoreInventoryAdjustmentForm
+                        session={session}
+                        onBack={() => setView('overview')}
+                        onSaved={async () => {
+                            await refreshSession();
+                            setView('overview');
+                        }}
+                    />
+                )}
                 {view === 'detail' && session && selected && (
                     <ExpenseDetail expense={selected} session={session} onBack={() => setView('overview')} />
+                )}
+                {view === 'close' && (
+                    <StoreCloseFlow
+                        session={session}
+                        branchId={branchId}
+                        canOpenKitchen={canOpenKitchen}
+                        canOpenHistory={canOpenHistory}
+                        onBack={() => setView('overview')}
+                        onBusyChange={setCloseBusy}
+                        onClosing={(id) => onStoreClosing?.(id)}
+                        onClosed={(result) => onStoreClosed?.(result)}
+                        onDone={() => changeOpen(false)}
+                        onNavigate={() => changeOpen(false)}
+                    />
                 )}
             </DialogContent>
         </Dialog>

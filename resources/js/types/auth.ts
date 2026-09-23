@@ -51,6 +51,19 @@ export type CurrentStoreSession = {
         name: string;
         on_hand: number;
     }[];
+    inventory_adjustments: StoreSessionInventoryAdjustment[];
+    inventory_adjustment_count: number;
+};
+
+export type StoreSessionInventoryAdjustment = {
+    id: string;
+    product_name: string;
+    quantity: number;
+    reason_code: string;
+    reason_label: string;
+    note: string | null;
+    created_at: string;
+    created_by: { name: string };
 };
 
 export type StoreSessionExpense = {

@@ -233,7 +233,7 @@ try {
     $observer->statement('CREATE SCHEMA "'.$schema.'"');
     $createdSchema = true;
     phase13Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Fresh migration failed.');
-    phase13Verify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 13 rollback failed.');
+    phase13Verify(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_22_165430')), '--force' => true, '--no-interaction' => true]) === 0, 'Phase 13 rollback failed.');
     phase13Verify(! DB::getSchemaBuilder()->hasTable('order_voids') && ! DB::getSchemaBuilder()->hasTable('void_authorization_settings'), 'Phase 13 rollback left schema behind.');
     phase13Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 13 reapply failed.');
     (new RbacSeeder)->run();

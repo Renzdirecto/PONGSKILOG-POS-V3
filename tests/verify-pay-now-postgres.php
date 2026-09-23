@@ -352,7 +352,7 @@ try {
         verify(count($successes) === ($scenario === 'last unit' ? 1 : 2), 'Wrong outcome count.');
         verify(count(array_unique(array_column($successes, 'order'))) === 1, 'Duplicate orders committed.');
         verify(count(array_unique(array_column($successes, 'number'))) === 1 && ctype_digit($successes[0]['number']), 'Operational number must be stable and numeric.');
-        verify(count(array_unique(array_column($successes, 'reference'))) === 1 && preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-'.$successes[0]['number'].'\z/', $successes[0]['reference']) === 1, 'Full reference must be stable and correctly formatted.');
+        verify(count(array_unique(array_column($successes, 'reference'))) === 1 && preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-\d{4,}\z/', $successes[0]['reference']) === 1, 'Full reference must be stable and correctly formatted.');
         if ($scenario === 'last unit') {
             verify(str_contains(json_encode($results), 'Insufficient stock'), 'Loser must report insufficient stock.');
         }

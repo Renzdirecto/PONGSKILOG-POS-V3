@@ -711,31 +711,58 @@ Final release-gate audit completed on 2026-09-23 with USER MANUAL QA accepted. T
 
 ## Phase 15 — Close Store & Reconciliation
 
-- [ ] Close Store entry point
-- [ ] Block unresolved UNPAID / PAY LATER
-- [ ] Block Kitchen non-DONE orders
-- [ ] Allow unclaimed QR without blocking
-- [ ] Opening Cash summary
-- [ ] Opening Cashless summary
-- [ ] Cash sales
-- [ ] Cashless sales
-- [ ] Split breakdown
-- [ ] Store purchases/expenses summary
-- [ ] Relevant adjustments / void effects
-- [ ] Expected Closing Cash
-- [ ] Expected Closing Cashless
-- [ ] Closing Cash input
-- [ ] Closing Cashless input
-- [ ] Cash variance
-- [ ] Cashless variance
-- [ ] Shortage blocks normal close
-- [ ] Overage requires note
-- [ ] Archive remaining unclaimed QR
-- [ ] Atomic Store Close transaction
-- [ ] Store Close audit
-- [ ] `store.closed` broadcast after commit
-- [ ] Customer QR switches to Store Closed
-- [ ] Concurrent Close Store protection
+- [x] Close Store entry point
+- [x] Block unresolved UNPAID / PAY LATER
+- [x] Block Kitchen non-DONE orders
+- [x] Allow unclaimed QR without blocking
+- [x] Opening Cash summary
+- [x] Opening Cashless summary
+- [x] Cash sales
+- [x] Cashless sales
+- [x] Split breakdown
+- [x] Store purchases/expenses summary
+- [x] Relevant adjustments / void effects
+- [x] Expected Closing Cash
+- [x] Expected Closing Cashless
+- [x] Closing Cash input
+- [x] Closing Cashless input
+- [x] Cash variance
+- [x] Cashless variance
+- [x] Shortage blocks normal close
+- [x] Overage requires note
+- [x] Archive remaining unclaimed QR
+- [x] Atomic Store Close transaction
+- [x] Store Close audit
+- [x] `store.closed` broadcast after commit
+- [x] Customer QR switches to Store Closed
+- [x] Concurrent Close Store protection
+
+- [x] Phase 15 implementation complete (focused, frontend, static and isolated PostgreSQL gates)
+- [ ] Standalone parity side-by-side review and device/visual acceptance (USER MANUAL QA)
+
+Phase 15 implementation on `feature/close-store` (2026-09-23). Close Store extends the existing `LIVE / STORE OPEN` Current Store Session dialog: a Close Store danger section below Purchases & Expenses opens Review & reconcile → final confirmation → Store Closed, with no new navigation page. The decoded `context/design/pos.html` bundle contains no Close Store prototype, so the flow reuses the accepted Phase 14 dialog shell and the standalone's white/black/red/amber/green token language; the Phase 14 sections are unchanged.
+
+**Intentional reconciliation decisions**
+
+1. `StoreSessionReconciliation` is the single authority for the read-only preview and the final close. Expected = Opening + Payment rows − Store Expenses − corrections on non-voided Orders − all payments of voided Orders, computed separately for Cash and Cashless in integer cents. Cash impact is `Payment.amount`, never tendered cash; Split legs count once and the split breakdown is explanatory only; a restock expense has one financial effect.
+2. `variance = actual − expected` everywhere (backend, DB, UI, Audit). Negative is a shortage, positive an overage.
+3. Cash and Cashless are independent: a shortage in either blocks close with no note override and no cross-channel offset. An overage requires a trimmed explanation of at least 5 characters; exact needs no note.
+4. Any committed, non-voided current-session Order with authoritative outstanding > 0 blocks close (unpaid/partial Pay Later and higher-total Balance Due, regardless of `payment_term`). Committed Kitchen/Preparing/Ready blocks; Done and voided do not.
+5. Voided Orders reverse every payment they collected, so an earlier lower-total correction on the same Order is excluded from the corrections line and never subtracted twice.
+6. New lower-total corrections persist `cash_amount`/`cashless_amount`. Single-method Orders are attributed automatically; mixed-method edits require the Cashier's explicit Cash portion in the existing Adjustment to return confirmation.
+7. Historical mixed-method corrections without a source block Close Store until a write-once, audited allocation is recorded from the blocker card. Nothing is guessed (no Cash default, no proportional split).
+8. A loaded (claimed) uncommitted QR order blocks close until payment or Cancel LOAD; Close never clears `loaded_by_user_id`. Submitted unclaimed QR orders are informational and archived with `store_closed` at the close timestamp.
+9. Expected balances keep exact signed math and may be negative (the former `expected_* >= 0` CHECK was removed); the UI surfaces a warning. Actual Closing Cash/Cashless remain non-negative.
+10. The close holds idempotency advisory → Branch → OPEN Store Session exclusively → unclaimed QR Orders, recomputes everything inside that boundary, and never trusts client totals. Exact retry recovers the same close; changed retry or a different key after close returns 409.
+11. The local POS cart is untouched until the server confirms the close; the confirmation warns that an unsent cart on the device will be cleared, and Store state reloads only after success (or a truthful already-closed response).
+
+**Verification**: focused Phase 15 + adjacent Store Session, expense, payment, settlement, edit, Void, Kitchen, QR, Customer Display, Audit and realtime slice **537 tests / 4,107 assertions**; frontend **87 tests**; Pint, PHPStan (zero errors), frontend lint, TypeScript, production build and `git diff --check` passed. Disposable SQLite up/down/reapply passed for both Phase 15 migrations. The isolated PostgreSQL harness `tests/verify-close-store-postgres.php` passed fresh/rollback/reapply (constraints and session-correction index), PostgreSQL SQL exactness and allocation, A Close vs Close, close-wins rejection of Pay Now, Pay Later, edit, Void, Kitchen, Expense and QR restore/load, write-first inclusion of settlement, correction, Void, Done and Expense (Pay Now/Pay Later correctly re-block), J 10-order QR archival rollback, and K concurrent Cash/Cashless/Split payments closing at zero variance; every temporary schema was removed. Phase 12, 13 and 14 harnesses were rerun after their fixed rollback step counts were made relative to their own migrations; the QR harness still uses pre-Phase-12 fixed step counts and was not rerun. Responsive layout was source-reviewed for 360/390/430/tablet/desktop (confirmation footer and variance labels were corrected for 360px); no browser sweep was performed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**: it received only the two additive `php artisan migrate` runs, and no Store Session was closed or edited. Supabase was not accessed. The full Laravel suite is reserved for FINAL QA after USER MANUAL QA. Status: **READY FOR USER MANUAL QA**.
+
+**Follow-up UI/UX refinements (USER MANUAL QA driven, 2026-09-23):** standalone-style Store Session close button without mouse focus ring; Pre-close checks shown only while a blocker remains; session purchases collapsible dropdown below Actual closing count; redesigned per-channel final confirmation; cached Store Session reopen with layout-preserving skeleton; modal widened 512px → 614px; Customer QR shows Store Closed instead of stale uncommitted-order tracking and refetches when a sleeping phone becomes visible.
+
+**Store Session inventory adjustments:** Adjust inventory sits beside Add expense / purchase in the same dialog. Complimentary, Wastage, Damaged, Staff meal and Other (explanation required) deduct stock through `ApplyInventoryMovement` (`manual_adjustment`, attributed via `store_session_inventory_adjustments`) under the shared Session boundary, with idempotency, one `inventory / store_session.inventory_adjusted` Audit and existing inventory/catalog realtime. It creates no Store Expense or Payment and never changes reconciliation. Verified by focused Pest, frontend tests and PostgreSQL scenario L (concurrent last-unit deductions). Status: USER MANUAL QA.
+
+**Final QA (2026-09-23):** the complete `origin/dev...feature/close-store` change set was re-audited from source. Fixes: the closing Cashier's client now records the Store Session it is closing before sending the request, because the `store.closed` broadcast can arrive before the HTTP response and previously dismissed the pending Store Closed summary; Add expense / Adjust inventory / expense detail fall back to the overview load message when the cached session is discarded (404/403/401/419) instead of rendering an empty dialog; the desktop Store Closed header keeps long Branch names beside the illustration. Regression coverage was added for inventory-adjustment failure injection (adjustment record and Audit write roll back stock, movement and attribution with no realtime), the inventory-adjustment role matrix (Cashier+Kitchen allowed; guest, inactive, inactive-assignment and other-Branch denied), and backend rejection of Pay Later, settlement and inventory adjustment after a real close. Stale PostgreSQL harness assumptions were corrected without production changes: the QR harness rollback steps are now relative to its own migrations, and the Phase 5/6 harnesses accept the documented `BRANCH-MMDDYY-####` reference. Gates: **1,408 Laravel tests / 9,419 assertions** and **100 frontend tests**, zero failures; Pint, PHPStan, frontend lint, TypeScript, production build and `git diff --check` passed; disposable SQLite fresh/rollback/reapply passed; all 11 isolated PostgreSQL harnesses (Close Store A–L, Store Expenses, Transaction History, Void/Audit, QR, inventory, Kitchen, Pay Later, Pay Now, POS, Store Session) passed and removed their schemas. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** No browser/device QA was performed in this audit. Status: **READY FOR PR**.
 
 ---
 

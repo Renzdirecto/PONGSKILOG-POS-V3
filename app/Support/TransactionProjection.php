@@ -11,7 +11,7 @@ use App\Models\Payment;
 
 class TransactionProjection
 {
-    public function __construct(private OrderMoney $money) {}
+    public function __construct(private OrderMoney $money, private PaymentCorrectionAllocation $allocation) {}
 
     /** @return array<string, mixed> */
     public function summary(Order $order): array
@@ -115,10 +115,13 @@ class TransactionProjection
                 ])->values()->all(),
             ])->values()->all(),
             'payment_groups' => $this->paymentGroups($order),
+            'refund_sources' => $this->refundSources($order),
             'adjustments' => $order->adjustments->map(fn ($adjustment): array => [
                 'id' => $adjustment->id,
                 'type' => $adjustment->type,
                 'amount' => $adjustment->amount,
+                'cash_amount' => $adjustment->cash_amount,
+                'cashless_amount' => $adjustment->cashless_amount,
                 'reason' => $adjustment->reason,
                 'created_at' => $adjustment->created_at?->toIso8601String(),
                 'created_by' => $adjustment->createdBy?->name,
@@ -133,6 +136,21 @@ class TransactionProjection
                         'quantity_restored' => $movement->quantity_delta,
                     ])->values()->all()
                 : [],
+        ];
+    }
+
+    /**
+     * Net Cash/Cashless still refundable for a future lower-total correction.
+     *
+     * @return array{cash_available: string, cashless_available: string}
+     */
+    private function refundSources(Order $order): array
+    {
+        $available = $this->allocation->available($order);
+
+        return [
+            'cash_available' => ExactMoney::decimal($available['cash']),
+            'cashless_available' => ExactMoney::decimal($available['cashless']),
         ];
     }
 

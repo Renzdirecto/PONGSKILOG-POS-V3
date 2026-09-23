@@ -224,12 +224,12 @@ try {
     $createdSchema = true;
     qrVerify(DB::selectOne('SELECT current_schema() AS schema')->schema === $schema, 'Schema isolation failed');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL fresh migration failed');
-    qrVerify(Artisan::call('migrate:rollback', ['--step' => 4, '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_22_062703')), '--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL rollback failed');
     qrVerify(! Schema::hasTable('customer_qr_sessions') && ! Schema::hasColumn('branches', 'receipt_logo_path'), 'PostgreSQL rollback left QR schema');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'PostgreSQL reapply failed');
     qrVerify(Schema::hasColumn('branches', 'receipt_logo_path'), 'PostgreSQL reapply omitted receipt logo');
     $legacy = Order::factory()->create(['order_number' => '1043', 'reference_number' => 'MAIN-260919-1043']);
-    qrVerify(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'Historical migration rollback failed');
+    qrVerify(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_22_093305')), '--force' => true, '--no-interaction' => true]) === 0, 'Historical migration rollback failed');
     qrVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Historical migration reapply failed');
     qrVerify($legacy->fresh()->order_number === '1043' && $legacy->fresh()->reference_number === 'MAIN-260919-1043', 'Historical identity rewritten');
     (new RbacSeeder)->run();

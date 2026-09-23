@@ -19,6 +19,7 @@ use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
+use App\Http\Controllers\OrderAdjustmentAllocationController;
 use App\Http\Controllers\PaymentInvoiceProofController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
@@ -30,8 +31,10 @@ use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffQrOrderController;
+use App\Http\Controllers\StoreSessionCloseController;
 use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
+use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
@@ -132,6 +135,10 @@ Route::middleware(['auth'])->group(function () {
             ->whereUuid('order')
             ->middleware('throttle:5,1')
             ->name('pos.transactions.void');
+        Route::post('pos/order-adjustments/{adjustment}/allocation', OrderAdjustmentAllocationController::class)
+            ->whereUuid('adjustment')
+            ->middleware('permission:transactions.view')
+            ->name('pos.order-adjustments.allocation.store');
         Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->name('pos.payments.invoice.store');
         Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
         Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->name('pos.payments.invoice.destroy');
@@ -148,9 +155,18 @@ Route::middleware(['auth'])->group(function () {
     Route::get('store-sessions/current', CurrentStoreSessionController::class)
         ->middleware(['permission:pos.access', 'permission:store_expenses.manage'])
         ->name('store-sessions.current');
+    Route::get('store-sessions/current/close', [StoreSessionCloseController::class, 'show'])
+        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
+        ->name('store-sessions.close.show');
+    Route::post('store-sessions/current/close', [StoreSessionCloseController::class, 'store'])
+        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch', 'throttle:10,1'])
+        ->name('store-sessions.close.store');
     Route::post('store-sessions/current/expenses', [StoreSessionExpenseController::class, 'store'])
         ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:20,1'])
         ->name('store-session-expenses.store');
+    Route::post('store-sessions/current/inventory-adjustments', StoreSessionInventoryAdjustmentController::class)
+        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-inventory-adjustments.store');
     Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
         ->whereUuid('expense')
         ->middleware(['permission:store_expenses.manage', 'branch'])

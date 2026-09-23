@@ -501,3 +501,10 @@ Frozen:
 - Audit is append-only
 - Sensitive reconciliation data is not broadcast to general staff
 - Offline financial writes are blocked
+
+## Phase 14 Store expense authorization - 2026-09-23
+
+- Expense create, current-session expense projection, private receipt streaming, and the Store Session realtime channel require an active, Branch-assigned `cashier` or `cashier_kitchen` with `store_expenses.manage`. Kitchen-only, Owner, unassigned, inactive, unauthenticated, and foreign-Branch access is denied; role-wide management status does not bypass the operational boundary.
+- The server derives the active Branch and current OPEN Store Session. Client Branch/Session identifiers are not authoritative. Creation takes the current Session shared lock, while future Close Store must take that boundary exclusively.
+- Receipts accept only validated JPG/JPEG/PNG/WebP images within the existing 2 MB and dimension bounds. Objects stay on the configured private disk and are served through an authorized Branch-scoped route with `private, no-store`; raw storage paths are never returned. Failed transactions remove newly stored objects.
+- Expense records and items reject normal update/delete behavior. Audit metadata excludes receipt bytes/path and credentials. A truly offline browser cannot submit and no irreversible expense is queued locally. A Reverb/Echo disconnect alone is not treated as network offline and does not block an authoritative HTTP expense commit.

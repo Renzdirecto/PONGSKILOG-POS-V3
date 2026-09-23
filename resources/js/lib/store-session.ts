@@ -3,7 +3,27 @@ import type { CurrentStoreSession } from '@/types';
 export type StoreSessionDialogState = {
     open: boolean;
     session: CurrentStoreSession | null;
-    unavailable: boolean;
+    loadState: StoreSessionLoadState;
+};
+
+export type StoreSessionLoadState =
+    | 'idle'
+    | 'loading'
+    | 'loaded'
+    | 'not_found'
+    | 'forbidden'
+    | 'session_expired'
+    | 'offline'
+    | 'error';
+
+const storeSessionLoadMessages: Partial<Record<StoreSessionLoadState, string>> = {
+    not_found: 'This Store Session is no longer available.',
+    forbidden: 'You do not have permission to view this Store Session.',
+    session_expired:
+        'Your session has expired. Sign in or refresh before continuing.',
+    offline:
+        'Unable to load the Store Session. Check your connection and try again.',
+    error: 'Store Session details could not be loaded. Try again.',
 };
 
 const pesoFormatter = new Intl.NumberFormat('en-PH', {
@@ -34,8 +54,39 @@ export function openStoreSessionDialogState(): StoreSessionDialogState {
     return {
         open: true,
         session: null,
-        unavailable: false,
+        loadState: 'loading',
     };
+}
+
+export function storeSessionLoadFailure(reason: unknown): StoreSessionLoadState {
+    if (typeof reason === 'object' && reason !== null) {
+        const failure = reason as {
+            name?: unknown;
+            response?: { status?: unknown };
+        };
+        const status = failure.response?.status;
+
+        if (status === 404) return 'not_found';
+        if (status === 403) return 'forbidden';
+        if (status === 401 || status === 419) return 'session_expired';
+        if (failure.name === 'HttpNetworkError') return 'offline';
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return 'offline';
+    }
+
+    return 'error';
+}
+
+export function storeSessionLoadMessage(
+    state: StoreSessionLoadState,
+): string | null {
+    return storeSessionLoadMessages[state] ?? null;
+}
+
+export function canRetryStoreSessionLoad(state: StoreSessionLoadState): boolean {
+    return state === 'offline' || state === 'error';
 }
 
 export function storeSessionDetailRows(session: CurrentStoreSession) {

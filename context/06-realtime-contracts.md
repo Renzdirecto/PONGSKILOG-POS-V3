@@ -726,3 +726,7 @@ Immediate after-commit delivery, transport rescue, compact payloads, event dedup
 `order.updated` is a compact after-commit event on the branch POS private channel with event/entity/order IDs, Order version, changed-domain names, and occurred time. It carries no item, finance, proof, or Audit payload; History coalesces and refetches server projections and also refetches after reconnect.
 
 `kitchen.order_updated` is a compact after-commit event on the branch Kitchen private channel. KDS refetches its authoritative ticket and briefly marks the affected Order `UPDATED`; the existing KitchenTicket identity, status, and lifecycle timestamps are unchanged. Settlement emits `order.updated` for the payment domain and the existing customer tracking invalidation.
+
+## Phase 14 Store Session expense invalidation - 2026-09-23
+
+`store.expense_recorded` is an immediate, rescued, after-commit invalidation on `private-branch.{branchId}.store-session`. Its compact payload contains event/type/Branch/expense/Store Session identity, payment source, amount, inventory-linked boolean, and occurrence time; it contains no note, receipt path, actor, balance, variance, or Audit detail. Authorized Cashier clients with the Store Session dialog open coalesce the signal and refetch the authoritative current-session projection, including after reconnect. Exact replay and rolled-back writes emit no duplicate success signal. Linked restocks retain the existing inventory/catalog invalidations from `ApplyInventoryMovement` rather than broadcasting a second inventory event.

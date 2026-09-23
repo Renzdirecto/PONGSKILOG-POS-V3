@@ -580,3 +580,13 @@ A feature/release cannot be considered production-ready until:
 - Cash/Cashless/Split grouped attempts; exact outstanding settlement; duplicate replay; invoice allowlist/dimensions/size, private authorized stream, replace/remove cleanup, cash-row denial, and earlier-session read-only behavior.
 - Compact after-commit POS/Kitchen events, reconnect refetch, temporary KDS UPDATED indicator, local-only view preference, camera fallback, and disabled Phase 13 Void.
 - Required gates: focused Pest suite, adjacent Pay Now/Pay Later/Kitchen/receipt regression suite, PostgreSQL harness, Pint, PHPStan, frontend check, TypeScript, production build, migration fresh/up/down/reapply, whitespace and secret/artifact review.
+
+## Phase 14 focused verification matrix
+
+- Normal Cash/Cashless expense identity and complete-session exact totals; no fake Payment; matching a Product name never restocks implicitly; previous Session and foreign Branch records excluded.
+- Cashier/Cashier+Kitchen allow paths; guest, Kitchen-only, Owner, unassigned, closed Session, foreign receipt/channel, and untracked Product denial; client Session identifier ignored in favor of the current OPEN Session.
+- Stable idempotent replay, changed-intent 409, one optional item, exactly-once `store_purchase_restock`, no lost stock update, restrictive history, private receipt type/size/access/cleanup, Audit append, and no success event on rollback.
+- Failure injection at item, inventory balance, movement, and Audit boundaries; all Expense/item/movement/balance/Audit effects roll back together.
+- Frontend contract coverage for existing Store Open entry, reusable overview/add/detail views, multipart Wayfinder submission, offline block, compact private realtime invalidation, branch/event guard, coalescing, and reconnect refresh.
+- Disposable SQLite fresh/rollback/reapply and isolated local PostgreSQL fresh/rollback/reapply. Independent PostgreSQL workers cover exact retry, changed intent, two same-Product restocks, different-Product restocks, and Expense versus future exclusive Close Store Session locking. Normal development data is never reset.
+- The decoded standalone and implementation receive a source-level comparison at phone/tablet/desktop breakpoints. Final device/visual acceptance remains USER MANUAL QA; no broad automated browser sweep is claimed.

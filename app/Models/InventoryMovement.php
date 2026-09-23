@@ -47,4 +47,10 @@ class InventoryMovement extends Model
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
+
+    /** @return BelongsTo<StoreSessionExpense, $this> */
+    public function storeSessionExpense(): BelongsTo
+    {
+        return $this->belongsTo(StoreSessionExpense::class);
+    }
 }

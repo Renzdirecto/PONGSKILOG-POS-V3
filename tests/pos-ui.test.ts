@@ -52,7 +52,7 @@ test('Store Session detail rows render persisted opening money and Manila time',
     assert.deepEqual(openStoreSessionDialogState(), {
         open: true,
         session: null,
-        unavailable: false,
+        loadState: 'loading',
     });
 
     const rows = storeSessionDetailRows({

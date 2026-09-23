@@ -79,6 +79,12 @@ class Branch extends Model
         return $this->hasMany(StoreSession::class);
     }
 
+    /** @return HasMany<StoreSessionExpense, $this> */
+    public function storeSessionExpenses(): HasMany
+    {
+        return $this->hasMany(StoreSessionExpense::class);
+    }
+
     /** @return BelongsToMany<User, $this> */
     public function users(): BelongsToMany
     {

@@ -24,6 +24,13 @@ Broadcast::channel('branch.{branch}.inventory', function (User $user, Branch $br
         && ($user->hasPermission('pos.access') || $user->hasPermission('inventory.manage') || $user->hasPermission('products.manage'));
 });
 
+Broadcast::channel('branch.{branch}.store-session', function (User $user, Branch $branch): bool {
+    return $user->is_active
+        && $user->canAccessBranch($branch)
+        && $user->hasPermission('store_expenses.manage')
+        && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+});
+
 Broadcast::channel('audit-trail', function (User $user): bool {
     return $user->is_active && $user->hasPermission('audit.view');
 });

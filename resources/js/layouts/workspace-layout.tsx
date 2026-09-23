@@ -22,7 +22,11 @@ import {
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
-import { openStoreSessionDialogState } from '@/lib/store-session';
+import {
+    openStoreSessionDialogState,
+    storeSessionLoadFailure,
+    type StoreSessionLoadState,
+} from '@/lib/store-session';
 import type {
     Auth,
     BranchContext,
@@ -30,7 +34,7 @@ import type {
     PosReadyOrder,
     StoreContext,
 } from '@/types';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 type SharedProps = {
     auth: Auth;
@@ -66,8 +70,8 @@ export default function WorkspaceLayout({
     const [storeSessionDialogOpen, setStoreSessionDialogOpen] = useState(false);
     const [storeSession, setStoreSession] =
         useState<CurrentStoreSession | null>(null);
-    const [storeSessionUnavailable, setStoreSessionUnavailable] =
-        useState(false);
+    const [storeSessionLoadState, setStoreSessionLoadState] =
+        useState<StoreSessionLoadState>('idle');
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
@@ -90,25 +94,29 @@ export default function WorkspaceLayout({
             (page.props.workspace === 'Owner' ||
                 page.props.workspace === 'Super Admin'));
 
+    const refreshStoreSession = useCallback(async () => {
+        setStoreSessionLoadState('loading');
+
+        try {
+            const detail = await storeSessionRequest.get(
+                currentStoreSession.url(),
+                { headers: { Accept: 'application/json' } },
+            );
+            setStoreSession(detail);
+            setStoreSessionLoadState('loaded');
+        } catch (reason) {
+            setStoreSessionLoadState(storeSessionLoadFailure(reason));
+        }
+    }, [storeSessionRequest]);
+
     if (isOperational) {
         const openStoreSessionDetails = async () => {
             const openingState = openStoreSessionDialogState();
             setStoreSessionDialogOpen(openingState.open);
             setStoreSession(openingState.session);
-            setStoreSessionUnavailable(openingState.unavailable);
+            setStoreSessionLoadState(openingState.loadState);
 
-            try {
-                const detail = await storeSessionRequest.submit(
-                    currentStoreSession(),
-                    {
-                        onHttpException: () => true,
-                        onNetworkError: () => true,
-                    },
-                );
-                setStoreSession(detail);
-            } catch {
-                setStoreSessionUnavailable(true);
-            }
+            await refreshStoreSession();
         };
 
         const navigation = [
@@ -273,13 +281,16 @@ export default function WorkspaceLayout({
                         )}
                         <PosProfileControls auth={auth} />
                     </header>
-                    <StoreSessionDetailsDialog
-                        open={storeSessionDialogOpen}
-                        onOpenChange={setStoreSessionDialogOpen}
-                        session={storeSession}
-                        loading={storeSessionRequest.processing}
-                        unavailable={storeSessionUnavailable}
-                    />
+                    {storeSessionDialogOpen && branchContext.current && (
+                        <StoreSessionDetailsDialog
+                            open
+                            onOpenChange={setStoreSessionDialogOpen}
+                            branchId={branchContext.current.id}
+                            session={storeSession}
+                            loadState={storeSessionLoadState}
+                            refreshSession={refreshStoreSession}
+                        />
+                    )}
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
                         {children}
                     </main>

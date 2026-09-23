@@ -19,7 +19,7 @@ class TransactionHistoryRequest extends FormRequest
         $user = $this->user();
 
         return $user instanceof User && $user->hasPermission('transactions.view')
-            && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+            && $user->hasCashierOperationsRole();
     }
 
     /**

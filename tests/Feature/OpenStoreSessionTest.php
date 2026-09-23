@@ -103,7 +103,7 @@ test('non cashier roles cannot open a store even if explicitly granted the permi
         ->toThrow(AuthorizationException::class);
 
     $this->assertDatabaseCount('store_sessions', 0);
-})->with(['super_admin', 'owner', 'kitchen_staff']);
+})->with(['owner', 'kitchen_staff']);
 
 test('a cashier cannot open an unrelated branch or reuse its existing session', function (bool $alreadyOpen) {
     $assignedBranch = Branch::factory()->create();
@@ -132,16 +132,35 @@ test('an inactive branch assignment cannot open a store', function () {
     $this->assertDatabaseCount('store_sessions', 0);
 });
 
-test('business wide scope cannot bypass the cashier branch assignment requirement', function () {
+test('owner business wide scope cannot bypass the cashier branch assignment requirement', function () {
     $branch = Branch::factory()->create();
     $user = assignedStoreOpener($branch);
-    $user->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+    $user->roles()->attach(Role::query()->where('name', 'owner')->sole());
     $user->branches()->detach();
 
     expect(fn () => app(OpenStoreSession::class)->execute($user, $branch, '0', '0'))
         ->toThrow(AuthorizationException::class);
 
     $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('full access super admin opens an active branch without a fabricated assignment and is audited as the actor', function () {
+    $this->seed(RbacSeeder::class);
+    $branch = Branch::factory()->create();
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    $session = app(OpenStoreSession::class)->execute($superAdmin, $branch, '1000.00', '250.00');
+
+    expect($session->opened_by_user_id)->toBe($superAdmin->id)
+        ->and($superAdmin->branches()->count())->toBe(0);
+    $this->assertDatabaseHas('audit_logs', ['user_id' => $superAdmin->id, 'branch_id' => $branch->id, 'action' => 'store.opened']);
+
+    $inactiveBranch = Branch::factory()->create(['status' => BranchStatus::Inactive]);
+    expect(fn () => app(OpenStoreSession::class)->execute($superAdmin, $inactiveBranch, '0', '0'))
+        ->toThrow(AuthorizationException::class);
+    expect(app(OpenStoreSession::class)->execute($superAdmin, $branch, '0', '0')->id)->toBe($session->id);
+    $this->assertDatabaseCount('store_sessions', 1);
 });
 
 test('a deleted user cannot open a store using a stale model', function () {

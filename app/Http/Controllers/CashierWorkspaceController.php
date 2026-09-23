@@ -30,7 +30,7 @@ class CashierWorkspaceController extends Controller
         $user = $request->user();
 
         abort_unless($user instanceof User, 401);
-        abort_unless($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'), 403);
+        abort_unless($user->hasCashierOperationsRole(), 403);
 
         $branch = $activeBranchContext->current($user);
 
@@ -63,7 +63,7 @@ class CashierWorkspaceController extends Controller
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active
                     && $user->hasPermission('store.open_close')
-                    && $user->branches()->whereKey($branch->getKey())->wherePivot('is_active', true)->exists(),
+                    && $user->hasOperationalBranchAccess($branch),
             ],
         ]);
     }

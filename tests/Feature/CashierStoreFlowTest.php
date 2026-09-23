@@ -71,7 +71,7 @@ test('non cashier roles cannot visit or open a cashier store even with permissio
         ->assertForbidden();
 
     $this->assertDatabaseCount('store_sessions', 0);
-})->with(['kitchen_staff', 'owner', 'super_admin']);
+})->with(['kitchen_staff', 'owner']);
 
 test('cashier opening requires both operation and workspace permissions', function (string $permission) {
     $branch = Branch::factory()->create();

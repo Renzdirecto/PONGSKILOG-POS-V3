@@ -290,7 +290,6 @@ test('only an active assigned cashier with store permission may close or preview
     $user = match ($case) {
         'kitchen' => $scenario->kitchen,
         'owner' => tap(User::factory()->create(), fn (User $owner) => $owner->roles()->attach(Role::query()->where('name', 'owner')->sole())),
-        'super admin' => tap(User::factory()->create(), fn (User $admin) => $admin->roles()->attach(Role::query()->where('name', 'super_admin')->sole())),
         'other branch' => $scenario->user('cashier', Branch::factory()->create()),
         'inactive assignment' => $scenario->user('cashier', assignmentActive: false),
         'inactive user' => $scenario->user('cashier', active: false),
@@ -308,7 +307,24 @@ test('only an active assigned cashier with store permission may close or preview
     closeStoreRequest($scenario, $scenario->closePayload('1000.00', '0.00'), $user)->assertStatus($closeStatus);
 
     closeStoreUnchanged($scenario);
-})->with(['kitchen', 'owner', 'super admin', 'other branch', 'inactive assignment', 'inactive user']);
+})->with(['kitchen', 'owner', 'other branch', 'inactive assignment', 'inactive user']);
+
+test('full access super admin previews and closes the selected branch as the audited actor without an assignment', function () {
+    $scenario = StoreCloseScenario::create('1000.00', '0.00');
+    $scenario->done($scenario->payNow(5, 'cash'));
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+        ->getJson(route('store-sessions.close.show'))->assertOk();
+    closeStoreRequest($scenario, $scenario->closePayload('1500.00', '0.00'), $superAdmin)->assertOk();
+
+    $session = $scenario->session->fresh();
+    expect($session->status)->toBe(StoreSessionStatus::Closed)
+        ->and($session->closed_by_user_id)->toBe($superAdmin->id)
+        ->and($superAdmin->branches()->count())->toBe(0);
+    expect(AuditLog::query()->where('action', 'store.closed')->sole()->user_id)->toBe($superAdmin->id);
+});
 
 test('preview is read-only and withholds reconciliation while blockers remain', function () {
     $scenario = StoreCloseScenario::create('1000.00', '0.00');

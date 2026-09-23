@@ -19,7 +19,7 @@ class AllocateOrderAdjustmentRequest extends FormRequest
             && $user->is_active
             && $user->hasPermission('pos.access')
             && $user->hasPermission('transactions.view')
-            && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+            && $user->hasCashierOperationsRole();
     }
 
     /**

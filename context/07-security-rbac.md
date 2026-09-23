@@ -268,7 +268,7 @@ Backend must prevent:
 
 Void requires:
 
-- An active assigned Cashier or Cashier+Kitchen initiator with POS access
+- An active assigned Cashier or Cashier+Kitchen initiator, or a full-access Super Admin on the selected active Branch, with POS access
 - Reason
 - The one global four-digit PIN configured by an active Super Admin and stored only as a hash
 - Attribution of the configuring Super Admin as a distinct authorizer
@@ -284,7 +284,7 @@ If stock was previously deducted:
 
 Dedicated Void Orders history is Super Admin-only.
 
-Kitchen-only, Owner-only, and Super Admin-only identities do not gain the operational Cashier Void action. Owner is denied Audit Trail, Void Orders, and PIN configuration. Possession of the configured PIN is intentionally delegated approval authority; it is not per-user password re-authentication. The plaintext PIN is never persisted, audited, returned, logged, or broadcast.
+Kitchen-only and Owner-only identities do not gain the operational Cashier Void action. A full-access Super Admin may initiate a Void for the selected active Branch (see Super Admin foundation, 2026-09-24), but the configuring Super Admin can never approve their own initiation. Owner is denied Audit Trail, Void Orders, and PIN configuration. Possession of the configured PIN is intentionally delegated approval authority; it is not per-user password re-authentication. The plaintext PIN is never persisted, audited, returned, logged, or broadcast.
 
 ---
 
@@ -512,3 +512,22 @@ Frozen:
 ## Phase 15 Close Store authorization - 2026-09-23
 
 Preview and close require an active user with `pos.access` and `store.open_close`, a Cashier or Cashier+Kitchen role, and an active assignment to the active Branch; the server derives the Branch and OPEN Store Session. Kitchen-only, Owner, unassigned and inactive users are denied; Super Admin is denied unless actually assigned as a Cashier. Payment-correction allocation requires `pos.access`, `transactions.view` and a Cashier or Cashier+Kitchen role (not `store.open_close`), for a correction in the current OPEN Store Session of the active Branch. Store Session inventory adjustment requires `store_expenses.manage`, a Cashier or Cashier+Kitchen role and an active assignment to the active Branch; the Product must be inventory-tracked in that Branch, and Kitchen-only, Owner, guest, inactive and unassigned users are denied. Reconciliation values stay in authorized HTTP responses and the protected Audit Trail and are never broadcast.
+
+## Super Admin foundation — full operational access and Staff creation — 2026-09-24
+
+**Supersedes** the Phase 14 and Phase 15 statements above that deny Super Admin Store expenses, Store inventory adjustment, Open/Close Store, and Cashier POS actions unless actually assigned as a Cashier. The product owner approved full operational parity for Super Admin.
+
+- Super Admin is the full-access role. Cashier POS and Store Session authorization now goes through `User::hasCashierOperationsRole()` (cashier, cashier_kitchen, super_admin) and `User::hasOperationalBranchAccess()` (an active assignment, or business-wide Super Admin). This covers `PosAccess`, every Cashier FormRequest, `OpenStoreSession`, the Cashier workspace, the current Store Session endpoint, and the private `store-session` channel.
+- Super Admin is never given fabricated Branch assignments. It operates only the active Branch it selects, which must be Active. Store Session state, reconciliation, idempotency, stock and payment invariants are unchanged, and every action is attributed and audited as the Super Admin.
+- Owner business-wide scope alone still grants no Cashier operations. Kitchen and Customer Display were already permission-based and now open for Super Admin once a Branch is selected.
+- Void keeps two-person authorization: a Super Admin may initiate, but the Super Admin who configured the global PIN cannot approve their own initiation.
+- Authorization stays backend-authoritative. Hidden or visible navigation is never the control; branch isolation (404 for another Branch's records) is unchanged.
+
+### Staff account creation
+
+- `GET/POST workspaces/super-admin/staff` requires an active user with `access_control.manage`, enforced by route middleware, the FormRequest, and the action. Owner keeps the frozen `staff.manage` permission for a future Owner operational-staff slice but gains no account creation from this Super Admin page.
+- Assignable roles are the seeded canonical roles only. Creating Owner or Super Admin is allowed here because this is the higher-level access-control surface required by §14. Owner and Super Admin are business-wide and reject Branch assignments. Cashier, Kitchen Staff, and Cashier + Kitchen require at least one Active Branch, rechecked under lock inside the transaction.
+- The temporary password is chosen by the Super Admin, validated with `Password::default()` plus confirmation, and hashed by the User `hashed` cast. It is never persisted in plaintext, logged, audited, broadcast, returned in page props, or shown again. There is no invite email, forced password change, first-login flow, or password expiry.
+- User, role, Branch assignments, active state, and one `staff/staff.created` Audit record commit in one transaction. The Audit records user id, Employee ID, name, email, role, Branch ids/codes, business-wide flag, and active state, with no password, confirmation, hash, secret, or token. Duplicate emails, including races on the unique index, return a validation error, so retries cannot create a second user or Audit record.
+- An optional staff profile picture set by the Super Admin (JPG/PNG/WebP, 64–8000px, up to 2 MB, no SVG) is stored on the private `staff_avatars_disk` (default `local`) under `staff-avatars/{user}` and served only through `super-admin.staff.avatar` (`access_control.manage`, `nosniff`). A failed creation deletes the stored file. The Audit records only `has_profile_picture`, never the path. This is admin-set; staff self-service avatar upload remains out of scope.
+- The Access Control matrix remains unimplemented. Its page is a read-only placeholder with no interactive toggles.

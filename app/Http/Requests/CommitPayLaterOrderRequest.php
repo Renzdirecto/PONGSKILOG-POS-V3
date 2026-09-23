@@ -18,7 +18,7 @@ class CommitPayLaterOrderRequest extends StorePosDraftOrderRequest
     {
         $user = $this->user();
 
-        return $user instanceof User && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+        return $user instanceof User && $user->hasCashierOperationsRole();
     }
 
     /**

@@ -254,7 +254,7 @@ test('foreign orders and non cashier roles cannot activate pay later', function 
         ->postJson(route('pos.orders.pay-later.store', $order), ['idempotency_key' => (string) Str::uuid()]);
     $case === 'foreign' ? $response->assertNotFound() : $response->assertForbidden();
     expect($order->fresh()->commercial_status)->toBe(CommercialStatus::Draft);
-})->with(['foreign', 'kitchen_staff', 'owner', 'super_admin']);
+})->with(['foreign', 'kitchen_staff', 'owner']);
 
 test('persisted access changes reject activation', function (string $change) {
     [$branch, $user, , , , $order] = payLaterFixture();

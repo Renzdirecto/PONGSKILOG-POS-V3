@@ -3,13 +3,11 @@ import {
     BarChart3,
     Bell,
     Boxes,
-    ClipboardList,
     LayoutDashboard,
     Menu,
     PackageSearch,
     ReceiptText,
     Settings,
-    ShieldBan,
     UserRound,
     Users,
 } from 'lucide-react';
@@ -35,7 +33,7 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
-import { auditTrail, owner, superAdmin, voidOrders } from '@/routes/workspaces';
+import { owner } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
@@ -121,14 +119,12 @@ export function OwnerWorkspaceShell({
     const page = usePage<SharedProps>();
     const { auth, branchContext } = page.props;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const isSuperAdmin = auth.roles.includes('super_admin');
-    const workspaceLabel = isSuperAdmin ? 'Super Admin' : 'Owner';
-    const dashboardRoute = isSuperAdmin ? superAdmin() : owner();
+    /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell is Owner-only. */
+    const workspaceLabel = 'Owner';
+    const dashboardRoute = owner();
     const isCatalog = page.component.startsWith('catalog/');
     const isInventory = page.component.startsWith('inventory/');
     const isBranches = page.component === 'branches/index';
-    const isAuditTrail = page.component === 'super-admin/audit-trail';
-    const isVoidOrders = page.component === 'super-admin/void-orders';
     const isDashboard =
         page.component === 'workspaces/show' && !isCatalog && !isInventory;
     const canProducts = auth.permissions.includes('products.manage');
@@ -170,27 +166,6 @@ export function OwnerWorkspaceShell({
                 },
             ],
         },
-        ...(isSuperAdmin
-            ? [{
-                  label: 'Control',
-                  items: [
-                      {
-                          label: 'Audit Trail',
-                          shortLabel: 'Audit',
-                          icon: ClipboardList,
-                          href: auditTrail(),
-                          active: isAuditTrail,
-                      },
-                      {
-                          label: 'Void Orders',
-                          shortLabel: 'Voids',
-                          icon: ShieldBan,
-                          href: voidOrders(),
-                          active: isVoidOrders,
-                      },
-                  ],
-              }]
-            : []),
         {
             label: 'Catalog',
             items: [
@@ -246,10 +221,6 @@ export function OwnerWorkspaceShell({
           ? 'Inventory'
           : isBranches
             ? 'Branch management'
-            : isAuditTrail
-              ? 'Audit trail'
-              : isVoidOrders
-                ? 'Void orders'
             : `${workspaceLabel} workspace`;
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
@@ -336,7 +307,7 @@ export function OwnerWorkspaceShell({
                         className="max-w-[70px]"
                     />
                     <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
-                        {isSuperAdmin ? 'Admin' : 'Owner'}
+                        Owner
                     </span>
                 </Link>
                 <p className="px-1.5 pt-2 text-center text-[9px] font-semibold tracking-[0.06em] text-white/40 uppercase">
@@ -470,7 +441,7 @@ export function OwnerWorkspaceShell({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </header>
-                <main className="owner-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
+                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
                     {children}
                 </main>
             </div>

@@ -323,7 +323,35 @@ test('direct payment endpoint forbids unauthorized actors', function (string $ro
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
         ->postJson(route('pos.payments.store'), paymentPayload($product))->assertForbidden();
     $this->assertDatabaseCount('orders', 0);
-})->with(['owner', 'super_admin', 'kitchen_staff']);
+})->with(['owner', 'kitchen_staff']);
+
+test('full access super admin pays for the selected active branch without an assignment and owns the payment', function () {
+    [$branch, $superAdmin, $product, $balance, $session] = paymentFixture('235.00', 'super_admin');
+    $superAdmin->branches()->detach();
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->postJson(route('pos.payments.store'), paymentPayload($product))
+        ->assertOk()
+        ->assertJsonPath('receipt.cashier', $superAdmin->name)
+        ->assertJsonPath('receipt.total', '235.00');
+
+    $order = Order::query()->sole();
+    expect($order->store_session_id)->toBe($session->id)
+        ->and($order->created_by_user_id)->toBe($superAdmin->id)
+        ->and($balance->fresh()->on_hand)->toBe(9);
+    $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'created_by_user_id' => $superAdmin->id]);
+});
+
+test('full access super admin cannot operate an inactive branch POS', function () {
+    [$branch, $superAdmin, $product] = paymentFixture('235.00', 'super_admin');
+    $branch->update(['status' => BranchStatus::Inactive]);
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->postJson(route('pos.payments.store'), paymentPayload($product))
+        ->assertForbidden();
+
+    $this->assertDatabaseCount('orders', 0);
+});
 
 test('guest payment endpoint returns 401', function () {
     $this->postJson(route('pos.payments.store'), [])->assertUnauthorized();

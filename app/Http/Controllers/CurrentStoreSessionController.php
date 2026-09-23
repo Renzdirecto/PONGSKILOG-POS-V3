@@ -21,7 +21,7 @@ class CurrentStoreSessionController extends Controller
         $user = $request->user();
 
         abort_unless($user instanceof User, 401);
-        abort_unless($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'), 403);
+        abort_unless($user->hasCashierOperationsRole(), 403);
 
         $branch = $activeBranchContext->current($user);
 

@@ -213,7 +213,7 @@ test('foreign orders and non cashier roles cannot settle pay later', function (s
     $case === 'foreign' ? $response->assertNotFound() : $response->assertForbidden();
     expect($order->fresh()->payment_status)->toBe(PaymentStatus::Unpaid);
     $this->assertDatabaseCount('payments', 0);
-})->with(['foreign', 'kitchen_staff', 'owner', 'super_admin']);
+})->with(['foreign', 'kitchen_staff', 'owner']);
 
 test('forged server owned settlement fields are rejected', function (string $field) {
     [, $user, , , , $order] = settlementFixture();

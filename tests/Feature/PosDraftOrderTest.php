@@ -525,7 +525,7 @@ test('non cashier roles cannot create or read POS drafts even when assigned', fu
     $this->get(route('pos.orders.show', $order))->assertForbidden();
 
     $this->assertDatabaseCount('orders', 1);
-})->with(['owner', 'super_admin', 'kitchen_staff']);
+})->with(['owner', 'kitchen_staff']);
 
 test('persisted authorization rejects disabled accounts assignments branches and revoked permissions', function (string $change) {
     $branch = Branch::factory()->create();

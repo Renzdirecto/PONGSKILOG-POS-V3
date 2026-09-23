@@ -19,7 +19,7 @@ class CloseStoreSessionRequest extends FormRequest
             && $user->is_active
             && $user->hasPermission('pos.access')
             && $user->hasPermission('store.open_close')
-            && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
+            && $user->hasCashierOperationsRole();
     }
 
     /**

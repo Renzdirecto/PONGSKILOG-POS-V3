@@ -35,10 +35,9 @@ class OpenStoreSession
 
             Gate::forUser($user)->authorize('select', $branch);
 
-            /** Frozen security rules require a Cashier role and assignment, even for business-wide users. */
-            if ((! $user->hasRole('cashier') && ! $user->hasRole('cashier_kitchen'))
-                || ! $user->branches()->whereKey($branch->getKey())->wherePivot('is_active', true)->exists()) {
-                throw new AuthorizationException('Only an assigned cashier may open this store.');
+            /** A Cashier role with an active assignment is required; only full-access Super Admin is business-wide here. */
+            if (! $user->hasCashierOperationsRole() || ! $user->hasOperationalBranchAccess($branch)) {
+                throw new AuthorizationException('Only an assigned cashier or Super Admin may open this store.');
             }
 
             if ($branch->status !== BranchStatus::Active) {

@@ -173,6 +173,38 @@ test('void rejects a PIN configured by the initiating cashier even when they are
     $this->assertDatabaseCount('order_voids', 0);
 });
 
+test('a full access super admin initiates a void approved by a different super admin PIN', function () {
+    $order = voidOrderFixture($this);
+    $initiator = User::factory()->create();
+    $initiator->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    $this->actingAs($initiator)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))
+        ->assertOk()
+        ->assertJsonPath('transaction.commercial_status', 'voided');
+
+    $this->assertDatabaseHas('order_voids', [
+        'order_id' => $order->id,
+        'initiated_by_user_id' => $initiator->id,
+        'authorized_by_user_id' => $this->superAdmin->id,
+    ]);
+    $this->assertDatabaseHas('audit_logs', ['auditable_id' => $order->id, 'user_id' => $initiator->id, 'action' => 'order.voided']);
+});
+
+test('a super admin cannot approve their own void with the PIN they configured', function () {
+    $order = voidOrderFixture($this);
+
+    $this->actingAs($this->superAdmin)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['authorization' => 'Authorization could not be verified.']);
+
+    expect($order->fresh()->commercial_status->value)->toBe('active');
+    $this->assertDatabaseCount('order_voids', 0);
+});
+
 test('void rejects a blank other reason and never stores the authorization PIN', function () {
     $order = voidOrderFixture($this);
     $payload = voidPayload($this, $order, [

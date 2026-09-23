@@ -882,3 +882,29 @@ USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt
 | Store Closed | Closed time/by, closing balances, variances, archived QR count and Done; Store state reloads and other clients leave the stale dialog on `store.closed`. |
 | Edit correction source | Adjustment to return asks `Returned in Cash` only when the refund source is not deterministic. |
 | Adjust inventory | Store Session sub-view beside Add expense / purchase: reason cards, searchable tracked products with current stock, whole-number quantity, note (required for Other), integer stock preview, compact confirmation, inventory-only save with no Cash/Cashless effect. |
+
+## Super Admin foundation — 2026-09-24
+
+This supersedes the §7 core navigation list. No Super Admin standalone is authoritative (see `08-ui-rules.md`, Super Admin UI authority).
+
+| Section | Destination | Status |
+| --- | --- | --- |
+| Overview | Dashboard | Control Center landing: quick links to Staff, Audit Trail, Void Orders, and Settings plus Branch workspace guidance. No analytics. |
+| Overview | Notifications | Placeholder (`super-admin.notifications`). No notification service, database, or unread count. |
+| Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
+| Owner | Owner Dashboard, Products, Inventory | Real existing pages. |
+| Owner | Reports | Placeholder (`super-admin.reports`) until the reporting phase. |
+| Control | Audit Trail, Void Orders | Real existing registers. |
+| Control | Staff | Real: account list and Add Staff (below). |
+| Control | Access Control | Placeholder (`super-admin.access-control`) with a read-only role-group overview. No toggles. |
+| Control | Settings | Real existing Branch Management / Receipt / QR settings (`branches.index`). Not duplicated under Owner. |
+
+Navigation comes from the registry in `resources/js/lib/super-admin-navigation.ts` (label, section, route, required permission, availability, Branch requirement), so future permission-driven Access Control can filter the same source.
+
+### Staff (Super Admin → Control → Staff)
+
+- List: Employee ID, rounded-square profile picture holder (initials when empty) with Name, Email, Role, Branch access, Status; debounced name/email/Employee ID search plus Role and Active/Inactive filters; 25 per page. Credentials are never projected.
+- Add Staff dialog (bottom sheet on mobile): optional profile picture (JPG/PNG/WebP up to 2 MB, preview, Remove), Employee ID (typed by the Super Admin as `MMDDYY` + a two-digit number, e.g. `09242601`; required and unique), Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
+- Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
+- Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
+- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing or deactivating existing staff is not part of this slice.

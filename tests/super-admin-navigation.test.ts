@@ -191,6 +191,12 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
     assert.match(shell, /pos: \{ icon: UtensilsCrossed, href: cashier\(\) \}/);
     assert.match(shell, /Choose a Branch/);
     assert.match(shell, /min-h-11/);
+    // Absolutely positioned content (sr-only labels) must scroll inside main, never extend the document.
+    assert.match(shell, /<main className="owner-scrollbar relative /);
+    assert.match(
+        source('components/owner-workspace-shell.tsx'),
+        /<main className="owner-scrollbar relative /,
+    );
     assert.doesNotMatch(shell, /unread|badgeCount/i);
     assert.match(layout, /<SuperAdminShell>\{children\}<\/SuperAdminShell>/);
     assert.match(layout, /Back to Super Admin Control Center/);

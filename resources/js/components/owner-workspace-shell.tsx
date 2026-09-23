@@ -441,7 +441,7 @@ export function OwnerWorkspaceShell({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </header>
-                <main className="owner-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
+                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
                     {children}
                 </main>
             </div>

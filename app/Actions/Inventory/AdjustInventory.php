@@ -4,6 +4,7 @@ namespace App\Actions\Inventory;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Enums\InventoryMovementType;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\InventoryMovement;
 use App\Models\Product;
@@ -52,6 +53,7 @@ class AdjustInventory
                     'reason' => $reason,
                 ],
             );
+            ReportsChanged::dispatch((string) $branch->id, 'inventory.adjusted');
 
             return $movement;
         });

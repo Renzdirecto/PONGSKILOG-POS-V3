@@ -378,7 +378,7 @@ export default function Staff({
                                         aria-label={label}
                                         aria-pressed={viewMode === mode}
                                         onClick={() => chooseView(mode)}
-                                        className={`flex size-10 items-center justify-center rounded-lg ${viewMode === mode ? 'bg-white text-[#111] shadow-sm' : 'text-[#777]'}`}
+                                        className={`flex size-11 items-center justify-center rounded-lg ${viewMode === mode ? 'bg-white text-[#111] shadow-sm' : 'text-[#777]'}`}
                                     >
                                         <Icon className="size-4" />
                                     </button>

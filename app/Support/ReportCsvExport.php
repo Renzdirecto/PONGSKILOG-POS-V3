@@ -108,6 +108,10 @@ class ReportCsvExport
                 $reconciliation['variance']['cash'], $reconciliation['variance']['cashless'],
             ];
         }
+        /** A long period lists only the latest Store Sessions; say so, as the on-screen report does. */
+        if ($report['sessions_listed']['shown'] < $report['sessions_listed']['total']) {
+            $rows[] = ['Listed the latest '.$report['sessions_listed']['shown'].' of '.$report['sessions_listed']['total'].' Store Sessions; every total above includes all of them.'];
+        }
 
         return $rows;
     }

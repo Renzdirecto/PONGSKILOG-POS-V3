@@ -495,3 +495,50 @@ Before production launch:
 - Mobile/tablet QA passed
 - Monitoring/logging active
 - Rollback procedure documented
+
+## 26. POST-PHASE-16 PLANNED PWA SLICE (accepted plan, NOT implemented)
+
+**Status: PLANNED, NOT IMPLEMENTED.** Accepted by the user on 2026-09-24 during Phase 16 Final QA. There is currently **no service worker, no web manifest, no install prompt, no offline cache and no manifest-driven PWA release**. Phase 16 only prepared branding assets. The PWA needs its own dedicated implementation slice with its own tests and QA; it has no build-plan phase number yet and must not be marked complete until that slice ships.
+
+### Mental model
+
+PONGSKILOG PWA = **INTERNET-FIRST / WIFI-FIRST**. The server stays authoritative for every financial, inventory, Store Session and concurrency decision (§02 rule 4: the system is not offline-first).
+
+- **Online:** normal, full application behavior.
+- **Offline:** a safe, degraded, **read-only / browse-oriented** experience.
+
+### Offline read-only scope
+
+- Primary offline-safe candidate: **Product/Menu Browse** from the last confirmed cached catalog.
+- Possible later cached read-only views: Transaction History, Owner Dashboard, Owner Reports — **only** with an explicit last-confirmed snapshot strategy. Any such view must prominently show `OFFLINE` and `Last synced: <timestamp>` and must never imply the data is current.
+- When no safe confirmed cache exists, show an offline-unavailable state instead of stale or invented data.
+
+### No offline writes (first PWA release)
+
+Offline must block, and must **not** queue for later automatic sync: Pay Now, Pay Later, settlement, Store Open, Store Close, Void, committed-order edits, Store Expenses, inventory adjustments, Customer QR LOAD/restore/delete, Kitchen status changes, Staff creation/edit, Access Control changes, Settings changes, and any other financial or stock-changing mutation. Reason: financial, inventory, Store Session and concurrency integrity remain server-authoritative.
+
+### Recommended: POS cart draft preservation
+
+- An unfinished local POS cart/draft intent MAY be preserved on the device. If the connection drops, the cart stays visible and Payment/commit stays disabled.
+- When the connection returns, the server MUST revalidate Product availability, price, modifiers, stock, Branch and Store Session before payment/commit. An offline cart is never silently auto-submitted.
+
+### Reconnect
+
+Network returns → Reverb/Echo reconnects → the client performs an authoritative refetch → server truth replaces any stale cached display. The existing realtime contracts already treat events as invalidation signals followed by refetch (catalog, Customer Display, Kitchen, Owner reports), which is compatible with this plan.
+
+### Installability goals
+
+- Installable on Android, desktop and other browser-supported devices; standalone, app-like launch; branded launcher/home-screen icon; app name **Pongskilog**; splash/theme branding where supported.
+- HTTPS is required in production. No App Store / Play Store listing is required for the initial release.
+
+### Branding asset registry for the future PWA
+
+| Use | Asset | Source original |
+| --- | --- | --- |
+| Browser tab / favicon | Approved gold rounded-square chef icon: `public/favicon.ico`, `public/images/branding/icons/favicon-32.png`, `favicon-192.png` | `public/images/branding/source/pongskilog-tab-icon.png` |
+| App install / launcher icon | Approved square Pongskilog-branded icon: `public/images/branding/icons/icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`; `public/apple-touch-icon.png` | `public/images/branding/source/pongskilog-square-logo.jpg` |
+| Social / Messenger link preview | Approved cream Pongskilog preview card: `public/images/branding/og-image.jpg` (1200×630) | `public/images/branding/source/pongskilog-link-preview-mockup.png` |
+| Header / sidebar | Existing approved Pongskilog wordmark treatment (sidebars and rails keep the wordmark only) | — |
+| Phone top bar / auth identity | Round emblem `public/images/branding/pongskilog-emblem.png` | `public/images/branding/source/pongskilog-round-emblem.jpg` |
+
+The 192/512 and maskable icons are ready for a future manifest but are not yet referenced by one.

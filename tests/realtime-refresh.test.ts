@@ -31,8 +31,13 @@ test('owner dashboard and reports reload their report props from the reports cha
     const reports = jsSource('pages/workspaces/reports.tsx');
 
     assert.match(hook, /'reports',\s+\['\.reports\.changed'\]/);
-    assert.match(hook, /router\.reload\(\{ only: onlyRef\.current, onFinish \}\)/);
-    assert.match(hook, /usePoll\(\s+30_000,/);
+    assert.match(hook, /router\.reload\(\{\s+only: onlyRef\.current,\s+onCancelToken:/);
+    assert.match(hook, /REPORTS_FALLBACK_POLL_MS = 30_000/);
+    assert.match(hook, /if \(!shouldPoll\) \{\s+return;\s+\}/);
+    assert.match(hook, /router\.on\('start'[\s\S]+refresh\.hold\(\)/);
+    assert.match(hook, /router\.on\('finish'[\s\S]+refresh\.release\(\)/);
+    assert.doesNotMatch(hook, /usePoll/);
+    assert.doesNotMatch(dashboard, /usePoll/);
     assert.match(
         dashboard,
         /useReportsRealtimeRefresh\(\s+\['analytics', 'report', \.\.\.LIVE_PROPS\],\s+report\.scope\?\.id \?\? null,\s+\)/,
@@ -41,6 +46,46 @@ test('owner dashboard and reports reload their report props from the reports cha
         reports,
         /useReportsRealtimeRefresh\(\s+\['report', 'analytics', 'kitchenNow'\],\s+report\.scope\?\.id \?\? null,\s+\)/,
     );
+});
+
+test('a report refresh waits for the page own visit and cancels a stale reload in flight', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let requests = 0;
+    let cancelled = 0;
+    let finish = () => {};
+    const refresh = createRealtimeRefresh((done) => {
+        requests += 1;
+        finish = done;
+
+        return () => {
+            cancelled += 1;
+            done();
+        };
+    }, 100);
+
+    refresh.schedule();
+    refresh.hold();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 0);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 1);
+
+    refresh.hold();
+    assert.equal(cancelled, 1);
+    refresh.schedule();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 1);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 2);
+    finish();
+
+    refresh.hold();
+    refresh.release();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 2);
+    refresh.dispose();
 });
 
 test('audit realtime stops fallback polling while Echo is connected', () => {

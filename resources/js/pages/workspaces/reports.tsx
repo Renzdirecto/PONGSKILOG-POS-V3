@@ -350,9 +350,9 @@ export default function Reports({
                         <div className="flex flex-col gap-1.5">
                             <span className={labelClass}>Custom range</span>
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex min-h-11 items-center gap-[7px] rounded-[11px] border border-[#e5e5e5] bg-white px-[11px]">
+                                <div className="flex min-h-11 max-w-full min-w-0 items-center gap-[7px] rounded-[11px] border border-[#e5e5e5] bg-white px-[11px]">
                                     <CalendarDays
-                                        className="size-4 text-[#767676]"
+                                        className="size-4 shrink-0 text-[#767676] max-[389px]:hidden"
                                         aria-hidden="true"
                                     />
                                     <input
@@ -363,7 +363,7 @@ export default function Reports({
                                         onChange={(event) =>
                                             setFrom(event.target.value)
                                         }
-                                        className="w-[128px] border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
+                                        className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
                                     />
                                     <span className="text-[#c9c9c9]">–</span>
                                     <input
@@ -374,7 +374,7 @@ export default function Reports({
                                         onChange={(event) =>
                                             setTo(event.target.value)
                                         }
-                                        className="w-[128px] border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
+                                        className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
                                     />
                                 </div>
                                 <button
@@ -440,7 +440,7 @@ export default function Reports({
                                 type="button"
                                 onClick={() => visit({ [chip.key]: [] })}
                                 aria-label={`Remove filter ${chip.label}`}
-                                className="inline-flex min-h-8 max-w-full items-center gap-[7px] rounded-full border border-[#111] bg-white px-[11px] text-[11.5px] font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
+                                className="inline-flex min-h-11 max-w-full items-center gap-[7px] rounded-full border border-[#111] bg-white px-[11px] text-[11.5px] font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-8"
                             >
                                 <span className="truncate">{chip.label}</span>
                                 <X
@@ -459,7 +459,7 @@ export default function Reports({
                                     categories: [],
                                 })
                             }
-                            className="inline-flex min-h-8 items-center px-[11px] text-[11.5px] font-semibold text-[#B91C1C]"
+                            className="inline-flex min-h-11 items-center rounded-full px-[11px] text-[11.5px] font-semibold text-[#B91C1C] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-8"
                         >
                             Reset all
                         </button>
@@ -1265,7 +1265,7 @@ export default function Reports({
                             title="Daily summary"
                             hint="Each business date includes every Store Session opened on it."
                         >
-                            <div className="hidden overflow-hidden rounded-[13px] border border-[#efefef] md:block">
+                            <div className="hidden overflow-x-auto rounded-[13px] border border-[#efefef] md:block">
                                 <table className="w-full text-left text-[13px] tabular-nums">
                                     <thead className="bg-[#fafafa]">
                                         <tr className={labelClass}>
@@ -1641,8 +1641,9 @@ function FilterDialog({
                     <DialogDescription className="text-xs leading-[1.5] text-[#767676]">
                         Order type, payment method and cashier apply to every
                         KPI, chart and table (Store Session reconciliation
-                        always covers the whole drawer). Category narrows Top
-                        products and Product performance only.
+                        always covers the whole drawer). Choosing Cash, Cashless
+                        or Split leaves out unpaid Pay Later orders. Category
+                        narrows Top products and Product performance only.
                     </DialogDescription>
                     {groups.map((group) => {
                         const values = draft[group.key] as (string | number)[];

@@ -158,3 +158,11 @@ test('history payment reuses the wide POS payment dialog', () => {
     assert.match(page, /idempotency_key: idempotencyKey/);
     assert.match(page, /attempt=\{null\}/);
 });
+
+test('a view-only business viewer gets no cashier pay, void or edit controls', () => {
+    assert.match(page, /readOnly=\{!operational\}/);
+    assert.match(page, /\{!readOnly && !isVoided && Number\(item\.outstanding\) > 0 && \(/);
+    assert.match(page, /\{!readOnly && \(\s+<>\s+<button[\s\S]+?Void[\s\S]+?Edit/);
+    assert.match(page, /\{detail\.operational !== false && \(\s+<>/);
+    assert.match(page, /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/);
+});

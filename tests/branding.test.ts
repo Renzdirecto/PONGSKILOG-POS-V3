@@ -33,3 +33,9 @@ test('titles and the public landing page say Pongskilog, not Laravel', () => {
     assert.doesNotMatch(welcome, /Laravel/);
     assert.match(welcome, /\/images\/branding\/icons\/icon-512\.png/);
 });
+
+test('the account settings shell carries no Laravel starter kit links', () => {
+    for (const shell of [source('components/app-sidebar.tsx'), source('components/app-header.tsx')]) {
+        assert.doesNotMatch(shell, /react-starter-kit|laravel\.com\/docs/);
+    }
+});

@@ -1,17 +1,25 @@
-/** One request at a time, with one trailing refresh for signals received in flight. */
+/**
+ * One request at a time, with one trailing refresh for signals received in flight.
+ *
+ * `hold()` pauses refreshes while the page runs its own navigation (for example a filter change): a pending refresh
+ * waits, an in-flight one is cancelled through the cancel function `refresh` may return, and `release()` runs one
+ * refresh against the page the navigation produced, so a stale reload never lands on top of newer filters.
+ */
 export function createRealtimeRefresh(
-    refresh: (finish: () => void) => void,
+    refresh: (finish: () => void) => void | (() => void),
     debounceMs = 160,
 ) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
     let queued = false;
     let disposed = false;
+    let held = false;
+    let cancelInFlight: (() => void) | undefined;
     const schedule = (delay = debounceMs) => {
         if (disposed) {
             return;
         }
-        if (inFlight) {
+        if (inFlight || held) {
             queued = true;
             return;
         }
@@ -21,17 +29,43 @@ export function createRealtimeRefresh(
         timer = setTimeout(() => {
             timer = undefined;
             inFlight = true;
-            refresh(() => {
+            let finished = false;
+            const cancel = refresh(() => {
+                finished = true;
                 inFlight = false;
+                cancelInFlight = undefined;
                 if (queued) {
                     queued = false;
                     schedule(0);
                 }
             });
+            cancelInFlight = finished || typeof cancel !== 'function' ? undefined : cancel;
         }, delay);
     };
     return {
         schedule,
+        hold: () => {
+            held = true;
+            if (timer !== undefined) {
+                clearTimeout(timer);
+                timer = undefined;
+                queued = true;
+            }
+            if (inFlight) {
+                queued = true;
+                cancelInFlight?.();
+            }
+        },
+        release: () => {
+            if (!held) {
+                return;
+            }
+            held = false;
+            if (queued && !inFlight) {
+                queued = false;
+                schedule(0);
+            }
+        },
         activate: () => {
             disposed = false;
         },
@@ -40,6 +74,7 @@ export function createRealtimeRefresh(
             clearTimeout(timer);
             timer = undefined;
             queued = false;
+            held = false;
         },
     };
 }

@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage, usePoll } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     Banknote,
     ChevronRight,
@@ -146,9 +146,11 @@ export default function OwnerDashboard({
         query: period === 'today' ? {} : { date: period },
     });
 
-    /** Kitchen, inventory and the latest transactions also refresh on a timer (ages and waiting times). */
-    usePoll(30_000, { only: LIVE_PROPS });
-    /** Sales, payments and sessions update as soon as an order, payment, void, expense or Store change happens. */
+    /**
+     * Sales, payments, sessions, Kitchen, inventory and the latest transactions update as soon as an order, payment,
+     * void, Kitchen status, expense, stock adjustment or Store change happens; the only timer is the disconnected
+     * fallback. Kitchen ages are shown "As of" their snapshot time.
+     */
     useReportsRealtimeRefresh(
         ['analytics', 'report', ...LIVE_PROPS],
         report.scope?.id ?? null,

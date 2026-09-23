@@ -122,7 +122,8 @@ test('the dashboard follows the standalone sections with real data only', () => 
         assert.match(dashboard, new RegExp(`title="${title}"`));
     }
     assert.match(dashboard, /Reporting period/);
-    assert.match(dashboard, /usePoll\(30_000, \{ only: LIVE_PROPS \}\)/);
+    assert.doesNotMatch(dashboard, /usePoll/);
+    assert.match(dashboard, /useReportsRealtimeRefresh\(\s+\['analytics', 'report', \.\.\.LIVE_PROPS\]/);
     assert.doesNotMatch(dashboard, /parseFloat|Number\(|BigInt\(|Math\.random/);
     assert.doesNotMatch(
         dashboard,

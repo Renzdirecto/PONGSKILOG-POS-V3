@@ -548,6 +548,23 @@ test('the csv export carries the payment method mix and the category filter of t
         ->and($csv)->not->toContain('Tapsilog');
 });
 
+test('the csv export says when a long period lists only the latest store sessions', function () {
+    analyticsAt('2026-09-23 12:00');
+    $branch = Branch::factory()->create(['code' => 'MAIN']);
+    foreach (range(1, 101) as $day) {
+        StoreSession::factory()->closed()->for($branch)->create(['opened_at' => now()->subDays($day)]);
+    }
+    $export = fn (array $query): string => (string) $this->actingAs(analyticsViewer())
+        ->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->get(route('workspaces.reports.export', $query))
+        ->assertOk()
+        ->getContent();
+
+    expect($export(['date' => 'last_12_months']))
+        ->toContain('Listed the latest 100 of 101 Store Sessions; every total above includes all of them.')
+        ->and($export(['date' => 'last_30_days']))->not->toContain('Listed the latest');
+});
+
 test('staff without business reporting cannot export reports', function (string $role) {
     $scenario = analyticsScenario('2026-09-23 09:00');
 

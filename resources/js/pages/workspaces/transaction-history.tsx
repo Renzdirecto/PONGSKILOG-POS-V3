@@ -250,11 +250,15 @@ export default function TransactionHistory({
     const listRoute = business ? businessTransactions : transactionHistory;
     const showRoute = business ? showBusiness : show;
     const allBranches = business && scope === null;
-    const [view, setView] = useState<'tiles' | 'list'>(() =>
-        localStorage.getItem('transaction-history-view') === 'list'
-            ? 'list'
-            : 'tiles',
-    );
+    const [view, setView] = useState<'tiles' | 'list'>(() => {
+        try {
+            return localStorage.getItem('transaction-history-view') === 'list'
+                ? 'list'
+                : 'tiles';
+        } catch {
+            return 'tiles';
+        }
+    });
     const [selected, setSelected] = useState<Detail | null>(null);
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -438,10 +442,14 @@ export default function TransactionHistory({
                             type="button"
                             onClick={() => {
                                 setView(mode);
-                                localStorage.setItem(
-                                    'transaction-history-view',
-                                    mode,
-                                );
+                                try {
+                                    localStorage.setItem(
+                                        'transaction-history-view',
+                                        mode,
+                                    );
+                                } catch {
+                                    /** Blocked storage only loses the remembered view. */
+                                }
                             }}
                             className={`inline-flex h-10 items-center gap-1.5 rounded-[9px] px-3.5 text-[12.5px] font-semibold ${view === mode ? 'bg-[#111] text-white' : 'text-[#666]'}`}
                         >
@@ -596,6 +604,7 @@ export default function TransactionHistory({
                             item={item}
                             branchCode={allBranches ? item.branch?.code : undefined}
                             compact={view === 'list'}
+                            readOnly={!operational}
                             onDetails={() => void loadDetail(item.id)}
                             onEdit={() =>
                                 void loadDetail(item.id).then((detail) =>
@@ -1039,6 +1048,7 @@ function TransactionCard({
     item,
     branchCode,
     compact,
+    readOnly,
     onDetails,
     onEdit,
     onPayment,
@@ -1049,6 +1059,8 @@ function TransactionCard({
     /** Shown on All Branches so every record keeps its Branch identity. */
     branchCode?: string;
     compact: boolean;
+    /** A view-only business viewer (the Owner) never sees Cashier Pay, Void or Edit controls. */
+    readOnly: boolean;
     onDetails: () => void;
     onEdit: () => void;
     onPayment: () => void;
@@ -1166,7 +1178,7 @@ function TransactionCard({
                     Details
                 </button>
             </div>
-            {!isVoided && Number(item.outstanding) > 0 && (
+            {!readOnly && !isVoided && Number(item.outstanding) > 0 && (
                 <button
                     type="button"
                     disabled={!item.can_settle}
@@ -1185,33 +1197,37 @@ function TransactionCard({
                     {pesos(item.outstanding)}
                 </button>
             )}
-            <div className="grid grid-cols-3 gap-1.5">
-                <button
-                    type="button"
-                    disabled={!item.can_void}
-                    title={
-                        item.can_void
-                            ? 'Void transaction'
-                            : 'This transaction cannot be voided'
-                    }
-                    onClick={onVoid}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
-                >
-                    <AlertTriangle className="size-4" /> Void
-                </button>
-                <button
-                    type="button"
-                    disabled={!item.can_edit || isVoided}
-                    title={
-                        item.can_edit
-                            ? 'Edit transaction'
-                            : 'Earlier Store Sessions are read-only'
-                    }
-                    onClick={onEdit}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-neutral-200 text-[12.5px] font-semibold disabled:opacity-40"
-                >
-                    <Pencil className="size-4" /> Edit
-                </button>
+            <div className={`grid gap-1.5 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                {!readOnly && (
+                    <>
+                        <button
+                            type="button"
+                            disabled={!item.can_void}
+                            title={
+                                item.can_void
+                                    ? 'Void transaction'
+                                    : 'This transaction cannot be voided'
+                            }
+                            onClick={onVoid}
+                            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
+                        >
+                            <AlertTriangle className="size-4" /> Void
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!item.can_edit || isVoided}
+                            title={
+                                item.can_edit
+                                    ? 'Edit transaction'
+                                    : 'Earlier Store Sessions are read-only'
+                            }
+                            onClick={onEdit}
+                            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-neutral-200 text-[12.5px] font-semibold disabled:opacity-40"
+                        >
+                            <Pencil className="size-4" /> Edit
+                        </button>
+                    </>
+                )}
                 <button
                     type="button"
                     onClick={onPrint}
@@ -1567,31 +1583,38 @@ function TransactionDetailDialog({
                     </div>
                 )}
                 {detail && !loading && (
-                    <footer className="grid shrink-0 grid-cols-[auto_auto_1fr] gap-2 border-t border-neutral-200 bg-white p-3.5">
-                        <button
-                            type="button"
-                            disabled={!detail.can_void}
-                            title={
-                                detail.can_void
-                                    ? 'Void transaction'
-                                    : 'This transaction cannot be voided'
-                            }
-                            onClick={onVoid}
-                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
-                        >
-                            <ShieldBan className="size-4" /> Void
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                !detail.can_edit ||
-                                detail.commercial_status === 'voided'
-                            }
-                            onClick={onEdit}
-                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
-                        >
-                            <Pencil className="size-4" /> Edit
-                        </button>
+                    <footer
+                        className={`grid shrink-0 gap-2 border-t border-neutral-200 bg-white p-3.5 ${detail.operational === false ? 'grid-cols-1' : 'grid-cols-[auto_auto_1fr]'}`}
+                    >
+                        {/* A view-only business viewer (the Owner) gets the receipt only, never Cashier Void or Edit. */}
+                        {detail.operational !== false && (
+                            <>
+                                <button
+                                    type="button"
+                                    disabled={!detail.can_void}
+                                    title={
+                                        detail.can_void
+                                            ? 'Void transaction'
+                                            : 'This transaction cannot be voided'
+                                    }
+                                    onClick={onVoid}
+                                    className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
+                                >
+                                    <ShieldBan className="size-4" /> Void
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={
+                                        !detail.can_edit ||
+                                        detail.commercial_status === 'voided'
+                                    }
+                                    onClick={onEdit}
+                                    className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
+                                >
+                                    <Pencil className="size-4" /> Edit
+                                </button>
+                            </>
+                        )}
                         <button
                             type="button"
                             onClick={onPrint}

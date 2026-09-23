@@ -555,6 +555,8 @@ When Offline:
 - Disable high-risk mutations
 - Keep safe read-only views usable where practical
 
+**Future PWA (POST-PHASE-16 PLANNED PWA SLICE — NOT implemented):** internet-first/Wi-Fi-first; offline is read-only and browse-oriented (last confirmed catalog first). Any cached history/Dashboard/Reports view must show `OFFLINE` and `Last synced: <timestamp>` prominently or show an offline-unavailable state; no offline business writes are queued; an unsent POS cart may stay visible with payment disabled and is revalidated by the server on reconnect. Full plan and branding asset registry: `12-deployment-operations.md` §26.
+
 ---
 
 ## 27. Accessibility
@@ -611,7 +613,7 @@ Close Store extends the Current Store Session dialog; the Phase 14 statement tha
 
 ### Owner analytics presentation (Phase 16C)
 
-Owner Dashboard and Reports charts are lightweight SVG/CSS modeled on the decoded standalone (no chart library): black area/line trends with a dashed grey previous period, a black/blue Cash–Cashless donut, #F2F2F2 bar tracks, black peak bars, keyboard-focusable trend points with a dark tooltip, collision-free axis labels (≤ 5 on phones) and text alternatives for every bar. Money on cards is always exact server decimals; compact ₱k/₱M appears only on chart axes. Split is an explanatory row, never a third payment segment. Segmented controls keep the standalone look on desktop with 44px targets on touch widths. Print hides the management shell.
+Owner Dashboard and Reports charts are lightweight SVG/CSS modeled on the decoded standalone (no chart library): black area/line trends with a dashed grey previous period, a black/blue Cash–Cashless donut, #F2F2F2 bar tracks, black peak bars, keyboard-focusable trend points with a dark tooltip, collision-free axis labels (≤ 5 on phones) and text alternatives for every bar. Money on cards is always exact server decimals; compact ₱k/₱M appears only on chart axes. On the Dashboard, Split is an explanatory row, never a third payment segment. The Reports Payment method donut is a paid-sales (₱) share: Split parts sit inside Cash and Cashless by default, and the *Include split* toggle shows Cash-only / Cashless-only / Split as three segments of the same total (never added on top). Report filter chips and Reset all keep 44px targets below `md`; the custom date range must fit 360px without horizontal overflow. The read-only Owner Transaction History renders no Take payment, Void or Edit controls. Segmented controls keep the standalone look on desktop with 44px targets on touch widths. Print hides the management shell.
 
 No authoritative Super Admin standalone exists. The former `context/design/PONGSKILOG Super Admin (standalone).html` was deleted as obsolete. Super Admin screens are product-designed from requirements (idea → product UX → implementation) in the established PONGSKILOG Owner/POS language: dark `#111111` sidebar, white/`#F7F7F7` content, Poppins, compact 20px-radius panels, restrained borders, and the existing button, dialog, and bottom-sheet conventions. `pos.html`, `PONGSKILOG-OWNER.html`, and `customer-qr.html` remain authoritative for the surfaces Super Admin inherits from them.
 

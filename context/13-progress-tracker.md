@@ -824,17 +824,41 @@ Same branch `feature/owner-reporting`, built on Phase 16A (`1731ce0`). No migrat
 - **Verification.** New `SalesAnalyticsTest` (18), `OwnerDashboardTest` (14), `BusinessTransactionHistoryTest` (12), `OwnerStaffManagementTest` (13), `OwnerSettingsTest` (6); updated `SuperAdminWorkspaceTest`. Focused backend regression **615 tests / 5,413 assertions** passed. Frontend **135 tests** passed (new `owner-analytics.test.ts`, rewritten `reports-ui.test.ts`). Pint, PHPStan (0 errors), frontend lint, TypeScript and production build passed. The isolated PostgreSQL harness `tests/verify-owner-reports-postgres.php` gained cases G–J (Manila hours, payment-class filter with scoped flows, EXTRACT(EPOCH) prep time, live snapshot and All Branches history) and passed, removing its schema. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** The complete Laravel suite is reserved for FINAL QA.
 - Status: **READY FOR USER MANUAL QA.** Standalone parity was reviewed source-side against the decoded template (no browser sweep); final visual acceptance is USER MANUAL QA. Phase 16 is not final until USER MANUAL QA and FINAL QA pass. PWA work was not started.
 
-- [x] Dashboard (Phase 16C; USER MANUAL QA pending)
-- [x] All Branches scope (USER MANUAL QA pending)
-- [x] Specific Branch scope (USER MANUAL QA pending)
-- [x] Transactions (Phase 16B; USER MANUAL QA pending)
-- [x] Reports (Phase 16A + 16C; USER MANUAL QA pending)
+### Manual-QA refinements — 2026-09-24 (`10ab328`, `3528eb0`, `da90ced`)
+
+- Reports Payment method donut became a paid-sales (₱) share with the user-approved *Include split* toggle (OFF = Split parts inside Cash/Cashless, ON = Cash-only / Cashless-only / Split, never added on top); category filter (Top products, Product performance, CSV product table only; current-category limitation disclosed); the "Filter this report" dialog (Category, Order type, Payment method, Cashier; Select all; Reset / Apply; 560px dialog, phone bottom sheet).
+- Owner Dashboard and Reports became live through the private `reports` invalidation channel (supersedes the 16A "no realtime / manual Refresh" note and the 16C "Dashboard polls" note).
+- Branding: canonical name **Pongskilog**, gold rounded-square chef tab icon, wordmark-only sidebars/rails, round emblem on phone/auth, square launcher icons prepared (unused), cream 1200×630 link preview, intentional Pongskilog `/` landing. Staff page: tiled default, optional list, per-device preference, name then Employee ID.
+
+### Phase 16 FINAL QA — 2026-09-24
+
+USER MANUAL QA: **PASSED BY USER** (reported by the user; the agent performed no browser/device QA). Final engineering QA audited the complete `origin/dev...origin/feature/owner-reporting` change set (5 commits, 99 files) in a detached QA worktree, independently of prior reports.
+
+- **Findings fixed (branch `qa/owner-reporting-final` → pushed fast-forward to `feature/owner-reporting`):**
+  - Realtime race: a debounced `router.reload` (which always requests the current URL and is applied when only the pathname matches) could land after a period/filter visit, overwrite the new figures with the old filter's and push the old URL. `useReportsRealtimeRefresh` now holds refreshes during the page's own sync visits, cancels an in-flight reload when one starts and refreshes once afterwards; the disconnected fallback goes through the same guard.
+  - Polling: the Dashboard's always-on 30s poll (duplicate polling while connected; two timers while disconnected) was removed. The single 30s fallback runs only while realtime is disconnected, skips hidden tabs, and the first connection after a page load no longer triggers a redundant full reload. Stock adjustments (`AdjustInventory`, Store Session inventory adjustment) now signal `reports.changed` (`inventory.adjusted`) so inventory attention stays live.
+  - Owner Transaction History rendered disabled Take payment / Void / Edit with a false "Earlier Store Sessions are read-only" reason; a view-only viewer now gets no Cashier mutation controls (server gating unchanged). Its view preference `localStorage` access is now guarded.
+  - CSV now states when a long period lists only the latest 100 of N Store Sessions (the screen already did).
+  - Report filter chips / Reset all and the Staff tile/list toggle meet 44px on touch widths; the custom date range no longer overflows at 360px; the Daily summary table scrolls instead of clipping; the filter dialog discloses that choosing a Payment method leaves out unpaid Pay Later Orders.
+  - Laravel starter-kit Repository/Documentation links removed from the account settings shell (`app-sidebar`, `app-header`).
+  - Regression coverage: realtime signal per action (settlement, Store Close, both stock adjustments), channel denial for guest / inactive owner / revoked `reports.view`, hold/cancel refresh unit test, CSV truncation notice, read-only history, touch/overflow/disclosure and branding source checks.
+- **Verified semantics (unchanged):** Manila business date = session opening date (cross-midnight stays under the opening date; UTC half-open bounds); multiple sessions per date combine with per-session drill-down and zero-activity sessions kept; Net Sales = current `orders.total` of committed Active/Completed Orders (Pay Later included) ≠ collections; Cash/Cashless = `StoreSessionReconciliation::flows()` (same formula as Close Store and Cashier Dashboard; `calculate()` delegates to it); corrections never guessed, corrected-then-voided nets to zero once; Expenses = Store Session expenses only; CLOSED = persisted snapshot, OPEN = LIVE/provisional, legacy missing values = Not available; Branch isolation on every flow, CSV and realtime filter; settlement/edit/void/allocation are same-session only, so order-filtered flows lose nothing; query count constant in session count; no migration.
+- **Gates:** complete Laravel suite **1,656 passed / 11,595 assertions / 0 failures / 0 errors / 0 skipped**; complete frontend suite **156 passed / 0 failed**; Pint, PHPStan (0 errors), `check:frontend`, `types:check`, production build and `git diff --check` passed. `tests/verify-owner-reports-postgres.php` passed A–K on an isolated loopback PostgreSQL schema that was removed afterwards. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.**
+- **Known limitations (documented, accepted):** categories use the product's current category (no Order Item category snapshot); in an OPEN session an edited Order with a raised, unsettled balance is classified in the donut at its full current total until settled; `APP_NAME` in each deployment's env drives titles and the session cookie/cache prefix, so changing it logs users out (pin `SESSION_COOKIE` / `CACHE_PREFIX` before renaming); `og:image` follows the request host/scheme (configure trusted proxies in production); maskable icon corners fall outside the circular safe zone (icons not yet used).
+- **PWA:** POST-PHASE-16 PLANNED PWA SLICE recorded in `12-deployment-operations.md` §26 — **NOT implemented** (no manifest, service worker, install prompt, offline cache or offline writes).
+- Status: **PHASE 16 COMPLETE.** Phase 17, the remaining Phase 18 Access Control and the PWA slice are not started.
+
+- [x] Dashboard (Phase 16C; manual QA + Final QA passed)
+- [x] All Branches scope
+- [x] Specific Branch scope
+- [x] Transactions (Phase 16B; read-only for Owner)
+- [x] Reports (Phase 16A + 16C + manual-QA refinements)
 - [x] Products
 - [x] Inventory
-- [x] Staff (Phase 16D, operational Staff only; USER MANUAL QA pending)
-- [x] Settings (Phase 16D reuse; USER MANUAL QA pending)
-- [x] Branch comparison (Phase 16C; USER MANUAL QA pending)
-- [x] Store Session summaries (Phase 16A + 16C; USER MANUAL QA pending)
+- [x] Staff (Phase 16D, operational Staff only)
+- [x] Settings (Phase 16D reuse)
+- [x] Branch comparison (Phase 16C)
+- [x] Store Session summaries (Phase 16A + 16C)
 - [x] Owner blocked from Super Admin-only controls (tested)
 
 ---

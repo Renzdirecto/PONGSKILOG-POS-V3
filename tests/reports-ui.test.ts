@@ -258,3 +258,12 @@ test('Owner and Super Admin render the report inside their management shells', (
     );
     assert.match(layout, /page\.component === 'workspaces\/reports' \|\|/);
 });
+
+test('report filter chips, reset and the custom range fit phones with 44px targets', () => {
+    assert.match(page, /rounded-full border border-\[#111\] bg-white px-\[11px\] text-\[11\.5px\] font-semibold focus-visible:ring-2 focus-visible:ring-\[#111\] focus-visible:outline-none md:min-h-8/);
+    assert.match(page, /inline-flex min-h-11 items-center rounded-full px-\[11px\][^"]+md:min-h-8"\s+>\s+Reset all/);
+    assert.match(page, /max-w-full min-w-0 items-center gap-\[7px\]/);
+    assert.equal(page.match(/className="w-\[128px\] min-w-0 /g)?.length, 2);
+    assert.match(page, /Choosing Cash, Cashless\s+or Split leaves out unpaid Pay Later orders\./);
+    assert.match(page, /hidden overflow-x-auto rounded-\[13px\] border border-\[#efefef\] md:block">\s+<table/);
+});

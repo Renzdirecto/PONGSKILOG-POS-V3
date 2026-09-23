@@ -7,6 +7,8 @@ use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\StoreSession;
+use App\Models\StoreSessionExpense;
 use App\Models\User;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -230,10 +232,15 @@ test('large whole unit quantities round trip without float conversion', function
     expect(BranchInventory::query()->sole()->on_hand)->toBe(PHP_INT_MAX);
 });
 
-test('future references are retained without requiring unimplemented tables', function () {
+test('implemented expense and reserved future references are retained', function () {
     $configuration = BranchProduct::factory()->create(['tracks_inventory' => true]);
     $orderId = (string) Str::uuid();
-    $expenseId = (string) Str::uuid();
+    $session = StoreSession::factory()->for($configuration->branch)->create();
+    $expenseId = StoreSessionExpense::factory()
+        ->for($configuration->branch)
+        ->for($session, 'storeSession')
+        ->create()
+        ->id;
     $transferId = (string) Str::uuid();
 
     $movement = app(ApplyInventoryMovement::class)->execute(

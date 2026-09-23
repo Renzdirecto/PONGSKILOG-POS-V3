@@ -792,3 +792,10 @@ boundary. No additional order, payment, inventory, or Kitchen aggregate was adde
 - `payment_invoice_proofs` has exactly one private object per Cashless Payment row and stores disk/path plus safe file metadata and uploader. Replacement swaps the object without changing Payment history; failed DB work removes the new object.
 - `audit_logs` is the canonical append-only mutation record with branch/user/module/action/auditable identity, before/after JSON, metadata, and an optional unique idempotency key.
 - Migration `2026_09_22_125245_add_transaction_history_editing_support` is additive and has verified PostgreSQL up/down/reapply behavior.
+
+## Phase 14 Store Session expenses - 2026-09-23
+
+- `store_session_expenses` is append-only current-session financial history: UUID identity, restrictive Branch/Store Session/actor parents, positive `numeric(14,2)` amount, constrained Cash/Cashless source, optional note, private receipt metadata, unique client idempotency UUID, and canonical intent hash. Session/source and bounded-history indexes support full-session exact aggregates plus newest-first display.
+- `store_session_expense_items` permits at most one optional tracked Product and positive integer quantity per expense. A linked purchase calls the existing inventory movement primitive with `store_purchase_restock`; `inventory_movements.store_session_expense_id` has a restrictive PostgreSQL foreign key. Normal expenses create no item, movement, or balance change.
+- Cash and Cashless totals are SQL aggregates over the complete current Store Session, independent of the bounded newest 50 records. Earlier sessions and other Branches are excluded. These separate totals are Phase 15 reconciliation inputs; no closing calculation is implemented here.
+- Fresh/rollback/reapply passed on disposable SQLite and isolated PostgreSQL. PostgreSQL also verified positive checks, exact money, uniqueness, restrictive linkage, concurrent retry/restock behavior, and the future exclusive Store Session close boundary.

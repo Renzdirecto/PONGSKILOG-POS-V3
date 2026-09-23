@@ -860,3 +860,14 @@ USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt
 | Detail dialog | Fresh items/modifiers, original/current money, grouped Payment attempts, adjustments, proof actions, receipt print/share eligibility. |
 | Edit dialog | Current metadata, reusable Product customization, retained snapshot disclosure, versioned save, explicit lower-total reconciliation and higher-total balance path. |
 | Invoice proof dialog | Authorized private view plus camera/file capture, replace and remove on the actual Cashless Payment row. |
+
+## Current Store Session surface
+
+| Surface | Registered behavior |
+|---|---|
+| Entry | Existing Cashier `LIVE / STORE OPEN` top control; no Expenses navigation page. |
+| Overview | Current Branch/session/opening context, complete-session Cash/Cashless/total expense aggregates, newest 50 expense records, truthful empty/truncated/offline states. |
+| Add expense / purchase | Stable attempt UUID, exact amount and payment source, optional note/private receipt, optional explicit one-product tracked restock and quantity. |
+| Expense detail | Read-only amount/source/actor/time/Branch/Session, note, Product/quantity/movement reference, and authorized private receipt action. |
+| State preservation | Dialog close returns to the same POS/cart/loaded-QR/order/payment state; authoritative realtime refresh updates only Store Session data. |
+| Future extension | Phase 15 adds reconciliation and Close Store to this same surface; none of those controls or calculations exist in Phase 14. |

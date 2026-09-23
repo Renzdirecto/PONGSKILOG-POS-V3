@@ -52,6 +52,11 @@ test('authorized cashier retrieves only the current branch open session detail',
                 'code' => 'MAIN',
                 'name' => 'Main Branch',
             ],
+            'expense_totals' => ['cash' => '0.00', 'cashless' => '0.00', 'total' => '0.00'],
+            'expenses' => [],
+            'expense_count' => 0,
+            'expenses_truncated' => false,
+            'restock_products' => [],
         ]);
 })->with(['cashier', 'cashier_kitchen']);
 

@@ -38,6 +38,36 @@ export type CurrentStoreSession = {
         name: string;
     };
     branch: BranchSummary;
+    expense_totals: {
+        cash: string;
+        cashless: string;
+        total: string;
+    };
+    expenses: StoreSessionExpense[];
+    expense_count: number;
+    expenses_truncated: boolean;
+    restock_products: {
+        id: string;
+        name: string;
+        on_hand: number;
+    }[];
+};
+
+export type StoreSessionExpense = {
+    id: string;
+    description: string;
+    amount: string;
+    payment_source: 'cash' | 'cashless';
+    note: string | null;
+    created_at: string;
+    created_by: { name: string };
+    item: {
+        product_id: string;
+        product_name: string;
+        quantity: number;
+        movement_id: string | null;
+    } | null;
+    receipt: { name: string; url: string } | null;
 };
 
 export type TwoFactorSetupData = {

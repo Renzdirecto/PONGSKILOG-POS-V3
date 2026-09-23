@@ -16,4 +16,5 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/**,resources/js/components/pos-paid.tsx,resources/js/pages/public-receipt.tsx} | .ai/rules/pages.md |
 | {app/Actions/Orders/VoidOrder.php,app/Http/Controllers/SetVoidAuthorizationPinController.php,app/Http/Requests/SetVoidAuthorizationPinRequest.php,resources/js/pages/**} | .ai/rules/requests-js-pages.md |
 | database/seeders/Local*Seeder.php | .ai/rules/seeders.md |
+| resources/js/{components,layouts}/**/*.{ts,tsx},app/Actions/StoreSessions/**/*.php | .ai/rules/store-sessions.md |
 | resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |

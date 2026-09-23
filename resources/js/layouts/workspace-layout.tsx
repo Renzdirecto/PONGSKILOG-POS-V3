@@ -30,7 +30,7 @@ import type {
     PosReadyOrder,
     StoreContext,
 } from '@/types';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 type SharedProps = {
     auth: Auth;
@@ -90,6 +90,23 @@ export default function WorkspaceLayout({
             (page.props.workspace === 'Owner' ||
                 page.props.workspace === 'Super Admin'));
 
+    const refreshStoreSession = useCallback(async () => {
+        setStoreSessionUnavailable(false);
+
+        try {
+            const detail = await storeSessionRequest.submit(
+                currentStoreSession(),
+                {
+                    onHttpException: () => true,
+                    onNetworkError: () => true,
+                },
+            );
+            setStoreSession(detail);
+        } catch {
+            setStoreSessionUnavailable(true);
+        }
+    }, [storeSessionRequest]);
+
     if (isOperational) {
         const openStoreSessionDetails = async () => {
             const openingState = openStoreSessionDialogState();
@@ -97,18 +114,7 @@ export default function WorkspaceLayout({
             setStoreSession(openingState.session);
             setStoreSessionUnavailable(openingState.unavailable);
 
-            try {
-                const detail = await storeSessionRequest.submit(
-                    currentStoreSession(),
-                    {
-                        onHttpException: () => true,
-                        onNetworkError: () => true,
-                    },
-                );
-                setStoreSession(detail);
-            } catch {
-                setStoreSessionUnavailable(true);
-            }
+            await refreshStoreSession();
         };
 
         const navigation = [
@@ -273,13 +279,17 @@ export default function WorkspaceLayout({
                         )}
                         <PosProfileControls auth={auth} />
                     </header>
-                    <StoreSessionDetailsDialog
-                        open={storeSessionDialogOpen}
-                        onOpenChange={setStoreSessionDialogOpen}
-                        session={storeSession}
-                        loading={storeSessionRequest.processing}
-                        unavailable={storeSessionUnavailable}
-                    />
+                    {storeSessionDialogOpen && branchContext.current && (
+                        <StoreSessionDetailsDialog
+                            open
+                            onOpenChange={setStoreSessionDialogOpen}
+                            branchId={branchContext.current.id}
+                            session={storeSession}
+                            loading={storeSessionRequest.processing}
+                            unavailable={storeSessionUnavailable}
+                            refreshSession={refreshStoreSession}
+                        />
+                    )}
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
                         {children}
                     </main>

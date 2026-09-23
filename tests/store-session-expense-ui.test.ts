@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import {
+    isExpenseWriteOnline,
+    storeExpenseError,
+} from '../resources/js/lib/store-session-expense.ts';
+
+const dialog = readFileSync(
+    new URL(
+        '../resources/js/components/store-session-details-dialog.tsx',
+        import.meta.url,
+    ),
+    'utf8',
+);
+const workspace = readFileSync(
+    new URL('../resources/js/layouts/workspace-layout.tsx', import.meta.url),
+    'utf8',
+);
+const realtime = readFileSync(
+    new URL(
+        '../resources/js/hooks/use-store-expense-realtime.ts',
+        import.meta.url,
+    ),
+    'utf8',
+);
+
+test('STORE OPEN launches the reusable current-session expense surface', () => {
+    assert.match(workspace, /onClick=\{openStoreSessionDetails\}/);
+    assert.match(workspace, /<StoreSessionDetailsDialog/);
+    assert.match(dialog, /Current Store Session/);
+    assert.match(dialog, /Purchases & expenses/);
+    assert.match(dialog, /Add expense \/ purchase/);
+    assert.match(dialog, /Restock inventory/);
+    assert.match(dialog, /View private receipt/);
+    assert.match(dialog, /h-\[min\(92svh,780px\)\]/);
+    assert.doesNotMatch(dialog, /Close Store/i);
+});
+
+test('expense form keeps a stable attempt key and submits multipart data through Wayfinder', () => {
+    assert.match(dialog, /useState\(createClientUuid\)/);
+    assert.match(dialog, /data\.append\('idempotency_key', attempt\)/);
+    assert.match(dialog, /new FormData\(\)/);
+    assert.match(dialog, /\.\.\.store\(\)/);
+    assert.match(dialog, /accept="image\/jpeg,image\/png,image\/webp"/);
+});
+
+test('expense realtime uses a branch-private compact event and recovery refreshes', () => {
+    assert.match(realtime, /`branch\.\$\{branchId\}\.store-session`/);
+    assert.match(realtime, /\['\.store\.expense_recorded'\]/);
+    assert.match(realtime, /createBranchEventGuard\(branchId\)/);
+    assert.match(realtime, /connectionStatus === 'connected'/);
+    assert.match(realtime, /window\.addEventListener\('online', recover\)/);
+});
+
+test('expense errors preserve conflict and validation feedback', () => {
+    assert.match(
+        storeExpenseError({ response: { status: 409 } }),
+        /already used with different details/,
+    );
+    assert.equal(
+        storeExpenseError({
+            response: {
+                status: 422,
+                data: { errors: { amount: ['Enter a valid amount.'] } },
+            },
+        }),
+        'Enter a valid amount.',
+    );
+});
+
+test('expense writes require both browser and Echo connectivity', () => {
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: true },
+    });
+    assert.equal(isExpenseWriteOnline('connected'), true);
+    assert.equal(isExpenseWriteOnline('unavailable'), false);
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: false },
+    });
+    assert.equal(isExpenseWriteOnline('connected'), false);
+});

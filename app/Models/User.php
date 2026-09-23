@@ -108,6 +108,12 @@ class User extends Authenticatable
         return $this->hasMany(StoreSession::class, 'closed_by_user_id');
     }
 
+    /** @return HasMany<StoreSessionExpense, $this> */
+    public function createdStoreSessionExpenses(): HasMany
+    {
+        return $this->hasMany(StoreSessionExpense::class, 'created_by_user_id');
+    }
+
     /** @return BelongsToMany<Branch, $this> */
     public function branches(): BelongsToMany
     {

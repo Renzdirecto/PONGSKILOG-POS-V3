@@ -684,20 +684,26 @@ Phase 13 final release-gate implementation (2026-09-23):
 
 ## Phase 14 — Store Purchases / Expenses
 
-- [ ] Current Store Session expense list
-- [ ] Add Store Purchase / Expense
-- [ ] Description
-- [ ] Amount
-- [ ] Cash payment source
-- [ ] Cashless payment source
-- [ ] Note / reason
-- [ ] Optional receipt image
-- [ ] Optional inventory product link
-- [ ] Optional quantity
-- [ ] Restock inventory movement
-- [ ] Cash closing-balance effect
-- [ ] Cashless closing-balance effect
-- [ ] Store Session/user trace
+- [x] Current Store Session expense list
+- [x] Add Store Purchase / Expense
+- [x] Description
+- [x] Amount
+- [x] Cash payment source
+- [x] Cashless payment source
+- [x] Note / reason
+- [x] Optional receipt image
+- [x] Optional inventory product link
+- [x] Optional quantity
+- [x] Restock inventory movement
+- [x] Cash closing-balance effect
+- [x] Cashless closing-balance effect
+- [x] Store Session/user trace
+
+Phase 14 implementation completed on `feature/store-expenses` (2026-09-23). Cashier Store Purchases / Expenses now open from the existing `LIVE / STORE OPEN` Current Store Session control, not a new navigation destination. The reusable session dialog provides exact server totals, newest-first current-session history, read-only detail, and an offline-safe add flow with optional private receipt and one explicit tracked-Product restock. Cash and Cashless classification is persisted separately for future Phase 15 expected-balance calculations; Phase 15 Close Store/reconciliation remains unimplemented.
+
+The write derives the active Branch and OPEN Store Session, takes the shared Session boundary, uses stable UUID/hash idempotency, reauthorizes and locks inventory inputs, calls `ApplyInventoryMovement`, appends canonical Audit evidence, cleans failed uploads, and emits compact rescued after-commit realtime invalidation. Focused Laravel, frontend, isolated migration, and independent-worker PostgreSQL integrity/concurrency gates passed. Standalone parity and responsive behavior were source-reviewed; final device/visual acceptance is USER MANUAL QA. Phase 15, Phase 16 full workspace, Phase 17, and Phase 18 remain incomplete.
+
+Delivery verification: the focused Store Session/inventory/Audit/realtime regression slice passed **245 tests / 1,473 assertions**, followed by **26 tests / 145 assertions** after the PHPStan-driven projection typing correction. The complete frontend behavior suite passed **75 tests**. Pint, PHPStan with zero errors, frontend lint with zero warnings across 135 files, TypeScript, production build, and whitespace checks passed. Disposable SQLite and isolated PostgreSQL fresh/rollback/reapply passed; PostgreSQL independent workers passed exact replay, changed-intent conflict, same-Product and different-Product restocks, and the exclusive future Close Store boundary. The temporary databases/schemas were removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** No Supabase access/reset, dependency change, Phase 15 action, broad browser sweep, or PR was performed. Status: **READY FOR USER MANUAL QA**.
 
 ---
 

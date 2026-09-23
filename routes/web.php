@@ -30,6 +30,8 @@ use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffQrOrderController;
+use App\Http\Controllers\StoreSessionExpenseController;
+use App\Http\Controllers\StoreSessionExpenseReceiptController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
@@ -144,8 +146,15 @@ Route::middleware(['auth'])->group(function () {
         ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
         ->name('store-sessions.open');
     Route::get('store-sessions/current', CurrentStoreSessionController::class)
-        ->middleware('permission:pos.access')
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage'])
         ->name('store-sessions.current');
+    Route::post('store-sessions/current/expenses', [StoreSessionExpenseController::class, 'store'])
+        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:20,1'])
+        ->name('store-session-expenses.store');
+    Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
+        ->whereUuid('expense')
+        ->middleware(['permission:store_expenses.manage', 'branch'])
+        ->name('store-session-expenses.receipt');
 
     Route::get('workspaces/kitchen', KitchenWorkspaceController::class)
         ->middleware(['permission:kitchen.access', 'branch'])

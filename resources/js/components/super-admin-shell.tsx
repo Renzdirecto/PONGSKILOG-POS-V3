@@ -56,7 +56,7 @@ import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import { edit as editProfile } from '@/routes/profile';
-import { accessControl, notifications, reports } from '@/routes/super-admin';
+import { accessControl, notifications } from '@/routes/super-admin';
 import { index as staffIndex } from '@/routes/super-admin/staff';
 import {
     auditTrail,
@@ -65,6 +65,7 @@ import {
     customerDisplay,
     kitchen,
     owner,
+    reports,
     superAdmin,
     transactionHistory,
     voidOrders,

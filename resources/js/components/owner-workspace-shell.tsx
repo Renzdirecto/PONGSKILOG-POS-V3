@@ -33,7 +33,7 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
-import { owner } from '@/routes/workspaces';
+import { owner, reports } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
@@ -125,6 +125,7 @@ export function OwnerWorkspaceShell({
     const isCatalog = page.component.startsWith('catalog/');
     const isInventory = page.component.startsWith('inventory/');
     const isBranches = page.component === 'branches/index';
+    const isReports = page.component === 'workspaces/reports';
     const isDashboard =
         page.component === 'workspaces/show' && !isCatalog && !isInventory;
     const canProducts = auth.permissions.includes('products.manage');
@@ -160,9 +161,8 @@ export function OwnerWorkspaceShell({
                     label: 'Reports',
                     shortLabel: 'Reports',
                     icon: BarChart3,
-                    active: false,
-                    unavailableReason:
-                        'Reports are outside this refinement scope.',
+                    href: reports(),
+                    active: isReports,
                 },
             ],
         },
@@ -221,7 +221,9 @@ export function OwnerWorkspaceShell({
           ? 'Inventory'
           : isBranches
             ? 'Branch management'
-            : `${workspaceLabel} workspace`;
+            : isReports
+              ? 'Reports'
+              : `${workspaceLabel} workspace`;
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
         : 'All Branches';
@@ -458,7 +460,7 @@ export function OwnerWorkspaceShell({
                     aria-haspopup="dialog"
                     aria-expanded={mobileMenuOpen}
                     onClick={() => setMobileMenuOpen(true)}
-                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches ? 'bg-white text-[#111111]' : 'text-white/70'}`}
+                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches || isReports ? 'bg-white text-[#111111]' : 'text-white/70'}`}
                 >
                     <Menu className="size-[18px]" />
                     More

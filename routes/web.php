@@ -30,6 +30,7 @@ use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
+use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
@@ -97,8 +98,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('staff/{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('staff.avatar');
         Route::inertia('notifications', 'super-admin/placeholder', ['destination' => 'notifications'])
             ->name('notifications');
-        Route::inertia('reports', 'super-admin/placeholder', ['destination' => 'reports'])
-            ->middleware('permission:reports.view')->name('reports');
         Route::inertia('access-control', 'super-admin/placeholder', ['destination' => 'access-control'])
             ->name('access-control');
     });
@@ -119,6 +118,10 @@ Route::middleware(['auth'])->group(function () {
         'eyebrow' => 'Business Operations',
         'description' => 'Business-wide owner workspace.',
     ])->middleware('permission:reports.view')->name('workspaces.owner');
+
+    Route::get('workspaces/reports', ReportsController::class)
+        ->middleware('permission:reports.view')
+        ->name('workspaces.reports');
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
         ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier');

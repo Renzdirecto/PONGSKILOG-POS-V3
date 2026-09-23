@@ -798,6 +798,19 @@ Owner workspace UI alignment slice (2026-09-21):
 - Live Chrome QA verified MAIN availability, Product enable/disable, price override, out-of-stock, and restock changes in an already-open POS without browser reload; a QAVE-only change did not alter MAIN. Original availability/price/role state and stock quantity were restored. Owner Instructions defaults and explanatory treatment were visually verified; 360/390/430/tablet/desktop checks found no document overflow and browser logs contained no application error.
 - The browser automation bridge could focus but not activate the POS order-type buttons in this run, so live instruction-chip/cart interaction was not claimed; server snapshots/totals/rejections and client price-neutral/reconnect behavior are covered by focused automated tests. Phase 8 and Phase 16 remain incomplete.
 
+### Phase 16A — Owner Sales & Store Session reporting — 2026-09-24
+
+Branch `feature/owner-reporting` from `dev` at `62ec3a9`. No migration and no dependency change.
+
+- **Real Reports page.** `GET /workspaces/reports` (`workspaces.reports`, `auth` + `permission:reports.view`, and `ReportsRequest` requires an active business-wide Owner or Super Admin). It is one read-only Inertia page (`workspaces/reports`) rendered in the Owner shell for Owner and the Super Admin shell for Super Admin. Owner → Reports is now enabled with an active state and appears as a Dashboard card. Super Admin → Owner → Reports is a live registry destination; the `super-admin.reports` placeholder route and content were removed. Owner Transactions stays disabled.
+- **One projection.** `App\Support\StoreSessionSalesReport` resolves Manila business-date ranges, the global Branch scope and the Store Session filter, then projects the summary, daily rows, session rows and detail. `StoreSessionReconciliation` gained `flows()` (batched Payment / Split / Expense / correction / Void flows keyed by session, Branch-matched), `opening()` and `expected()`. `calculate()` and `correctionChannels()` now delegate to them, so Close Store, the Cashier Dashboard and reporting share one formula. `ExactMoney::signedCents()` parses persisted signed values.
+- **Semantics:** see `02-business-rules.md` §37. Business date = Manila date the session opened; multiple sessions per date; cross-midnight sessions stay under the opening date. Net Sales = current `orders.total` of committed Active/Completed Orders (Pay Later included), separate from Cash/Cashless net collections. Split is informational. Corrections and Void reversals are shown separately with no double subtraction. Expenses are Store Session expenses only, and stock-only adjustments are excluded. CLOSED sessions use persisted snapshot/close values (legacy sessions fall back to records and show Not available for missing values). OPEN sessions are LIVE and provisional. Zero-activity sessions still appear.
+- **Performance:** a constant number of queries regardless of session count (sessions + eager identities + one Order aggregate + batched flows; closed snapshots skip the live flows), bounded by the 31-day custom maximum. Index review found `orders(store_session_id, qr_sequence)` already leads with `store_session_id`, and payments / expenses / order_adjustments already have session indexes, so no migration was added. Realtime was not added: All Branches would need many subscriptions and Owner is not authorized on operational branch channels, so the page has a manual Refresh (no polling).
+- **UI:** follows the decoded `PONGSKILOG-OWNER.html` Reports screen (toolbar card with segmented periods and a centered Business date, custom-range card, KPI grid, 20px panels, inset tiles, tables that become cards). Fake analytics (charts, product ranking, cashier performance, exports) were not reproduced. Responsive layout was source-reviewed for 360/390/430/tablet/1024/desktop; no browser sweep was performed.
+- **Verification:** new `StoreSessionSalesReportTest` (35 tests) plus a batched-flow parity test in `StoreSessionReconciliationTest`. Focused backend regression **551 tests / 3,910 assertions**; frontend **120 tests** (new `reports-ui.test.ts`). Pint, PHPStan (0 errors), frontend lint, TypeScript, production build and `git diff --check` passed. The new isolated PostgreSQL harness `tests/verify-owner-reports-postgres.php` passed: index, same-day sessions with odd-cent Cash/Cashless/Split, correction + Void, Manila boundary, All Branches isolation, and batched-vs-single parity. The Close Store PostgreSQL harness (A–L) was rerun after the reconciliation refactor and passed. Both removed their schemas. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**, received no migration and had no rows written. The full Laravel suite is reserved for FINAL QA.
+- **Known limitation:** the shared BranchSwitcher redirects to the role workspace after switching (existing behavior), so the Owner returns to Reports from the navigation after changing Branch scope.
+- Status: **READY FOR USER MANUAL QA**. Phase 16 remains incomplete: Dashboard analytics, Transactions, Staff, full Settings, Branch comparison, product/payment-mix/cashier/kitchen reporting and exports remain deferred. Only Store Session summaries is checked below; Reports stays unchecked until the rest of the planned report scope exists.
+
 - [ ] Dashboard
 - [ ] All Branches scope
 - [ ] Specific Branch scope
@@ -808,7 +821,7 @@ Owner workspace UI alignment slice (2026-09-21):
 - [ ] Staff
 - [ ] Settings
 - [ ] Branch comparison
-- [ ] Store Session summaries
+- [x] Store Session summaries (Phase 16A; USER MANUAL QA pending)
 - [ ] Owner blocked from Super Admin-only controls
 
 ---

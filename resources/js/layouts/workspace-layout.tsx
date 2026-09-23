@@ -120,6 +120,7 @@ export default function WorkspaceLayout({
         page.component.startsWith('inventory/') ||
         page.component.startsWith('super-admin/') ||
         page.component === 'branches/index' ||
+        page.component === 'workspaces/reports' ||
         (page.component === 'workspaces/show' &&
             (page.props.workspace === 'Owner' ||
                 page.props.workspace === 'Super Admin'));

@@ -1,12 +1,12 @@
 import { Head } from '@inertiajs/react';
-import { BarChart3, Bell, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Bell, ShieldCheck, type LucideIcon } from 'lucide-react';
 import {
     OwnerPage,
     OwnerStatusBadge,
     ownerPanelClass,
 } from '@/components/owner-ui';
 
-type PlannedDestination = 'notifications' | 'reports' | 'access-control';
+type PlannedDestination = 'notifications' | 'access-control';
 
 const content: Record<
     PlannedDestination,
@@ -18,13 +18,6 @@ const content: Record<
             'Operational alerts and system notices will be collected here.',
         icon: Bell,
         detail: 'No notification service is connected yet, so no alerts or unread counts are shown.',
-    },
-    reports: {
-        title: 'Reports',
-        description:
-            'Sales and operational reporting will be available in the reporting phase.',
-        icon: BarChart3,
-        detail: 'Reporting is not built yet. No figures are shown until they come from real sales and Store Session records.',
     },
     'access-control': {
         title: 'Access Control',

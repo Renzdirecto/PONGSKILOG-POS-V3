@@ -496,6 +496,19 @@ May include:
 
 ## 6.3 Reports
 
+Phase 16A (implemented): **Sales & Store Sessions** at `workspaces.reports` (`/workspaces/reports`), one read-only page shared by Owner and Super Admin and rendered inside each role's management shell.
+
+- Toolbar card (Owner standalone Reports pattern): segmented Today / Yesterday / Last 7 days / This month / Custom, a centered Business date label with day, Store Session and scope counts, and a labelled Store Session select (All Sessions by default). Custom opens a second card with native From/To date inputs and Apply range (max 31 days, re-validated on the server). Filters are shareable query parameters (`date`, `from`, `to`, `session`).
+- Branch scope is the existing global BranchSwitcher (All Branches or one Branch); the page has no second Branch selector.
+- Six KPI cards: Net Sales, Orders, Cash Collected, Cashless Collected, Expenses, Store Sessions (2 / 3 / 6 columns).
+- Financial effects panel: Split payments (informational, already inside Cash/Cashless), Corrections (Cash/Cashless and any pending allocation), Void reversals.
+- Daily summary (multi-day ranges): table from 768px, cards below.
+- Store Sessions: table from 1280px (Branch · business date, time range or LIVE, opened/closed by, Orders, Net sales, Cash, Cashless, Expenses, status text badge, View session); two-column cards from 768px and one column on phones.
+- View session opens a read-only dialog (bottom sheet on mobile) with Store Session, Sales, Collections, Outflows / effects and Reconciliation sections. OPEN sessions show "LIVE · figures are provisional"; CLOSED sessions show persisted opening, expected, actual, per-channel variance and the closing note. There are no mutation controls.
+- Not in this slice: product performance, payment-mix charts, cashier/kitchen activity, branch comparison, exports.
+
+Planned scope:
+
 - Date range
 - Branch scope
 - Sales
@@ -698,7 +711,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 - Products, Categories, and Modifiers share segmented route navigation. Product stock is branch-specific; All Branches never fabricates an aggregate stock value.
 - Inventory uses full-dataset server summaries, compact filters, a dense desktop table, wrapped mobile rows, real update timestamps, and real adjustment/history actions.
 - Management dialogs become bottom sheets on mobile and centered dialogs from the small desktop breakpoint upward.
-- Dashboard, Products, Inventory, and Branch Management link to real protected routes. Unimplemented Transactions, Reports, and Staff destinations remain visibly disabled with a reason.
+- Dashboard, Reports, Products, Inventory, and Branch Management link to real protected routes. Unimplemented Transactions and Staff destinations remain visibly disabled with a reason.
 - The Owner presentation never replaces backend permission, branch, inventory, catalog, image, or Store Session authority.
 
 ## 12.1 Standalone Product Editor and Groups
@@ -893,7 +906,7 @@ This supersedes the §7 core navigation list. No Super Admin standalone is autho
 | Overview | Notifications | Placeholder (`super-admin.notifications`). No notification service, database, or unread count. |
 | Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
 | Owner | Owner Dashboard, Products, Inventory | Real existing pages. |
-| Owner | Reports | Placeholder (`super-admin.reports`) until the reporting phase. |
+| Owner | Reports | Real: the shared Sales & Store Sessions report (`workspaces.reports`, Phase 16A). The former `super-admin.reports` placeholder route was removed. |
 | Control | Audit Trail, Void Orders | Real existing registers. |
 | Control | Staff | Real: account list and Add Staff (below). |
 | Control | Access Control | Placeholder (`super-admin.access-control`) with a read-only role-group overview. No toggles. |

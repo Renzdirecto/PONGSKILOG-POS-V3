@@ -90,7 +90,7 @@ test('existing destinations point at real routes and only unbuilt pages are plan
         kitchen: ['workspaces.kitchen', 'live'],
         'customer-display': ['workspaces.customer-display', 'live'],
         'owner-dashboard': ['workspaces.owner', 'live'],
-        reports: ['super-admin.reports', 'planned'],
+        reports: ['workspaces.reports', 'live'],
         products: ['products.index', 'live'],
         inventory: ['inventory.index', 'live'],
         'audit-trail': ['workspaces.audit-trail', 'live'],
@@ -133,6 +133,7 @@ test('the active destination follows the rendered page', () => {
                 'access-control',
             ],
             [{ component: 'super-admin/staff', url: '/' }, 'staff'],
+            [{ component: 'workspaces/reports', url: '/' }, 'reports'],
             [{ component: 'catalog/modifiers', url: '/' }, 'products'],
             [{ component: 'inventory/movements', url: '/' }, 'inventory'],
             [{ component: 'branches/index', url: '/' }, 'settings'],
@@ -189,6 +190,7 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
     assert.match(shell, /aria-current=\{active \? 'page' : undefined\}/);
     assert.match(shell, /staff: \{ icon: Users, href: staffIndex\(\) \}/);
     assert.match(shell, /pos: \{ icon: UtensilsCrossed, href: cashier\(\) \}/);
+    assert.match(shell, /reports: \{ icon: BarChart3, href: reports\(\) \}/);
     assert.match(shell, /Choose a Branch/);
     assert.match(shell, /min-h-11/);
     // Absolutely positioned content (sr-only labels) must scroll inside main, never extend the document.

@@ -153,9 +153,9 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         label: 'Reports',
         shortLabel: 'Reports',
         section: 'owner',
-        routeName: 'super-admin.reports',
+        routeName: 'workspaces.reports',
         permission: 'reports.view',
-        availability: 'planned',
+        availability: 'live',
         requiresBranch: false,
     },
     {
@@ -266,6 +266,9 @@ export function activeSuperAdminDestination(
         )
             ? (page.destination as SuperAdminDestinationId)
             : null;
+    }
+    if (component === 'workspaces/reports') {
+        return 'reports';
     }
     if (component === 'super-admin/staff') {
         return 'staff';

@@ -10,6 +10,7 @@ use App\Models\OrderAdjustment;
 use App\Models\Payment;
 use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
+use App\Support\StoreSessionReconciliation;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Str;
 use Tests\StoreCloseScenario;
@@ -263,3 +264,35 @@ test('only committed non-voided Kitchen work that is not Done blocks close', fun
     'done' => [KitchenStatus::Done, false, 0],
     'voided while in kitchen' => [null, true, 0],
 ]);
+
+test('batched session flows match each session reconciliation and ignore rows from another Branch', function () {
+    $first = StoreCloseScenario::create('1000.00', '0.00');
+    $first->edit($first->payNow(5, 'cash'), 4);
+    $first->payNow(3, 'split', '100.00');
+    $first->void($first->payNow(2, 'cashless'));
+    $first->expense('40.00', 'cashless');
+    $second = StoreCloseScenario::create('500.00', '200.00');
+    $second->payNow(7, 'cashless');
+    $second->expense('25.00', 'cash');
+    Payment::factory()->for($second->payNow(1, 'cash'))->create([
+        'branch_id' => $first->branch->id, 'store_session_id' => $second->session->id, 'amount' => '999.00',
+    ]);
+    $service = app(StoreSessionReconciliation::class);
+
+    $flows = $service->flows([$first->session->id => $first->branch->id, $second->session->id => $second->branch->id]);
+
+    foreach ([$first, $second] as $scenario) {
+        $session = $scenario->session->fresh();
+        $single = $service->calculate($scenario->branch, $session);
+        $batched = $flows[$session->id];
+
+        expect(array_diff_key($single, ['opening' => true, 'expected' => true, 'corrections' => true]))
+            ->toBe(array_diff_key($batched, ['corrections' => true]))
+            ->and($batched['corrections'])->toBe([
+                'cash' => $single['corrections']['cash'], 'cashless' => $single['corrections']['cashless'],
+                'unallocated' => 0, 'count' => $single['corrections']['count'],
+            ])
+            ->and($service->expected($service->opening($session), $batched))->toBe($single['expected']);
+    }
+    expect($flows[$second->session->id]['sales']['cash'])->toBe(10000);
+});

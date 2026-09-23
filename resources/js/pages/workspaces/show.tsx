@@ -1,5 +1,6 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import {
+    BarChart3,
     Boxes,
     Building2,
     CheckCircle2,
@@ -12,6 +13,7 @@ import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
+import { reports } from '@/routes/workspaces';
 import type { Auth, BranchContext, StoreContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
 import type { KitchenStatusSummary, PosReadyOrder } from '@/types/kitchen';
@@ -70,10 +72,27 @@ export default function Workspace({
                 <Head title={`${workspace} workspace`} />
                 <OwnerPage
                     title="Dashboard"
-                    description="Your business-wide workspace for products, branch inventory, and operating locations."
+                    description="Your business-wide workspace for sales reports, products, branch inventory, and operating locations."
                     maxWidth="max-w-[1180px]"
                 >
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 min-[1180px]:grid-cols-4 md:grid-cols-2">
+                        {auth.permissions.includes('reports.view') && (
+                            <Link
+                                href={reports()}
+                                className={`${ownerPanelClass} flex min-h-[132px] flex-col justify-between p-4 transition hover:border-[#bdbdbd]`}
+                            >
+                                <BarChart3 className="size-5 text-[#666]" />
+                                <span>
+                                    <strong className="block text-sm font-semibold">
+                                        Reports
+                                    </strong>
+                                    <span className="mt-1 block text-[11.5px] text-[#767676]">
+                                        Sales, collections, expenses, and Store
+                                        Session reconciliation.
+                                    </span>
+                                </span>
+                            </Link>
+                        )}
                         {auth.permissions.includes('products.manage') && (
                             <Link
                                 href={productsIndex()}
@@ -136,8 +155,8 @@ export default function Workspace({
                                 Owner workspace foundations are ready
                             </h2>
                             <p className="mt-1 text-[12.5px] leading-5 text-[#666]">
-                                Products, inventory, and branches are live.
-                                Dashboard analytics, transactions, reports, and
+                                Sales reports, products, inventory, and branches
+                                are live. Dashboard analytics, transactions, and
                                 staff management remain unavailable until their
                                 scheduled phases.
                             </p>

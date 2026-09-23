@@ -834,7 +834,7 @@ Owner workspace UI alignment slice (2026-09-21):
 
 ### Super Admin foundation, navigation, and Staff creation — 2026-09-24
 
-Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency change. One additive migration (follow-up request): nullable unique `users.employee_id`, required on new staff as `MMDDYY` + two digits, typed manually by the Super Admin; existing accounts keep it empty.
+Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency change. One additive migration (follow-up request): nullable unique `users.employee_id`, required on new staff as `MMDDYY` + two digits, typed manually by the Super Admin; existing accounts keep it empty. A second additive migration adds nullable `users.avatar_path` for an optional Super Admin uploaded staff profile picture (private disk, authorized route), shown as a rounded-square holder in the Staff list.
 
 - The obsolete `context/design/PONGSKILOG Super Admin (standalone).html` was deleted. No Super Admin standalone is authoritative; Super Admin UI is product-designed in the Owner/POS language (`08-ui-rules.md`, `09-ui-registry.md`).
 - New `SuperAdminShell` with a collapsible four-section sidebar (Overview, Cashier + Kitchen, Owner, Control), driven by the permission-aware registry `resources/js/lib/super-admin-navigation.ts`. It has a tablet rail and a mobile dock, each with a collapsible drawer, and the Owner shell is now Owner-only. Operational pages keep their POS shell and gain a Control Center link for Super Admin.

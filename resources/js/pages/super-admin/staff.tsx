@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
+    Camera,
     ChevronLeft,
     ChevronRight,
     Globe2,
@@ -37,6 +38,7 @@ type StaffRole = { name: string; label: string; business_wide: boolean };
 type StaffMember = {
     id: number;
     employee_id: string | null;
+    avatar_url: string | null;
     name: string;
     email: string;
     is_active: boolean;
@@ -96,6 +98,44 @@ function BranchAccess({ member }: { member: StaffMember }) {
     return (
         <span className="text-[12px] text-[#444]">
             {member.branches.map((branch) => branch.name).join(', ')}
+        </span>
+    );
+}
+
+function initials(name: string): string {
+    return name
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0])
+        .join('')
+        .toUpperCase();
+}
+
+/** Rounded-square profile picture holder; shows initials when no picture was uploaded. */
+function StaffAvatar({
+    name,
+    url,
+    size = 'size-10',
+}: {
+    name: string;
+    url: string | null;
+    size?: string;
+}) {
+    return (
+        <span
+            className={`${size} flex shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[#e5e5e5] bg-[#f3f3f3] text-[12px] font-semibold text-[#666]`}
+        >
+            {url ? (
+                <img
+                    src={url}
+                    alt=""
+                    loading="lazy"
+                    className="size-full object-cover"
+                />
+            ) : (
+                <span aria-hidden="true">{initials(name)}</span>
+            )}
         </span>
     );
 }
@@ -292,8 +332,16 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                         <td className="px-4 py-3 font-mono text-[12.5px] text-[#444]">
                                             {member.employee_id ?? '—'}
                                         </td>
-                                        <td className="px-4 py-3 text-[13px] font-semibold wrap-break-word">
-                                            {member.name}
+                                        <td className="px-4 py-3">
+                                            <span className="flex items-center gap-3">
+                                                <StaffAvatar
+                                                    name={member.name}
+                                                    url={member.avatar_url}
+                                                />
+                                                <span className="min-w-0 text-[13px] font-semibold wrap-break-word">
+                                                    {member.name}
+                                                </span>
+                                            </span>
                                         </td>
                                         <td className="px-4 py-3 text-[12.5px] break-all text-[#444]">
                                             {member.email}
@@ -321,8 +369,13 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                     key={member.id}
                                     className="flex flex-col gap-1.5 p-4"
                                 >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
+                                    <div className="flex items-start gap-3">
+                                        <StaffAvatar
+                                            name={member.name}
+                                            url={member.avatar_url}
+                                            size="size-11"
+                                        />
+                                        <div className="min-w-0 flex-1">
                                             <p className="text-[13.5px] font-semibold wrap-break-word">
                                                 {member.name}
                                             </p>
@@ -432,8 +485,27 @@ function AddStaffForm({
         role: '',
         branch_ids: [] as string[],
         is_active: true,
+        avatar: null as File | null,
     });
     const submitting = useRef(false);
+    const avatarInput = useRef<HTMLInputElement>(null);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const previewUrl = useRef<string | null>(null);
+
+    useEffect(
+        () => () => {
+            if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+        },
+        [],
+    );
+
+    function chooseAvatar(file: File | null) {
+        if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+        previewUrl.current = file ? URL.createObjectURL(file) : null;
+        setAvatarPreview(previewUrl.current);
+        form.setData('avatar', file);
+        if (!file && avatarInput.current) avatarInput.current.value = '';
+    }
     const selectedRole = roles.find((role) => role.name === form.data.role);
     const requiresBranch =
         selectedRole !== undefined && !selectedRole.business_wide;
@@ -492,6 +564,65 @@ function AddStaffForm({
                 <legend className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-[#888] uppercase">
                     Basic information
                 </legend>
+                <div className="flex items-center gap-3">
+                    <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-[#e5e5e5] bg-[#f3f3f3] text-[#999]">
+                        {avatarPreview ? (
+                            <img
+                                src={avatarPreview}
+                                alt="Selected profile picture"
+                                className="size-full object-cover"
+                            />
+                        ) : (
+                            <Camera className="size-5" aria-hidden="true" />
+                        )}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap gap-2">
+                            <label
+                                htmlFor="staff-avatar"
+                                className={`${ownerSecondaryActionClass} inline-flex cursor-pointer items-center gap-1.5 has-focus-visible:ring-2`}
+                            >
+                                <Camera className="size-4" aria-hidden="true" />
+                                {form.data.avatar
+                                    ? 'Change photo'
+                                    : 'Add profile picture'}
+                                <input
+                                    ref={avatarInput}
+                                    id="staff-avatar"
+                                    name="avatar"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    onChange={(event) =>
+                                        chooseAvatar(
+                                            event.target.files?.[0] ?? null,
+                                        )
+                                    }
+                                    aria-describedby="staff-avatar-hint staff-avatar-error"
+                                    className="sr-only"
+                                />
+                            </label>
+                            {form.data.avatar && (
+                                <button
+                                    type="button"
+                                    onClick={() => chooseAvatar(null)}
+                                    className={ownerSecondaryActionClass}
+                                >
+                                    Remove
+                                </button>
+                            )}
+                        </div>
+                        <p
+                            id="staff-avatar-hint"
+                            className="text-xs text-neutral-500"
+                        >
+                            Optional. JPG, PNG or WebP up to 2 MB.
+                        </p>
+                        <FieldError
+                            id="staff-avatar-error"
+                            message={form.errors.avatar}
+                        />
+                    </div>
+                </div>
                 <div className="space-y-2">
                     <Label htmlFor="staff-employee_id">Employee ID</Label>
                     <Input

@@ -10,9 +10,13 @@ use App\Models\User;
 use App\Support\StaffRoles;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CreateStaffAccount
 {
@@ -20,14 +24,18 @@ class CreateStaffAccount
 
     /**
      * Create a login account, its single canonical Role, its Branch assignments and one Audit record atomically.
-     * The temporary password is hashed by the User cast and never leaves this method in any other form.
+     * The temporary password is hashed by the User cast and never leaves this method in any other form. An optional
+     * profile picture is stored on the private staff avatar disk and removed again if the transaction fails.
      *
-     * @param  array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool}  $data
+     * @param  array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool, avatar?: UploadedFile|null}  $data
      */
     public function execute(User $actor, array $data): User
     {
+        $avatarDisk = (string) config('filesystems.staff_avatars_disk', 'local');
+        $avatarPath = null;
+
         try {
-            return DB::transaction(function () use ($actor, $data): User {
+            return DB::transaction(function () use ($actor, $data, $avatarDisk, &$avatarPath): User {
                 $actor = User::query()->whereKey($actor->getKey())->first();
                 if ($actor === null || ! $actor->is_active || ! $actor->hasPermission('access_control.manage')) {
                     throw new AuthorizationException('Only Super Admin access control may create staff accounts.');
@@ -48,6 +56,17 @@ class CreateStaffAccount
                     'password' => $data['password'],
                     'is_active' => $data['is_active'] ?? true,
                 ])->save();
+
+                $avatar = $data['avatar'] ?? null;
+                if ($avatar instanceof UploadedFile) {
+                    $fileName = Str::uuid().'.'.($avatar->guessExtension() ?: 'jpg');
+                    $stored = Storage::disk($avatarDisk)->putFileAs('staff-avatars/'.$user->id, $avatar, $fileName);
+                    if ($stored === false) {
+                        throw ValidationException::withMessages(['avatar' => 'The profile picture could not be stored. Try again.']);
+                    }
+                    $avatarPath = $stored;
+                    $user->forceFill(['avatar_path' => $avatarPath])->save();
+                }
 
                 $user->roles()->attach($role);
                 $user->branches()->attach($branches->mapWithKeys(fn (Branch $branch): array => [
@@ -71,12 +90,21 @@ class CreateStaffAccount
                         'branch_ids' => $branches->pluck('id')->values()->all(),
                         'branch_codes' => $branches->pluck('code')->values()->all(),
                         'is_active' => $user->is_active,
+                        'has_profile_picture' => $user->avatar_path !== null,
                     ],
                 );
 
                 return $user;
             });
-        } catch (UniqueConstraintViolationException $exception) {
+        } catch (Throwable $exception) {
+            if ($avatarPath !== null) {
+                Storage::disk($avatarDisk)->delete($avatarPath);
+            }
+
+            if (! $exception instanceof UniqueConstraintViolationException) {
+                throw $exception;
+            }
+
             throw str_contains($exception->getMessage(), 'employee_id')
                 ? ValidationException::withMessages(['employee_id' => 'This Employee ID is already used by another account.'])
                 : ValidationException::withMessages(['email' => 'This email is already used by another account.']);

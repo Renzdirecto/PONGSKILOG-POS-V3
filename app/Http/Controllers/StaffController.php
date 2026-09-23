@@ -12,8 +12,10 @@ use App\Models\User;
 use App\Support\StaffRoles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StaffController extends Controller
 {
@@ -24,7 +26,7 @@ class StaffController extends Controller
     {
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
-            ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'created_at'])
+            ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'avatar_path', 'created_at'])
             ->with([
                 'roles:id,name',
                 'branches' => fn ($query) => $query
@@ -55,6 +57,9 @@ class StaffController extends Controller
                     'employee_id' => $user->employee_id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'avatar_url' => $user->avatar_path === null
+                        ? null
+                        : route('super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
                     'is_active' => $user->is_active,
                     'roles' => array_map(fn (string $role): array => [
                         'name' => $role,
@@ -93,10 +98,24 @@ class StaffController extends Controller
 
         /** @var array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool} $data */
         $data = $request->safe()->only(['employee_id', 'name', 'email', 'password', 'role', 'branch_ids', 'is_active']);
-        $createStaffAccount->execute($actor, $data);
+        $createStaffAccount->execute($actor, [...$data, 'avatar' => $request->file('avatar')]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
 
         return to_route('super-admin.staff.index');
+    }
+
+    /**
+     * Stream a staff profile picture from the private disk to Super Admin access control only.
+     */
+    public function avatar(User $user): StreamedResponse
+    {
+        $disk = Storage::disk((string) config('filesystems.staff_avatars_disk', 'local'));
+        abort_if($user->avatar_path === null || ! $disk->exists($user->avatar_path), 404);
+
+        return $disk->response($user->avatar_path, null, [
+            'Cache-Control' => 'private, max-age=300',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

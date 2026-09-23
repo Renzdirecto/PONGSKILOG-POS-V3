@@ -11,6 +11,7 @@ use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 
 class StoreStaffRequest extends FormRequest
 {
@@ -79,6 +80,9 @@ class StoreStaffRequest extends FormRequest
                 Rule::exists('branches', 'id')->where('status', BranchStatus::Active->value),
             ],
             'is_active' => ['sometimes', 'boolean'],
+            'avatar' => ['nullable', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('2mb')->dimensions(
+                Rule::dimensions()->minWidth(64)->minHeight(64)->maxWidth(8000)->maxHeight(8000),
+            )],
         ];
     }
 

@@ -94,6 +94,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('workspaces/super-admin')->name('super-admin.')->middleware('permission:access_control.manage')->group(function () {
         Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
         Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('staff.store');
+        Route::get('staff/{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('staff.avatar');
         Route::inertia('notifications', 'super-admin/placeholder', ['destination' => 'notifications'])
             ->name('notifications');
         Route::inertia('reports', 'super-admin/placeholder', ['destination' => 'reports'])

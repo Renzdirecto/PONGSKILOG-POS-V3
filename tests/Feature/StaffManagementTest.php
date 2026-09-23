@@ -9,10 +9,12 @@ use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -130,6 +132,7 @@ test('super admin creates operational staff with a hashed temporary password bra
             'branch_ids' => [$this->branch->id],
             'branch_codes' => ['ALPHA'],
             'is_active' => true,
+            'has_profile_picture' => false,
         ]);
     expect(json_encode([$audit->before, $audit->after, $audit->metadata]))
         ->not->toContain('Temporary-Pass-42')
@@ -264,4 +267,62 @@ test('an inactive super admin cannot create staff through the action', function 
     ]))->toThrow(AuthorizationException::class);
 
     $this->assertDatabaseMissing('users', ['email' => 'jamie@pongskilog.test']);
+});
+
+test('a profile picture is stored privately and served only to super admin access control', function () {
+    Storage::fake('local');
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::query()->where('name', 'owner')->sole());
+
+    createStaffRequest(staffPayload(['avatar' => UploadedFile::fake()->image('jamie.png', 200, 200)]))
+        ->assertRedirectToRoute('super-admin.staff.index');
+
+    $user = User::query()->where('email', 'jamie@pongskilog.test')->sole();
+    expect($user->avatar_path)->toStartWith('staff-avatars/'.$user->id.'/');
+    Storage::disk('local')->assertExists($user->avatar_path);
+    expect(AuditLog::query()->where('action', 'staff.created')->sole()->after['has_profile_picture'])->toBeTrue();
+    $this->actingAs($this->superAdmin)
+        ->get(route('super-admin.staff.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('staff.data.1.avatar_url', fn (string $url) => str_starts_with($url, '/workspaces/super-admin/staff/'.$user->id.'/avatar?v=')));
+    $this->get(route('super-admin.staff.avatar', $user))->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+    $this->actingAs($owner)->get(route('super-admin.staff.avatar', $user))->assertForbidden();
+});
+
+test('staff without a profile picture have no avatar image', function () {
+    createStaffRequest(staffPayload())->assertRedirectToRoute('super-admin.staff.index');
+
+    $user = User::query()->where('email', 'jamie@pongskilog.test')->sole();
+    expect($user->avatar_path)->toBeNull();
+    $this->get(route('super-admin.staff.avatar', $user))->assertNotFound();
+});
+
+test('a profile picture must be a real jpg png or webp image up to 2 MB', function (UploadedFile $file) {
+    Storage::fake('local');
+
+    createStaffRequest(staffPayload(['avatar' => $file]))->assertInvalid(['avatar']);
+
+    $this->assertDatabaseMissing('users', ['email' => 'jamie@pongskilog.test']);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with([
+    'pdf' => fn () => UploadedFile::fake()->create('photo.pdf', 100, 'application/pdf'),
+    'svg' => fn () => UploadedFile::fake()->create('photo.svg', 10, 'image/svg+xml'),
+    'too large' => fn () => UploadedFile::fake()->image('photo.jpg', 800, 800)->size(3000),
+]);
+
+test('a failed account creation removes the stored profile picture', function () {
+    Storage::fake('local');
+    $this->mock(AuditRecorder::class)->shouldReceive('record')->andThrow(new RuntimeException('audit unavailable'));
+
+    expect(fn () => app(CreateStaffAccount::class)->execute($this->superAdmin, [
+        'employee_id' => '09242601',
+        'name' => 'Jamie Cruz',
+        'email' => 'jamie@pongskilog.test',
+        'password' => 'Temporary-Pass-42',
+        'role' => 'cashier',
+        'branch_ids' => [$this->branch->id],
+        'avatar' => UploadedFile::fake()->image('jamie.png', 200, 200),
+    ]))->toThrow(RuntimeException::class, 'audit unavailable');
+
+    $this->assertDatabaseMissing('users', ['email' => 'jamie@pongskilog.test']);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
 });

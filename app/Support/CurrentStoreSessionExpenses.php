@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Branch;
 use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
+use App\Models\StoreSessionInventoryAdjustment;
 use Illuminate\Support\Facades\DB;
 
 class CurrentStoreSessionExpenses
@@ -45,6 +46,11 @@ class CurrentStoreSessionExpenses
             })
             ->all();
 
+        $adjustments = StoreSessionInventoryAdjustment::query()
+            ->where('branch_id', $branch->id)
+            ->where('store_session_id', $session->id);
+        $adjustmentCount = (clone $adjustments)->count();
+
         return [
             'expense_totals' => [
                 'cash' => $this->money($totals['cash_total'] ?? 0),
@@ -55,6 +61,20 @@ class CurrentStoreSessionExpenses
             'expense_count' => $count,
             'expenses_truncated' => $count > 50,
             'restock_products' => $products,
+            /** Stock-only records: listed with the session history but never part of the money totals. */
+            'inventory_adjustments' => $adjustments->with(['createdBy:id,name', 'product:id,name'])
+                ->latest('created_at')->latest('id')->limit(50)->get()
+                ->map(fn (StoreSessionInventoryAdjustment $adjustment): array => [
+                    'id' => $adjustment->id,
+                    'product_name' => $adjustment->product->name,
+                    'quantity' => $adjustment->quantity,
+                    'reason_code' => $adjustment->reason_code->value,
+                    'reason_label' => $adjustment->reason_code->label(),
+                    'note' => $adjustment->note,
+                    'created_at' => $adjustment->created_at?->toIso8601String(),
+                    'created_by' => ['name' => $adjustment->createdBy->name],
+                ])->all(),
+            'inventory_adjustment_count' => $adjustmentCount,
         ];
     }
 

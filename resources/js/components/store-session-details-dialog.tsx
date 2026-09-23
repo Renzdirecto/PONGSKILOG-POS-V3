@@ -28,7 +28,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { StoreCloseFlow } from '@/components/store-close-flow';
-import { StoreInventoryAdjustmentForm } from '@/components/store-inventory-adjustment-form';
+import {
+    InventoryAdjustmentRow,
+    StoreInventoryAdjustmentForm,
+} from '@/components/store-inventory-adjustment-form';
+import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
@@ -639,14 +643,18 @@ export function StoreSessionDetailsDialog({
                                     </div>
                                 </section>
                                 <section className="overflow-hidden rounded-xl border border-neutral-200">
-                                    {session.expenses.length === 0 ? (
+                                    {session.expenses.length === 0 && (session.inventory_adjustments ?? []).length === 0 ? (
                                         <div className="flex min-h-36 flex-col items-center justify-center gap-2 p-6 text-center text-neutral-500">
                                             <ReceiptText className="size-6" />
-                                            <p className="text-sm font-semibold text-neutral-700">No purchases or expenses recorded for this Store Session.</p>
+                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses or stock adjustments recorded for this Store Session.</p>
                                         </div>
                                     ) : (
                                         <ul className="divide-y divide-neutral-100">
-                                            {session.expenses.map((expense) => (
+                                            {sessionActivity(session.expenses, session.inventory_adjustments).map((entry) => entry.kind === 'adjustment' ? (
+                                                <li key={`adjustment-${entry.item.id}`}>
+                                                    <InventoryAdjustmentRow adjustment={entry.item} />
+                                                </li>
+                                            ) : ((expense) => (
                                                 <li key={expense.id}>
                                                     <button type="button" onClick={() => { setSelected(expense); setView('detail'); }} className="flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-950 focus-visible:outline-none">
                                                         <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${expense.payment_source === 'cash' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-700'}`}>
@@ -669,12 +677,12 @@ export function StoreSessionDetailsDialog({
                                                         <ChevronRight className="size-4 shrink-0 text-neutral-400" />
                                                     </button>
                                                 </li>
-                                            ))}
+                                            ))(entry.item))}
                                         </ul>
                                     )}
-                                    {session.expenses_truncated && (
+                                    {(session.expenses_truncated || session.inventory_adjustment_count > 50) && (
                                         <p className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-500">
-                                            Showing the newest 50 of {session.expense_count} records.
+                                            Showing the newest 50 of {session.expense_count} expenses and {session.inventory_adjustment_count} stock adjustments.
                                         </p>
                                     )}
                                 </section>

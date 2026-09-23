@@ -27,7 +27,9 @@ import { DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { InventoryAdjustmentRow } from '@/components/store-inventory-adjustment-form';
 import { useStoreCloseRealtime } from '@/hooks/use-store-close-realtime';
+import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
     assessClose,
@@ -492,6 +494,8 @@ function SessionPurchases({
                         Cash {formatDecimalPeso(session.expense_totals.cash)} ·
                         Cashless{' '}
                         {formatDecimalPeso(session.expense_totals.cashless)}
+                        {session.inventory_adjustment_count > 0 &&
+                            ` · ${session.inventory_adjustment_count} stock ${session.inventory_adjustment_count === 1 ? 'adjustment' : 'adjustments'}`}
                     </span>
                 </span>
                 <ChevronDown
@@ -504,56 +508,80 @@ function SessionPurchases({
                     id="session-purchases-list"
                     className="border-t border-neutral-200 p-3.5"
                 >
-                    {session.expenses.length === 0 ? (
+                    {session.expenses.length === 0 &&
+                    (session.inventory_adjustments ?? []).length === 0 ? (
                         <p className="py-3 text-center text-xs text-neutral-500">
-                            No purchases or expenses recorded for this Store
-                            Session.
+                            No purchases, expenses or stock adjustments recorded
+                            for this Store Session.
                         </p>
                     ) : (
                         <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100">
-                            {session.expenses.map((expense) => (
-                                <li
-                                    key={expense.id}
-                                    className="flex items-center gap-3 px-3 py-2.5"
-                                >
-                                    <span
-                                        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${expense.payment_source === 'cash' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-700'}`}
-                                    >
-                                        {expense.payment_source === 'cash' ? (
-                                            <Banknote className="size-4" />
-                                        ) : (
-                                            <Smartphone className="size-4" />
-                                        )}
-                                    </span>
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-xs font-bold">
-                                            {expense.description}
-                                        </span>
-                                        <span className="mt-0.5 block truncate text-[10px] text-neutral-500">
-                                            {manilaTime.format(
-                                                new Date(expense.created_at),
-                                            )}{' '}
-                                            · {expense.created_by.name}
-                                        </span>
-                                        {expense.item && (
-                                            <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800">
-                                                <PackagePlus className="size-3" />{' '}
-                                                RESTOCK ·{' '}
-                                                {expense.item.product_name} ×{' '}
-                                                {expense.item.quantity}
+                            {sessionActivity(
+                                session.expenses,
+                                session.inventory_adjustments,
+                            ).map((entry) =>
+                                entry.kind === 'adjustment' ? (
+                                    <li key={`adjustment-${entry.item.id}`}>
+                                        <InventoryAdjustmentRow
+                                            adjustment={entry.item}
+                                            compact
+                                        />
+                                    </li>
+                                ) : (
+                                    ((expense) => (
+                                        <li
+                                            key={expense.id}
+                                            className="flex items-center gap-3 px-3 py-2.5"
+                                        >
+                                            <span
+                                                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${expense.payment_source === 'cash' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-700'}`}
+                                            >
+                                                {expense.payment_source ===
+                                                'cash' ? (
+                                                    <Banknote className="size-4" />
+                                                ) : (
+                                                    <Smartphone className="size-4" />
+                                                )}
                                             </span>
-                                        )}
-                                    </span>
-                                    <span className="shrink-0 text-right">
-                                        <span className="block text-xs font-bold tabular-nums">
-                                            {formatDecimalPeso(expense.amount)}
-                                        </span>
-                                        <span className="text-[9px] font-semibold tracking-wide text-neutral-500 uppercase">
-                                            {expense.payment_source}
-                                        </span>
-                                    </span>
-                                </li>
-                            ))}
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-xs font-bold">
+                                                    {expense.description}
+                                                </span>
+                                                <span className="mt-0.5 block truncate text-[10px] text-neutral-500">
+                                                    {manilaTime.format(
+                                                        new Date(
+                                                            expense.created_at,
+                                                        ),
+                                                    )}{' '}
+                                                    · {expense.created_by.name}
+                                                </span>
+                                                {expense.item && (
+                                                    <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800">
+                                                        <PackagePlus className="size-3" />{' '}
+                                                        RESTOCK ·{' '}
+                                                        {
+                                                            expense.item
+                                                                .product_name
+                                                        }{' '}
+                                                        ×{' '}
+                                                        {expense.item.quantity}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="shrink-0 text-right">
+                                                <span className="block text-xs font-bold tabular-nums">
+                                                    {formatDecimalPeso(
+                                                        expense.amount,
+                                                    )}
+                                                </span>
+                                                <span className="text-[9px] font-semibold tracking-wide text-neutral-500 uppercase">
+                                                    {expense.payment_source}
+                                                </span>
+                                            </span>
+                                        </li>
+                                    ))(entry.item)
+                                ),
+                            )}
                         </ul>
                     )}
                     {session.expenses_truncated && (

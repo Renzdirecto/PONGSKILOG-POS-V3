@@ -83,3 +83,25 @@ export function inventoryAdjustmentError(error: unknown): string {
 
     return 'The adjustment could not be saved. Check the details and try again.';
 }
+
+export type SessionActivity<Expense, Adjustment> =
+    | { kind: 'expense'; item: Expense }
+    | { kind: 'adjustment'; item: Adjustment };
+
+/** Newest-first session history: money expenses and stock-only adjustments in one timeline. */
+export function sessionActivity<
+    Expense extends { id: string; created_at: string },
+    Adjustment extends { id: string; created_at: string },
+>(
+    expenses: Expense[],
+    adjustments: Adjustment[] = [],
+): SessionActivity<Expense, Adjustment>[] {
+    return [
+        ...expenses.map((item) => ({ kind: 'expense' as const, item })),
+        ...adjustments.map((item) => ({ kind: 'adjustment' as const, item })),
+    ].sort(
+        (left, right) =>
+            Date.parse(right.item.created_at) -
+            Date.parse(left.item.created_at),
+    );
+}

@@ -132,3 +132,17 @@ test('roles without Store Session operations are rejected', function (string $ro
 
     expect($this->scenario->stock->fresh()->on_hand)->toBe(50);
 })->with(['kitchen_staff', 'owner']);
+
+test('adjustments appear in the current-session projection without changing money totals', function () {
+    inventoryAdjustment($this->scenario, ['reason_code' => 'wastage', 'quantity' => 2, 'note' => 'Dropped tray'])->assertOk();
+
+    $this->actingAs($this->scenario->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->scenario->branch->id])
+        ->getJson(route('store-sessions.current'))->assertOk()
+        ->assertJsonPath('inventory_adjustment_count', 1)
+        ->assertJsonPath('inventory_adjustments.0.product_name', 'Lemon Cola')
+        ->assertJsonPath('inventory_adjustments.0.quantity', 2)
+        ->assertJsonPath('inventory_adjustments.0.reason_label', 'Wastage')
+        ->assertJsonPath('inventory_adjustments.0.note', 'Dropped tray')
+        ->assertJsonPath('expense_totals', ['cash' => '0.00', 'cashless' => '0.00', 'total' => '0.00'])
+        ->assertJsonPath('expense_count', 0);
+});

@@ -244,3 +244,12 @@ test('final confirmation summarizes each channel with its own variance state', (
     assert.match(flow, /aria-label="Edit overage explanation"/);
     assert.match(flow, /This will close the current store session/);
 });
+
+test('Store Closed POS page keeps Open Store permission-gated and Browse available', () => {
+    const page = source('components/cashier-store.tsx');
+    assert.match(page, /<ClosedStoreIllustration \/>/);
+    assert.match(page, /\{canOpen && \(\s*<Button/);
+    assert.match(page, /Browse Read-Only/);
+    assert.match(page, /Ready when you are/);
+    assert.match(page, /aria-hidden="true"/);
+});

@@ -16,7 +16,10 @@ import {
 } from '@/lib/store-inventory-adjustment';
 import { isExpenseWriteOnline } from '@/lib/store-session-expense';
 import { store } from '@/routes/store-session-inventory-adjustments';
-import type { CurrentStoreSession } from '@/types';
+import type {
+    CurrentStoreSession,
+    StoreSessionInventoryAdjustment,
+} from '@/types';
 
 /** Stock used outside a normal sale: inventory-only, never a Store Expense or Cash/Cashless change. */
 export function StoreInventoryAdjustmentForm({
@@ -320,6 +323,66 @@ export function StoreInventoryAdjustmentForm({
                     </Button>
                 )}
             </footer>
+        </div>
+    );
+}
+
+const adjustmentTime = new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+});
+
+/** Stock-only history row; it deliberately shows no peso value. */
+export function InventoryAdjustmentRow({
+    adjustment,
+    compact = false,
+}: {
+    adjustment: StoreSessionInventoryAdjustment;
+    compact?: boolean;
+}) {
+    return (
+        <div
+            className={`flex items-center gap-3 px-3 ${compact ? 'py-2.5' : 'min-h-16 py-2.5'}`}
+        >
+            <span
+                className={`flex shrink-0 items-center justify-center bg-violet-50 text-violet-700 ${compact ? 'size-8 rounded-lg' : 'size-9 rounded-xl'}`}
+            >
+                <PackageMinus className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+                <span
+                    className={`block truncate font-bold ${compact ? 'text-xs' : 'text-sm'}`}
+                >
+                    {adjustment.product_name} × {adjustment.quantity}
+                </span>
+                <span className="mt-0.5 block truncate text-[10px] text-neutral-500">
+                    {adjustmentTime.format(new Date(adjustment.created_at))} ·{' '}
+                    {adjustment.created_by.name}
+                </span>
+                <span className="mt-1 flex flex-wrap gap-1">
+                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-800 uppercase">
+                        Stock adjustment · {adjustment.reason_label}
+                    </span>
+                </span>
+                {adjustment.note && (
+                    <span className="mt-1 block truncate text-[10px] text-neutral-500 italic">
+                        {adjustment.note}
+                    </span>
+                )}
+            </span>
+            <span className="shrink-0 text-right">
+                <span
+                    className={`block font-bold text-violet-700 tabular-nums ${compact ? 'text-xs' : 'text-sm'}`}
+                >
+                    −{adjustment.quantity}
+                </span>
+                <span className="text-[9px] font-semibold tracking-wide text-neutral-500 uppercase">
+                    Stock only
+                </span>
+            </span>
         </div>
     );
 }

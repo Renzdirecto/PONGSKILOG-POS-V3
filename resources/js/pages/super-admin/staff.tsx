@@ -112,7 +112,7 @@ function initials(name: string): string {
         .toUpperCase();
 }
 
-/** Rounded-square profile picture holder; shows initials when no picture was uploaded. */
+/** Rounded-square profile picture holder; shows initials when no picture was uploaded or it fails to load. */
 function StaffAvatar({
     name,
     url,
@@ -122,15 +122,18 @@ function StaffAvatar({
     url: string | null;
     size?: string;
 }) {
+    const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
     return (
         <span
             className={`${size} flex shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[#e5e5e5] bg-[#f3f3f3] text-[12px] font-semibold text-[#666]`}
         >
-            {url ? (
+            {url && url !== failedUrl ? (
                 <img
                     src={url}
                     alt=""
                     loading="lazy"
+                    onError={() => setFailedUrl(url)}
                     className="size-full object-cover"
                 />
             ) : (
@@ -605,6 +608,7 @@ function AddStaffForm({
                                 <button
                                     type="button"
                                     onClick={() => chooseAvatar(null)}
+                                    aria-label="Remove profile picture"
                                     className={ownerSecondaryActionClass}
                                 >
                                     Remove

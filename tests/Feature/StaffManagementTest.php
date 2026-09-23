@@ -282,8 +282,8 @@ test('a profile picture is stored privately and served only to super admin acces
     Storage::disk('local')->assertExists($user->avatar_path);
     expect(AuditLog::query()->where('action', 'staff.created')->sole()->after['has_profile_picture'])->toBeTrue();
     $this->actingAs($this->superAdmin)
-        ->get(route('super-admin.staff.index'))
-        ->assertInertia(fn (Assert $page) => $page->where('staff.data.1.avatar_url', fn (string $url) => str_starts_with($url, '/workspaces/super-admin/staff/'.$user->id.'/avatar?v=')));
+        ->get(route('super-admin.staff.index', ['search' => 'jamie@']))
+        ->assertInertia(fn (Assert $page) => $page->has('staff.data', 1)->where('staff.data.0.avatar_url', fn (string $url) => str_starts_with($url, '/workspaces/super-admin/staff/'.$user->id.'/avatar?v=')));
     $this->get(route('super-admin.staff.avatar', $user))->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
     $this->actingAs($owner)->get(route('super-admin.staff.avatar', $user))->assertForbidden();
 });
@@ -326,3 +326,70 @@ test('a failed account creation removes the stored profile picture', function ()
     $this->assertDatabaseMissing('users', ['email' => 'jamie@pongskilog.test']);
     expect(Storage::disk('local')->allFiles())->toBe([]);
 });
+
+test('private profile pictures are denied to every other role guests and inactive super admins', function (string $case) {
+    Storage::fake('local');
+    createStaffRequest(staffPayload(['avatar' => UploadedFile::fake()->image('jamie.png', 200, 200)]))
+        ->assertRedirectToRoute('super-admin.staff.index');
+    $staff = User::query()->where('email', 'jamie@pongskilog.test')->sole();
+    $this->get(route('super-admin.staff.avatar', $staff))->assertOk()->assertHeader('Cache-Control', 'max-age=300, private');
+    auth()->logout();
+
+    if ($case === 'guest') {
+        $this->get(route('super-admin.staff.avatar', $staff))->assertRedirectToRoute('login');
+
+        return;
+    }
+
+    if ($case === 'inactive super admin') {
+        $this->superAdmin->forceFill(['is_active' => false])->save();
+        $this->actingAs($this->superAdmin)->get(route('super-admin.staff.avatar', $staff))->assertRedirectToRoute('login');
+
+        return;
+    }
+
+    $viewer = User::factory()->create();
+    $viewer->roles()->attach(Role::query()->where('name', $case)->sole());
+    $viewer->branches()->attach($this->branch, ['is_active' => true]);
+
+    $this->actingAs($viewer)->get(route('super-admin.staff.avatar', $staff))->assertForbidden();
+    $this->actingAs($viewer)->get(route('super-admin.staff.avatar', $viewer))->assertForbidden();
+})->with(['cashier', 'kitchen_staff', 'cashier_kitchen', 'guest', 'inactive super admin']);
+
+test('a profile picture whose content is not an image is rejected even with an image name and type', function () {
+    Storage::fake('local');
+    $path = tempnam(sys_get_temp_dir(), 'avatar');
+    file_put_contents($path, '<?php echo "not an image";');
+    $spoofed = new UploadedFile($path, 'photo.png', 'image/png', null, true);
+
+    createStaffRequest(staffPayload(['avatar' => $spoofed]))->assertInvalid(['avatar']);
+
+    $this->assertDatabaseMissing('users', ['email' => 'jamie@pongskilog.test']);
+    $this->assertDatabaseCount('audit_logs', 0);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('a duplicate that races past request validation reports the violated field and leaves no account or picture', function (string $field, string $message) {
+    Storage::fake('local');
+    User::factory()->create($field === 'email' ? ['email' => 'jamie@pongskilog.test'] : [])
+        ->forceFill(['employee_id' => $field === 'employee_id' ? '09242601' : '09232601'])->save();
+    $usersBefore = User::query()->count();
+
+    expect(fn () => app(CreateStaffAccount::class)->execute($this->superAdmin, [
+        'employee_id' => '09242601',
+        'name' => 'Jamie Cruz',
+        'email' => 'jamie@pongskilog.test',
+        'password' => 'Temporary-Pass-42',
+        'role' => 'cashier',
+        'branch_ids' => [$this->branch->id],
+        'avatar' => UploadedFile::fake()->image('jamie.png', 200, 200),
+    ]))->toThrow(fn (ValidationException $exception) => expect($exception->errors())->toBe([$field => [$message]]));
+
+    expect(User::query()->count())->toBe($usersBefore)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+    $this->assertDatabaseCount('user_branch_assignments', 0);
+    $this->assertDatabaseCount('audit_logs', 0);
+})->with([
+    'email' => ['email', 'This email is already used by another account.'],
+    'employee id' => ['employee_id', 'This Employee ID is already used by another account.'],
+]);

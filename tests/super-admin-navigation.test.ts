@@ -209,3 +209,9 @@ test('planned pages and the staff form never fake controls or echo credentials',
     assert.match(staffPage, /All branches \/ business-wide/);
     assert.doesNotMatch(staffPage, /must change|first login|invite/i);
 });
+
+test('staff avatars fall back to initials and the remove control is named', () => {
+    assert.match(staffPage, /onError=\{\(\) => setFailedUrl\(url\)\}/);
+    assert.match(staffPage, /url && url !== failedUrl \?/);
+    assert.match(staffPage, /aria-label="Remove profile picture"/);
+});

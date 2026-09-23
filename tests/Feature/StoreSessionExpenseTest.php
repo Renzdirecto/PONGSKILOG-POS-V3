@@ -182,6 +182,30 @@ test('owner and unassigned operational users cannot create expenses', function (
     $this->assertDatabaseCount('store_session_expenses', 0);
 })->with(['owner', 'unassigned cashier']);
 
+test('a full access super admin records an expense only for the selected open branch session', function () {
+    $branch = Branch::factory()->create();
+    $session = StoreSession::factory()->for($branch)->create();
+    $closedBranch = Branch::factory()->create();
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    $this->actingAs($superAdmin)->postJson(route('store-session-expenses.store'), storeExpensePayload())
+        ->assertRedirectToRoute('workspace');
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $closedBranch->id])
+        ->postJson(route('store-session-expenses.store'), storeExpensePayload())->assertUnprocessable();
+    $this->assertDatabaseCount('store_session_expenses', 0);
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->postJson(route('store-session-expenses.store'), storeExpensePayload())->assertOk();
+
+    $expense = StoreSessionExpense::query()->sole();
+    expect($expense->branch_id)->toBe($branch->id)
+        ->and($expense->store_session_id)->toBe($session->id)
+        ->and($expense->created_by_user_id)->toBe($superAdmin->id)
+        ->and(AuditLog::query()->where('action', 'store_expense_recorded')->sole()->user_id)->toBe($superAdmin->id)
+        ->and($superAdmin->branches()->count())->toBe(0);
+});
+
 test('inactive cashier identity and inactive branch assignment cannot create expenses', function (string $case) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
@@ -324,6 +348,17 @@ test('expense realtime payload is compact and branch channel authorization is sc
     ])->assertForbidden();
     $this->actingAs($cashier)->postJson('/broadcasting/auth', [
         'socket_id' => '123.456', 'channel_name' => 'private-branch.'.$otherBranch->id.'.store-session',
+    ])->assertForbidden();
+
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+    $owner = User::factory()->create();
+    $owner->roles()->attach(Role::query()->where('name', 'owner')->sole());
+    $this->actingAs($superAdmin)->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456', 'channel_name' => $channel,
+    ])->assertOk();
+    $this->actingAs($owner)->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456', 'channel_name' => $channel,
     ])->assertForbidden();
 });
 

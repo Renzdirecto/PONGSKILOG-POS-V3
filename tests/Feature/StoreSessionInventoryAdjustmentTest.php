@@ -135,6 +135,19 @@ test('roles without Store Session operations are rejected', function (string $ro
     expect($this->scenario->stock->fresh()->on_hand)->toBe(50);
 })->with(['kitchen_staff', 'owner']);
 
+test('a full access super admin adjusts the selected branch stock as the audited actor without an assignment', function () {
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    inventoryAdjustment($this->scenario, [], $superAdmin)->assertOk()->assertJsonPath('adjustment.on_hand', 49);
+
+    expect(StoreSessionInventoryAdjustment::query()->sole()->created_by_user_id)->toBe($superAdmin->id)
+        ->and(AuditLog::query()->where('action', 'store_session.inventory_adjusted')->sole()->user_id)->toBe($superAdmin->id)
+        ->and($superAdmin->branches()->count())->toBe(0);
+    inventoryAdjustment($this->scenario, ['quantity' => 50], $superAdmin)->assertUnprocessable()->assertJsonValidationErrors(['quantity']);
+    expect($this->scenario->stock->fresh()->on_hand)->toBe(49);
+});
+
 test('a cashier with kitchen access may adjust inventory', function () {
     inventoryAdjustment($this->scenario, [], $this->scenario->user('cashier_kitchen'))->assertOk();
 

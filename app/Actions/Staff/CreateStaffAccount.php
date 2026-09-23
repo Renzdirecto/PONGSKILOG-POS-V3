@@ -105,7 +105,11 @@ class CreateStaffAccount
                 throw $exception;
             }
 
-            throw str_contains($exception->getMessage(), 'employee_id')
+            /** The raw message embeds the INSERT column list, so only the parsed violated columns or index are trusted. */
+            $employeeIdTaken = in_array('employee_id', $exception->columns, true)
+                || $exception->index === 'users_employee_id_unique';
+
+            throw $employeeIdTaken
                 ? ValidationException::withMessages(['employee_id' => 'This Employee ID is already used by another account.'])
                 : ValidationException::withMessages(['email' => 'This email is already used by another account.']);
         }

@@ -182,6 +182,19 @@ test('owner and unassigned operational users cannot create expenses', function (
     $this->assertDatabaseCount('store_session_expenses', 0);
 })->with(['owner', 'unassigned cashier']);
 
+test('inactive cashier identity and inactive branch assignment cannot create expenses', function (string $case) {
+    $branch = Branch::factory()->create();
+    StoreSession::factory()->for($branch)->create();
+    $user = User::factory()->create(['is_active' => $case !== 'inactive user']);
+    $user->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+    $user->branches()->attach($branch, ['is_active' => $case !== 'inactive assignment']);
+
+    $response = $this->actingAs($user)->postJson(route('store-session-expenses.store'), storeExpensePayload());
+
+    $case === 'inactive user' ? $response->assertUnauthorized() : $response->assertRedirectToRoute('workspace');
+    $this->assertDatabaseCount('store_session_expenses', 0);
+})->with(['inactive user', 'inactive assignment']);
+
 test('client session identifiers are ignored in favor of the current open session', function () {
     $branch = Branch::factory()->create();
     $cashier = storeExpenseUser($branch);
@@ -207,6 +220,9 @@ test('invalid money and an untracked product are rejected without effects', func
     $this->actingAs($cashier)->postJson(route('store-session-expenses.store'), storeExpensePayload([
         'restock' => true, 'product_id' => $product->id, 'quantity' => 2,
     ]))->assertUnprocessable()->assertJsonValidationErrors('product_id');
+    $this->actingAs($cashier)->postJson(route('store-session-expenses.store'), storeExpensePayload([
+        'restock' => true, 'product_id' => $product->id, 'quantity' => 1_000_001,
+    ]))->assertUnprocessable()->assertJsonValidationErrors('quantity');
     $this->assertDatabaseCount('store_session_expenses', 0);
     $this->assertDatabaseCount('inventory_movements', 0);
 });

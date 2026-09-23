@@ -44,7 +44,7 @@ class StoreSessionExpenseRequest extends FormRequest
             'note' => ['nullable', 'string', 'max:2000'],
             'restock' => ['required', 'boolean'],
             'product_id' => ['nullable', 'required_if:restock,true', 'prohibited_unless:restock,true', 'uuid'],
-            'quantity' => ['nullable', 'required_if:restock,true', 'prohibited_unless:restock,true', 'integer', 'min:1'],
+            'quantity' => ['nullable', 'required_if:restock,true', 'prohibited_unless:restock,true', 'integer', 'min:1', 'max:1000000'],
             'receipt' => ['nullable', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('2mb')->dimensions(
                 Rule::dimensions()->minWidth(64)->minHeight(64)->maxWidth(8000)->maxHeight(8000),
             )],

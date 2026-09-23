@@ -38,10 +38,6 @@ export function storeExpenseError(error: unknown): string {
     return 'The expense could not be saved. Check the details and try again.';
 }
 
-export function isExpenseWriteOnline(connectionStatus: string): boolean {
-    return (
-        typeof navigator !== 'undefined' &&
-        navigator.onLine &&
-        connectionStatus === 'connected'
-    );
+export function isExpenseWriteOnline(): boolean {
+    return typeof navigator !== 'undefined' && navigator.onLine;
 }

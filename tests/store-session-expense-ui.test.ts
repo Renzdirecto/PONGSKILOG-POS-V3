@@ -131,16 +131,17 @@ test('expense errors preserve conflict and validation feedback', () => {
     );
 });
 
-test('expense writes require both browser and Echo connectivity', () => {
+test('expense writes require browser connectivity but not Echo connectivity', () => {
     Object.defineProperty(globalThis, 'navigator', {
         configurable: true,
         value: { onLine: true },
     });
-    assert.equal(isExpenseWriteOnline('connected'), true);
-    assert.equal(isExpenseWriteOnline('unavailable'), false);
+    assert.equal(isExpenseWriteOnline(), true);
+    assert.match(dialog, /Live updates are unavailable/);
+    assert.match(dialog, /You can still record an expense/);
     Object.defineProperty(globalThis, 'navigator', {
         configurable: true,
         value: { onLine: false },
     });
-    assert.equal(isExpenseWriteOnline('connected'), false);
+    assert.equal(isExpenseWriteOnline(), false);
 });

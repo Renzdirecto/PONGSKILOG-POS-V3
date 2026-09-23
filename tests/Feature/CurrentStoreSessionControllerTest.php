@@ -123,6 +123,16 @@ test('kitchen only user is denied current Store Session detail', function () {
     $this->actingAs($user)->getJson(route('store-sessions.current'))->assertForbidden();
 });
 
+test('inactive cashier is denied current Store Session detail', function () {
+    $branch = Branch::factory()->create();
+    $user = currentStoreSessionUser($branch);
+    $user->forceFill(['is_active' => false])->save();
+    $user->refresh();
+    StoreSession::factory()->for($branch)->create();
+
+    $this->actingAs($user)->getJson(route('store-sessions.current'))->assertUnauthorized();
+});
+
 test('stale context for an unassigned branch exposes no Store Session detail', function () {
     $assignedBranch = Branch::factory()->create();
     $unassignedBranch = Branch::factory()->create();

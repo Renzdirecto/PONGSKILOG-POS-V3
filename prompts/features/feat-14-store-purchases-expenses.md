@@ -1,6 +1,6 @@
 # Feature 14 — Store Purchases / Expenses
 
-**Status:** Implementation complete — USER MANUAL QA pending
+**Status:** Complete — USER MANUAL QA accepted; final release-gate audit passed
 **Branch:** `feature/store-expenses`
 **Starting commit:** `31626e4748f8bcbbe29eba46cf9fb4ec8c8d805f`
 

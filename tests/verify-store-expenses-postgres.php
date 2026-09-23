@@ -18,6 +18,7 @@ use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
 use App\Models\User;
+use App\Support\CurrentStoreSessionExpenses;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Connection;
@@ -100,20 +101,23 @@ if ($worker) {
     DB::statement("SET statement_timeout = '20s'");
     DB::selectOne("SELECT set_config('application_name', ?, false)", [$argv[3]]);
 
+    $paymentSource = $argv[9] ?? 'cash';
+    $restock = ($argv[10] ?? '1') === '1';
+
     try {
         $expense = app(RecordStoreSessionExpense::class)->execute(
             User::query()->findOrFail($argv[4]),
             Branch::query()->findOrFail($argv[5]),
-            [
+            array_filter([
                 'idempotency_key' => $argv[6],
                 'description' => 'Concurrent ice restock',
                 'amount' => $argv[7],
-                'payment_source' => 'cash',
+                'payment_source' => $paymentSource,
                 'note' => null,
-                'restock' => true,
-                'product_id' => $argv[8],
-                'quantity' => 3,
-            ],
+                'restock' => $restock,
+                'product_id' => $restock ? $argv[8] : null,
+                'quantity' => $restock ? 3 : null,
+            ], fn (mixed $value): bool => $value !== null),
         );
         echo json_encode(['status' => 200, 'expense_id' => $expense->id, 'amount' => $expense->amount], JSON_THROW_ON_ERROR).PHP_EOL;
     } catch (HttpExceptionInterface $exception) {
@@ -267,6 +271,40 @@ try {
     verifyPhase14(BranchInventory::query()->where('product_id', $product->id)->sole()->on_hand === 20, 'First independent product has the wrong balance.');
     verifyPhase14(BranchInventory::query()->where('product_id', $secondProduct->id)->sole()->on_hand === 13, 'Second independent product has the wrong balance.');
     echo 'DIFFERENT PRODUCTS PASS: no unnecessary deadlock and both balances advanced.'.PHP_EOL;
+
+    $totalsBranch = Branch::factory()->create();
+    $totalsCashier = User::factory()->create();
+    $totalsCashier->roles()->attach(Role::query()->where('name', 'cashier')->sole());
+    $totalsCashier->branches()->attach($totalsBranch, ['is_active' => true]);
+    $totalsSession = StoreSession::factory()->for($totalsBranch)->create();
+    DB::beginTransaction();
+    StoreSession::query()->whereKey($totalsSession->id)->lockForUpdate()->sole();
+    $totalsWorkers = [];
+    foreach ([['cash', '200.00'], ['cashless', '500.00']] as $index => [$source, $amount]) {
+        $application = $schema.'_expense_totals_'.$index;
+        $process = new Process([
+            PHP_BINARY, __FILE__, '--worker', $schema, $application, (string) $totalsCashier->id,
+            $totalsBranch->id, (string) Str::uuid(), $amount, $product->id, $source, '0',
+        ], dirname(__DIR__), [
+            'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_URL' => 'null',
+            'DB_HOST' => $connection['host'], 'DB_PORT' => (string) $connection['port'],
+            'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'],
+            'DB_PASSWORD' => $connection['password'], 'DB_SSLMODE' => $connection['sslmode'],
+        ], timeout: 25);
+        $processes[] = $process;
+        $totalsWorkers[] = $process;
+        $process->start();
+    }
+    awaitPhase14Locks($observer, $schema.'_expense_totals_', $totalsWorkers);
+    DB::commit();
+    foreach ($totalsWorkers as $process) {
+        verifyPhase14($process->wait() === 0, 'Expense-total worker failed: '.$process->getErrorOutput().$process->getOutput());
+        verifyPhase14(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['status'] === 200, 'Concurrent Cash/Cashless expense failed.');
+    }
+    $totals = app(CurrentStoreSessionExpenses::class)->for($totalsBranch, $totalsSession);
+    verifyPhase14($totals['expense_totals'] === ['cash' => '200.00', 'cashless' => '500.00', 'total' => '700.00'], 'Concurrent Cash/Cashless totals were inaccurate.');
+    verifyPhase14($totals['expense_count'] === 2, 'Concurrent Cash/Cashless expenses were not both retained.');
+    echo 'EXPENSE TOTALS PASS: concurrent Cash/Cashless writes produced exact full-session totals.'.PHP_EOL;
 
     $session = StoreSession::query()->where('branch_id', $branch->id)->where('status', 'open')->sole();
     DB::beginTransaction();

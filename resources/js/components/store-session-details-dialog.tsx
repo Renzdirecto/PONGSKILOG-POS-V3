@@ -175,12 +175,10 @@ function ExpenseDetail({
 
 function ExpenseForm({
     session,
-    connectionStatus,
     onBack,
     onSaved,
 }: {
     session: CurrentStoreSession;
-    connectionStatus: string;
     onBack: () => void;
     onSaved: () => Promise<void>;
 }) {
@@ -209,7 +207,7 @@ function ExpenseForm({
 
     async function submit(event: React.FormEvent) {
         event.preventDefault();
-        if (!isExpenseWriteOnline(connectionStatus)) {
+        if (!isExpenseWriteOnline()) {
             setError('You are offline. Reconnect before recording an expense.');
             return;
         }
@@ -390,6 +388,7 @@ function ExpenseForm({
                                     onChange={(event) => setQuantity(event.target.value)}
                                     inputMode="numeric"
                                     min="1"
+                                    max="1000000"
                                     step="1"
                                     type="number"
                                     required={restock}
@@ -565,15 +564,19 @@ export function StoreSessionDetailsDialog({
                                             <p className="text-[10px] font-bold tracking-[0.14em] text-neutral-500 uppercase">Purchases & expenses</p>
                                             <p className="mt-0.5 text-xs text-neutral-500">Current Store Session only</p>
                                         </div>
-                                        <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline(connectionStatus)} className="min-h-11 rounded-xl bg-neutral-950 px-3 text-white hover:bg-black">
+                                        <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 rounded-xl bg-neutral-950 px-3 text-white hover:bg-black">
                                             <Plus className="size-4" /> Add expense / purchase
                                         </Button>
                                     </div>
-                                    {connectionStatus !== 'connected' && (
+                                    {!isExpenseWriteOnline() ? (
                                         <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                                             You are offline. Reconnect before recording an expense. Confirmed history remains visible.
                                         </p>
-                                    )}
+                                    ) : connectionStatus !== 'connected' ? (
+                                        <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                            Live updates are unavailable. You can still record an expense; this session will refresh from the server after saving.
+                                        </p>
+                                    ) : null}
                                     <div className="grid grid-cols-3 gap-2">
                                         <SummaryCard label="Cash" amount={session.expense_totals.cash} />
                                         <SummaryCard label="Cashless" amount={session.expense_totals.cashless} />
@@ -627,7 +630,6 @@ export function StoreSessionDetailsDialog({
                 {view === 'add' && session && (
                     <ExpenseForm
                         session={session}
-                        connectionStatus={connectionStatus}
                         onBack={() => setView('overview')}
                         onSaved={async () => {
                             await refreshSession();

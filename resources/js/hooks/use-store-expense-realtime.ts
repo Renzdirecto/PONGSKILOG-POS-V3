@@ -31,6 +31,18 @@ export function useStoreExpenseRealtime(
         [branchId, guard, refresh],
     );
 
+    /** Stock shown for restocks and adjustments follows the branch inventory invalidation. */
+    useEcho<Record<string, unknown>>(
+        `branch.${branchId}.inventory`,
+        ['.inventory.changed'],
+        (event) => {
+            if (guard(event)) {
+                refresh.schedule();
+            }
+        },
+        [branchId, guard, refresh],
+    );
+
     useEffect(() => {
         if (
             previousStatus.current !== 'connected' &&

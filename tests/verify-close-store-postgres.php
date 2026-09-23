@@ -25,6 +25,7 @@ use App\Actions\Orders\TransitionKitchenOrder;
 use App\Actions\Orders\VoidOrder;
 use App\Actions\StoreSessions\CloseStoreSession;
 use App\Actions\StoreSessions\RecordStoreSessionExpense;
+use App\Actions\StoreSessions\RecordStoreSessionInventoryAdjustment;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Models\AuditLog;
@@ -185,6 +186,12 @@ if ($worker) {
                 'product_id' => $argv[7] ?? null,
                 'quantity' => isset($argv[7]) ? 2 : null,
             ], fn (mixed $value): bool => $value !== null))->only(['id']),
+            'adjust' => app(RecordStoreSessionInventoryAdjustment::class)->execute($user, $branch, [
+                'idempotency_key' => (string) Str::uuid(),
+                'reason_code' => 'complimentary',
+                'product_id' => $argv[7],
+                'quantity' => 1,
+            ])->only(['id']),
             'restore' => app(RestoreCustomerQrOrder::class)->execute($user, $branch, $order())->only(['id']),
             'load' => app(LoadCustomerQrOrder::class)->execute($user, $branch, $order())->only(['id']),
         };
@@ -456,6 +463,24 @@ try {
     $closeResult = $finish($startWorker('mixed_close', 0, $mixed->cashier, $mixed->branch, $closeArgs($mixed, '1320.00', '280.00')));
     verifyPhase15($closeResult['status'] === 200 && $mixed->session->fresh()->cash_variance === '0.00' && $mixed->session->fresh()->cashless_variance === '0.00', 'K: exact close failed.');
     echo 'K PASS: six concurrent Cash/Cashless/Split payments reconciled and closed with zero variance.'.PHP_EOL;
+
+    /** L: concurrent inventory-only deductions of the last unit never drive stock negative or touch money. */
+    $lastUnit = StoreCloseScenario::create('1000.00', '0.00');
+    $lastUnit->stock->update(['on_hand' => 1]);
+    DB::beginTransaction();
+    BranchInventory::query()->whereKey($lastUnit->stock->id)->lockForUpdate()->sole();
+    $adjusters = [];
+    foreach ([0, 1] as $index) {
+        $adjusters[] = $startWorker('last_unit', $index, $lastUnit->cashier, $lastUnit->branch, ['adjust', $lastUnit->product->id]);
+    }
+    awaitPhase15Locks($observer, $schema.'_last_unit_', $adjusters);
+    DB::commit();
+    $statuses = collect(array_map($finish, $adjusters))->pluck('status')->sort()->values()->all();
+    verifyPhase15($statuses === [200, 422], 'L: concurrent deductions returned '.json_encode($statuses));
+    verifyPhase15($lastUnit->stock->fresh()->on_hand === 0, 'L: stock was not exactly zero.');
+    verifyPhase15(StoreSessionExpense::query()->where('store_session_id', $lastUnit->session->id)->doesntExist(), 'L: an adjustment created an expense.');
+    verifyPhase15($lastUnit->reconciliation()['expected'] === ['cash' => '1000.00', 'cashless' => '0.00'], 'L: an adjustment changed reconciliation.');
+    echo 'L PASS: two concurrent last-unit adjustments yield one deduction, one rejection, stock 0 and no financial effect.'.PHP_EOL;
     echo 'PASS: PostgreSQL Phase 15 schema and concurrency invariants.'.PHP_EOL;
 } finally {
     while (DB::transactionLevel() > 0) {

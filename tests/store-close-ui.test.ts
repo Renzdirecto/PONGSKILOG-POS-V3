@@ -209,10 +209,38 @@ test('POS state is reloaded only after the server confirms the close', () => {
     assert.equal(reloads.length, 2);
     assert.match(flow, /onClosed\(closed\);\s*router\.reload\(\);/);
     assert.match(flow, /failure\.kind === 'closed'\) \{\s*router\.reload\(\);/);
-    assert.match(flow, /Any unsent POS cart on this device will be cleared\./);
+    assert.match(
+        flow,
+        /Any unsent POS cart on this device will be\s+cleared\./,
+    );
 });
 
 test('the confirmation footer keeps both actions within a 360px dialog', () => {
     assert.match(flow, /grid-cols-\[auto_minmax\(0,1fr\)\]/);
     assert.match(dialog, /w-\[calc\(100%-16px\)\]/);
+});
+
+test('session purchases collapse behind a dropdown below the closing count', () => {
+    assert.match(flow, /<SessionPurchases session=\{session\} \/>/);
+    assert.match(flow, /aria-expanded=\{open\}/);
+    assert.match(flow, /<ChevronDown/);
+    assert.match(flow, /useState\(false\)/);
+    assert.ok(
+        flow.indexOf('<SessionPurchases') >
+            flow.indexOf('Actual closing count'),
+    );
+    assert.match(dialog, /<StoreCloseFlow\s+session=\{session\}/);
+});
+
+test('pre-close checks are shown only while a blocker remains', () => {
+    assert.match(flow, /\{preview && blockers && !preview\.ready && \(/);
+    assert.match(flow, /unclaimed QR \$\{/);
+});
+
+test('final confirmation summarizes each channel with its own variance state', () => {
+    assert.match(flow, /<ChannelSummary\s+label="Cash"/);
+    assert.match(flow, /<ChannelSummary\s+label="Cashless"/);
+    assert.match(flow, /Please review the session summary before closing\./);
+    assert.match(flow, /aria-label="Edit overage explanation"/);
+    assert.match(flow, /This will close the current store session/);
 });

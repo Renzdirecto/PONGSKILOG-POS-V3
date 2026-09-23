@@ -24,6 +24,7 @@ import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
 import {
+    discardsStoreSession,
     openStoreSessionDialogState,
     storeSessionLoadFailure,
     type StoreSessionLoadState,
@@ -124,7 +125,11 @@ export default function WorkspaceLayout({
             setStoreSession(detail);
             setStoreSessionLoadState('loaded');
         } catch (reason) {
-            setStoreSessionLoadState(storeSessionLoadFailure(reason));
+            const failure = storeSessionLoadFailure(reason);
+            if (discardsStoreSession(failure)) {
+                setStoreSession(null);
+            }
+            setStoreSessionLoadState(failure);
         }
     }, [storeSessionRequest]);
 
@@ -135,6 +140,7 @@ export default function WorkspaceLayout({
               ? 'kitchen'
               : null;
         const handleStoreClosed = (event: StoreClosedRealtimeEvent) => {
+            setStoreSession(null);
             if (event.store_session_id !== ownClosedSessionId.current) {
                 setStoreSessionDialogOpen(false);
                 toast.info(
@@ -144,7 +150,11 @@ export default function WorkspaceLayout({
             router.reload();
         };
         const openStoreSessionDetails = async () => {
-            const openingState = openStoreSessionDialogState();
+            const openingState = openStoreSessionDialogState(
+                storeSession?.branch.id === branchContext.current?.id
+                    ? storeSession
+                    : null,
+            );
             setStoreSessionDialogOpen(openingState.open);
             setStoreSession(openingState.session);
             setStoreSessionLoadState(openingState.loadState);
@@ -334,6 +344,7 @@ export default function WorkspaceLayout({
                             onStoreClosed={(result) => {
                                 ownClosedSessionId.current =
                                     result.store_session.id;
+                                setStoreSession(null);
                             }}
                         />
                     )}

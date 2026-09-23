@@ -1,13 +1,20 @@
 import { http, router } from '@inertiajs/react';
 import {
     AlertTriangle,
+    ArrowDown,
     ArrowLeft,
+    ArrowUp,
     Banknote,
+    Check,
     CheckCircle2,
     ChefHat,
+    ChevronDown,
     CircleAlert,
+    CreditCard,
     Info,
     LockKeyhole,
+    PackagePlus,
+    Pencil,
     ReceiptText,
     RefreshCw,
     Smartphone,
@@ -41,6 +48,7 @@ import {
     store as closeStore,
 } from '@/routes/store-sessions/close';
 import { kitchen, transactionHistory } from '@/routes/workspaces';
+import type { CurrentStoreSession } from '@/types';
 import type {
     StoreCloseCorrection,
     StoreClosePreview,
@@ -373,7 +381,195 @@ function VarianceCard({
     );
 }
 
+/** Final-confirmation summary for one independent reconciliation channel. */
+function ChannelSummary({
+    label,
+    description,
+    icon: Icon,
+    tone,
+    expected,
+    actual,
+    assessment,
+}: {
+    label: 'Cash' | 'Cashless';
+    description: string;
+    icon: typeof Banknote;
+    tone: 'green' | 'blue';
+    expected: string;
+    actual: string;
+    assessment: ChannelAssessment;
+}) {
+    const variance = assessment.variance ?? 0n;
+    const state = assessment.state;
+    const varianceStyle =
+        state === 'exact'
+            ? 'bg-green-50 text-green-800'
+            : 'bg-red-50 text-red-700';
+    const VarianceIcon =
+        state === 'exact' ? Check : state === 'overage' ? ArrowUp : ArrowDown;
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-neutral-200">
+            <header className="flex items-center gap-3 px-3.5 pt-3.5 pb-2.5">
+                <span
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${tone === 'green' ? 'bg-green-100 text-green-700' : 'bg-sky-100 text-sky-700'}`}
+                >
+                    <Icon className="size-5" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                    <p className="text-sm font-bold">{label}</p>
+                    <p className="truncate text-[11px] text-neutral-500">
+                        {description}
+                    </p>
+                </div>
+            </header>
+            <dl>
+                {[
+                    [`Expected ${label}`, formatDecimalPeso(expected)],
+                    [`Actual ${label}`, formatDecimalPeso(actual)],
+                ].map(([term, value]) => (
+                    <div
+                        key={term}
+                        className="flex items-center justify-between gap-4 border-t border-neutral-100 px-3.5 py-2.5"
+                    >
+                        <dt className="text-xs text-neutral-600">{term}</dt>
+                        <dd className="text-right text-sm font-semibold break-all tabular-nums">
+                            {value}
+                        </dd>
+                    </div>
+                ))}
+                <div
+                    className={`flex items-center justify-between gap-4 px-3.5 py-2.5 ${varianceStyle}`}
+                >
+                    <dt className="text-xs font-bold">{label} Variance</dt>
+                    <dd className="flex items-center gap-2 text-right text-sm font-bold break-all tabular-nums">
+                        {formatPeso(variance < 0n ? -variance : variance)}
+                        <span
+                            className={`flex size-5 shrink-0 items-center justify-center rounded-full ${state === 'exact' ? 'bg-green-600 text-white' : 'bg-red-100 text-red-700'}`}
+                        >
+                            <VarianceIcon className="size-3.5" aria-hidden />
+                        </span>
+                        <span className="sr-only">
+                            {state === 'exact'
+                                ? 'Exact'
+                                : state === 'overage'
+                                  ? 'Overage'
+                                  : 'Shortage'}
+                        </span>
+                    </dd>
+                </div>
+            </dl>
+        </section>
+    );
+}
+
+/** Read-only view of the current session's purchases so the count can be checked against them. */
+function SessionPurchases({
+    session,
+}: {
+    session: CurrentStoreSession | null;
+}) {
+    const [open, setOpen] = useState(false);
+
+    if (!session) {
+        return null;
+    }
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-neutral-200">
+            <button
+                type="button"
+                aria-expanded={open}
+                aria-controls="session-purchases-list"
+                onClick={() => setOpen((value) => !value)}
+                className="flex min-h-14 w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none focus-visible:ring-inset"
+            >
+                <span className="min-w-0">
+                    <span className="block text-sm font-bold">
+                        Purchases &amp; expenses ({session.expense_count})
+                    </span>
+                    <span className="mt-0.5 block text-xs text-neutral-500 tabular-nums">
+                        Cash {formatDecimalPeso(session.expense_totals.cash)} ·
+                        Cashless{' '}
+                        {formatDecimalPeso(session.expense_totals.cashless)}
+                    </span>
+                </span>
+                <ChevronDown
+                    aria-hidden
+                    className={`size-5 shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`}
+                />
+            </button>
+            {open && (
+                <div
+                    id="session-purchases-list"
+                    className="border-t border-neutral-200 p-3.5"
+                >
+                    {session.expenses.length === 0 ? (
+                        <p className="py-3 text-center text-xs text-neutral-500">
+                            No purchases or expenses recorded for this Store
+                            Session.
+                        </p>
+                    ) : (
+                        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100">
+                            {session.expenses.map((expense) => (
+                                <li
+                                    key={expense.id}
+                                    className="flex items-center gap-3 px-3 py-2.5"
+                                >
+                                    <span
+                                        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${expense.payment_source === 'cash' ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-700'}`}
+                                    >
+                                        {expense.payment_source === 'cash' ? (
+                                            <Banknote className="size-4" />
+                                        ) : (
+                                            <Smartphone className="size-4" />
+                                        )}
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-xs font-bold">
+                                            {expense.description}
+                                        </span>
+                                        <span className="mt-0.5 block truncate text-[10px] text-neutral-500">
+                                            {manilaTime.format(
+                                                new Date(expense.created_at),
+                                            )}{' '}
+                                            · {expense.created_by.name}
+                                        </span>
+                                        {expense.item && (
+                                            <span className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800">
+                                                <PackagePlus className="size-3" />{' '}
+                                                RESTOCK ·{' '}
+                                                {expense.item.product_name} ×{' '}
+                                                {expense.item.quantity}
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className="shrink-0 text-right">
+                                        <span className="block text-xs font-bold tabular-nums">
+                                            {formatDecimalPeso(expense.amount)}
+                                        </span>
+                                        <span className="text-[9px] font-semibold tracking-wide text-neutral-500 uppercase">
+                                            {expense.payment_source}
+                                        </span>
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {session.expenses_truncated && (
+                        <p className="pt-2 text-center text-[10px] text-neutral-500">
+                            Showing the newest 50 of {session.expense_count}{' '}
+                            records. Totals include all records.
+                        </p>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
 export function StoreCloseFlow({
+    session,
     branchId,
     canOpenKitchen,
     canOpenHistory,
@@ -383,6 +579,7 @@ export function StoreCloseFlow({
     onDone,
     onNavigate,
 }: {
+    session: CurrentStoreSession | null;
     branchId: string;
     canOpenKitchen: boolean;
     canOpenHistory: boolean;
@@ -608,24 +805,9 @@ export function StoreCloseFlow({
         cashValue !== null &&
         cashlessValue !== null
     ) {
-        const rows: [string, string][] = [
-            ['Expected Cash', formatDecimalPeso(reconciliation.expected.cash)],
-            ['Actual Cash', formatDecimalPeso(cashValue)],
-            ['Cash variance', formatPeso(assessment.cash.variance ?? 0n)],
-            [
-                'Expected Cashless',
-                formatDecimalPeso(reconciliation.expected.cashless),
-            ],
-            ['Actual Cashless', formatDecimalPeso(cashlessValue)],
-            [
-                'Cashless variance',
-                formatPeso(assessment.cashless.variance ?? 0n),
-            ],
-        ];
-
         return (
             <div className="flex min-h-0 flex-1 flex-col">
-                <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+                <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                     <button
                         type="button"
                         onClick={() => setStage('review')}
@@ -642,40 +824,74 @@ export function StoreCloseFlow({
                         <DialogTitle className="truncate text-base font-bold">
                             Close {preview.store_session.branch.name}?
                         </DialogTitle>
+                        <DialogDescription className="truncate text-[11px] text-neutral-500">
+                            Please review the session summary before closing.
+                        </DialogDescription>
                     </div>
                 </header>
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
-                    <dl className="overflow-hidden rounded-xl border border-neutral-200">
-                        {rows.map(([label, value]) => (
-                            <div
-                                key={label}
-                                className="flex items-center justify-between gap-4 border-b border-neutral-100 px-3.5 py-2.5 last:border-0"
-                            >
-                                <dt className="text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                                    {label}
-                                </dt>
-                                <dd className="text-right text-sm font-bold break-all tabular-nums">
-                                    {value}
-                                </dd>
-                            </div>
-                        ))}
-                    </dl>
+                    <ChannelSummary
+                        label="Cash"
+                        description="Physical cash payments"
+                        icon={Banknote}
+                        tone="green"
+                        expected={reconciliation.expected.cash}
+                        actual={cashValue}
+                        assessment={assessment.cash}
+                    />
+                    <ChannelSummary
+                        label="Cashless"
+                        description="Card, e-wallet, and other cashless payments"
+                        icon={CreditCard}
+                        tone="blue"
+                        expected={reconciliation.expected.cashless}
+                        actual={cashlessValue}
+                        assessment={assessment.cashless}
+                    />
                     {trimmedNote && (
-                        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 break-words text-amber-900">
-                            <span className="font-bold">
-                                Overage explanation:{' '}
+                        <section className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-amber-950">
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-600 text-white">
+                                <CircleAlert className="size-4" aria-hidden />
                             </span>
-                            {trimmedNote}
-                        </p>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold">
+                                    Overage explanation
+                                </p>
+                                <p className="mt-0.5 text-xs leading-5 break-words">
+                                    {trimmedNote}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setStage('review')}
+                                disabled={submitting}
+                                aria-label="Edit overage explanation"
+                                className="flex size-11 shrink-0 items-center justify-center rounded-xl text-amber-900 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none disabled:opacity-50"
+                            >
+                                <Pencil className="size-4" />
+                            </button>
+                        </section>
                     )}
-                    <DialogDescription className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900">
-                        This action closes the current Store Session and
-                        disables operational ordering until a new Store Session
-                        is opened.
-                        {preview.qr.unclaimed_count > 0 &&
-                            ` ${preview.qr.unclaimed_count} unclaimed QR ${preview.qr.unclaimed_count === 1 ? 'order' : 'orders'} will be archived.`}{' '}
-                        Any unsent POS cart on this device will be cleared.
-                    </DialogDescription>
+                    <section className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-red-900">
+                        <AlertTriangle
+                            className="mt-0.5 size-5 shrink-0 text-red-700"
+                            aria-hidden
+                        />
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-red-700">
+                                This will close the current store session
+                            </p>
+                            <p className="mt-0.5 text-xs leading-5">
+                                This action closes the current Store Session and
+                                disables operational ordering until a new Store
+                                Session is opened.
+                                {preview.qr.unclaimed_count > 0 &&
+                                    ` ${preview.qr.unclaimed_count} unclaimed QR ${preview.qr.unclaimed_count === 1 ? 'order' : 'orders'} will be archived.`}{' '}
+                                Any unsent POS cart on this device will be
+                                cleared.
+                            </p>
+                        </div>
+                    </section>
                     {!online && (
                         <p
                             role="alert"
@@ -728,7 +944,7 @@ export function StoreCloseFlow({
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+            <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                 <button
                     type="button"
                     onClick={onBack}
@@ -805,7 +1021,8 @@ export function StoreCloseFlow({
                     </div>
                 )}
 
-                {preview && blockers && (
+                {/* Pre-close checks appear only while something blocks closing; the QR archive count stays in the confirmation. */}
+                {preview && blockers && !preview.ready && (
                     <section
                         className="space-y-2"
                         aria-labelledby="pre-close-checks"
@@ -1202,6 +1419,7 @@ export function StoreCloseFlow({
                                 </div>
                             )}
                         </section>
+                        <SessionPurchases session={session} />
                     </>
                 )}
 

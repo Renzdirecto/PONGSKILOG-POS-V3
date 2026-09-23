@@ -807,3 +807,7 @@ boundary. No additional order, payment, inventory, or Kitchen aggregate was adde
 - Closed Store Sessions are immutable at the model layer. A status-consistency CHECK was deliberately not added because existing fixtures close sessions with a bare status update; `CloseStoreSession` always writes the complete closing record.
 
 Migration `2026_09_23_074723_add_store_session_index_to_order_adjustments_table` adds `(store_session_id, order_id)` on `order_adjustments` so close-time correction aggregates stay scoped to one session. Payments (`store_session_id`), Orders (`store_session_id, qr_sequence`), and expenses (`store_session_id, payment_source`) reuse existing indexes.
+
+## Store Session inventory adjustments - 2026-09-23
+
+Migration `2026_09_23_132208_create_store_session_inventory_adjustments_table` adds an append-only `store_session_inventory_adjustments` record (Branch, Store Session, Product, unique `inventory_movement_id`, reason code `complimentary|wastage|damaged|staff_meal|other`, positive quantity, optional note, actor, unique idempotency key, intent hash). The stock change itself is a canonical `manual_adjustment` movement written through `ApplyInventoryMovement`; no Store Expense, Payment, or reconciliation value is created, so Store Close financial totals are unaffected.

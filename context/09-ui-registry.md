@@ -881,3 +881,4 @@ USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt
 | Final confirmation | Expected/actual/variance per channel, QR archive count and cart warning; stable idempotency key for ambiguous retries. |
 | Store Closed | Closed time/by, closing balances, variances, archived QR count and Done; Store state reloads and other clients leave the stale dialog on `store.closed`. |
 | Edit correction source | Adjustment to return asks `Returned in Cash` only when the refund source is not deterministic. |
+| Adjust inventory | Store Session sub-view beside Add expense / purchase: reason cards, searchable tracked products with current stock, whole-number quantity, note (required for Other), integer stock preview, compact confirmation, inventory-only save with no Cash/Cashless effect. |

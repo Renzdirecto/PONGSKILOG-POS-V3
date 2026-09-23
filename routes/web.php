@@ -34,6 +34,7 @@ use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
 use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
+use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
@@ -163,6 +164,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('store-sessions/current/expenses', [StoreSessionExpenseController::class, 'store'])
         ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:20,1'])
         ->name('store-session-expenses.store');
+    Route::post('store-sessions/current/inventory-adjustments', StoreSessionInventoryAdjustmentController::class)
+        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-inventory-adjustments.store');
     Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
         ->whereUuid('expense')
         ->middleware(['permission:store_expenses.manage', 'branch'])

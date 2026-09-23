@@ -6,6 +6,7 @@ import {
     ChevronRight,
     FileImage,
     LockKeyhole,
+    PackageMinus,
     PackagePlus,
     Plus,
     ReceiptText,
@@ -27,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { StoreCloseFlow } from '@/components/store-close-flow';
+import { StoreInventoryAdjustmentForm } from '@/components/store-inventory-adjustment-form';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
@@ -47,7 +49,7 @@ import type {
     StoreSessionExpense,
 } from '@/types';
 
-type View = 'overview' | 'add' | 'detail' | 'close';
+type View = 'overview' | 'add' | 'adjust' | 'detail' | 'close';
 
 const manilaTime = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
@@ -102,7 +104,7 @@ function ExpenseDetail({
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+            <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                 <button
                     type="button"
                     onClick={onBack}
@@ -247,7 +249,7 @@ function ExpenseForm({
 
     return (
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-            <header className="flex items-center gap-2 border-b border-neutral-200 px-1 pb-3">
+            <header className="flex items-center gap-2 border-b border-neutral-200 pr-12 pb-3 pl-1">
                 <button
                     type="button"
                     onClick={onBack}
@@ -520,10 +522,10 @@ export function StoreSessionDetailsDialog({
             <DialogContent
                 onEscapeKeyDown={(event) => closeBusy && event.preventDefault()}
                 onInteractOutside={(event) => closeBusy && event.preventDefault()}
-                className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[760px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
+                className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[calc(100%-16px)] sm:max-w-[614px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-3 [&>button]:right-3 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-[10px] [&>button]:text-[#767676] [&>button]:opacity-100 [&>button]:transition-colors [&>button]:hover:bg-[#F2F2F2] [&>button]:hover:text-[#111111] [&>button]:focus:ring-0 [&>button]:focus:ring-offset-0 [&>button]:focus-visible:ring-2 [&>button]:focus-visible:ring-neutral-950 sm:[&>button]:top-5 sm:[&>button]:right-5 [&>button>svg]:!size-5">
                 {view === 'overview' && (
                     <>
-                        <DialogHeader className="shrink-0 pr-9 text-left">
+                        <DialogHeader className="shrink-0 pr-12 text-left">
                             <div className="flex items-center gap-3">
                                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700">
                                     <Store className="size-5" />
@@ -548,11 +550,40 @@ export function StoreSessionDetailsDialog({
                         </DialogHeader>
 
                         {loadState === 'loading' && !session && (
-                            <div className="flex min-h-52 flex-1 items-center justify-center gap-2 text-sm text-neutral-500" role="status">
-                                <Spinner /> Loading Store Session…
+                            <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-hidden" role="status" aria-label="Loading Store Session">
+                                <span className="sr-only">Loading Store Session…</span>
+                                <div className="grid gap-3 rounded-xl border border-neutral-200 p-3 sm:grid-cols-3">
+                                    {[0, 1, 2, 3, 4].map((cell) => (
+                                        <div key={cell} className="space-y-1.5">
+                                            <div className="h-2 w-16 animate-pulse rounded bg-neutral-100" />
+                                            <div className="h-3 w-24 animate-pulse rounded bg-neutral-200" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="h-3 w-32 animate-pulse rounded bg-neutral-200" />
+                                    <div className="h-11 w-44 animate-pulse rounded-xl bg-neutral-200" />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {[0, 1, 2].map((card) => (
+                                        <div key={card} className="h-[62px] animate-pulse rounded-xl bg-neutral-100" />
+                                    ))}
+                                </div>
+                                <div className="overflow-hidden rounded-xl border border-neutral-200">
+                                    {[0, 1, 2].map((row) => (
+                                        <div key={row} className="flex min-h-16 items-center gap-3 border-b border-neutral-100 px-3 py-2.5 last:border-0">
+                                            <div className="size-9 shrink-0 animate-pulse rounded-xl bg-neutral-100" />
+                                            <div className="flex-1 space-y-1.5">
+                                                <div className="h-3 w-2/5 animate-pulse rounded bg-neutral-200" />
+                                                <div className="h-2 w-1/4 animate-pulse rounded bg-neutral-100" />
+                                            </div>
+                                            <div className="h-3 w-14 animate-pulse rounded bg-neutral-200" />
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
-                        {loadMessage && !session && (
+                        {loadMessage && (
                             <div role="alert" className="my-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
                                 <p>{loadMessage}</p>
                                 {canRetryStoreSessionLoad(loadState) && (
@@ -578,14 +609,19 @@ export function StoreSessionDetailsDialog({
                                     ))}
                                 </dl>
                                 <section>
-                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                         <div>
                                             <p className="text-[10px] font-bold tracking-[0.14em] text-neutral-500 uppercase">Purchases & expenses</p>
                                             <p className="mt-0.5 text-xs text-neutral-500">Current Store Session only</p>
                                         </div>
-                                        <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 rounded-xl bg-neutral-950 px-3 text-white hover:bg-black">
-                                            <Plus className="size-4" /> Add expense / purchase
-                                        </Button>
+                                        <div className="grid gap-2 sm:flex sm:shrink-0">
+                                            <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl bg-neutral-950 px-3 text-white hover:bg-black sm:w-auto">
+                                                <Plus className="size-4" /> Add expense / purchase
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={() => setView('adjust')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
+                                                <PackageMinus className="size-4" /> Adjust inventory
+                                            </Button>
+                                        </div>
                                     </div>
                                     {!isExpenseWriteOnline() ? (
                                         <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -679,11 +715,22 @@ export function StoreSessionDetailsDialog({
                         }}
                     />
                 )}
+                {view === 'adjust' && session && (
+                    <StoreInventoryAdjustmentForm
+                        session={session}
+                        onBack={() => setView('overview')}
+                        onSaved={async () => {
+                            await refreshSession();
+                            setView('overview');
+                        }}
+                    />
+                )}
                 {view === 'detail' && session && selected && (
                     <ExpenseDetail expense={selected} session={session} onBack={() => setView('overview')} />
                 )}
                 {view === 'close' && (
                     <StoreCloseFlow
+                        session={session}
                         branchId={branchId}
                         canOpenKitchen={canOpenKitchen}
                         canOpenHistory={canOpenHistory}

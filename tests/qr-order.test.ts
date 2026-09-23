@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { QrLine, QrOrder, QrReceipt } from '../resources/js/types/qr.ts';
 
@@ -153,10 +154,40 @@ test('receipt download contains persisted line names instructions and tender cha
     assert.doesNotMatch(text, /cashier|idempotency|token_hash/);
 });
 
-
 test('QR display transitions from provisional to official identity and elapsed time is local', async () => {
-    const { qrIdentity, qrElapsed } = await import('../resources/js/lib/qr-order.ts');
-    assert.equal(qrIdentity({order_number: null, qr_number: 'QR-01'}), 'QR-01');
-    assert.equal(qrIdentity({order_number: '1001', qr_number: 'QR-01'}), '#1001');
-    assert.equal(qrElapsed('2026-09-22T00:00:00Z', Date.parse('2026-09-22T00:02:03Z')), '2m 3s');
+    const { qrIdentity, qrElapsed } =
+        await import('../resources/js/lib/qr-order.ts');
+    assert.equal(
+        qrIdentity({ order_number: null, qr_number: 'QR-01' }),
+        'QR-01',
+    );
+    assert.equal(
+        qrIdentity({ order_number: '1001', qr_number: 'QR-01' }),
+        '#1001',
+    );
+    assert.equal(
+        qrElapsed('2026-09-22T00:00:00Z', Date.parse('2026-09-22T00:02:03Z')),
+        '2m 3s',
+    );
+});
+
+test('Store close replaces uncommitted QR tracking and refetches when the phone wakes', () => {
+    const page = readFileSync(
+        new URL('../resources/js/components/customer-qr.tsx', import.meta.url),
+        'utf8',
+    );
+    const realtime = readFileSync(
+        new URL(
+            '../resources/js/hooks/use-customer-qr-realtime.ts',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(page, /order\.committed_at === null && !closedOrderViewed/);
+    assert.match(page, /setClosedOrderViewed\(true\);\s*go\('track'\);/);
+    assert.match(
+        realtime,
+        /document\.addEventListener\('visibilitychange', visible\)/,
+    );
+    assert.match(realtime, /window\.addEventListener\('pageshow', online\)/);
 });

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
     canRetryStoreSessionLoad,
+    discardsStoreSession,
+    openStoreSessionDialogState,
     storeSessionLoadFailure,
     storeSessionLoadMessage,
 } from '../resources/js/lib/store-session.ts';
@@ -146,4 +148,29 @@ test('expense writes require browser connectivity but not Echo connectivity', ()
         value: { onLine: false },
     });
     assert.equal(isExpenseWriteOnline(), false);
+});
+
+test('reopening shows the cached session while refreshing and never keeps a closed one', () => {
+    const cached = { id: 'session-1' } as unknown as Parameters<
+        typeof openStoreSessionDialogState
+    >[0];
+    assert.deepEqual(openStoreSessionDialogState(cached), {
+        open: true,
+        session: cached,
+        loadState: 'loading',
+    });
+    assert.equal(discardsStoreSession('not_found'), true);
+    assert.equal(discardsStoreSession('forbidden'), true);
+    assert.equal(discardsStoreSession('session_expired'), true);
+    assert.equal(discardsStoreSession('offline'), false);
+    assert.match(
+        workspace,
+        /openStoreSessionDialogState\(\s*storeSession\?\.branch\.id === branchContext\.current\?\.id/,
+    );
+    assert.match(
+        workspace,
+        /handleStoreClosed = \(event: StoreClosedRealtimeEvent\) => \{\s*setStoreSession\(null\);/,
+    );
+    assert.match(dialog, /aria-label="Loading Store Session"/);
+    assert.match(dialog, /\[&>button\]:focus-visible:ring-2/);
 });

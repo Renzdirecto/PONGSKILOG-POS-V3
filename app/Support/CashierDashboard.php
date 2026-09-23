@@ -13,8 +13,10 @@ use Illuminate\Support\Facades\DB;
  * Read-only operational projection for the Cashier Dashboard: the active Branch and its current OPEN Store Session.
  *
  * Sales come from actual Payment rows of non-voided Orders in the current Store Session, net of lower-total
- * corrections on those Orders. Split payments are already stored as separate Cash and Cashless Payment rows,
- * so the Split breakdown is explanatory only and is never added to Sales again.
+ * corrections on those Orders. Cash and Cashless are net of the corrections Store Session reconciliation attributes
+ * to each channel; a mixed-method correction still awaiting allocation is reported separately and never guessed.
+ * Split payments are already stored as separate Cash and Cashless Payment rows, so the Split breakdown is
+ * explanatory only and is never added to Sales again.
  *
  * @phpstan-type SessionSummary array{
  *     orders: int,
@@ -22,12 +24,17 @@ use Illuminate\Support\Facades\DB;
  *     cash: string,
  *     cashless: string,
  *     corrections: string,
+ *     unallocated_corrections: string,
  *     split: array{count: int, cash: string, cashless: string}
  * }
  */
 class CashierDashboard
 {
-    public function __construct(private KitchenBoard $kitchenBoard, private InventoryState $inventoryState) {}
+    public function __construct(
+        private KitchenBoard $kitchenBoard,
+        private InventoryState $inventoryState,
+        private StoreSessionReconciliation $reconciliation,
+    ) {}
 
     /**
      * @return array{
@@ -83,12 +90,8 @@ class CashierDashboard
                 $collected[$method] = ExactMoney::add($collected[$method], (int) $row->cents);
             });
 
-        $corrections = (int) DB::table('order_adjustments')
-            ->join('orders', 'orders.id', '=', 'order_adjustments.order_id')
-            ->where('order_adjustments.branch_id', $branch->id)
-            ->where('order_adjustments.store_session_id', $session->id)
-            ->where('orders.commercial_status', '<>', CommercialStatus::Voided->value)
-            ->sum(DB::raw($this->cents('order_adjustments.amount')));
+        $corrections = $this->reconciliation->correctionChannels($branch, $session);
+        $correctionTotal = ExactMoney::add(ExactMoney::add($corrections['cash'], $corrections['cashless']), $corrections['unallocated']);
 
         $groupKey = "COALESCE(CAST(payments.payment_group_id AS VARCHAR(64)), REPLACE(REPLACE(payments.idempotency_key, ':cashless', ''), ':cash', ''))";
         $splitGroups = DB::table('payments')
@@ -116,10 +119,11 @@ class CashierDashboard
 
         return [
             'orders' => $orders,
-            'sales' => ExactMoney::decimal(max(0, $gross - $corrections)),
-            'cash' => ExactMoney::decimal($collected['cash']),
-            'cashless' => ExactMoney::decimal($collected['cashless']),
-            'corrections' => ExactMoney::decimal($corrections),
+            'sales' => ExactMoney::decimal(max(0, $gross - $correctionTotal)),
+            'cash' => ExactMoney::decimal(max(0, $collected['cash'] - $corrections['cash'])),
+            'cashless' => ExactMoney::decimal(max(0, $collected['cashless'] - $corrections['cashless'])),
+            'corrections' => ExactMoney::decimal($correctionTotal),
+            'unallocated_corrections' => ExactMoney::decimal($corrections['unallocated']),
             'split' => [
                 'count' => (int) $split?->split_count,
                 'cash' => ExactMoney::decimal((int) $split?->cash_cents),

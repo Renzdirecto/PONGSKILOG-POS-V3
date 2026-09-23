@@ -296,15 +296,20 @@ class StoreSessionReconciliation
         ];
     }
 
-    /** @return array{cash: int, cashless: int, count: int} */
-    private function corrections(Branch $branch, StoreSession $session): array
+    /**
+     * Corrections on non-voided Orders attributed to the channel that funded them. A mixed-method correction without
+     * an allocation is never guessed: it is reported as unallocated so read-only views stay truthful before Close Store.
+     *
+     * @return array{cash: int, cashless: int, unallocated: int, count: int}
+     */
+    public function correctionChannels(Branch $branch, StoreSession $session): array
     {
         $cash = $this->cents('order_adjustments.cash_amount');
         $cashless = $this->cents('order_adjustments.cashless_amount');
         $amount = $this->cents('order_adjustments.amount');
         $methodCount = '(SELECT COUNT(DISTINCT p.method) FROM payments p WHERE p.order_id = order_adjustments.order_id)';
         $soleMethod = '(SELECT MIN(p.method) FROM payments p WHERE p.order_id = order_adjustments.order_id)';
-        $totals = ['cash' => 0, 'cashless' => 0, 'count' => 0];
+        $totals = ['cash' => 0, 'cashless' => 0, 'unallocated' => 0, 'count' => 0];
 
         $this->currentCorrections($branch, $session)
             ->get([
@@ -323,9 +328,8 @@ class StoreSessionReconciliation
                     return;
                 }
                 if ((int) $row->method_count !== 1) {
-                    throw new \LogicException('A payment correction requires a Cash/Cashless allocation before reconciliation.');
-                }
-                if ($row->sole_method === 'cash') {
+                    $totals['unallocated'] = ExactMoney::add($totals['unallocated'], (int) $row->amount_cents);
+                } elseif ($row->sole_method === 'cash') {
                     $totals['cash'] = ExactMoney::add($totals['cash'], (int) $row->amount_cents);
                 } else {
                     $totals['cashless'] = ExactMoney::add($totals['cashless'], (int) $row->amount_cents);
@@ -333,6 +337,17 @@ class StoreSessionReconciliation
             });
 
         return $totals;
+    }
+
+    /** @return array{cash: int, cashless: int, count: int} */
+    private function corrections(Branch $branch, StoreSession $session): array
+    {
+        $channels = $this->correctionChannels($branch, $session);
+        if ($channels['unallocated'] > 0) {
+            throw new \LogicException('A payment correction requires a Cash/Cashless allocation before reconciliation.');
+        }
+
+        return ['cash' => $channels['cash'], 'cashless' => $channels['cashless'], 'count' => $channels['count']];
     }
 
     /** @return list<array<string, mixed>> */

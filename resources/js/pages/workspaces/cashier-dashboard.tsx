@@ -39,6 +39,7 @@ type CashierDashboardData = {
         cash: string;
         cashless: string;
         corrections: string;
+        unallocated_corrections: string;
         split: { count: number; cash: string; cashless: string };
     } | null;
     kitchen: { kitchen: number; preparing: number; ready: number } | null;
@@ -198,6 +199,15 @@ export default function CashierDashboard({
         summary && summary.split.count > 0
             ? `Includes ${summary.split.count} split · ${pesos(summary.split.cash)} cash + ${pesos(summary.split.cashless)} cashless`
             : null;
+    const hasCorrections = summary !== null && summary.corrections !== '0.00';
+    const channelHint = (channel: string) =>
+        hasCorrections
+            ? `${channel} collected, net of corrections`
+            : `${channel} payments this Store Session`;
+    const unallocatedHint =
+        summary && summary.unallocated_corrections !== '0.00'
+            ? ` · ${pesos(summary.unallocated_corrections)} awaiting Cash/Cashless allocation`
+            : '';
     const sessionTiles: Tile[] = [
         {
             key: 'orders',
@@ -212,8 +222,8 @@ export default function CashierDashboard({
             label: 'Sales',
             value: summary ? pesos(summary.sales) : '—',
             hint: summary
-                ? summary.corrections !== '0.00'
-                    ? `Payments collected, less ${pesos(summary.corrections)} corrections`
+                ? hasCorrections
+                    ? `Payments collected, less ${pesos(summary.corrections)} corrections${unallocatedHint}`
                     : 'Payments collected this Store Session'
                 : closedHint,
             icon: TrendingUp,
@@ -223,7 +233,7 @@ export default function CashierDashboard({
             key: 'cash',
             label: 'Cash',
             value: summary ? pesos(summary.cash) : '—',
-            hint: summary ? 'Cash payment legs' : closedHint,
+            hint: summary ? channelHint('Cash') : closedHint,
             icon: Banknote,
             tone: 'bg-[#f0fdf4] text-[#15803d]',
         },
@@ -232,7 +242,7 @@ export default function CashierDashboard({
             label: 'Cashless',
             value: summary ? pesos(summary.cashless) : '—',
             hint: summary
-                ? (splitHint ?? 'Cashless payment legs')
+                ? (splitHint ?? channelHint('Cashless'))
                 : closedHint,
             icon: Smartphone,
             tone: 'bg-[#eff6ff] text-[#1d4ed8]',

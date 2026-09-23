@@ -16,6 +16,7 @@ use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\StoreCloseScenario;
 
 beforeEach(function () {
     $this->seed(RbacSeeder::class);
@@ -162,7 +163,7 @@ test('dashboard exposes only the operational current session projection', functi
         ->has('dashboard', fn (Assert $dashboard) => $dashboard
             ->has('store')
             ->has('summary', fn (Assert $summary) => $summary
-                ->hasAll(['orders', 'sales', 'cash', 'cashless', 'corrections', 'split']))
+                ->hasAll(['orders', 'sales', 'cash', 'cashless', 'corrections', 'unallocated_corrections', 'split']))
             ->has('kitchen')
             ->has('payments')
             ->has('expenses')
@@ -194,11 +195,56 @@ test('sales use current session payment rows without voided orders or split doub
         ->where('dashboard.summary', [
             'orders' => 3,
             'sales' => '270.00',
-            'cash' => '240.00',
+            'cash' => '230.00',
             'cashless' => '40.00',
             'corrections' => '10.00',
+            'unallocated_corrections' => '0.00',
             'split' => ['count' => 1, 'cash' => '60.00', 'cashless' => '40.00'],
         ]));
+});
+
+test('cash and cashless are net of the corrections reconciliation attributes to each channel', function () {
+    $scenario = StoreCloseScenario::create();
+    $scenario->edit($scenario->payNow(5, 'cash'), 4);
+    $scenario->edit($scenario->payNow(5, 'split', '200.00'), 3, ['refund_cash_amount' => '150.00']);
+    $scenario->payNow(2, 'cashless');
+    $scenario->void($scenario->edit($scenario->payNow(3, 'cash'), 2));
+    $reconciliation = $scenario->reconciliation();
+
+    $response = $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'));
+
+    expect([$reconciliation['sales']['cash'], $reconciliation['corrections']['cash'], $reconciliation['voids']['cash']])->toBe(['1100.00', '250.00', '300.00'])
+        ->and([$reconciliation['sales']['cashless'], $reconciliation['corrections']['cashless'], $reconciliation['voids']['cashless']])->toBe(['400.00', '50.00', '0.00']);
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('dashboard.summary', [
+            'orders' => 3,
+            'sales' => '900.00',
+            'cash' => '550.00',
+            'cashless' => '350.00',
+            'corrections' => '300.00',
+            'unallocated_corrections' => '0.00',
+            'split' => ['count' => 1, 'cash' => '300.00', 'cashless' => '200.00'],
+        ]));
+});
+
+test('an unallocated mixed-method correction reduces sales without guessing its channel', function () {
+    $branch = Branch::factory()->create();
+    $user = dashboardStaff($branch);
+    $session = StoreSession::factory()->for($branch)->create();
+    $split = dashboardOrder($session, ['total' => '90.00', 'subtotal' => '90.00']);
+    $group = (string) Str::uuid();
+    dashboardPayment($split, 'cash', '60.00', $group);
+    dashboardPayment($split, 'cashless', '40.00', $group);
+    OrderAdjustment::factory()->for($split)->create(['branch_id' => $branch->id, 'store_session_id' => $session->id, 'amount' => '10.00']);
+
+    $response = $this->actingAs($user)->get(route('workspaces.cashier-dashboard'));
+
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('dashboard.summary.sales', '90.00')
+        ->where('dashboard.summary.cash', '60.00')
+        ->where('dashboard.summary.cashless', '40.00')
+        ->where('dashboard.summary.corrections', '10.00')
+        ->where('dashboard.summary.unallocated_corrections', '10.00'));
 });
 
 test('kitchen counts cover the current session and skip voided orders', function () {
@@ -247,6 +293,26 @@ test('expense total matches the current store session only', function () {
 
     $response->assertInertia(fn (Assert $page) => $page
         ->where('dashboard.expenses', ['count' => 2, 'total' => '150.50']));
+});
+
+test('stock-only store session adjustments are not counted as expenses', function () {
+    $scenario = StoreCloseScenario::create();
+    $scenario->expense('20.00', 'cash');
+
+    $this->actingAs($scenario->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+        ->postJson(route('store-session-inventory-adjustments.store'), [
+            'idempotency_key' => (string) Str::uuid(),
+            'reason_code' => 'wastage',
+            'product_id' => $scenario->product->id,
+            'quantity' => 3,
+            'note' => null,
+        ])->assertOk();
+
+    $response = $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'));
+
+    $response->assertInertia(fn (Assert $page) => $page
+        ->where('dashboard.expenses', ['count' => 1, 'total' => '20.00']));
 });
 
 test('dashboard values are isolated to the active branch', function () {

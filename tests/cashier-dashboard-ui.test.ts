@@ -47,6 +47,13 @@ test('dashboard shows backend money without browser arithmetic', () => {
     assert.match(page, /pesos\(summary\.sales\)/);
 });
 
+test('cash and cashless hints describe net channel sales, not raw payment legs', () => {
+    assert.match(page, /hint: summary \? channelHint\('Cash'\) : closedHint/);
+    assert.match(page, /splitHint \?\? channelHint\('Cashless'\)/);
+    assert.match(page, /net of corrections/);
+    assert.doesNotMatch(page, /payment legs'/);
+});
+
 test('dashboard refreshes its projection from branch realtime signals', () => {
     for (const event of [
         '.order.committed',

@@ -14,6 +14,7 @@ export type SuperAdminDestinationId =
     | 'kitchen'
     | 'customer-display'
     | 'owner-dashboard'
+    | 'owner-transactions'
     | 'reports'
     | 'products'
     | 'inventory'
@@ -48,6 +49,7 @@ export type SuperAdminPageState = {
     url: string;
     workspace?: string;
     destination?: string;
+    surface?: string;
 };
 
 export const superAdminSections: readonly SuperAdminSection[] = [
@@ -149,13 +151,23 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         requiresBranch: false,
     },
     {
+        id: 'owner-transactions',
+        label: 'Transactions',
+        shortLabel: 'Sales',
+        section: 'owner',
+        routeName: 'workspaces.transactions',
+        permission: 'transactions.view',
+        availability: 'live',
+        requiresBranch: false,
+    },
+    {
         id: 'reports',
         label: 'Reports',
         shortLabel: 'Reports',
         section: 'owner',
-        routeName: 'super-admin.reports',
+        routeName: 'workspaces.reports',
         permission: 'reports.view',
-        availability: 'planned',
+        availability: 'live',
         requiresBranch: false,
     },
     {
@@ -267,6 +279,9 @@ export function activeSuperAdminDestination(
             ? (page.destination as SuperAdminDestinationId)
             : null;
     }
+    if (component === 'workspaces/reports') {
+        return 'reports';
+    }
     if (component === 'super-admin/staff') {
         return 'staff';
     }
@@ -289,7 +304,9 @@ export function activeSuperAdminDestination(
         return 'cashier-dashboard';
     }
     if (component === 'workspaces/transaction-history') {
-        return 'transaction-history';
+        return page.surface === 'business'
+            ? 'owner-transactions'
+            : 'transaction-history';
     }
     if (component === 'workspaces/kitchen') {
         return 'kitchen';
@@ -297,7 +314,7 @@ export function activeSuperAdminDestination(
     if (component === 'workspaces/customer-display') {
         return 'customer-display';
     }
-    if (component === 'workspaces/show' && page.workspace === 'Owner') {
+    if (component === 'workspaces/owner-dashboard') {
         return 'owner-dashboard';
     }
     if (

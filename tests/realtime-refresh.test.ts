@@ -1,12 +1,92 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
     createBranchEventGuard,
     createQrVersionRecovery,
     createRealtimeRefresh,
+    createReportsEventGuard,
     getAuditRealtimeFallbackAction,
 } from '../resources/js/lib/realtime-refresh.ts';
 import { shouldRefetchCatalogAfterConnectionChange } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+const jsSource = (path: string): string =>
+    readFileSync(new URL(`../resources/js/${path}`, import.meta.url), 'utf8');
+
+test('reports signals refresh every branch for All Branches and only the selected branch otherwise', () => {
+    const allBranches = createReportsEventGuard(null);
+    const main = createReportsEventGuard('main');
+
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), true);
+    assert.equal(allBranches({ event_id: 'b', branch_id: 'qave' }), true);
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), false);
+    assert.equal(allBranches({ event_id: 'c' }), false);
+    assert.equal(main({ event_id: 'd', branch_id: 'qave' }), false);
+    assert.equal(main({ event_id: 'e', branch_id: 'main' }), true);
+});
+
+test('owner dashboard and reports reload their report props from the reports channel', () => {
+    const hook = jsSource('hooks/use-reports-realtime-refresh.ts');
+    const dashboard = jsSource('pages/workspaces/owner-dashboard.tsx');
+    const reports = jsSource('pages/workspaces/reports.tsx');
+
+    assert.match(hook, /'reports',\s+\['\.reports\.changed'\]/);
+    assert.match(hook, /router\.reload\(\{\s+only: onlyRef\.current,\s+onCancelToken:/);
+    assert.match(hook, /REPORTS_FALLBACK_POLL_MS = 30_000/);
+    assert.match(hook, /if \(!shouldPoll\) \{\s+return;\s+\}/);
+    assert.match(hook, /router\.on\('start'[\s\S]+refresh\.hold\(\)/);
+    assert.match(hook, /router\.on\('finish'[\s\S]+refresh\.release\(\)/);
+    assert.doesNotMatch(hook, /usePoll/);
+    assert.doesNotMatch(dashboard, /usePoll/);
+    assert.match(
+        dashboard,
+        /useReportsRealtimeRefresh\(\s+\['analytics', 'report', \.\.\.LIVE_PROPS\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+    assert.match(
+        reports,
+        /useReportsRealtimeRefresh\(\s+\['report', 'analytics', 'kitchenNow'\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+});
+
+test('a report refresh waits for the page own visit and cancels a stale reload in flight', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let requests = 0;
+    let cancelled = 0;
+    let finish = () => {};
+    const refresh = createRealtimeRefresh((done) => {
+        requests += 1;
+        finish = done;
+
+        return () => {
+            cancelled += 1;
+            done();
+        };
+    }, 100);
+
+    refresh.schedule();
+    refresh.hold();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 0);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 1);
+
+    refresh.hold();
+    assert.equal(cancelled, 1);
+    refresh.schedule();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 1);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 2);
+    finish();
+
+    refresh.hold();
+    refresh.release();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 2);
+    refresh.dispose();
+});
 
 test('audit realtime stops fallback polling while Echo is connected', () => {
     const action = getAuditRealtimeFallbackAction('connected', 'connected');

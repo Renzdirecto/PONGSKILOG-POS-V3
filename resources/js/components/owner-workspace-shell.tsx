@@ -12,6 +12,7 @@ import {
     Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import {
     DropdownMenu,
@@ -33,13 +34,15 @@ import { index as inventoryIndex } from '@/routes/inventory';
 import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
-import { owner } from '@/routes/workspaces';
+import { index as staffIndex } from '@/routes/staff';
+import { owner, reports, transactions } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
     auth: Auth;
     branchContext: BranchContext;
     workspace?: string;
+    surface?: string;
 };
 
 type NavigationItem = {
@@ -89,7 +92,7 @@ function NavigationControl({
                 </span>
                 {!compact && (
                     <span className="text-[9px] font-semibold tracking-[0.06em] uppercase">
-                        Later
+                        No access
                     </span>
                 )}
             </button>
@@ -125,10 +128,16 @@ export function OwnerWorkspaceShell({
     const isCatalog = page.component.startsWith('catalog/');
     const isInventory = page.component.startsWith('inventory/');
     const isBranches = page.component === 'branches/index';
-    const isDashboard =
-        page.component === 'workspaces/show' && !isCatalog && !isInventory;
+    const isReports = page.component === 'workspaces/reports';
+    const isDashboard = page.component === 'workspaces/owner-dashboard';
+    const isTransactions =
+        page.component === 'workspaces/transaction-history' &&
+        page.props.surface === 'business';
+    const isStaff = page.component === 'super-admin/staff';
     const canProducts = auth.permissions.includes('products.manage');
     const canInventory = auth.permissions.includes('inventory.manage');
+    const canTransactions = auth.permissions.includes('transactions.view');
+    const canStaff = auth.permissions.includes('staff.manage');
     const canSettings =
         branchContext.businessWide &&
         auth.permissions.includes('settings.manage');
@@ -146,23 +155,22 @@ export function OwnerWorkspaceShell({
             ],
         },
         {
-            label: 'Sales',
+            label: 'Operations',
             items: [
                 {
                     label: 'Transactions',
                     shortLabel: 'Sales',
                     icon: ReceiptText,
-                    active: false,
-                    unavailableReason:
-                        'Transactions will be available in Phase 12.',
+                    href: canTransactions ? transactions() : undefined,
+                    active: isTransactions,
+                    unavailableReason: 'Transaction history is unavailable.',
                 },
                 {
                     label: 'Reports',
                     shortLabel: 'Reports',
                     icon: BarChart3,
-                    active: false,
-                    unavailableReason:
-                        'Reports are outside this refinement scope.',
+                    href: reports(),
+                    active: isReports,
                 },
             ],
         },
@@ -188,15 +196,15 @@ export function OwnerWorkspaceShell({
             ],
         },
         {
-            label: 'Business',
+            label: 'Administration',
             items: [
                 {
                     label: 'Staff',
                     shortLabel: 'Staff',
                     icon: Users,
-                    active: false,
-                    unavailableReason:
-                        'Staff management is outside this refinement scope.',
+                    href: canStaff ? staffIndex() : undefined,
+                    active: isStaff,
+                    unavailableReason: 'Staff management is unavailable.',
                 },
                 {
                     label: 'Settings',
@@ -220,15 +228,21 @@ export function OwnerWorkspaceShell({
         : isInventory
           ? 'Inventory'
           : isBranches
-            ? 'Branch management'
-            : `${workspaceLabel} workspace`;
+            ? 'Settings'
+            : isReports
+              ? 'Reports'
+              : isTransactions
+                ? 'Transactions'
+                : isStaff
+                  ? 'Staff'
+                  : 'Dashboard';
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
         : 'All Branches';
 
     return (
-        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
-            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex">
+        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
+            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
                 <div className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4">
                     <img
                         src="/images/branding/logo.png"
@@ -296,7 +310,7 @@ export function OwnerWorkspaceShell({
                 </div>
             </aside>
 
-            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex">
+            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
                     href={dashboardRoute}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
@@ -339,13 +353,9 @@ export function OwnerWorkspaceShell({
                 </div>
             </aside>
 
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-                <header className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[92px] shrink-0 md:hidden"
-                    />
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
+                <header className="flex h-[60px] shrink-0 items-center gap-2.5 print:hidden border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
+                    <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {pageTitle}
                     </p>
@@ -441,14 +451,14 @@ export function OwnerWorkspaceShell({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </header>
-                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
+                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0 print:block print:overflow-visible print:bg-white print:pb-0">
                     {children}
                 </main>
             </div>
 
             <nav
                 aria-label={`Mobile ${workspaceLabel} navigation`}
-                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden"
+                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {mobileItems.map((item) => (
                     <NavigationControl key={item.label} item={item} compact />
@@ -458,7 +468,7 @@ export function OwnerWorkspaceShell({
                     aria-haspopup="dialog"
                     aria-expanded={mobileMenuOpen}
                     onClick={() => setMobileMenuOpen(true)}
-                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches ? 'bg-white text-[#111111]' : 'text-white/70'}`}
+                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches || isReports || isTransactions || isStaff ? 'bg-white text-[#111111]' : 'text-white/70'}`}
                 >
                     <Menu className="size-[18px]" />
                     More

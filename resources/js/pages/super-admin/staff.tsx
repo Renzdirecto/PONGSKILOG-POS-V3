@@ -4,6 +4,8 @@ import {
     ChevronLeft,
     ChevronRight,
     Globe2,
+    LayoutGrid,
+    List,
     Search,
     ShieldAlert,
     UserPlus,
@@ -31,6 +33,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { restoredOwnerViewMode } from '@/lib/owner-view-preference';
+import type { OwnerViewMode } from '@/lib/owner-view-preference';
+import {
+    index as ownerStaffIndex,
+    store as ownerStaffStore,
+} from '@/routes/staff';
 import { index as staffIndex, store } from '@/routes/super-admin/staff';
 import type { BranchSummary } from '@/types';
 
@@ -60,13 +68,25 @@ type Props = {
     filters: Filters;
     roles: StaffRole[];
     branches: BranchSummary[];
+    /**
+     * 'owner' is the Owner workspace (operational Staff only); 'super_admin' is Super Admin access control. The server
+     * decides which roles and accounts each surface may reach; this only picks the matching routes.
+     */
+    surface?: 'owner' | 'super_admin';
 };
+
+type StaffSurface = NonNullable<Props['surface']>;
+
+const STAFF_ROUTES = {
+    owner: { index: ownerStaffIndex, store: ownerStaffStore },
+    super_admin: { index: staffIndex, store },
+} as const;
 
 const selectClass = `${ownerControlClass} w-full`;
 
-function applyFilters(filters: Filters): void {
+function applyFilters(surface: StaffSurface, filters: Filters): void {
     router.get(
-        staffIndex.url(),
+        STAFF_ROUTES[surface].index.url(),
         Object.fromEntries(
             Object.entries(filters).filter(([, value]) => value),
         ),
@@ -143,6 +163,20 @@ function StaffAvatar({
     );
 }
 
+/** Name first, with the Employee ID directly underneath it. */
+function StaffIdentity({ member }: { member: StaffMember }) {
+    return (
+        <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-[13.5px] font-semibold wrap-break-word">
+                {member.name}
+            </span>
+            <span className="font-mono text-[11.5px] text-[#767676]">
+                {member.employee_id ?? 'No Employee ID'}
+            </span>
+        </span>
+    );
+}
+
 function StatusBadge({ active }: { active: boolean }) {
     return (
         <OwnerStatusBadge tone={active ? 'green' : 'neutral'}>
@@ -151,9 +185,18 @@ function StatusBadge({ active }: { active: boolean }) {
     );
 }
 
-export default function Staff({ staff, filters, roles, branches }: Props) {
+export default function Staff({
+    staff,
+    filters,
+    roles,
+    branches,
+    surface = 'super_admin',
+}: Props) {
+    const ownerSurface = surface === 'owner';
     const [search, setSearch] = useState(filters.search ?? '');
     const [adding, setAdding] = useState(false);
+    /** Tiled is the default; the viewer's last choice is remembered on this device only. */
+    const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
     const searchTimer = useRef<number | undefined>(undefined);
     const hasFilters = Boolean(
         filters.search || filters.role || filters.status,
@@ -161,12 +204,33 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
 
     useEffect(() => () => window.clearTimeout(searchTimer.current), []);
 
+    useEffect(() => {
+        try {
+            setViewMode(
+                restoredOwnerViewMode(
+                    window.localStorage.getItem('owner-staff-view'),
+                ),
+            );
+        } catch {
+            setViewMode('tile');
+        }
+    }, []);
+
+    function chooseView(mode: OwnerViewMode) {
+        setViewMode(mode);
+        try {
+            window.localStorage.setItem('owner-staff-view', mode);
+        } catch {
+            // Storage can be unavailable (private mode); the choice then lasts for this visit.
+        }
+    }
+
     /** Typed search is debounced; role and status selects apply immediately. */
     function changeSearch(value: string) {
         setSearch(value);
         window.clearTimeout(searchTimer.current);
         searchTimer.current = window.setTimeout(
-            () => applyFilters({ ...filters, search: value }),
+            () => applyFilters(surface, { ...filters, search: value }),
             350,
         );
     }
@@ -176,7 +240,11 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
             <Head title="Staff" />
             <OwnerPage
                 title="Staff"
-                description="Create and manage staff access to PONGSKILOG."
+                description={
+                    ownerSurface
+                        ? 'Operational Staff accounts: Cashier, Kitchen Staff and Cashier + Kitchen. Owner and Super Admin accounts stay with Super Admin access control.'
+                        : 'Create and manage staff access to PONGSKILOG.'
+                }
                 action={
                     <button
                         type="button"
@@ -217,7 +285,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <select
                             value={filters.role ?? ''}
                             onChange={(event) =>
-                                applyFilters({
+                                applyFilters(surface, {
                                     ...filters,
                                     search,
                                     role: event.target.value,
@@ -238,7 +306,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <select
                             value={filters.status ?? ''}
                             onChange={(event) =>
-                                applyFilters({
+                                applyFilters(surface, {
                                     ...filters,
                                     search,
                                     status: event.target.value,
@@ -277,7 +345,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                 onClick={() => {
                                     window.clearTimeout(searchTimer.current);
                                     setSearch('');
-                                    applyFilters({});
+                                    applyFilters(surface, {});
                                 }}
                                 className={`${ownerSecondaryActionClass} mt-4 inline-flex items-center gap-1.5`}
                             >
@@ -287,124 +355,198 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         )}
                     </div>
                 ) : (
-                    <section
-                        aria-label="Staff accounts"
-                        className={`${ownerPanelClass} overflow-hidden`}
-                    >
-                        <table className="hidden w-full table-fixed text-left md:table">
-                            <thead className="border-b border-[#eeeeee] bg-[#fafafa] text-[10px] font-semibold tracking-[0.06em] text-[#888] uppercase">
-                                <tr>
-                                    <th
-                                        scope="col"
-                                        className="w-[110px] px-4 py-3"
+                    <>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#767676]">
+                            <p role="status">
+                                {staff.data.length} of {staff.total} staff
+                            </p>
+                            <div
+                                role="group"
+                                aria-label="Staff view"
+                                className="flex rounded-[10px] bg-[#ededed] p-1"
+                            >
+                                {(
+                                    [
+                                        ['tile', LayoutGrid, 'Tiled view'],
+                                        ['list', List, 'List view'],
+                                    ] as const
+                                ).map(([mode, Icon, label]) => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        title={label}
+                                        aria-label={label}
+                                        aria-pressed={viewMode === mode}
+                                        onClick={() => chooseView(mode)}
+                                        className={`flex size-11 items-center justify-center rounded-lg ${viewMode === mode ? 'bg-white text-[#111] shadow-sm' : 'text-[#777]'}`}
                                     >
-                                        Employee ID
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="w-[20%] px-4 py-3"
-                                    >
-                                        Name
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="w-[24%] px-4 py-3"
-                                    >
-                                        Email
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="w-[16%] px-4 py-3"
-                                    >
-                                        Role
-                                    </th>
-                                    <th scope="col" className="px-4 py-3">
-                                        Branch access
-                                    </th>
-                                    <th
-                                        scope="col"
-                                        className="w-[110px] px-4 py-3"
-                                    >
-                                        Status
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#f0f0f0]">
+                                        <Icon className="size-4" />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {viewMode === 'tile' ? (
+                            <ul
+                                aria-label="Staff accounts"
+                                className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3"
+                            >
                                 {staff.data.map((member) => (
-                                    <tr key={member.id} className="align-top">
-                                        <td className="px-4 py-3 font-mono text-[12.5px] text-[#444]">
-                                            {member.employee_id ?? '—'}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className="flex items-center gap-3">
-                                                <StaffAvatar
-                                                    name={member.name}
-                                                    url={member.avatar_url}
-                                                />
-                                                <span className="min-w-0 text-[13px] font-semibold wrap-break-word">
-                                                    {member.name}
-                                                </span>
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-[12.5px] break-all text-[#444]">
-                                            {member.email}
-                                        </td>
-                                        <td className="px-4 py-3 text-[12.5px]">
-                                            {member.roles
-                                                .map((role) => role.label)
-                                                .join(', ') || 'No role'}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <BranchAccess member={member} />
-                                        </td>
-                                        <td className="px-4 py-3">
+                                    <li
+                                        key={member.id}
+                                        className={`${ownerPanelClass} flex min-w-0 flex-col gap-3 p-4`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <StaffAvatar
+                                                name={member.name}
+                                                url={member.avatar_url}
+                                                size="size-12"
+                                            />
+                                            <StaffIdentity member={member} />
                                             <StatusBadge
                                                 active={member.is_active}
                                             />
-                                        </td>
-                                    </tr>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {member.roles.length === 0 ? (
+                                                <OwnerStatusBadge tone="outline">
+                                                    No role
+                                                </OwnerStatusBadge>
+                                            ) : (
+                                                member.roles.map((role) => (
+                                                    <OwnerStatusBadge
+                                                        key={role.name}
+                                                        tone="neutral"
+                                                    >
+                                                        {role.label}
+                                                    </OwnerStatusBadge>
+                                                ))
+                                            )}
+                                        </div>
+                                        <p className="truncate text-[11.5px] text-[#767676]">
+                                            {member.email}
+                                        </p>
+                                        <div className="border-t border-[#eeeeee] pt-2.5">
+                                            <BranchAccess member={member} />
+                                        </div>
+                                    </li>
                                 ))}
-                            </tbody>
-                        </table>
-                        <ul className="divide-y divide-[#f0f0f0] md:hidden">
-                            {staff.data.map((member) => (
-                                <li
-                                    key={member.id}
-                                    className="flex flex-col gap-1.5 p-4"
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <StaffAvatar
-                                            name={member.name}
-                                            url={member.avatar_url}
-                                            size="size-11"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-[13.5px] font-semibold wrap-break-word">
-                                                {member.name}
-                                            </p>
+                            </ul>
+                        ) : (
+                            <section
+                                aria-label="Staff accounts"
+                                className={`${ownerPanelClass} overflow-hidden`}
+                            >
+                                <table className="hidden w-full table-fixed text-left md:table">
+                                    <thead className="border-b border-[#eeeeee] bg-[#fafafa] text-[10px] font-semibold tracking-[0.06em] text-[#888] uppercase">
+                                        <tr>
+                                            <th
+                                                scope="col"
+                                                className="w-[28%] px-4 py-3"
+                                            >
+                                                Name
+                                            </th>
+                                            <th
+                                                scope="col"
+                                                className="w-[24%] px-4 py-3"
+                                            >
+                                                Email
+                                            </th>
+                                            <th
+                                                scope="col"
+                                                className="w-[16%] px-4 py-3"
+                                            >
+                                                Role
+                                            </th>
+                                            <th scope="col" className="px-4 py-3">
+                                                Branch access
+                                            </th>
+                                            <th
+                                                scope="col"
+                                                className="w-[110px] px-4 py-3"
+                                            >
+                                                Status
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#f0f0f0]">
+                                        {staff.data.map((member) => (
+                                            <tr
+                                                key={member.id}
+                                                className="align-top"
+                                            >
+                                                <td className="px-4 py-3">
+                                                    <span className="flex items-center gap-3">
+                                                        <StaffAvatar
+                                                            name={member.name}
+                                                            url={
+                                                                member.avatar_url
+                                                            }
+                                                        />
+                                                        <StaffIdentity
+                                                            member={member}
+                                                        />
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-[12.5px] break-all text-[#444]">
+                                                    {member.email}
+                                                </td>
+                                                <td className="px-4 py-3 text-[12.5px]">
+                                                    {member.roles
+                                                        .map((role) => role.label)
+                                                        .join(', ') || 'No role'}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <BranchAccess
+                                                        member={member}
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <StatusBadge
+                                                        active={
+                                                            member.is_active
+                                                        }
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <ul className="divide-y divide-[#f0f0f0] md:hidden">
+                                    {staff.data.map((member) => (
+                                        <li
+                                            key={member.id}
+                                            className="flex flex-col gap-1.5 p-4"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <StaffAvatar
+                                                    name={member.name}
+                                                    url={member.avatar_url}
+                                                    size="size-11"
+                                                />
+                                                <StaffIdentity member={member} />
+                                                <StatusBadge
+                                                    active={member.is_active}
+                                                />
+                                            </div>
                                             <p className="text-[12px] break-all text-[#666]">
                                                 {member.email}
                                             </p>
-                                            <p className="font-mono text-[11.5px] text-[#888]">
-                                                ID {member.employee_id ?? '—'}
+                                            <p className="text-[12px] font-medium">
+                                                {member.roles
+                                                    .map((role) => role.label)
+                                                    .join(', ') || 'No role'}
                                             </p>
-                                        </div>
-                                        <StatusBadge
-                                            active={member.is_active}
-                                        />
-                                    </div>
-                                    <p className="text-[12px] font-medium">
-                                        {member.roles
-                                            .map((role) => role.label)
-                                            .join(', ') || 'No role'}
-                                    </p>
-                                    <BranchAccess member={member} />
-                                </li>
-                            ))}
-                        </ul>
+                                            <BranchAccess member={member} />
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
+
                         <nav
                             aria-label="Staff pages"
-                            className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeeee] px-4 py-3 text-[12px] text-[#767676]"
+                            className={`${ownerPanelClass} flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[12px] text-[#767676]`}
                         >
                             <span>
                                 {staff.from}–{staff.to} of {staff.total}
@@ -434,7 +576,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                 ) : null}
                             </span>
                         </nav>
-                    </section>
+                    </>
                 )}
             </OwnerPage>
 
@@ -453,6 +595,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <AddStaffForm
                             roles={roles}
                             branches={branches}
+                            surface={surface}
                             onCreated={() => setAdding(false)}
                         />
                     )}
@@ -473,10 +616,12 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 function AddStaffForm({
     roles,
     branches,
+    surface,
     onCreated,
 }: {
     roles: StaffRole[];
     branches: BranchSummary[];
+    surface: StaffSurface;
     onCreated: () => void;
 }) {
     const form = useForm({
@@ -527,7 +672,7 @@ function AddStaffForm({
 
             return requiresBranch ? { ...rest, branch_ids: branchIds } : rest;
         });
-        form.submit(store(), {
+        form.submit(STAFF_ROUTES[surface].store(), {
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();

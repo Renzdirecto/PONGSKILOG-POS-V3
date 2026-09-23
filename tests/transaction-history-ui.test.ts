@@ -18,7 +18,11 @@ const invoice = readFileSync(
 );
 
 test('transaction history keeps filters, metrics, and pagination server-driven', () => {
-    assert.match(page, /router\.get\(transactionHistory\(\)/);
+    assert.match(page, /router\.get\(listRoute\(\)/);
+    assert.match(
+        page,
+        /const listRoute = business \? businessTransactions : transactionHistory;/,
+    );
     assert.match(
         page,
         /only: \['transactions', 'history_total', 'metrics', 'filters'\]/,
@@ -153,4 +157,12 @@ test('history payment reuses the wide POS payment dialog', () => {
     assert.match(page, /const idempotencyKey = useMemo\(\(\) => createClientUuid\(\)/);
     assert.match(page, /idempotency_key: idempotencyKey/);
     assert.match(page, /attempt=\{null\}/);
+});
+
+test('a view-only business viewer gets no cashier pay, void or edit controls', () => {
+    assert.match(page, /readOnly=\{!operational\}/);
+    assert.match(page, /\{!readOnly && !isVoided && Number\(item\.outstanding\) > 0 && \(/);
+    assert.match(page, /\{!readOnly && \(\s+<>\s+<button[\s\S]+?Void[\s\S]+?Edit/);
+    assert.match(page, /\{detail\.operational !== false && \(\s+<>/);
+    assert.match(page, /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/);
 });

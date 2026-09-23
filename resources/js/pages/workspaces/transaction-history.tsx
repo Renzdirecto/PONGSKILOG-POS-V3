@@ -1,4 +1,4 @@
-import { Head, Link, http, router, usePage } from '@inertiajs/react';
+import { Head, Link, http, router, usePage, usePoll } from '@inertiajs/react';
 import {
     AlertTriangle,
     ArrowLeft,
@@ -53,7 +53,8 @@ import { stockAvailabilityLabel } from '@/lib/pos-order';
 import { update as updateKitchenStatus } from '@/routes/orders/kitchen-status';
 import { store as settle } from '@/routes/pos/orders/settlements';
 import { show, update, voidMethod } from '@/routes/pos/transactions';
-import { transactionHistory } from '@/routes/workspaces';
+import { transactionHistory, transactions as businessTransactions } from '@/routes/workspaces';
+import { show as showBusiness } from '@/routes/workspaces/transactions';
 import type { Auth, BranchContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
 import type {
@@ -125,6 +126,7 @@ type Summary = {
     version: number;
     item_count: number;
     items_preview: SummaryItem[];
+    branch?: { id: string; name: string; code: string };
     can_edit: boolean;
     can_settle: boolean;
     can_void: boolean;
@@ -145,7 +147,7 @@ type Detail = Summary & {
             amount: string;
             amount_received: string | null;
             change_amount: string | null;
-            invoice: { name: string; url: string } | null;
+            invoice: { name: string; url: string | null } | null;
         }[];
     }[];
     adjustments: {
@@ -163,6 +165,8 @@ type Detail = Summary & {
         quantity_restored: number;
     }[];
     receipt: ReceiptSummary;
+    /** False when the viewer holds no POS access to this Order's Branch (Owner, or All Branches). */
+    operational?: boolean;
 };
 type PageLink = { url: string | null; label: string; active: boolean };
 type Props = {
@@ -182,7 +186,11 @@ type Props = {
         pending: number;
     };
     filters: Record<string, string>;
-    catalog: CashierCatalog;
+    /** 'pos' is the Cashier terminal; 'business' is the same page for a business-wide Owner or Super Admin. */
+    surface: 'pos' | 'business';
+    scope: { id: string; name: string; code: string } | null;
+    operational: boolean;
+    catalog: CashierCatalog | null;
     tables: BranchTable[];
 };
 
@@ -227,6 +235,9 @@ export default function TransactionHistory({
     history_total: historyTotal,
     metrics,
     filters,
+    surface,
+    scope,
+    operational,
     catalog,
     tables,
 }: Props) {
@@ -235,11 +246,19 @@ export default function TransactionHistory({
         branchContext: BranchContext;
     }>().props;
     const branch = branchContext.current;
-    const [view, setView] = useState<'tiles' | 'list'>(() =>
-        localStorage.getItem('transaction-history-view') === 'list'
-            ? 'list'
-            : 'tiles',
-    );
+    const business = surface === 'business';
+    const listRoute = business ? businessTransactions : transactionHistory;
+    const showRoute = business ? showBusiness : show;
+    const allBranches = business && scope === null;
+    const [view, setView] = useState<'tiles' | 'list'>(() => {
+        try {
+            return localStorage.getItem('transaction-history-view') === 'list'
+                ? 'list'
+                : 'tiles';
+        } catch {
+            return 'tiles';
+        }
+    });
     const [selected, setSelected] = useState<Detail | null>(null);
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -263,7 +282,7 @@ export default function TransactionHistory({
                 ([, value]) => value !== undefined && value !== '',
             ),
         );
-        router.get(transactionHistory(), query, {
+        router.get(listRoute(), query, {
             preserveState: true,
             preserveScroll: true,
             replace: true,
@@ -282,26 +301,30 @@ export default function TransactionHistory({
 
     const refresh = () =>
         router.reload({ only: ['transactions', 'history_total', 'metrics'] });
-    useBranchRealtimeRefresh({
-        branchId: branch?.id ?? '',
-        channel: 'pos',
-        events: HISTORY_REALTIME_EVENTS,
-        only: ['transactions', 'history_total', 'metrics'],
-        debounceMs: 120,
-        onEvent: (event) => {
-            const orderId = event.order_id ?? event.entity_id;
+    const onRealtimeEvent = (event: Record<string, unknown>) => {
+        const orderId = event.order_id ?? event.entity_id;
 
-            if (selected && orderId === selected.id) {
-                void loadDetail(selected.id);
-            }
-        },
-    });
+        if (selected && orderId === selected.id) {
+            void loadDetail(selected.id);
+        }
+    };
+
+    /** Dashboard links open one transaction directly: ?open=<order id>. */
+    const openRequested = useRef(false);
+    useEffect(() => {
+        if (openRequested.current) return;
+        openRequested.current = true;
+        const requested = new URL(window.location.href).searchParams.get('open');
+        if (requested && transactions.data.some((item) => item.id === requested)) {
+            void loadDetail(requested);
+        }
+    }, []);
 
     async function loadDetail(id: string): Promise<Detail | null> {
         setLoading(true);
         try {
             const response = await http.getClient().request({
-                ...show(id),
+                ...showRoute(id),
                 headers: { Accept: 'application/json' },
             });
             const detail = (
@@ -325,7 +348,7 @@ export default function TransactionHistory({
     function clearFilters() {
         setSearchText('');
         router.get(
-            transactionHistory(),
+            listRoute(),
             {},
             {
                 preserveState: true,
@@ -389,7 +412,17 @@ export default function TransactionHistory({
 
     return (
         <div className="pos-surface min-h-full bg-[#fafafa] p-3 text-[#111] md:p-4">
-            <Head title="Transaction history" />
+            <Head title={business ? 'Transactions' : 'Transaction history'} />
+            {business ? (
+                <HistoryPolling />
+            ) : (
+                branch && (
+                    <HistoryRealtime
+                        branchId={branch.id}
+                        onEvent={onRealtimeEvent}
+                    />
+                )
+            )}
             <header className="mb-2.5 flex flex-wrap items-end gap-2.5">
                 <div className="min-w-0 flex-1">
                     <h1 className="text-[17px] font-bold tracking-[-0.02em]">
@@ -398,6 +431,8 @@ export default function TransactionHistory({
                     <p className="text-xs text-[#666]">
                         {transactions.total} of {historyTotal} transactions
                         {filtersActive ? ' (filtered)' : ''}
+                        {business &&
+                            ` · ${scope ? `${scope.code} · ${scope.name}` : 'All Branches'}${operational ? '' : ' · view only'}`}
                     </p>
                 </div>
                 <div className="flex shrink-0 gap-0.5 rounded-[11px] bg-[#f2f2f2] p-0.5">
@@ -407,10 +442,14 @@ export default function TransactionHistory({
                             type="button"
                             onClick={() => {
                                 setView(mode);
-                                localStorage.setItem(
-                                    'transaction-history-view',
-                                    mode,
-                                );
+                                try {
+                                    localStorage.setItem(
+                                        'transaction-history-view',
+                                        mode,
+                                    );
+                                } catch {
+                                    /** Blocked storage only loses the remembered view. */
+                                }
                             }}
                             className={`inline-flex h-10 items-center gap-1.5 rounded-[9px] px-3.5 text-[12.5px] font-semibold ${view === mode ? 'bg-[#111] text-white' : 'text-[#666]'}`}
                         >
@@ -563,7 +602,9 @@ export default function TransactionHistory({
                         <TransactionCard
                             key={item.id}
                             item={item}
+                            branchCode={allBranches ? item.branch?.code : undefined}
                             compact={view === 'list'}
+                            readOnly={!operational}
                             onDetails={() => void loadDetail(item.id)}
                             onEdit={() =>
                                 void loadDetail(item.id).then((detail) =>
@@ -644,7 +685,7 @@ export default function TransactionHistory({
                 onPrint={() => setReceiptOpen(true)}
                 onInvoice={setInvoicePayment}
             />
-            {selected && editing && (
+            {selected && editing && catalog && (
                 <EditDialog
                     detail={selected}
                     catalog={catalog}
@@ -714,6 +755,7 @@ export default function TransactionHistory({
             {selected && receiptOpen && (
                 <ReceiptDialog
                     detail={selected}
+                    canShareQr={selected.operational !== false}
                     onClose={() => {
                         setReceiptOpen(false);
                         setSelected(null);
@@ -723,7 +765,14 @@ export default function TransactionHistory({
             {invoicePayment && selected && (
                 <TransactionInvoiceDialog
                     paymentId={invoicePayment.id}
-                    invoice={invoicePayment.invoice}
+                    invoice={
+                        invoicePayment.invoice?.url
+                            ? {
+                                  name: invoicePayment.invoice.name,
+                                  url: invoicePayment.invoice.url,
+                              }
+                            : null
+                    }
                     open
                     mutable={selected.can_edit}
                     onClose={() => setInvoicePayment(null)}
@@ -997,7 +1046,9 @@ function CalendarField({ label, value }: { label: string; value: string }) {
 
 function TransactionCard({
     item,
+    branchCode,
     compact,
+    readOnly,
     onDetails,
     onEdit,
     onPayment,
@@ -1005,7 +1056,11 @@ function TransactionCard({
     onPrint,
 }: {
     item: Summary;
+    /** Shown on All Branches so every record keeps its Branch identity. */
+    branchCode?: string;
     compact: boolean;
+    /** A view-only business viewer (the Owner) never sees Cashier Pay, Void or Edit controls. */
+    readOnly: boolean;
     onDetails: () => void;
     onEdit: () => void;
     onPayment: () => void;
@@ -1039,6 +1094,15 @@ function TransactionCard({
                 </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
+                {branchCode && (
+                    <span
+                        title={item.branch?.name}
+                        className="inline-flex h-[22px] items-center rounded-full border border-[#111] bg-white px-2 text-[10px] font-bold tracking-[.05em] uppercase"
+                    >
+                        <span className="sr-only">Branch </span>
+                        {branchCode}
+                    </span>
+                )}
                 <SemanticChip kind={item.order_type} />
                 {isVoided ? (
                     <SemanticChip kind="voided" />
@@ -1114,7 +1178,7 @@ function TransactionCard({
                     Details
                 </button>
             </div>
-            {!isVoided && Number(item.outstanding) > 0 && (
+            {!readOnly && !isVoided && Number(item.outstanding) > 0 && (
                 <button
                     type="button"
                     disabled={!item.can_settle}
@@ -1133,33 +1197,37 @@ function TransactionCard({
                     {pesos(item.outstanding)}
                 </button>
             )}
-            <div className="grid grid-cols-3 gap-1.5">
-                <button
-                    type="button"
-                    disabled={!item.can_void}
-                    title={
-                        item.can_void
-                            ? 'Void transaction'
-                            : 'This transaction cannot be voided'
-                    }
-                    onClick={onVoid}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
-                >
-                    <AlertTriangle className="size-4" /> Void
-                </button>
-                <button
-                    type="button"
-                    disabled={!item.can_edit || isVoided}
-                    title={
-                        item.can_edit
-                            ? 'Edit transaction'
-                            : 'Earlier Store Sessions are read-only'
-                    }
-                    onClick={onEdit}
-                    className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-neutral-200 text-[12.5px] font-semibold disabled:opacity-40"
-                >
-                    <Pencil className="size-4" /> Edit
-                </button>
+            <div className={`grid gap-1.5 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                {!readOnly && (
+                    <>
+                        <button
+                            type="button"
+                            disabled={!item.can_void}
+                            title={
+                                item.can_void
+                                    ? 'Void transaction'
+                                    : 'This transaction cannot be voided'
+                            }
+                            onClick={onVoid}
+                            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-red-200 text-[12.5px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
+                        >
+                            <AlertTriangle className="size-4" /> Void
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!item.can_edit || isVoided}
+                            title={
+                                item.can_edit
+                                    ? 'Edit transaction'
+                                    : 'Earlier Store Sessions are read-only'
+                            }
+                            onClick={onEdit}
+                            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[11px] border border-neutral-200 text-[12.5px] font-semibold disabled:opacity-40"
+                        >
+                            <Pencil className="size-4" /> Edit
+                        </button>
+                    </>
+                )}
                 <button
                     type="button"
                     onClick={onPrint}
@@ -1273,6 +1341,12 @@ function TransactionDetailDialog({
                                 {truthfulCustomer(detail) && (
                                     <p className="text-[13px] font-semibold">
                                         {truthfulCustomer(detail)}
+                                    </p>
+                                )}
+                                {detail.branch && (
+                                    <p className="text-[11.5px] text-neutral-500">
+                                        {detail.branch.code} ·{' '}
+                                        {detail.branch.name}
                                     </p>
                                 )}
                             </div>
@@ -1472,10 +1546,20 @@ function TransactionDetailDialog({
                                             <button
                                                 key={payment.id}
                                                 type="button"
+                                                disabled={
+                                                    detail.operational ===
+                                                    false
+                                                }
+                                                title={
+                                                    detail.operational ===
+                                                    false
+                                                        ? 'Invoice proofs open from this Branch POS'
+                                                        : undefined
+                                                }
                                                 onClick={() =>
                                                     onInvoice(payment)
                                                 }
-                                                className="flex w-full items-center gap-3 rounded-xl border border-neutral-200 p-3 text-left"
+                                                className="flex w-full items-center gap-3 rounded-xl border border-neutral-200 p-3 text-left disabled:cursor-default disabled:bg-neutral-50"
                                             >
                                                 <CreditCard className="size-4 text-blue-700" />
                                                 <span className="min-w-0 flex-1">
@@ -1499,31 +1583,38 @@ function TransactionDetailDialog({
                     </div>
                 )}
                 {detail && !loading && (
-                    <footer className="grid shrink-0 grid-cols-[auto_auto_1fr] gap-2 border-t border-neutral-200 bg-white p-3.5">
-                        <button
-                            type="button"
-                            disabled={!detail.can_void}
-                            title={
-                                detail.can_void
-                                    ? 'Void transaction'
-                                    : 'This transaction cannot be voided'
-                            }
-                            onClick={onVoid}
-                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
-                        >
-                            <ShieldBan className="size-4" /> Void
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                !detail.can_edit ||
-                                detail.commercial_status === 'voided'
-                            }
-                            onClick={onEdit}
-                            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
-                        >
-                            <Pencil className="size-4" /> Edit
-                        </button>
+                    <footer
+                        className={`grid shrink-0 gap-2 border-t border-neutral-200 bg-white p-3.5 ${detail.operational === false ? 'grid-cols-1' : 'grid-cols-[auto_auto_1fr]'}`}
+                    >
+                        {/* A view-only business viewer (the Owner) gets the receipt only, never Cashier Void or Edit. */}
+                        {detail.operational !== false && (
+                            <>
+                                <button
+                                    type="button"
+                                    disabled={!detail.can_void}
+                                    title={
+                                        detail.can_void
+                                            ? 'Void transaction'
+                                            : 'This transaction cannot be voided'
+                                    }
+                                    onClick={onVoid}
+                                    className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 text-[13px] font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 disabled:opacity-40"
+                                >
+                                    <ShieldBan className="size-4" /> Void
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={
+                                        !detail.can_edit ||
+                                        detail.commercial_status === 'voided'
+                                    }
+                                    onClick={onEdit}
+                                    className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 px-3 text-[13px] font-semibold disabled:opacity-40"
+                                >
+                                    <Pencil className="size-4" /> Edit
+                                </button>
+                            </>
+                        )}
                         <button
                             type="button"
                             onClick={onPrint}
@@ -2810,9 +2901,11 @@ function SettlementDialog({
 
 function ReceiptDialog({
     detail,
+    canShareQr,
     onClose,
 }: {
     detail: Detail;
+    canShareQr: boolean;
     onClose: () => void;
 }) {
     return (
@@ -2831,6 +2924,7 @@ function ReceiptDialog({
                     onBack={onClose}
                     onNewOrder={onClose}
                     showNewOrderAction={false}
+                    canShareQr={canShareQr}
                 />
             </DialogContent>
         </Dialog>
@@ -2987,4 +3081,30 @@ function selectedModifierDetails(line: EditLine) {
             )
             .map((option) => `${option.groupName}: ${option.name}`),
     };
+}
+
+function HistoryRealtime({
+    branchId,
+    onEvent,
+}: {
+    branchId: string;
+    onEvent: (event: Record<string, unknown>) => void;
+}) {
+    useBranchRealtimeRefresh({
+        branchId,
+        channel: 'pos',
+        events: HISTORY_REALTIME_EVENTS,
+        only: ['transactions', 'history_total', 'metrics'],
+        debounceMs: 120,
+        onEvent,
+    });
+
+    return null;
+}
+
+/** The business surface is not subscribed to a POS channel, so it refreshes its page on an interval instead. */
+function HistoryPolling() {
+    usePoll(30_000, { only: ['transactions', 'history_total', 'metrics'] });
+
+    return null;
 }

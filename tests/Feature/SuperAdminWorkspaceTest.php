@@ -40,13 +40,12 @@ test('planned super admin destinations render protected placeholders', function 
             ->where('destination', $destination));
 })->with([
     'notifications' => ['super-admin.notifications', 'notifications'],
-    'reports' => ['super-admin.reports', 'reports'],
     'access control' => ['super-admin.access-control', 'access-control'],
 ]);
 
 test('guests are sent to login from super admin control center routes', function (string $routeName) {
     $this->get(route($routeName))->assertRedirectToRoute('login');
-})->with(['workspaces.super-admin', 'super-admin.staff.index', 'super-admin.notifications', 'super-admin.reports', 'super-admin.access-control']);
+})->with(['workspaces.super-admin', 'super-admin.staff.index', 'super-admin.notifications', 'super-admin.access-control']);
 
 test('other roles cannot open the super admin control center', function (string $roleName) {
     $branch = Branch::factory()->create();
@@ -54,7 +53,7 @@ test('other roles cannot open the super admin control center', function (string 
 
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
 
-    foreach (['workspaces.super-admin', 'super-admin.staff.index', 'super-admin.notifications', 'super-admin.reports', 'super-admin.access-control'] as $routeName) {
+    foreach (['workspaces.super-admin', 'super-admin.staff.index', 'super-admin.notifications', 'super-admin.access-control'] as $routeName) {
         $this->get(route($routeName))->assertForbidden();
     }
 })->with(['owner', 'cashier', 'kitchen_staff', 'cashier_kitchen']);
@@ -101,7 +100,9 @@ test('super admin opens the existing owner and control destinations', function (
         ->get(route($routeName))
         ->assertInertia(fn (Assert $page) => $page->component($component));
 })->with([
-    'owner dashboard' => ['workspaces.owner', 'workspaces/show'],
+    'owner dashboard' => ['workspaces.owner', 'workspaces/owner-dashboard'],
+    'owner transactions' => ['workspaces.transactions', 'workspaces/transaction-history'],
+    'owner reports' => ['workspaces.reports', 'workspaces/reports'],
     'products' => ['products.index', 'catalog/products'],
     'inventory' => ['inventory.index', 'inventory/index'],
     'audit trail' => ['workspaces.audit-trail', 'super-admin/audit-trail'],

@@ -25,6 +25,7 @@ export function PosPaid({
     onBack,
     onNewOrder,
     showNewOrderAction = true,
+    canShareQr = true,
 }: {
     receipt: ReceiptSummary;
     showReceipt: boolean;
@@ -32,6 +33,8 @@ export function PosPaid({
     onBack: () => void;
     onNewOrder: () => void;
     showNewOrderAction?: boolean;
+    /** Show QR creates a POS receipt share link, so only POS-authorized viewers get it. */
+    canShareQr?: boolean;
 }) {
     const [showQr, setShowQr] = useState(false);
     const [invoiceOpen, setInvoiceOpen] = useState(false);
@@ -248,7 +251,7 @@ export function PosPaid({
                         Print receipt
                     </button>
                     <div className="flex gap-2">
-                        {receipt.payment_status === 'paid' && (
+                        {canShareQr && receipt.payment_status === 'paid' && (
                             <button
                                 onClick={() => setShowQr(true)}
                                 className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-400 text-[13.5px] font-semibold"

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { SuperAdminShell } from '@/components/super-admin-shell';
@@ -52,6 +53,7 @@ type SharedProps = {
     workspace?: string;
     readyOrders?: PosReadyOrder[];
     qrWaitingCount?: number;
+    surface?: string;
 };
 
 function StoreClosedListener({
@@ -112,7 +114,13 @@ export default function WorkspaceLayout({
         isPos &&
         new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
     const isKitchen = page.component === 'workspaces/kitchen';
-    const isHistory = page.component === 'workspaces/transaction-history';
+    /** Owner and Super Admin read the same Transaction History page inside their management shell. */
+    const isBusinessHistory =
+        page.component === 'workspaces/transaction-history' &&
+        page.props.surface === 'business';
+    const isHistory =
+        page.component === 'workspaces/transaction-history' &&
+        !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
     const isOperational = isPos || isKitchen || isHistory || isDashboard;
     const isOwnerManagement =
@@ -120,9 +128,9 @@ export default function WorkspaceLayout({
         page.component.startsWith('inventory/') ||
         page.component.startsWith('super-admin/') ||
         page.component === 'branches/index' ||
-        (page.component === 'workspaces/show' &&
-            (page.props.workspace === 'Owner' ||
-                page.props.workspace === 'Super Admin'));
+        page.component === 'workspaces/reports' ||
+        page.component === 'workspaces/owner-dashboard' ||
+        isBusinessHistory;
 
     const refreshStoreSession = useCallback(async () => {
         setStoreSessionLoadState('loading');
@@ -455,13 +463,7 @@ export default function WorkspaceLayout({
             <header className="border-b border-neutral-200 bg-white">
                 <div className="mx-auto flex min-h-18 max-w-[96rem] flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
                     <div className="flex min-w-0 items-center gap-3 sm:mr-auto">
-                        <div className="flex h-11 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-neutral-950 px-2">
-                            <img
-                                src="/images/branding/logo.png"
-                                alt="PONGSKILOG"
-                                className="h-auto w-full"
-                            />
-                        </div>
+                        <AppLogoIcon alt="" className="size-11 shrink-0" />
                         <div className="hidden sm:block">
                             <p className="text-sm font-bold tracking-[0.12em] uppercase">
                                 PONGSKILOG

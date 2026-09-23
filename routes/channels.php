@@ -32,6 +32,11 @@ Broadcast::channel('branch.{branch}.store-session', function (User $user, Branch
         && $user->hasOperationalBranchAccess($branch);
 });
 
+/** Business-wide report invalidation signals for the Owner/Super Admin Dashboard and Reports. */
+Broadcast::channel('reports', function (User $user): bool {
+    return $user->is_active && $user->hasPermission('reports.view') && $user->hasBusinessWideScope();
+});
+
 Broadcast::channel('audit-trail', function (User $user): bool {
     return $user->is_active && $user->hasPermission('audit.view');
 });

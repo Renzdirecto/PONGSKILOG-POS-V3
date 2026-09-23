@@ -7,6 +7,7 @@ use App\Actions\Inventory\ApplyInventoryMovement;
 use App\Enums\InventoryMovementType;
 use App\Enums\StoreInventoryAdjustmentReason;
 use App\Enums\StoreSessionStatus;
+use App\Events\ReportsChanged;
 use App\Http\Requests\StoreSessionInventoryAdjustmentRequest;
 use App\Models\Branch;
 use App\Models\BranchInventory;
@@ -143,6 +144,7 @@ class RecordStoreSessionInventoryAdjustment
                 ],
                 idempotencyKey: $key,
             );
+            ReportsChanged::dispatch((string) $branch->id, 'inventory.adjusted');
 
             return $adjustment->load('product', 'inventoryMovement');
         });

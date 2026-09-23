@@ -18,6 +18,12 @@ class ExactMoney
         return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 
+    /** Parses a persisted signed decimal such as a reconciliation value "-250.00". */
+    public static function signedCents(string $amount): int
+    {
+        return str_starts_with($amount, '-') ? -self::cents(substr($amount, 1)) : self::cents($amount);
+    }
+
     public static function decimal(int $cents): string
     {
         self::guard($cents);

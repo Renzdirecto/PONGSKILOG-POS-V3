@@ -18,15 +18,22 @@ class StoreStaffRequest extends FormRequest
     use PasswordValidationRules, ProfileValidationRules;
 
     /**
-     * Staff account creation is Super Admin access-control management, enforced server-side.
+     * Staff account creation is Super Admin access control (every role) or Owner Staff management (operational roles),
+     * enforced server-side. Each Staff route additionally requires its own permission middleware.
      */
     public function authorize(): bool
     {
         $user = $this->user();
 
-        return $user instanceof User
-            && $user->is_active
-            && $user->hasPermission('access_control.manage');
+        return $user instanceof User && StaffRoles::manageableBy($user) !== [];
+    }
+
+    /** @return list<string> */
+    private function manageableRoles(): array
+    {
+        $user = $this->user();
+
+        return $user instanceof User ? StaffRoles::manageableBy($user) : [];
     }
 
     protected function prepareForValidation(): void
@@ -69,7 +76,7 @@ class StoreStaffRequest extends FormRequest
                 },
             ],
             'password' => $this->passwordRules(),
-            'role' => ['required', 'string', Rule::in(StaffRoles::names()), Rule::exists('roles', 'name')],
+            'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')],
             'branch_ids' => $requiresBranch
                 ? ['required', 'array', 'min:1']
                 : ['prohibited'],

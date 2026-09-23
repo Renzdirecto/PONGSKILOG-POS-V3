@@ -14,13 +14,19 @@ class TransactionHistory
 {
     public function __construct(private TransactionProjection $projection) {}
 
-    /** @param array<string, mixed> $filters
+    /**
+     * One page of committed, non-voided transactions for a Branch, or for every Branch when a business-wide viewer
+     * chose All Branches. Edit, Settle and Void are offered only on the POS-authorized mutable Branch, for Orders of
+     * its current OPEN Store Session; every other surface is read-only and the write endpoints re-authorize anyway.
+     *
+     * @param  array<string, mixed>  $filters
+     * @param  Branch|null  $mutableBranch  the Branch the viewer may operate on through the POS, if any
      * @return array<string, mixed>
      */
-    public function for(Branch $branch, array $filters): array
+    public function for(?Branch $branch, array $filters, ?Branch $mutableBranch = null): array
     {
         $query = $this->baseQuery($branch)
-            ->with(['items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable', 'voidRecord.initiatedBy', 'voidRecord.authorizedBy']);
+            ->with(['branch:id,name,code', 'items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments', 'branchTable', 'voidRecord.initiatedBy', 'voidRecord.authorizedBy']);
 
         $this->applyFilters($query, $filters);
         $metricsQuery = $this->baseQuery($branch);
@@ -32,16 +38,18 @@ class TransactionHistory
             ->selectRaw("SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS paid")
             ->selectRaw("SUM(CASE WHEN payment_status = 'unpaid' THEN 1 ELSE 0 END) AS pending")
             ->first();
-        $openSessionId = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->value('id');
+        $openSessionId = $mutableBranch?->storeSessions()->where('status', StoreSessionStatus::Open)->value('id');
         $page = $query->orderByDesc('committed_at')->orderByDesc('id')->paginate(10)->withQueryString();
-        $page->through(function (Order $order) use ($openSessionId): array {
+        $page->through(function (Order $order) use ($openSessionId, $mutableBranch): array {
             $canMutate = $openSessionId !== null
+                && $order->branch_id === $mutableBranch->id
                 && $order->store_session_id === $openSessionId
                 && $order->commercial_status === CommercialStatus::Active;
             $summary = $this->projection->summary($order);
 
             return [
                 ...$summary,
+                'branch' => ['id' => $order->branch->id, 'name' => $order->branch->name, 'code' => $order->branch->code],
                 'can_edit' => $canMutate,
                 'can_settle' => $canMutate && (float) $summary['outstanding'] > 0,
                 'can_void' => $canMutate,
@@ -62,10 +70,10 @@ class TransactionHistory
     }
 
     /** @return Builder<Order> */
-    private function baseQuery(Branch $branch): Builder
+    private function baseQuery(?Branch $branch): Builder
     {
         return Order::query()
-            ->where('branch_id', $branch->id)
+            ->when($branch !== null, fn (Builder $query) => $query->where('branch_id', $branch?->id))
             ->whereNotNull('committed_at')
             ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed]);
     }

@@ -23,6 +23,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import {
     Dialog,
@@ -56,7 +57,7 @@ import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import { edit as editProfile } from '@/routes/profile';
-import { accessControl, notifications, reports } from '@/routes/super-admin';
+import { accessControl, notifications } from '@/routes/super-admin';
 import { index as staffIndex } from '@/routes/super-admin/staff';
 import {
     auditTrail,
@@ -65,8 +66,10 @@ import {
     customerDisplay,
     kitchen,
     owner,
+    reports,
     superAdmin,
     transactionHistory,
+    transactions,
     voidOrders,
 } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
@@ -76,6 +79,7 @@ type SharedProps = {
     branchContext: BranchContext;
     workspace?: string;
     destination?: string;
+    surface?: string;
 };
 
 type DestinationBinding = {
@@ -98,6 +102,7 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
         kitchen: { icon: ChefHat, href: kitchen() },
         'customer-display': { icon: MonitorUp, href: customerDisplay() },
         'owner-dashboard': { icon: Store, href: owner() },
+        'owner-transactions': { icon: ReceiptText, href: transactions() },
         reports: { icon: BarChart3, href: reports() },
         products: { icon: Boxes, href: productsIndex() },
         inventory: { icon: PackageSearch, href: inventoryIndex() },
@@ -278,6 +283,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
         url: page.url,
         workspace: page.props.workspace,
         destination: page.props.destination,
+        surface: page.props.surface,
     });
     const activeSection = superAdminSectionOf(activeId);
     const [expanded, setExpanded] = useState<SuperAdminSectionId[]>(() =>
@@ -315,8 +321,8 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             : `flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${!activeIsPinned && activeId !== null ? 'bg-white text-[#111111]' : 'text-white/70'}`;
 
     return (
-        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
-            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex">
+        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
+            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
                 <Link
                     href={superAdmin()}
                     className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
@@ -380,7 +386,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                 </div>
             </aside>
 
-            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex">
+            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
                     href={superAdmin()}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
@@ -437,13 +443,9 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                 </div>
             </aside>
 
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-                <header className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[92px] shrink-0 md:hidden"
-                    />
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
+                <header className="flex h-[60px] shrink-0 print:hidden items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
+                    <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {activeDestination?.label ?? 'Super Admin'}
                     </p>
@@ -516,14 +518,14 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </header>
-                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0">
+                <main className="owner-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[#f7f7f7] pb-[calc(92px+env(safe-area-inset-bottom,0px))] md:pb-0 print:block print:overflow-visible print:bg-white print:pb-0">
                     {children}
                 </main>
             </div>
 
             <nav
                 aria-label="Mobile Super Admin navigation"
-                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden"
+                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {pinned.map((destination) => (
                     <DestinationControl

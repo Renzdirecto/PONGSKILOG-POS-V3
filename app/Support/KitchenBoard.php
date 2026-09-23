@@ -54,23 +54,6 @@ class KitchenBoard
             ->limit(100)
             ->get();
 
-        $countsByStatus = $this->ordersForSession($branch, $session)
-            ->selectRaw('kitchen_status, count(*) as aggregate')
-            ->groupBy('kitchen_status')
-            ->pluck('aggregate', 'kitchen_status');
-
-        $counts = [
-            'all' => (int) $countsByStatus->only([
-                KitchenStatus::Kitchen->value,
-                KitchenStatus::Preparing->value,
-                KitchenStatus::Ready->value,
-            ])->sum(),
-            'kitchen' => (int) ($countsByStatus[KitchenStatus::Kitchen->value] ?? 0),
-            'preparing' => (int) ($countsByStatus[KitchenStatus::Preparing->value] ?? 0),
-            'ready' => (int) ($countsByStatus[KitchenStatus::Ready->value] ?? 0),
-            'done' => (int) ($countsByStatus[KitchenStatus::Done->value] ?? 0),
-        ];
-
         return [
             'is_open' => true,
             'tickets' => array_values($activeOrders
@@ -79,8 +62,20 @@ class KitchenBoard
                 ->map($this->kitchenTicket(...))
                 ->values()
                 ->all()),
-            'counts' => $counts,
+            'counts' => $this->countsForSession($branch, $session),
         ];
+    }
+
+    /**
+     * Kitchen ticket counts for the current OPEN Store Session without loading tickets.
+     *
+     * @return array{all: int, kitchen: int, preparing: int, ready: int, done: int}
+     */
+    public function counts(Branch $branch): array
+    {
+        $session = $this->openSession($branch);
+
+        return $session === null ? $this->emptyCounts() : $this->countsForSession($branch, $session);
     }
 
     /** @return array{is_open: bool, preparing: list<string>, ready: list<string>} */
@@ -274,6 +269,27 @@ class KitchenBoard
             ->map(fn (Order $order): string => '#'.$order->order_number)
             ->values()
             ->all());
+    }
+
+    /** @return array{all: int, kitchen: int, preparing: int, ready: int, done: int} */
+    private function countsForSession(Branch $branch, StoreSession $session): array
+    {
+        $countsByStatus = $this->ordersForSession($branch, $session)
+            ->selectRaw('kitchen_status, count(*) as aggregate')
+            ->groupBy('kitchen_status')
+            ->pluck('aggregate', 'kitchen_status');
+
+        return [
+            'all' => (int) $countsByStatus->only([
+                KitchenStatus::Kitchen->value,
+                KitchenStatus::Preparing->value,
+                KitchenStatus::Ready->value,
+            ])->sum(),
+            'kitchen' => (int) ($countsByStatus[KitchenStatus::Kitchen->value] ?? 0),
+            'preparing' => (int) ($countsByStatus[KitchenStatus::Preparing->value] ?? 0),
+            'ready' => (int) ($countsByStatus[KitchenStatus::Ready->value] ?? 0),
+            'done' => (int) ($countsByStatus[KitchenStatus::Done->value] ?? 0),
+        ];
     }
 
     /** @return array{all: int, kitchen: int, preparing: int, ready: int, done: int} */

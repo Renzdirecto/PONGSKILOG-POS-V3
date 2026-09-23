@@ -14,8 +14,10 @@ import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
+import { StoreSessionDetailsContext } from '@/hooks/use-store-session-details';
 import {
     cashier,
+    cashierDashboard,
     customerDisplay,
     kitchen,
     transactionHistory,
@@ -104,7 +106,8 @@ export default function WorkspaceLayout({
         new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
     const isKitchen = page.component === 'workspaces/kitchen';
     const isHistory = page.component === 'workspaces/transaction-history';
-    const isOperational = isPos || isKitchen || isHistory;
+    const isDashboard = page.component === 'workspaces/cashier-dashboard';
+    const isOperational = isPos || isKitchen || isHistory || isDashboard;
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
@@ -166,9 +169,9 @@ export default function WorkspaceLayout({
             {
                 label: 'Dashboard',
                 icon: LayoutDashboard,
-                available: false,
-                href: null,
-                active: false,
+                available: auth.permissions.includes('pos.access'),
+                href: cashierDashboard(),
+                active: isDashboard,
             },
             {
                 label: 'POS',
@@ -267,9 +270,11 @@ export default function WorkspaceLayout({
                     <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 min-[1180px]:h-[66px] min-[1180px]:px-4">
                         <div className="min-w-0 flex-1">
                             <h1 className="truncate text-[15px] font-bold">
-                                {isKitchen
-                                    ? 'Kitchen display'
-                                    : isHistory
+                                {isDashboard
+                                    ? 'Dashboard'
+                                    : isKitchen
+                                      ? 'Kitchen display'
+                                      : isHistory
                                       ? 'Transaction history'
                                     : isQr
                                       ? 'QR Orders'
@@ -279,7 +284,8 @@ export default function WorkspaceLayout({
                                 {branchContext.current?.name}
                             </p>
                         </div>
-                        {page.props.storeContext?.isOpen && isPos ? (
+                        {page.props.storeContext?.isOpen &&
+                        (isPos || isDashboard) ? (
                             <button
                                 type="button"
                                 aria-label="View current Store Session details"
@@ -359,7 +365,15 @@ export default function WorkspaceLayout({
                         />
                     )}
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
-                        {children}
+                        <StoreSessionDetailsContext.Provider
+                            value={
+                                page.props.storeContext?.isOpen
+                                    ? openStoreSessionDetails
+                                    : null
+                            }
+                        >
+                            {children}
+                        </StoreSessionDetailsContext.Provider>
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"

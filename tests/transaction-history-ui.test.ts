@@ -18,7 +18,11 @@ const invoice = readFileSync(
 );
 
 test('transaction history keeps filters, metrics, and pagination server-driven', () => {
-    assert.match(page, /router\.get\(transactionHistory\(\)/);
+    assert.match(page, /router\.get\(listRoute\(\)/);
+    assert.match(
+        page,
+        /const listRoute = business \? businessTransactions : transactionHistory;/,
+    );
     assert.match(
         page,
         /only: \['transactions', 'history_total', 'metrics', 'filters'\]/,

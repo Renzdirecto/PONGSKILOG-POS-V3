@@ -57,7 +57,16 @@ test('super admin navigation exposes the four required sections in order', () =>
                     'Customer Display',
                 ],
             ],
-            ['Owner', ['Owner Dashboard', 'Reports', 'Products', 'Inventory']],
+            [
+                'Owner',
+                [
+                    'Owner Dashboard',
+                    'Transactions',
+                    'Reports',
+                    'Products',
+                    'Inventory',
+                ],
+            ],
             [
                 'Control',
                 [
@@ -90,6 +99,7 @@ test('existing destinations point at real routes and only unbuilt pages are plan
         kitchen: ['workspaces.kitchen', 'live'],
         'customer-display': ['workspaces.customer-display', 'live'],
         'owner-dashboard': ['workspaces.owner', 'live'],
+        'owner-transactions': ['workspaces.transactions', 'live'],
         reports: ['workspaces.reports', 'live'],
         products: ['products.index', 'live'],
         inventory: ['inventory.index', 'live'],
@@ -138,8 +148,24 @@ test('the active destination follows the rendered page', () => {
             [{ component: 'inventory/movements', url: '/' }, 'inventory'],
             [{ component: 'branches/index', url: '/' }, 'settings'],
             [
-                { component: 'workspaces/show', url: '/', workspace: 'Owner' },
+                { component: 'workspaces/owner-dashboard', url: '/' },
                 'owner-dashboard',
+            ],
+            [
+                {
+                    component: 'workspaces/transaction-history',
+                    url: '/workspaces/transactions',
+                    surface: 'business',
+                },
+                'owner-transactions',
+            ],
+            [
+                {
+                    component: 'workspaces/transaction-history',
+                    url: '/workspaces/transaction-history',
+                    surface: 'pos',
+                },
+                'transaction-history',
             ],
             [
                 {

@@ -17,8 +17,8 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Actions/Orders/**, app/Actions/Orders/TransitionKitchenOrder.php | .ai/rules/orders.md |
 | {app/Http/Controllers/**,resources/js/components/pos-paid.tsx,resources/js/pages/public-receipt.tsx} | .ai/rules/pages.md |
 | {app/Actions/Orders/VoidOrder.php,app/Http/Controllers/SetVoidAuthorizationPinController.php,app/Http/Requests/SetVoidAuthorizationPinRequest.php,resources/js/pages/**} | .ai/rules/requests-js-pages.md |
-| {app/Support/StoreSessionSalesReport.php,app/Support/StoreSessionReconciliation.php,app/Http/Controllers/ReportsController.php,app/Http/Requests/ReportsRequest.php,resources/js/pages/workspaces/reports.tsx,resources/js/lib/reports.ts} | .ai/rules/reports.md |
+| {app/Support/StoreSessionSalesReport.php,app/Support/StoreSessionReconciliation.php,app/Http/Controllers/ReportsController.php,app/Http/Requests/ReportsRequest.php,resources/js/pages/workspaces/reports.tsx,resources/js/lib/reports.ts}, {app/Support/SalesAnalytics.php,app/Support/ReportPeriod.php,app/Support/ManilaSql.php,app/Support/BusinessSnapshot.php,app/Support/ReportCsvExport.php,app/Http/Controllers/OwnerDashboardController.php,resources/js/pages/workspaces/owner-dashboard.tsx,resources/js/components/owner-analytics.tsx,resources/js/lib/owner-analytics.ts} | .ai/rules/reports.md |
 | database/seeders/Local*Seeder.php | .ai/rules/seeders.md |
 | resources/js/{components,layouts}/**/*.{ts,tsx},app/Actions/StoreSessions/**/*.php | .ai/rules/store-sessions.md |
-| {app/Actions/Staff/**,app/Http/Controllers/StaffController.php,app/Http/Requests/StoreStaffRequest.php,resources/js/pages/super-admin/staff.tsx} | .ai/rules/super-admin.md |
+| {app/Actions/Staff/**,app/Http/Controllers/StaffController.php,app/Http/Requests/StoreStaffRequest.php,resources/js/pages/super-admin/staff.tsx}, app/Support/StaffRoles.php | .ai/rules/super-admin.md |
 | resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |

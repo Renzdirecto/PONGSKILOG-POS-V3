@@ -21,6 +21,7 @@ use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\OrderAdjustmentAllocationController;
+use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\PaymentInvoiceProofController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
@@ -113,15 +114,29 @@ Route::middleware(['auth'])->group(function () {
         ->middleware(['permission:void_orders.manage', 'throttle:5,1'])
         ->name('workspaces.void-orders.pin.update');
 
-    Route::inertia('workspaces/owner', 'workspaces/show', [
-        'workspace' => 'Owner',
-        'eyebrow' => 'Business Operations',
-        'description' => 'Business-wide owner workspace.',
-    ])->middleware('permission:reports.view')->name('workspaces.owner');
+    Route::get('workspaces/owner', OwnerDashboardController::class)
+        ->middleware('permission:reports.view')->name('workspaces.owner');
 
     Route::get('workspaces/reports', ReportsController::class)
         ->middleware('permission:reports.view')
         ->name('workspaces.reports');
+    Route::get('workspaces/reports/export', [ReportsController::class, 'export'])
+        ->middleware(['permission:reports.view', 'throttle:20,1'])
+        ->name('workspaces.reports.export');
+
+    Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
+        ->middleware('permission:transactions.view')
+        ->name('workspaces.transactions');
+    Route::get('workspaces/transactions/{order}', [TransactionHistoryController::class, 'businessShow'])
+        ->whereUuid('order')
+        ->middleware('permission:transactions.view')
+        ->name('workspaces.transactions.show');
+
+    Route::prefix('workspaces/staff')->name('staff.')->middleware('permission:staff.manage')->group(function () {
+        Route::get('/', [StaffController::class, 'index'])->name('index');
+        Route::post('/', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('store');
+        Route::get('{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('avatar');
+    });
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
         ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier');

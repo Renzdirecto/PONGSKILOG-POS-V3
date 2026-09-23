@@ -17,9 +17,7 @@ class StaffIndexRequest extends FormRequest
     {
         $user = $this->user();
 
-        return $user instanceof User
-            && $user->is_active
-            && $user->hasPermission('access_control.manage');
+        return $user instanceof User && StaffRoles::manageableBy($user) !== [];
     }
 
     /**
@@ -31,7 +29,7 @@ class StaffIndexRequest extends FormRequest
     {
         return [
             'search' => ['nullable', 'string', 'max:150'],
-            'role' => ['nullable', 'string', Rule::in(StaffRoles::names())],
+            'role' => ['nullable', 'string', Rule::in($this->user() instanceof User ? StaffRoles::manageableBy($this->user()) : [])],
             'status' => ['nullable', 'string', Rule::in(['active', 'inactive'])],
             'page' => ['nullable', 'integer', 'min:1'],
         ];

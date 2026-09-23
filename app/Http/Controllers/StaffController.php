@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Support\StaffRoles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -20,10 +21,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class StaffController extends Controller
 {
     /**
-     * List login accounts with their role, Branch access and status. Credentials are never projected.
+     * List login accounts with their role, Branch access and status. Credentials are never projected. Super Admin sees
+     * every account; the Owner sees operational Staff only (Cashier, Kitchen Staff, Cashier + Kitchen).
      */
     public function index(StaffIndexRequest $request): Response
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+        $surface = $this->surface($request);
+        $manageable = StaffRoles::manageableBy($actor);
+        $fullAccess = $manageable === StaffRoles::names();
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
             ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'avatar_path', 'created_at'])
@@ -34,6 +41,7 @@ class StaffController extends Controller
                     ->wherePivot('is_active', true)
                     ->orderBy('branches.name'),
             ])
+            ->when(! $fullAccess, fn (Builder $query) => $this->scopeToManageable($query, $manageable))
             ->when($filters['search'] ?? null, function (Builder $query, string $search): void {
                 $term = '%'.mb_strtolower(trim($search)).'%';
                 $query->where(fn (Builder $query) => $query
@@ -49,7 +57,7 @@ class StaffController extends Controller
             ->orderBy('id')
             ->paginate(25)
             ->withQueryString()
-            ->through(function (User $user): array {
+            ->through(function (User $user) use ($surface): array {
                 $roleNames = $user->roles->pluck('name')->all();
 
                 return [
@@ -59,7 +67,7 @@ class StaffController extends Controller
                     'email' => $user->email,
                     'avatar_url' => $user->avatar_path === null
                         ? null
-                        : route('super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
+                        : route($surface === 'owner' ? 'staff.avatar' : 'super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
                     'is_active' => $user->is_active,
                     'roles' => array_map(fn (string $role): array => [
                         'name' => $role,
@@ -79,8 +87,9 @@ class StaffController extends Controller
         return Inertia::render('super-admin/staff', [
             'staff' => $staff,
             'filters' => $filters,
+            'surface' => $surface,
             'roles' => array_values(array_filter(
-                StaffRoles::options(),
+                StaffRoles::options($manageable),
                 fn (array $role): bool => in_array($role['name'], $seededRoles, true),
             )),
             'branches' => Branch::query()
@@ -102,14 +111,18 @@ class StaffController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
 
-        return to_route('super-admin.staff.index');
+        return to_route($this->surface($request) === 'owner' ? 'staff.index' : 'super-admin.staff.index');
     }
 
     /**
-     * Stream a staff profile picture from the private disk to Super Admin access control only.
+     * Stream a staff profile picture from the private disk to Super Admin access control, or to an Owner for the
+     * operational Staff they manage. The file is never public and its storage path is never exposed.
      */
-    public function avatar(User $user): StreamedResponse
+    public function avatar(Request $request, User $user): StreamedResponse
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User && $actor->is_active
+            && ($actor->hasPermission('access_control.manage') || StaffRoles::canManage($actor, $user)), 404);
         $disk = Storage::disk((string) config('filesystems.staff_avatars_disk', 'local'));
         abort_if($user->avatar_path === null || ! $disk->exists($user->avatar_path), 404);
 
@@ -117,5 +130,23 @@ class StaffController extends Controller
             'Cache-Control' => 'private, max-age=300',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /** 'owner' for the Owner workspace Staff routes, otherwise the Super Admin access-control surface. */
+    private function surface(Request $request): string
+    {
+        return $request->routeIs('staff.*') ? 'owner' : 'super_admin';
+    }
+
+    /**
+     * Keeps accounts that hold at least one role and only manageable roles.
+     *
+     * @param  Builder<User>  $query
+     * @param  list<string>  $roles
+     */
+    private function scopeToManageable(Builder $query, array $roles): void
+    {
+        $query->whereHas('roles', fn (Builder $assigned) => $assigned->whereIn('roles.name', $roles))
+            ->whereDoesntHave('roles', fn (Builder $assigned) => $assigned->whereNotIn('roles.name', $roles));
     }
 }

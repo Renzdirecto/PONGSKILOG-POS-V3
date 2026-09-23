@@ -24,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { SegmentedTabs } from '@/components/owner-analytics';
 import {
     OwnerPage,
     OwnerStatusBadge,
@@ -62,13 +63,25 @@ const statusLabels: Record<BranchStatus, string> = {
     temporarily_closed: 'Temporarily closed',
     inactive: 'Inactive',
 };
+/** The Owner standalone Settings tabs that have a real backend: no business-profile fields are invented. */
+const SETTINGS_TABS = [
+    ['branches', 'Branch Management'],
+    ['receipt', 'Receipt'],
+    ['qr', 'Customer QR'],
+] as const;
+
+type SettingsTab = (typeof SETTINGS_TABS)[number][0];
+
 export default function Branches({ branches }: { branches: Branch[] }) {
-    const [section, setSection] = useState<'branches' | 'receipt'>('branches');
+    const [section, setSection] = useState<SettingsTab>('branches');
     const [receiptBranchId, setReceiptBranchId] = useState(
         branches[0]?.id ?? '',
     );
     const receiptBranch =
         branches.find((branch) => branch.id === receiptBranchId) ?? branches[0];
+    const [qrTabBranchId, setQrTabBranchId] = useState(branches[0]?.id ?? '');
+    const qrTabBranch =
+        branches.find((branch) => branch.id === qrTabBranchId) ?? branches[0];
     const [qrBranch, setQrBranch] = useState<Branch | null>(null);
     const [editing, setEditing] = useState<Branch | null | undefined>(
         undefined,
@@ -90,21 +103,62 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                 }
                 maxWidth="max-w-[1180px]"
             >
-                <div className="mb-4 flex gap-2 border-b border-neutral-200 pb-3">
-                    {(['branches', 'receipt'] as const).map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setSection(tab)}
-                            aria-pressed={section === tab}
-                            className={`${section === tab ? primaryActionClass : actionClass} px-4 py-3`}
-                        >
-                            {tab === 'branches'
-                                ? 'Branch Management'
-                                : 'Receipt'}
-                        </button>
-                    ))}
+                <div className="self-start">
+                    <SegmentedTabs
+                        label="Settings section"
+                        value={section}
+                        options={SETTINGS_TABS}
+                        onChange={setSection}
+                        size="lg"
+                    />
                 </div>
-                {section === 'receipt' ? (
+                {section === 'qr' ? (
+                    qrTabBranch ? (
+                        <section
+                            aria-label="Customer QR"
+                            className={`${ownerPanelClass} flex max-w-[820px] flex-col gap-4 p-4 sm:p-[18px]`}
+                        >
+                            <div className="flex flex-wrap items-end justify-between gap-3">
+                                <div className="flex min-w-0 flex-col gap-0.5">
+                                    <h2 className="text-[15px] font-bold tracking-[-0.01em]">
+                                        Customer QR
+                                    </h2>
+                                    <p className="text-xs text-[#767676]">
+                                        The customer menu link, ordering switch
+                                        and scan history of one Branch.
+                                    </p>
+                                </div>
+                                <label className="flex w-full max-w-xs flex-col gap-1.5 text-xs font-semibold">
+                                    Branch
+                                    <select
+                                        className={controlClass}
+                                        value={qrTabBranch.id}
+                                        onChange={(event) =>
+                                            setQrTabBranchId(event.target.value)
+                                        }
+                                    >
+                                        {branches.map((branch) => (
+                                            <option
+                                                key={branch.id}
+                                                value={branch.id}
+                                            >
+                                                {branch.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <BranchQrPanel
+                                key={qrTabBranch.id}
+                                branch={qrTabBranch}
+                            />
+                        </section>
+                    ) : (
+                        <p className="text-sm text-neutral-500">
+                            Add a branch to configure its customer QR.
+                        </p>
+                    )
+                ) : section === 'receipt' ? (
                     <div className="space-y-4">
                         {receiptBranch ? (
                             <>

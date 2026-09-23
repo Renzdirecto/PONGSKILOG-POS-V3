@@ -696,8 +696,8 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 ## 37. Phase 16A Owner Sales & Store Session reporting - 2026-09-24
 
 - **Business date** is the Asia/Manila calendar date on which a Store Session **opened**. A Branch may open and close several Store Sessions on one business date; all of them belong to it. A session that crosses midnight stays entirely under its opening date and is never split across two daily reports. Boundaries are computed in application code (Manila) and queried as UTC half-open ranges; database, server and browser time zones are never relied on.
-- Date filters: Today (default), Yesterday, Last 7 days, This month, Custom (at most 31 business dates, validated on the server). Store Session filter: All Sessions or one session in the selected dates and Branch scope; a session outside that scope or range is never reported (the report falls back to All Sessions with a notice).
-- Branch scope is the global Owner/Super Admin Branch context: All Branches aggregates every Branch the business-wide user may view (including inactive Branches' history); a selected Branch reports only its own sessions. Every Store Session row keeps its Branch identity. No ranking or Branch comparison.
+- Date filters: Today (default), Yesterday, Last 7 days, This month, Custom (at most 31 business dates, validated on the server). Phase 16C adds Last 30 days and Last 12 months; see §38. Store Session filter: All Sessions or one session in the selected dates and Branch scope; a session outside that scope or range is never reported (the report falls back to All Sessions with a notice).
+- Branch scope is the global Owner/Super Admin Branch context: All Branches aggregates every Branch the business-wide user may view (including inactive Branches' history); a selected Branch reports only its own sessions. Every Store Session row keeps its Branch identity. Phase 16C adds a neutral, alphabetical Branch comparison for All Branches (§38); there is still no ranking language.
 - **Net Sales is sales value, not cash.** It is the current final `orders.total` of committed Active or Completed Orders in the selected sessions. Drafts, submitted/uncommitted or archived QR Orders and voided Orders are excluded. Committed edits are already in the final total and are never subtracted again. Pay Later Orders count as sales before they are paid (Sale ≠ Collection).
 - **Orders** counts those same eligible committed, non-voided Orders.
 - **Cash / Cashless Collected** are net collections per channel from `StoreSessionReconciliation`: Payment amounts − that channel's allocated corrections on non-voided Orders − that channel's payments on voided Orders. Tendered cash and change are never used. A mixed-method correction still awaiting allocation is reported as pending and never guessed into a channel.
@@ -708,3 +708,52 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 - An **OPEN** session appears as LIVE with provisional figures from the same canonical read-only reconciliation. It has no actual closing counts. Its expected balance is unavailable while a correction allocation is pending.
 - A Store Session with zero activity still appears under its business date with 0.00 values.
 - Reporting is read-only for Owner and Super Admin (`reports.view` with business-wide scope). It has no POST/PATCH/DELETE route and never closes a Store, edits, voids, settles, records expenses or adjusts stock.
+
+## 38. Phase 16B–16D Owner workspace completion - 2026-09-24
+
+**Status: implemented, pending USER MANUAL QA and FINAL QA.**
+
+### Business date, periods and comparison
+
+- Phase 16A business-date semantics are unchanged: a period selects the Store Sessions that **opened** on its Asia/Manila business dates. A date with several Store Sessions combines all of them; the Store Session filter drills into one and is additional, never a replacement for the date.
+- Reports period tabs follow the Owner standalone: Daily (today), Weekly (last 7 days), Monthly (last 30 days), Yearly (last 12 calendar months, month buckets) and Custom (≤ 31 dates). Yesterday and This month remain valid server presets. The Dashboard tabs are Today, 7 days and 30 days.
+- The previous period is the immediately preceding equal span (today → yesterday, N days → the previous N days, 12 months → the same months a year earlier, This month → the same days last month). It uses the same filters and bucket count. Drilling into one Store Session has no comparison. Deltas are computed on the server from exact integers (percent, percentage points for the cashless share, seconds for prep time). A zero previous value with a positive current value reads "New".
+- Trend buckets: one day → Manila clock hour of `committed_at`; up to 31 days → business date; 12 months → calendar month of the business date. Hour charts show 6 AM–9 PM, widened to include any real activity outside it.
+
+### Metric definitions (one authority: `SalesAnalytics` over `StoreSessionSalesReport` and `StoreSessionReconciliation`)
+
+- **Total sales** = Phase 16A Net Sales: the current final `orders.total` of committed Active/Completed Orders. **Transactions** = those Orders. **Items sold** = their Order Item quantities. **Average order** = sales ÷ transactions (half-up to the centavo). Voided Orders contribute nothing to any of them.
+- **Payment mix / Payment method** = Cash and Cashless net collections from Payment.amount (− allocated corrections − payments of voided Orders), attributed to the Store Session that received the payment, exactly as Close Store. A CLOSED session uses its close-time snapshot. Split legs are already inside Cash and Cashless: Split is an explanatory row and never a third segment or an added amount. `amount_received` and change are never sales. **Cashless share** = Cashless ÷ (Cash + Cashless) collections; it is "—" when nothing was collected.
+- **Sales by category / Top products / Product performance** sum immutable Order Item `line_total` snapshots and name products by `product_name_snapshot`. Order Items do not snapshot a category, so categories group by each product's **current** category (a deleted product is "Uncategorized"); this is labelled in the UI and never recomputes amounts from current prices. More than seven categories fold the rest into one "N other categories" row.
+- **Peak sales hours** = sales per Manila clock hour of `committed_at` (fixed UTC+8; Manila has no DST). The Dashboard groups them into two-hour blocks.
+- **Order type** = sales, transactions, items and average per Dine in / Take out.
+- **Kitchen performance**: Orders completed = eligible Orders whose Kitchen status is Done; Average prep time = committed_at → ready_at for Orders that reached Ready (Orders that skipped Ready are not timed); per-hour averages mark the fastest and slowest hours. Preparing now / Ready to serve are live counts of open Store Sessions.
+- **Cashier performance**: an Order is credited to its POS creator, or to the cashier who loaded it from the Customer QR queue ("Unattributed" otherwise). Cash / Cashless / Split are sales of that cashier's Orders by how the Order was paid; unpaid Pay Later value is shown separately.
+- **Period highlights** are plain selections of the figures above (top category, peak hour, top product, cashless share, strongest day or month) — no estimates or projections.
+- **Branch comparison** (All Branches only): per Branch Store Sessions, Orders, sales, Cash, Cashless and expenses, alphabetical, with no ranking language and no stock figures.
+
+### Report filters
+
+- Order type, Payment method (how the Order was paid from all of its legs: Cash only, Cashless only or Split; unpaid Pay Later Orders match none) and Cashier are server-side filters. They narrow every KPI, chart, table and the CSV, **including Cash/Cashless collections**, which are then computed from the same reconciliation formula over the matching Orders.
+- Category is **not** a report-wide filter: Payments are recorded per Order, not per item, so Cash and Cashless cannot be split by category truthfully. Category narrows the Product performance table only ("this table only").
+- Store Session reconciliation (Collections & drawer effects, Daily summary, Store Sessions and their detail) always covers the whole drawer and is never narrowed by order filters; the page says so while a filter is active. Expenses in the Branch comparison show "—" while an order filter is active.
+
+### Store Session summaries
+
+- Reports lists the Store Sessions of the period (the latest 100 for long periods; totals always include all). The detail shows Branch, opened/closed at and by, orders, Net Sales, Cash/Cashless collections, Split, expenses, corrections, void reversals, opening, expected, actual and variance per channel, closing note and the count of unclaimed Customer QR orders archived at close. CLOSED sessions use the persisted snapshot/close columns; OPEN sessions are LIVE and provisional. The Dashboard shows the latest four with a link that drills Reports into that session.
+
+### Print and export
+
+- Print uses the browser print view (Save as PDF); the management shell navigation is hidden in print. Export offers CSV (`GET workspaces/reports/export`, same validation, scope and filters, throttled, formula-injection safe) and PDF via print. No PDF library was added.
+
+### Owner Dashboard live state
+
+- Inventory attention uses `InventoryState` per Branch for active tracked products: a selected Branch lists out-of-stock then low-stock products with Adjust links into Inventory; All Branches shows low/out **counts per Branch** and never sums stock quantities.
+- Kitchen snapshot counts Kitchen / Preparing / Ready tickets of currently OPEN Store Sessions and times the oldest Kitchen/Preparing ticket from `committed_at`; it exposes no money. All Branches sums the discrete ticket counts and names the oldest ticket's Branch.
+- Recent transactions are the latest five committed, non-voided Orders in scope; each opens the shared Transaction History detail and receipt.
+- Kitchen, inventory and recent transactions refresh every 30 seconds; period analytics reload when the period changes.
+
+### Owner Transactions
+
+- Owner and Super Admin use the **same** Transaction History page (`workspaces/transaction-history`, `surface = business`) at `GET workspaces/transactions` inside their management shell, across All Branches or the selected Branch, with the same server search, filters, metrics, pagination (10 per page), cards, details and receipt. All Branches cards carry the Branch code; details carry Branch identity. Voided Orders stay excluded.
+- Edit, Settle and Void are offered only when the viewer also holds POS access to the selected Branch (Super Admin) and the Order belongs to that Branch's OPEN Store Session. The Owner is always read-only: invoice proofs show that they exist but open only from the Branch POS, and Show QR receipt sharing is hidden. Every write endpoint keeps its POS authorization, so hidden buttons are never the control.

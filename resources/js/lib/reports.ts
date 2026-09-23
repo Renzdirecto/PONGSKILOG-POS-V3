@@ -2,7 +2,9 @@ export type ReportPreset =
     | 'today'
     | 'yesterday'
     | 'last_7_days'
+    | 'last_30_days'
     | 'month'
+    | 'last_12_months'
     | 'custom';
 
 export type ReportFilters = {
@@ -10,7 +12,34 @@ export type ReportFilters = {
     from?: string;
     to?: string;
     session?: string;
+    order_types?: string[];
+    payment_methods?: string[];
+    cashiers?: (number | string)[];
 };
+
+export type ReportOrderFilters = Pick<
+    ReportFilters,
+    'order_types' | 'payment_methods' | 'cashiers'
+>;
+
+/** The Owner standalone Reports period tabs, backed by server presets. */
+export const REPORT_TABS: readonly [ReportPreset, string][] = [
+    ['today', 'Daily'],
+    ['last_7_days', 'Weekly'],
+    ['last_30_days', 'Monthly'],
+    ['last_12_months', 'Yearly'],
+    ['custom', 'Custom'],
+];
+
+/** The Owner standalone Dashboard reporting-period tabs. */
+export const DASHBOARD_PERIODS: readonly [
+    'today' | 'last_7_days' | 'last_30_days',
+    string,
+][] = [
+    ['today', 'Today'],
+    ['last_7_days', '7 days'],
+    ['last_30_days', '30 days'],
+];
 
 export type ReportSessionResult =
     | 'live'
@@ -37,7 +66,7 @@ export const REPORT_PRESETS: readonly [ReportPreset, string][] = [
 export function reportQuery(
     current: ReportFilters,
     next: ReportFilters,
-): Record<string, string> {
+): Record<string, string | string[]> {
     const periodChanged = 'date' in next || 'from' in next || 'to' in next;
     const merged: ReportFilters = {
         ...current,
@@ -50,13 +79,32 @@ export function reportQuery(
     }
 
     return Object.fromEntries(
-        Object.entries(merged).filter(
-            (entry): entry is [string, string] =>
-                typeof entry[1] === 'string' &&
-                entry[1] !== '' &&
-                !(entry[0] === 'date' && entry[1] === 'today'),
+        Object.entries(merged).flatMap(
+            ([key, value]): [string, string | string[]][] => {
+                if (Array.isArray(value)) {
+                    return value.length > 0
+                        ? [[key, value.map((item) => String(item))]]
+                        : [];
+                }
+
+                return typeof value === 'string' &&
+                    value !== '' &&
+                    !(key === 'date' && value === 'today')
+                    ? [[key, value]]
+                    : [];
+            },
         ),
     );
+}
+
+/** Toggles one value in an order-filter list; an empty list means "all". */
+export function toggleFilterValue<T extends string | number>(
+    values: readonly T[],
+    value: T,
+): T[] {
+    return values.includes(value)
+        ? values.filter((item) => item !== value)
+        : [...values, value];
 }
 
 function calendarDay(value: string): number | null {

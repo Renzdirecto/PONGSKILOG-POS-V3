@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Order;
 use App\Models\StoreSession;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -227,14 +228,24 @@ class StoreSessionReconciliation
      * read-only reporting shares this authority without a per-session query loop. Every flow counts only rows whose
      * Branch is the Store Session's own Branch. Corrections keep any unallocated amount separate and never guess it.
      *
+     * An optional order scope narrows Payment, Split, Void and correction flows to the Orders a read-only report filter
+     * keeps (the same formula over fewer Orders). Store expenses belong to the drawer, not an Order, and are never narrowed.
+     *
      * @param  array<string, string>  $sessionBranches  Store Session id => Branch id
+     * @param  (\Closure(QueryBuilder): mixed)|null  $orderScope
      * @return array<string, SessionFlows>
      */
-    public function flows(array $sessionBranches): array
+    public function flows(array $sessionBranches, ?\Closure $orderScope = null): array
     {
         if ($sessionBranches === []) {
             return [];
         }
+        $scopedOrders = null;
+        if ($orderScope !== null) {
+            $scopedOrders = DB::table('orders')->select('orders.id')->whereIn('orders.store_session_id', array_keys($sessionBranches));
+            $orderScope($scopedOrders);
+        }
+        $scope = fn (QueryBuilder $query, string $column): QueryBuilder => $scopedOrders === null ? $query : $query->whereIn($column, $scopedOrders);
         $sessionIds = array_keys($sessionBranches);
         $branchIds = array_values(array_unique($sessionBranches));
         $owns = fn (\stdClass $row): bool => ($sessionBranches[(string) $row->store_session_id] ?? null) === (string) $row->branch_id;
@@ -251,6 +262,7 @@ class StoreSessionReconciliation
             ->join('orders', 'orders.id', '=', 'payments.order_id')
             ->whereIn('payments.branch_id', $branchIds)
             ->whereIn('payments.store_session_id', $sessionIds)
+            ->tap(fn (QueryBuilder $query) => $scope($query, 'payments.order_id'))
             ->groupBy('payments.store_session_id', 'payments.branch_id', 'payments.method')
             ->groupByRaw($voided)
             ->get([
@@ -279,6 +291,7 @@ class StoreSessionReconciliation
             ->whereIn('payments.branch_id', $branchIds)
             ->whereIn('payments.store_session_id', $sessionIds)
             ->where('orders.commercial_status', CommercialStatus::Voided->value)
+            ->tap(fn (QueryBuilder $query) => $scope($query, 'payments.order_id'))
             ->groupBy('payments.store_session_id', 'payments.branch_id')
             ->get([
                 DB::raw('payments.store_session_id AS store_session_id'), DB::raw('payments.branch_id AS branch_id'),
@@ -295,6 +308,7 @@ class StoreSessionReconciliation
         $splitGroups = DB::table('payments')
             ->whereIn('payments.branch_id', $branchIds)
             ->whereIn('payments.store_session_id', $sessionIds)
+            ->tap(fn (QueryBuilder $query) => $scope($query, 'payments.order_id'))
             ->groupBy('payments.store_session_id', 'payments.branch_id')
             ->groupByRaw($groupKey)
             ->havingRaw('COUNT(DISTINCT payments.method) = 2')
@@ -338,7 +352,7 @@ class StoreSessionReconciliation
             ];
         }
 
-        $corrections = $this->correctionChannelsFor($sessionBranches);
+        $corrections = $this->correctionChannelsFor($sessionBranches, $scopedOrders);
         $flows = [];
         foreach ($sessionIds as $sessionId) {
             $flows[$sessionId] = [
@@ -424,7 +438,7 @@ class StoreSessionReconciliation
      * @param  array<string, string>  $sessionBranches  Store Session id => Branch id
      * @return array<string, CorrectionCents>
      */
-    private function correctionChannelsFor(array $sessionBranches): array
+    private function correctionChannelsFor(array $sessionBranches, ?QueryBuilder $scopedOrders = null): array
     {
         $cash = $this->cents('order_adjustments.cash_amount');
         $cashless = $this->cents('order_adjustments.cashless_amount');
@@ -434,6 +448,7 @@ class StoreSessionReconciliation
         $totals = array_map(fn (): array => ['cash' => 0, 'cashless' => 0, 'unallocated' => 0, 'count' => 0], $sessionBranches);
 
         $this->currentCorrections($sessionBranches)
+            ->when($scopedOrders !== null, fn (QueryBuilder $query) => $query->whereIn('order_adjustments.order_id', $scopedOrders))
             ->get([
                 DB::raw('order_adjustments.store_session_id AS store_session_id'),
                 DB::raw('order_adjustments.branch_id AS branch_id'),
@@ -503,7 +518,7 @@ class StoreSessionReconciliation
     }
 
     /** @param array<string, string> $sessionBranches Store Session id => Branch id */
-    private function currentCorrections(array $sessionBranches): \Illuminate\Database\Query\Builder
+    private function currentCorrections(array $sessionBranches): QueryBuilder
     {
         return DB::table('order_adjustments')
             ->join('orders', 'orders.id', '=', 'order_adjustments.order_id')

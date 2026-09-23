@@ -811,18 +811,31 @@ Branch `feature/owner-reporting` from `dev` at `62ec3a9`. No migration and no de
 - **Known limitation:** the shared BranchSwitcher redirects to the role workspace after switching (existing behavior), so the Owner returns to Reports from the navigation after changing Branch scope.
 - Status: **READY FOR USER MANUAL QA**. Phase 16 remains incomplete: Dashboard analytics, Transactions, Staff, full Settings, Branch comparison, product/payment-mix/cashier/kitchen reporting and exports remain deferred. Only Store Session summaries is checked below; Reports stays unchecked until the rest of the planned report scope exists.
 
-- [ ] Dashboard
-- [ ] All Branches scope
-- [ ] Specific Branch scope
-- [ ] Transactions
-- [ ] Reports
-- [ ] Products
-- [ ] Inventory
-- [ ] Staff
-- [ ] Settings
-- [ ] Branch comparison
-- [x] Store Session summaries (Phase 16A; USER MANUAL QA pending)
-- [ ] Owner blocked from Super Admin-only controls
+### Phase 16B + 16C + 16D — Owner workspace completion — 2026-09-24
+
+Same branch `feature/owner-reporting`, built on Phase 16A (`1731ce0`). No migration and no dependency change.
+
+- **16B Transactions.** `GET /workspaces/transactions` (+ `/{order}` detail) renders the **same** `workspaces/transaction-history` page with `surface = business` inside the Owner or Super Admin shell, for All Branches or the selected Branch. `TransactionHistory::for()` now takes an optional Branch and a separate POS-authorized mutable Branch, so capabilities stay server-derived: the Owner is always read-only (write routes remain 403 through `permission:pos.access`), a Super Admin keeps open-session actions only on the selected Branch. Branch codes on All Branches cards, Branch identity in details, invoice proofs without links and no Show QR for read-only viewers. Cashier history is unchanged.
+- **16C Dashboard + Reports.** New `SalesAnalytics` (one authority for Dashboard and Reports) over `StoreSessionSalesReport` and `StoreSessionReconciliation`; `ReportPeriod` (standalone periods, previous period, buckets); `ManilaSql` (driver-aware Manila hour / prep seconds); `BusinessSnapshot` (Kitchen snapshot, Inventory attention per Branch, recent transactions); `ReportCsvExport`. `StoreSessionReconciliation::flows()` accepts an optional order scope so order filters narrow collections with the same formula; closed sessions still use their snapshot when unfiltered. The Owner Dashboard (`workspaces/owner-dashboard`) and Reports were rebuilt to the decoded standalone with real data only; Store Session summaries gained archived-QR counts and a bounded list; Branch comparison is factual and alphabetical. Definitions: `02-business-rules.md` §38.
+- **16D Staff + Settings.** `StaffRoles::manageableBy()` scopes Staff by capability: Owner `staff.manage` → Cashier / Kitchen Staff / Cashier + Kitchen only, re-checked in `CreateStaffAccount`; Owner routes `staff.index/store/avatar` reuse `StaffController` and `super-admin/staff` with `surface = owner`; avatars are served to an Owner only for Staff they manage (404 otherwise). Settings reuse Branch Management / Receipt and add a Customer QR tab over the existing QR panel.
+- **Navigation.** Owner shell: Dashboard, Transactions, Reports, Products, Inventory, Staff, Settings are real (groups Overview / Operations / Catalog / Administration); no "Later" items remain; Super Admin-only controls are absent. Super Admin gains Owner → Transactions. Print hides both management shells.
+- **Data gaps (documented, not invented):** Order Items have no category snapshot, so categories group by the current product category (labelled); a category filter cannot split Cash/Cashless, so category narrows Product performance only; prep time covers Orders that reached Ready.
+- **Performance.** Aggregates are grouped SQL over the selected sessions (one per-order subquery grouped by session/hour/type/cashier/payment class, one Order Item grouping, batched flows); previous period adds the same bounded queries; the product list is bounded by the catalog; history stays paginated (10); the Dashboard polls only its live props. No speculative index was added (orders already index `(branch_id, committed_at)` and `store_session_id`).
+- **Verification.** New `SalesAnalyticsTest` (18), `OwnerDashboardTest` (14), `BusinessTransactionHistoryTest` (12), `OwnerStaffManagementTest` (13), `OwnerSettingsTest` (6); updated `SuperAdminWorkspaceTest`. Focused backend regression **615 tests / 5,413 assertions** passed. Frontend **135 tests** passed (new `owner-analytics.test.ts`, rewritten `reports-ui.test.ts`). Pint, PHPStan (0 errors), frontend lint, TypeScript and production build passed. The isolated PostgreSQL harness `tests/verify-owner-reports-postgres.php` gained cases G–J (Manila hours, payment-class filter with scoped flows, EXTRACT(EPOCH) prep time, live snapshot and All Branches history) and passed, removing its schema. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** The complete Laravel suite is reserved for FINAL QA.
+- Status: **READY FOR USER MANUAL QA.** Standalone parity was reviewed source-side against the decoded template (no browser sweep); final visual acceptance is USER MANUAL QA. Phase 16 is not final until USER MANUAL QA and FINAL QA pass. PWA work was not started.
+
+- [x] Dashboard (Phase 16C; USER MANUAL QA pending)
+- [x] All Branches scope (USER MANUAL QA pending)
+- [x] Specific Branch scope (USER MANUAL QA pending)
+- [x] Transactions (Phase 16B; USER MANUAL QA pending)
+- [x] Reports (Phase 16A + 16C; USER MANUAL QA pending)
+- [x] Products
+- [x] Inventory
+- [x] Staff (Phase 16D, operational Staff only; USER MANUAL QA pending)
+- [x] Settings (Phase 16D reuse; USER MANUAL QA pending)
+- [x] Branch comparison (Phase 16C; USER MANUAL QA pending)
+- [x] Store Session summaries (Phase 16A + 16C; USER MANUAL QA pending)
+- [x] Owner blocked from Super Admin-only controls (tested)
 
 ---
 

@@ -100,7 +100,9 @@ test('super admin opens the existing owner and control destinations', function (
         ->get(route($routeName))
         ->assertInertia(fn (Assert $page) => $page->component($component));
 })->with([
-    'owner dashboard' => ['workspaces.owner', 'workspaces/show'],
+    'owner dashboard' => ['workspaces.owner', 'workspaces/owner-dashboard'],
+    'owner transactions' => ['workspaces.transactions', 'workspaces/transaction-history'],
+    'owner reports' => ['workspaces.reports', 'workspaces/reports'],
     'products' => ['products.index', 'catalog/products'],
     'inventory' => ['inventory.index', 'inventory/index'],
     'audit trail' => ['workspaces.audit-trail', 'super-admin/audit-trail'],

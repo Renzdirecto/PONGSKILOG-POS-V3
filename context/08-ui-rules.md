@@ -609,6 +609,10 @@ Close Store extends the Current Store Session dialog; the Phase 14 statement tha
 
 ## Super Admin UI authority — 2026-09-24
 
+### Owner analytics presentation (Phase 16C)
+
+Owner Dashboard and Reports charts are lightweight SVG/CSS modeled on the decoded standalone (no chart library): black area/line trends with a dashed grey previous period, a black/blue Cash–Cashless donut, #F2F2F2 bar tracks, black peak bars, keyboard-focusable trend points with a dark tooltip, collision-free axis labels (≤ 5 on phones) and text alternatives for every bar. Money on cards is always exact server decimals; compact ₱k/₱M appears only on chart axes. Split is an explanatory row, never a third payment segment. Segmented controls keep the standalone look on desktop with 44px targets on touch widths. Print hides the management shell.
+
 No authoritative Super Admin standalone exists. The former `context/design/PONGSKILOG Super Admin (standalone).html` was deleted as obsolete. Super Admin screens are product-designed from requirements (idea → product UX → implementation) in the established PONGSKILOG Owner/POS language: dark `#111111` sidebar, white/`#F7F7F7` content, Poppins, compact 20px-radius panels, restrained borders, and the existing button, dialog, and bottom-sheet conventions. `pos.html`, `PONGSKILOG-OWNER.html`, and `customer-qr.html` remain authoritative for the surfaces Super Admin inherits from them.
 
 Super Admin management pages use one collapsible control-center sidebar with four sections: Overview, Cashier + Kitchen, Owner, and Control. Each section header has a label and chevron and expands or collapses with local UI state only. Overview and the section holding the current page start expanded, and navigating into a collapsed section re-expands it. The active item uses the white active treatment and `aria-current="page"`. Tablet uses a 96px rail with pinned Dashboard, Staff, and Audit plus a Menu button. Mobile uses a four-item bottom dock with More. Both open a drawer with the same collapsible groups, 44px targets, and no horizontal overflow.

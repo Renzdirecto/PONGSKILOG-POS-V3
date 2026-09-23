@@ -9,10 +9,14 @@
  */
 
 use App\Actions\StoreSessions\CloseStoreSession;
+use App\Enums\KitchenStatus;
 use App\Models\Branch;
 use App\Models\StoreSession;
+use App\Support\BusinessSnapshot;
+use App\Support\SalesAnalytics;
 use App\Support\StoreSessionReconciliation;
 use App\Support\StoreSessionSalesReport;
+use App\Support\TransactionHistory;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
@@ -152,6 +156,48 @@ try {
         verifyPhase16a($flows[$scenario->session->id]['sales'] === $single['sales'] && $flows[$scenario->session->id]['voids'] === $single['voids'], 'F: flow parity');
     }
     echo 'F PASS: batched session flows match single-session reconciliation.'.PHP_EOL;
+
+    /** G: Phase 16B–D analytics on PostgreSQL agree with the Phase 16A report and use Manila clock hours. */
+    $analytics = app(SalesAnalytics::class);
+    $day = ['date' => 'custom', 'from' => '2026-09-23', 'to' => '2026-09-23'];
+    $mainResult = $analytics->for($main->branch, $day);
+    $mainKpis = $mainResult['analytics']['kpis'];
+    verifyPhase16a($mainKpis['sales']['value'] === $mainResult['report']['summary']['net_sales'], 'G: analytics sales '.$mainKpis['sales']['value']);
+    verifyPhase16a($mainResult['analytics']['collections']['cash'] === '149.98' && $mainResult['analytics']['collections']['cashless'] === '50.00', 'G: analytics collections');
+    verifyPhase16a($mainResult['analytics']['collections']['split']['total'] === '66.66', 'G: split explained once');
+    $mainHours = array_column($mainResult['analytics']['hours'], null, 'hour');
+    verifyPhase16a($mainHours[8]['sales'] === '166.65' && $mainHours[17]['sales'] === '33.33', 'G: Manila hours '.json_encode([$mainHours[8]['sales'] ?? null, $mainHours[17]['sales'] ?? null]));
+    verifyPhase16a(! isset($mainHours[0]) && ! isset($mainHours[1]), 'G: UTC hours must not appear');
+    echo 'G PASS: analytics sales, collections and Split match Phase 16A; hours are Manila clock hours.'.PHP_EOL;
+
+    /** H: payment-class order filter and order-scoped reconciliation flows on PostgreSQL. */
+    $split = $analytics->for($main->branch, [...$day, 'payment_methods' => ['split']])['analytics'];
+    verifyPhase16a($split['kpis']['sales']['value'] === '66.66' && $split['kpis']['transactions']['value'] === 1, 'H: split filter sales');
+    verifyPhase16a($split['collections']['cash'] === '49.99' && $split['collections']['cashless'] === '16.67', 'H: scoped flows '.json_encode([$split['collections']['cash'], $split['collections']['cashless']]));
+    $dineIn = $analytics->for($main->branch, [...$day, 'order_types' => ['dine_in']])['analytics'];
+    verifyPhase16a($dineIn['kpis']['sales']['value'] === '0.00' && $dineIn['collections']['total'] === '0.00', 'H: empty filter');
+    echo 'H PASS: EXISTS payment classification and order-scoped flows narrow sales and collections together.'.PHP_EOL;
+
+    /** I: committed-to-ready prep seconds on PostgreSQL. */
+    phase16aAt('2026-09-23 11:00');
+    $timed = $qave->payNow(1, 'cash');
+    phase16aAt('2026-09-23 11:02');
+    $qave->kitchenStatus($timed, KitchenStatus::Preparing);
+    phase16aAt('2026-09-23 11:05');
+    $qave->kitchenStatus($timed, KitchenStatus::Ready);
+    $kitchen = $analytics->for($qave->branch, $day)['analytics']['kitchen'];
+    verifyPhase16a($kitchen['average_prep_seconds'] === 300 && $kitchen['timed_orders'] === 1, 'I: prep seconds '.json_encode($kitchen['average_prep_seconds']));
+    echo 'I PASS: EXTRACT(EPOCH) prep time is exact on PostgreSQL.'.PHP_EOL;
+
+    /** J: live snapshot, recent transactions and All Branches history on PostgreSQL. */
+    $snapshot = app(BusinessSnapshot::class);
+    $live = $snapshot->kitchen($qave->branch);
+    verifyPhase16a($live['ready'] === 1 && $live['kitchen'] === 1 && $live['oldest'] !== null, 'J: kitchen snapshot '.json_encode($live));
+    verifyPhase16a(count($snapshot->recentTransactions(null)) === 5, 'J: recent transactions');
+    verifyPhase16a($snapshot->inventoryAttention(null)['mode'] === 'branches', 'J: inventory attention');
+    $history = app(TransactionHistory::class)->for(null, []);
+    verifyPhase16a($history['transactions']->total() === $history['history_total'], 'J: All Branches history');
+    echo 'J PASS: Business snapshot and All Branches Transaction History query PostgreSQL.'.PHP_EOL;
     echo 'PASS: PostgreSQL Owner report read parity.'.PHP_EOL;
 } finally {
     Carbon::setTestNow();

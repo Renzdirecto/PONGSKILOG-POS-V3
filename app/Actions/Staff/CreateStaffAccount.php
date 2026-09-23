@@ -37,13 +37,18 @@ class CreateStaffAccount
         try {
             return DB::transaction(function () use ($actor, $data, $avatarDisk, &$avatarPath): User {
                 $actor = User::query()->whereKey($actor->getKey())->first();
-                if ($actor === null || ! $actor->is_active || ! $actor->hasPermission('access_control.manage')) {
-                    throw new AuthorizationException('Only Super Admin access control may create staff accounts.');
+                $manageable = $actor === null ? [] : StaffRoles::manageableBy($actor);
+                if ($actor === null || $manageable === []) {
+                    throw new AuthorizationException('Only Super Admin access control or Owner Staff management may create staff accounts.');
                 }
 
                 $role = Role::query()->where('name', $data['role'])->first();
                 if ($role === null || ! in_array($role->name, StaffRoles::names(), true)) {
                     throw ValidationException::withMessages(['role' => 'Choose a valid role.']);
+                }
+                /** Owner Staff management reaches operational roles only; the role list is re-checked here, not trusted. */
+                if (! in_array($role->name, $manageable, true)) {
+                    throw new AuthorizationException('This account may not create '.StaffRoles::label($role->name).' accounts.');
                 }
 
                 $branches = $this->assignableBranches($role->name, $data['branch_ids'] ?? []);

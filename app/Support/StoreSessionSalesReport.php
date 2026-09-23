@@ -8,8 +8,10 @@ use App\Models\Branch;
 use App\Models\StoreSession;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,7 +29,7 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-import-type SessionFlows from StoreSessionReconciliation
  *
  * @phpstan-type Filters array{date?: string|null, from?: string|null, to?: string|null, session?: string|null}
- * @phpstan-type Period array{preset: string, from: CarbonImmutable, through: CarbonImmutable}
+ * @phpstan-type OrderScope Closure(QueryBuilder): mixed
  * @phpstan-type SessionRow array{
  *     session: StoreSession,
  *     business_date: string,
@@ -35,16 +37,19 @@ use Illuminate\Support\Facades\DB;
  *     net_sales: int,
  *     voided_orders: int,
  *     flows: SessionFlows,
- *     source: 'closing_snapshot'|'closing_record'|'live'
+ *     source: 'closing_snapshot'|'closing_record'|'live'|'order_filtered'
  * }
  */
 class StoreSessionSalesReport
 {
-    public const TIMEZONE = 'Asia/Manila';
+    public const TIMEZONE = ReportPeriod::TIMEZONE;
 
-    public const PRESETS = ['today', 'yesterday', 'last_7_days', 'month', 'custom'];
+    public const PRESETS = ReportPeriod::PRESETS;
 
-    public const MAX_CUSTOM_DAYS = 31;
+    public const MAX_CUSTOM_DAYS = ReportPeriod::MAX_CUSTOM_DAYS;
+
+    /** The Store Session list is bounded; a longer period keeps every total but lists only the most recent sessions. */
+    public const MAX_LISTED_SESSIONS = 100;
 
     public function __construct(private StoreSessionReconciliation $reconciliation) {}
 
@@ -53,107 +58,137 @@ class StoreSessionSalesReport
      * @param  Filters  $filters  validated report filters
      * @return array<string, mixed>
      */
-    public function for(?Branch $branch, array $filters): array
+    public function for(?Branch $branch, array $filters, ?ReportPeriod $period = null): array
     {
-        $period = $this->period($filters);
-        $sessions = StoreSession::query()
-            ->with(['branch:id,name,code', 'openedBy:id,name', 'closedBy:id,name'])
-            ->when($branch !== null, fn (Builder $query) => $query->where('branch_id', $branch?->id))
-            ->where('opened_at', '>=', $period['from']->utc())
-            ->where('opened_at', '<', $period['through']->addDay()->utc())
-            ->orderBy('opened_at')
-            ->orderBy('id')
-            ->get();
+        $period ??= ReportPeriod::fromFilters($filters);
+        $sessions = $this->sessions($branch, $period);
 
+        return $this->present($branch, $filters, $period, $sessions, $this->figures($this->selectedSessions($sessions, $filters, $period)));
+    }
+
+    /**
+     * Presents already computed session figures, so a caller that also builds analytics reuses one set of queries.
+     *
+     * @param  Filters  $filters
+     * @param  Collection<int, StoreSession>  $sessions  every Store Session of the scope and period
+     * @param  list<SessionRow>  $rows  figures of the selected Store Sessions
+     * @return array<string, mixed>
+     */
+    public function present(?Branch $branch, array $filters, ReportPeriod $period, Collection $sessions, array $rows): array
+    {
         $requested = is_string($filters['session'] ?? null) ? strtolower($filters['session']) : null;
-        $selected = $requested === null ? $sessions : $sessions->where('id', $requested)->values();
         /** A Store Session outside the authorized Branch scope or business-date range is never reported. */
-        $ignored = $requested !== null && $selected->isEmpty();
-        if ($ignored) {
-            $selected = $sessions;
-        }
-        $rows = $this->rows($selected);
+        $ignored = $requested !== null && (! $period->allowsSessionFilter() || ! $sessions->contains('id', $requested));
+        $listed = array_slice($rows, -self::MAX_LISTED_SESSIONS);
+        $archived = $this->archivedQrCounts(array_map(fn (array $row): string => $row['session']->id, $listed));
 
         return [
-            'period' => $this->presentPeriod($period),
+            'period' => $period->present(),
             'scope' => $branch === null ? null : ['id' => $branch->id, 'name' => $branch->name, 'code' => $branch->code],
             'session_filter' => [
                 'selected' => $ignored ? null : $requested,
                 'ignored' => $ignored,
-                'options' => $sessions->map(fn (StoreSession $session): array => [
+                'available' => $period->allowsSessionFilter(),
+                'options' => $period->allowsSessionFilter() ? $sessions->map(fn (StoreSession $session): array => [
                     'id' => $session->id,
                     'label' => $this->sessionLabel($session, $branch === null),
                     'status' => $session->status->value,
-                ])->all(),
+                ])->values()->all() : [],
             ],
             'summary' => $this->summary($rows),
             'days' => $this->days($rows),
-            'sessions' => array_map(fn (array $row): array => $this->presentSession($row), $rows),
+            'sessions' => array_map(
+                fn (array $row): array => $this->presentSession($row, $archived[$row['session']->id] ?? 0),
+                $listed,
+            ),
+            'sessions_listed' => ['shown' => count($listed), 'total' => count($rows)],
         ];
     }
 
     /**
-     * Manila calendar-day boundaries; `through` is the start of the last included day.
+     * Store Sessions of the authorized Branch scope whose business date falls in the current or previous period.
      *
-     * @param  Filters  $filters
-     * @return Period
+     * @return Collection<int, StoreSession>
      */
-    private function period(array $filters): array
+    public function sessions(?Branch $branch, ReportPeriod $period, bool $previous = false): Collection
     {
-        $today = CarbonImmutable::now(self::TIMEZONE)->startOfDay();
-        $preset = in_array($filters['date'] ?? null, self::PRESETS, true) ? (string) $filters['date'] : 'today';
-        [$from, $through] = match ($preset) {
-            'yesterday' => [$today->subDay(), $today->subDay()],
-            'last_7_days' => [$today->subDays(6), $today],
-            'month' => [$today->startOfMonth(), $today],
-            'custom' => [$this->day((string) ($filters['from'] ?? '')) ?? $today, $this->day((string) ($filters['to'] ?? '')) ?? $today],
-            default => [$today, $today],
-        };
+        [$start, $end] = $period->bounds($previous);
 
-        return ['preset' => $preset, 'from' => $from, 'through' => $through];
-    }
-
-    private function day(string $date): ?CarbonImmutable
-    {
-        $day = CarbonImmutable::createFromFormat('!Y-m-d', $date, self::TIMEZONE);
-
-        return $day instanceof CarbonImmutable ? $day : null;
+        return StoreSession::query()
+            ->with(['branch:id,name,code', 'openedBy:id,name', 'closedBy:id,name'])
+            ->when($branch !== null, fn (Builder $query) => $query->where('branch_id', $branch?->id))
+            ->where('opened_at', '>=', $start)
+            ->where('opened_at', '<', $end)
+            ->orderBy('opened_at')
+            ->orderBy('id')
+            ->get();
     }
 
     /**
+     * The requested Store Session when it belongs to the scope and period, otherwise every session. A Store Session
+     * outside the authorized Branch scope or business-date range is never reported.
+     *
      * @param  Collection<int, StoreSession>  $sessions
+     * @param  array{session?: string|null}  $filters
+     * @return Collection<int, StoreSession>
+     */
+    public function selectedSessions(Collection $sessions, array $filters, ReportPeriod $period): Collection
+    {
+        $requested = is_string($filters['session'] ?? null) ? strtolower($filters['session']) : null;
+        if ($requested === null || ! $period->allowsSessionFilter()) {
+            return $sessions;
+        }
+        $selected = $sessions->where('id', $requested)->values();
+
+        return $selected->isEmpty() ? $sessions : $selected;
+    }
+
+    public function businessDate(StoreSession $session): string
+    {
+        return $this->manila($session->opened_at)->toDateString();
+    }
+
+    /**
+     * Per-session Orders, Net Sales and Cash/Cashless flows. Without an order scope a CLOSED session reports its
+     * persisted close-time snapshot. With an order scope (report filters by order type, payment method or cashier)
+     * every session is computed from its append-only Payment and correction records narrowed to the matching Orders:
+     * the same reconciliation formula over fewer Orders. Store expenses are drawer-level and are never narrowed.
+     *
+     * @param  Collection<int, StoreSession>  $sessions
+     * @param  OrderScope|null  $orderScope  narrows an `orders` query to the Orders a report filter keeps
      * @return list<SessionRow>
      */
-    private function rows(Collection $sessions): array
+    public function figures(Collection $sessions, ?Closure $orderScope = null): array
     {
         if ($sessions->isEmpty()) {
             return [];
         }
         /** @var array<string, string> $sessionBranches */
         $sessionBranches = $sessions->mapWithKeys(fn (StoreSession $session): array => [$session->id => (string) $session->branch_id])->all();
-        $orders = $this->orders($sessionBranches);
+        $orders = $this->orders($sessionBranches, $orderScope);
 
         $snapshots = [];
         $live = [];
         foreach ($sessions as $session) {
-            $snapshot = $session->status === StoreSessionStatus::Closed ? $this->snapshotFlows($session) : null;
+            $snapshot = $orderScope === null && $session->status === StoreSessionStatus::Closed ? $this->snapshotFlows($session) : null;
             if ($snapshot === null) {
                 $live[$session->id] = $sessionBranches[$session->id];
             } else {
                 $snapshots[$session->id] = $snapshot;
             }
         }
-        $liveFlows = $this->reconciliation->flows($live);
+        $liveFlows = $this->reconciliation->flows($live, $orderScope);
 
-        return array_values($sessions->map(function (StoreSession $session) use ($orders, $snapshots, $liveFlows): array {
+        return array_values($sessions->map(function (StoreSession $session) use ($orders, $snapshots, $liveFlows, $orderScope): array {
             $counts = $orders[$session->id] ?? ['orders' => 0, 'net_sales' => 0, 'voided_orders' => 0];
 
             return [
                 'session' => $session,
-                'business_date' => $this->manila($session->opened_at)->toDateString(),
+                'business_date' => $this->businessDate($session),
                 ...$counts,
                 'flows' => $snapshots[$session->id] ?? $liveFlows[$session->id],
                 'source' => match (true) {
+                    $orderScope !== null => 'order_filtered',
                     isset($snapshots[$session->id]) => 'closing_snapshot',
                     $session->status === StoreSessionStatus::Closed => 'closing_record',
                     default => 'live',
@@ -166,18 +201,23 @@ class StoreSessionSalesReport
      * Committed Order counts and Net Sales per Store Session in one grouped query.
      *
      * @param  array<string, string>  $sessionBranches
+     * @param  OrderScope|null  $orderScope
      * @return array<string, array{orders: int, net_sales: int, voided_orders: int}>
      */
-    private function orders(array $sessionBranches): array
+    private function orders(array $sessionBranches, ?Closure $orderScope = null): array
     {
         $total = 'CAST(ROUND(orders.total * 100) AS BIGINT)';
         $eligible = "orders.commercial_status IN ('".CommercialStatus::Active->value."', '".CommercialStatus::Completed->value."')";
         $voided = "orders.commercial_status = '".CommercialStatus::Voided->value."'";
-
-        return DB::table('orders')
+        $query = DB::table('orders')
             ->whereIn('orders.branch_id', array_values(array_unique($sessionBranches)))
             ->whereIn('orders.store_session_id', array_keys($sessionBranches))
-            ->whereNotNull('orders.committed_at')
+            ->whereNotNull('orders.committed_at');
+        if ($orderScope !== null) {
+            $orderScope($query);
+        }
+
+        return $query
             ->groupBy('orders.store_session_id', 'orders.branch_id')
             ->get([
                 DB::raw('orders.store_session_id AS store_session_id'),
@@ -249,10 +289,12 @@ class StoreSessionSalesReport
     }
 
     /**
+     * Net collections per channel: Payment amounts − allocated corrections − payments of voided Orders.
+     *
      * @param  SessionFlows  $flows
      * @return array{cash: int, cashless: int}
      */
-    private function collections(array $flows): array
+    public function collections(array $flows): array
     {
         return [
             'cash' => $flows['sales']['cash'] - $flows['corrections']['cash'] - $flows['voids']['cash'],
@@ -349,7 +391,7 @@ class StoreSessionSalesReport
      * @param  SessionRow  $row
      * @return array<string, mixed>
      */
-    private function presentSession(array $row): array
+    private function presentSession(array $row, int $archivedQr): array
     {
         $session = $row['session'];
         $flows = $row['flows'];
@@ -380,6 +422,7 @@ class StoreSessionSalesReport
             'branch' => ['id' => $session->branch->id, 'name' => $session->branch->name, 'code' => $session->branch->code],
             'business_date' => $row['business_date'],
             'business_date_label' => $opened->format('M j, Y'),
+            'business_date_short' => $opened->format('D, M j'),
             'time_range' => $this->timeRange($session),
             'opened_at' => $opened->toIso8601String(),
             'opened_at_label' => $opened->format('M j, Y · g:i A'),
@@ -431,6 +474,7 @@ class StoreSessionSalesReport
                 'variance_status' => $varianceStatus,
                 'closing_note' => $session->closing_note,
             ],
+            'archived_qr_orders' => $archivedQr,
         ];
     }
 
@@ -450,26 +494,24 @@ class StoreSessionSalesReport
     }
 
     /**
-     * @param  Period  $period
-     * @return array{preset: string, from: string, to: string, label: string, days: int}
+     * Customer QR orders that Close Store archived as unclaimed, per listed Store Session, in one grouped query.
+     *
+     * @param  list<string>  $sessionIds
+     * @return array<string, int>
      */
-    private function presentPeriod(array $period): array
+    private function archivedQrCounts(array $sessionIds): array
     {
-        $from = $period['from'];
-        $through = $period['through'];
-        $label = match (true) {
-            $from->isSameDay($through) => $from->format('D, M j, Y'),
-            $from->isSameYear($through) => $from->format('M j').' – '.$through->format('M j, Y'),
-            default => $from->format('M j, Y').' – '.$through->format('M j, Y'),
-        };
+        if ($sessionIds === []) {
+            return [];
+        }
 
-        return [
-            'preset' => $period['preset'],
-            'from' => $from->toDateString(),
-            'to' => $through->toDateString(),
-            'label' => $label,
-            'days' => (int) $from->diffInDays($through) + 1,
-        ];
+        return DB::table('orders')
+            ->whereIn('store_session_id', $sessionIds)
+            ->where('archive_reason', 'store_closed')
+            ->groupBy('store_session_id')
+            ->pluck(DB::raw('COUNT(*) AS archived'), 'store_session_id')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
     }
 
     private function sessionLabel(StoreSession $session, bool $withBranch): string

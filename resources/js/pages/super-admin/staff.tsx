@@ -31,6 +31,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import {
+    index as ownerStaffIndex,
+    store as ownerStaffStore,
+} from '@/routes/staff';
 import { index as staffIndex, store } from '@/routes/super-admin/staff';
 import type { BranchSummary } from '@/types';
 
@@ -60,13 +64,25 @@ type Props = {
     filters: Filters;
     roles: StaffRole[];
     branches: BranchSummary[];
+    /**
+     * 'owner' is the Owner workspace (operational Staff only); 'super_admin' is Super Admin access control. The server
+     * decides which roles and accounts each surface may reach; this only picks the matching routes.
+     */
+    surface?: 'owner' | 'super_admin';
 };
+
+type StaffSurface = NonNullable<Props['surface']>;
+
+const STAFF_ROUTES = {
+    owner: { index: ownerStaffIndex, store: ownerStaffStore },
+    super_admin: { index: staffIndex, store },
+} as const;
 
 const selectClass = `${ownerControlClass} w-full`;
 
-function applyFilters(filters: Filters): void {
+function applyFilters(surface: StaffSurface, filters: Filters): void {
     router.get(
-        staffIndex.url(),
+        STAFF_ROUTES[surface].index.url(),
         Object.fromEntries(
             Object.entries(filters).filter(([, value]) => value),
         ),
@@ -151,7 +167,14 @@ function StatusBadge({ active }: { active: boolean }) {
     );
 }
 
-export default function Staff({ staff, filters, roles, branches }: Props) {
+export default function Staff({
+    staff,
+    filters,
+    roles,
+    branches,
+    surface = 'super_admin',
+}: Props) {
+    const ownerSurface = surface === 'owner';
     const [search, setSearch] = useState(filters.search ?? '');
     const [adding, setAdding] = useState(false);
     const searchTimer = useRef<number | undefined>(undefined);
@@ -166,7 +189,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
         setSearch(value);
         window.clearTimeout(searchTimer.current);
         searchTimer.current = window.setTimeout(
-            () => applyFilters({ ...filters, search: value }),
+            () => applyFilters(surface, { ...filters, search: value }),
             350,
         );
     }
@@ -176,7 +199,11 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
             <Head title="Staff" />
             <OwnerPage
                 title="Staff"
-                description="Create and manage staff access to PONGSKILOG."
+                description={
+                    ownerSurface
+                        ? 'Operational Staff accounts: Cashier, Kitchen Staff and Cashier + Kitchen. Owner and Super Admin accounts stay with Super Admin access control.'
+                        : 'Create and manage staff access to PONGSKILOG.'
+                }
                 action={
                     <button
                         type="button"
@@ -217,7 +244,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <select
                             value={filters.role ?? ''}
                             onChange={(event) =>
-                                applyFilters({
+                                applyFilters(surface, {
                                     ...filters,
                                     search,
                                     role: event.target.value,
@@ -238,7 +265,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <select
                             value={filters.status ?? ''}
                             onChange={(event) =>
-                                applyFilters({
+                                applyFilters(surface, {
                                     ...filters,
                                     search,
                                     status: event.target.value,
@@ -277,7 +304,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                 onClick={() => {
                                     window.clearTimeout(searchTimer.current);
                                     setSearch('');
-                                    applyFilters({});
+                                    applyFilters(surface, {});
                                 }}
                                 className={`${ownerSecondaryActionClass} mt-4 inline-flex items-center gap-1.5`}
                             >
@@ -453,6 +480,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         <AddStaffForm
                             roles={roles}
                             branches={branches}
+                            surface={surface}
                             onCreated={() => setAdding(false)}
                         />
                     )}
@@ -473,10 +501,12 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 function AddStaffForm({
     roles,
     branches,
+    surface,
     onCreated,
 }: {
     roles: StaffRole[];
     branches: BranchSummary[];
+    surface: StaffSurface;
     onCreated: () => void;
 }) {
     const form = useForm({
@@ -527,7 +557,7 @@ function AddStaffForm({
 
             return requiresBranch ? { ...rest, branch_ids: branchIds } : rest;
         });
-        form.submit(store(), {
+        form.submit(STAFF_ROUTES[surface].store(), {
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();

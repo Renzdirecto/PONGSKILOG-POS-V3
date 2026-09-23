@@ -471,30 +471,27 @@ Navigation:
 
 ## 6.1 Dashboard
 
-Scopes:
+Phase 16C (implemented): `workspaces.owner` renders `workspaces/owner-dashboard` inside the Owner shell (Super Admin: inside the Control Center shell). It follows the decoded standalone Dashboard in order, with real data only:
 
-- All Branches
-- Specific Branch
-
-May include:
-
-- Sales
-- Orders
-- Payment mix
-- Pending Pay Later
-- Product performance
-- Inventory alerts
-- Branch comparison
-- Store Open/Closed state
+- Reporting period card (Today / 7 days / 30 days) with the business-date range and scope.
+- Five KPI cards with icons — Total sales, Transactions (Total transactions ≥ 1250px), Average order (Average order value ≥ 1250px), Items sold, Cashless sales % — each with a server delta pill and "vs <previous period>"; 2 / 3 / 5 columns. Cards open Reports for the same period.
+- Sales trend (area + line, keyboard/hover points with a dark tooltip, Compare previous dashed line and legend) beside Payment mix (Cash/Cashless donut, legend, and a Split explanation row) at ≥ 1120px (1.7fr / 1fr).
+- Sales by category and Peak sales hours (two-hour blocks, black peak bar, "Peak …" chip) in two columns ≥ 1000px.
+- Top products (top 5), Inventory attention (selected Branch: OUT/LOW rows with Adjust links; All Branches: low/out counts per Branch) and Kitchen snapshot (Kitchen / Preparing / Ready + oldest ticket waiting) in an auto-fit ≥ 290px grid.
+- Recent transactions (latest five, tap for the shared transaction detail/receipt), Branch comparison (All Branches only) and the latest four Store Sessions with drill-down into Reports.
+- Empty states say what is missing ("No sales in this period", "No Branch has an open Store Session", "All tracked products are sufficiently stocked"); no fabricated zeros where "—" is truer.
 
 ## 6.2 Transactions
 
-- All Branches / branch filter
-- Search/filter
-- Transaction detail
-- Operational review
+Phase 16B (implemented): `workspaces.transactions` renders the **same** `workspaces/transaction-history` page as the Cashier terminal with `surface = business` inside the Owner (or Super Admin) management shell.
+
+- Same tiled/list presentation, KPI filter cards, search, date/status/payment/type/method filters, server pagination, Details, receipt Print and badges. All Branches cards add the Branch code chip; details show Branch identity; the header shows the scope and "view only" when the viewer has no POS access.
+- Read-only for the Owner: Edit / Payment / Void stay disabled from server capabilities, invoice proofs show without a link, and Show QR is hidden. A Super Admin with POS access to the selected Branch keeps the normal open-session actions.
+- The business surface refreshes every 30 seconds (it subscribes to no POS channel). `?open=<order id>` opens that transaction's detail (used by the Dashboard).
 
 ## 6.3 Reports
+
+Phase 16C (implemented) brings Reports to the decoded standalone "Reports & analytics" layout on top of Phase 16A: period tabs Daily / Weekly / Monthly / Yearly / Custom with a centred range label, Print, Export (CSV or PDF via print) and Filters · N; a scope row with the custom range and the Store Session select; active filter chips with Reset all; five KPI cards; Sales by category (taps narrow Product performance only) | Payment method; Order type | Peak sales hours (Sales/Transactions); Sales trend (Sales/Transactions + Compare previous); Top products (Sales/Qty sold, top 10); Product performance (sort select, category chips, table ≥ 1000px, cards below); Kitchen performance with Average prep time by hour | Cashier performance (Highest sales / Most transactions); Period highlights; Branch comparison (All Branches); then the Phase 16A Collections & drawer effects, Daily summary and Store Sessions with the read-only session dialog (now also showing archived QR orders). The filter dialog offers Order type, Payment method and Cashier and explains why Category is table-only. The earlier Phase 16A description below is kept for history.
 
 Phase 16A (implemented): **Sales & Store Sessions** at `workspaces.reports` (`/workspaces/reports`), one read-only page shared by Owner and Super Admin and rendered inside each role's management shell.
 
@@ -711,7 +708,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 - Products, Categories, and Modifiers share segmented route navigation. Product stock is branch-specific; All Branches never fabricates an aggregate stock value.
 - Inventory uses full-dataset server summaries, compact filters, a dense desktop table, wrapped mobile rows, real update timestamps, and real adjustment/history actions.
 - Management dialogs become bottom sheets on mobile and centered dialogs from the small desktop breakpoint upward.
-- Dashboard, Reports, Products, Inventory, and Branch Management link to real protected routes. Unimplemented Transactions and Staff destinations remain visibly disabled with a reason.
+- Dashboard, Transactions, Reports, Products, Inventory, Staff and Settings link to real protected routes (Phase 16B–D). Navigation groups follow the standalone: Overview, Operations, Catalog, Administration. A destination without permission shows "No access" and is disabled. Super Admin-only Audit Trail, Void Orders and Access Control never appear in the Owner shell.
 - The Owner presentation never replaces backend permission, branch, inventory, catalog, image, or Store Session authority.
 
 ## 12.1 Standalone Product Editor and Groups
@@ -849,7 +846,7 @@ Primary decoded references remain customer-qr.html, pos.html and PONGSKILOG-OWNE
 
 Customer updates include configured/disabled welcome social links, allowlisted category icons, cart icon/quantity count, top-scoped success toast, Confirm Order CTA, green/blue order-type selection, Track/View icons, green top View Order action, actual timestamped colored timeline, rounded Browse/New Order + View Order + Receipt actions, and Stay connected on tracking/receipt. Existing browse-only protection and terminal-only reset remain.
 
-Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
+Owner Settings exposes Branch Management, Receipt and (Phase 16D) a Customer QR tab that reuses the same QR panel with a Branch select, in the standalone segmented tab style. No business-profile fields are invented. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
 
 Visual acceptance comes from the user's manual QA. No broad browser sweep was performed during the final audit.
 
@@ -905,7 +902,8 @@ This supersedes the §7 core navigation list. No Super Admin standalone is autho
 | Overview | Dashboard | Control Center landing: quick links to Staff, Audit Trail, Void Orders, and Settings plus Branch workspace guidance. No analytics. |
 | Overview | Notifications | Placeholder (`super-admin.notifications`). No notification service, database, or unread count. |
 | Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
-| Owner | Owner Dashboard, Products, Inventory | Real existing pages. |
+| Owner | Owner Dashboard, Products, Inventory | Real existing pages. The Owner Dashboard is the Phase 16C analytics dashboard. |
+| Owner | Transactions | Real: the shared Transaction History on the business surface (`workspaces.transactions`, Phase 16B). |
 | Owner | Reports | Real: the shared Sales & Store Sessions report (`workspaces.reports`, Phase 16A). The former `super-admin.reports` placeholder route was removed. |
 | Control | Audit Trail, Void Orders | Real existing registers. |
 | Control | Staff | Real: account list and Add Staff (below). |
@@ -921,3 +919,8 @@ Navigation comes from the registry in `resources/js/lib/super-admin-navigation.t
 - Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
 - Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
 - Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing or deactivating existing staff is not part of this slice.
+
+### Staff (Owner → Administration → Staff, Phase 16D)
+
+- The same `super-admin/staff` page renders with `surface = owner` at `staff.index` inside the Owner shell: identical list, avatars/initials, search, Role and Active/Inactive filters and Add Staff dialog.
+- Role options and the list are server-scoped to Cashier, Kitchen Staff and Cashier + Kitchen; Owner and Super Admin accounts are neither listed nor creatable. Branch access rules, the temporary password flow, private avatars (`staff.avatar`) and the `staff.created` Audit are unchanged.

@@ -47,6 +47,10 @@ export type Daypart = {
 };
 
 export type CategoryRow = {
+    /** A category UUID, "uncategorized", or "others" for the grouped tail. */
+    key: string;
+    /** The category filter values this row stands for. */
+    ids: string[];
     name: string;
     sales: string;
     sales_cents: number;
@@ -111,18 +115,42 @@ export type Highlight = {
 
 export type FilterOption<T extends string | number> = { value: T; label: string };
 
+export type PaymentMethodKey = 'cash' | 'cashless' | 'split';
+
+export type PaymentMixMethod = {
+    method: PaymentMethodKey;
+    label: string;
+    transactions: number;
+    sales: string;
+    sales_cents: number;
+    /** Share of Cash + Cashless transactions in basis points; always null for Split. */
+    share: number | null;
+    /** Share of all paid transactions in basis points. */
+    share_with_split: number | null;
+};
+
+export type PaymentMixData = {
+    basis: 'transactions';
+    methods: PaymentMixMethod[];
+    unpaid: { transactions: number; sales: string };
+};
+
 export type Analytics = {
     comparison: { available: boolean; description: string; label: string };
     filters: {
         order_types: string[];
         payment_methods: string[];
         cashiers: number[];
+        /** Narrows product rows only (Top products, Product performance). */
+        categories: string[];
+        /** True when an order filter narrows the Orders (never set by the category filter). */
         active: boolean;
     };
     filter_options: {
         order_types: FilterOption<string>[];
         payment_methods: FilterOption<string>[];
         cashiers: FilterOption<number>[];
+        categories: FilterOption<string>[];
     };
     kpis: {
         sales: Kpi<string>;
@@ -148,6 +176,7 @@ export type Analytics = {
         split: { count: number; total: string; cash: string; cashless: string };
         unallocated: string;
     };
+    payment_mix: PaymentMixData;
     categories: CategoryRow[];
     order_types: OrderTypeRow[];
     hours: HourBucket[];
@@ -205,6 +234,92 @@ export const SERIES_COLORS = [
 ];
 
 export const CHANNEL_COLORS = { cash: '#111111', cashless: '#1D4ED8' };
+
+/** Payment method colours from the Owner standalone; Split takes its restrained grey. */
+export const METHOD_COLORS: Record<PaymentMethodKey, string> = {
+    ...CHANNEL_COLORS,
+    split: '#8A8A8A',
+};
+
+export type PaymentMixSegment = PaymentMixMethod & {
+    /** The server share for the visible whole, in basis points (null when that whole is empty). */
+    visibleShare: number | null;
+    color: string;
+    /** SVG dash geometry on a pathLength of 100. */
+    dash: string;
+    offset: string;
+};
+
+/**
+ * The Payment method donut: Cash and Cashless by default, plus Split when it is included. Every method is a
+ * mutually exclusive order class, so Split is added as its own segment and never on top of Cash or Cashless. The
+ * shares come from the server (exactly 100.0% of the visible transactions); this only lays them out.
+ */
+export function paymentMixSegments(
+    mix: PaymentMixData,
+    includeSplit: boolean,
+): {
+    segments: PaymentMixSegment[];
+    paidTransactions: number;
+    excludedSplit: number;
+} {
+    let offset = 0;
+    const segments = mix.methods
+        .filter((method) => includeSplit || method.method !== 'split')
+        .map((method) => {
+            const visibleShare = includeSplit
+                ? method.share_with_split
+                : method.share;
+            const percent =
+                visibleShare === null || method.transactions === 0
+                    ? 0
+                    : visibleShare / 100;
+            const segment = {
+                ...method,
+                visibleShare,
+                color: METHOD_COLORS[method.method],
+                dash: `${percent.toFixed(2)} ${Math.max(0, 100 - percent).toFixed(2)}`,
+                offset: (-offset).toFixed(2),
+            };
+            offset += percent;
+
+            return segment;
+        });
+
+    return {
+        segments,
+        paidTransactions: segments.reduce(
+            (total, segment) => total + segment.transactions,
+            0,
+        ),
+        excludedSplit: includeSplit
+            ? 0
+            : (mix.methods.find((method) => method.method === 'split')
+                  ?.transactions ?? 0),
+    };
+}
+
+/** A Sales by category row is selected when the category filter holds every category it stands for. */
+export function categoryRowSelected(
+    row: Pick<CategoryRow, 'ids'>,
+    selected: readonly string[],
+): boolean {
+    return (
+        row.ids.length > 0 && row.ids.every((id) => selected.includes(id))
+    );
+}
+
+/** Picking a row filters to exactly its categories; picking the row that is already the whole filter clears it. */
+export function nextCategorySelection(
+    row: Pick<CategoryRow, 'ids'>,
+    selected: readonly string[],
+): string[] {
+    const same =
+        selected.length === row.ids.length &&
+        row.ids.every((id) => selected.includes(id));
+
+    return same ? [] : [...row.ids];
+}
 
 /** A server share in basis points as a percentage label, or an em dash when there is no whole to share. */
 export function shareLabel(basisPoints: number | null, digits = 1): string {

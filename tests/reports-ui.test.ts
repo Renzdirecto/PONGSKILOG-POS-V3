@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
     REPORT_TABS,
+    appliedSelection,
     customRangeError,
+    draftSelection,
     reportQuery,
     SESSION_RESULTS,
     toggleFilterValue,
@@ -13,6 +15,7 @@ const source = (path: string): string =>
     readFileSync(new URL(`../resources/js/${path}`, import.meta.url), 'utf8');
 const page = source('pages/workspaces/reports.tsx');
 const sessions = source('components/report-store-sessions.tsx');
+const components = source('components/owner-analytics.tsx');
 const ownerShell = source('components/owner-workspace-shell.tsx');
 const layout = source('layouts/workspace-layout.tsx');
 
@@ -138,7 +141,7 @@ test('filters, dialogs and tables are labelled for assistive technology', () => 
     assert.match(page, /<span className=\{labelClass\}>Store Session<\/span>/);
     assert.match(page, /type="date"/);
     assert.match(page, /aria-label="Report from date"/);
-    assert.match(page, /<DialogTitle[\s\S]{0,80}Report filters/);
+    assert.match(page, /<DialogTitle[\s\S]{0,120}Filter this report/);
     assert.match(page, /aria-label=\{`Remove filter \$\{chip\.label\}`\}/);
     assert.match(page, /scope="col"/);
     assert.match(sessions, /<DialogTitle[\s\S]{0,80}Store Session/);
@@ -147,10 +150,101 @@ test('filters, dialogs and tables are labelled for assistive technology', () => 
     assert.match(sessions, /Unclaimed QR orders archived/);
 });
 
-test('category is honestly limited to the product table because payments are per order', () => {
-    assert.match(page, /Category is not a report-wide filter/);
-    assert.match(page, /this table only/);
+test('the filter dialog opens every unfiltered group fully checked and applies all or none as no filter', () => {
+    const options = [{ value: 'cash' }, { value: 'cashless' }, { value: 'split' }];
+
+    assert.deepEqual(draftSelection([], options), ['cash', 'cashless', 'split']);
+    assert.deepEqual(draftSelection(['split'], options), ['split']);
+    assert.deepEqual(appliedSelection(['cash', 'cashless', 'split'], options), []);
+    assert.deepEqual(appliedSelection([], options), []);
+    assert.deepEqual(appliedSelection(['split', 'cash'], options), ['cash', 'split']);
+    assert.deepEqual(appliedSelection(['gone'], options), []);
+});
+
+test('category filters stay in the shareable query and clear like every other filter', () => {
+    assert.deepEqual(
+        reportQuery(
+            { categories: ['c1'], order_types: ['dine_in'] },
+            { date: 'last_7_days' },
+        ),
+        { categories: ['c1'], order_types: ['dine_in'], date: 'last_7_days' },
+    );
+    assert.deepEqual(reportQuery({ categories: ['c1'] }, { categories: [] }), {});
+});
+
+test('the filter dialog matches the owner standalone structure', () => {
+    const dialog = page.slice(page.indexOf('function FilterDialog('));
+
+    assert.match(dialog, /Analytics filter/);
+    assert.match(dialog, /Filter this report/);
+    assert.match(dialog, /overlayClassName="bg-\[rgba\(17,17,17,0\.44\)\]"/);
+    assert.match(dialog, /showCloseButton=\{false\}/);
+    assert.match(dialog, /<DialogClose\s+aria-label="Close"/);
+    assert.match(dialog, /top-auto bottom-0 left-0 [^"]*rounded-t-\[20px\] rounded-b-none/);
+    assert.match(dialog, /md:max-h-\[min\(92dvh,940px\)\] md:max-w-\[560px\]/);
+    assert.match(dialog, /shadow-\[0_30px_70px_rgba\(0,0,0,0\.3\)\]/);
+    assert.match(dialog, /border-b border-\[#e5e5e5\] px-4 py-3\.5/);
+    assert.match(dialog, /\[grid-template-columns:repeat\(auto-fit,minmax\(150px,1fr\)\)\]/);
+    assert.match(dialog, /role="checkbox"\s+aria-checked=\{on\}/);
+    assert.match(dialog, /inline-flex size-5 shrink-0 items-center justify-center rounded-md border/);
+    assert.match(dialog, /Select all/);
+    assert.match(dialog, /pb-\[calc\(14px\+env\(safe-area-inset-bottom,0px\)\)\]/);
+    assert.match(dialog, /h-\[52px\] flex-\[0_1_auto\][^"]*border-\[#949494\][\s\S]{0,200}Reset/);
+    assert.match(dialog, /h-\[52px\] flex-\[1_1_auto\][^"]*bg-\[#111\][^"]*"\s*>\s*<Check[^>]*\/>\s*Apply filters/);
+    assert.deepEqual(
+        [...dialog.matchAll(/title: '([^']+)'/g)].map((match) => match[1]),
+        ['Category', 'Order type', 'Payment method', 'Cashier'],
+    );
+    assert.match(dialog, /scope: 'Product views only'/);
+    assert.match(dialog, /onClick=\{\(\) => setDraft\(everything\(\)\)\}/);
+    assert.match(dialog, /categories: appliedSelection\(\s+draft\.categories,/);
+    assert.match(dialog, /cashiers: appliedSelection\(\s+draft\.cashiers,/);
+});
+
+test('active chips mirror the server filters, including category, and Reset all clears them', () => {
+    assert.match(page, /label: `Category: \$\{analytics\.filters\.categories/);
+    assert.match(page, /onClick=\{\(\) => visit\(\{ \[chip\.key\]: \[\] \}\)\}/);
+    assert.match(
+        page,
+        /order_types: \[\],\s+payment_methods: \[\],\s+cashiers: \[\],\s+categories: \[\],/,
+    );
+    assert.match(page, /onApply=\{\(next\) => \{\s+setFiltersOpen\(false\);\s+visit\(next\);/);
+});
+
+test('sales by category rows filter only the product views and say so', () => {
+    assert.match(page, /selected=\{selectedCategories\}/);
+    assert.match(page, /nextCategorySelection\(\s+category,\s+selectedCategories,\s+\)/);
+    assert.match(page, /<CategoryScopePill/);
+    assert.match(page, /Category: \{label\}/);
+    assert.match(page, /onClear=\{\(\) => pickCategories\(\[\]\)\}/);
+    const prose = page.replace(/\s+/g, ' ');
+    assert.match(prose, /Sales, payments and collections are unchanged\./);
+    assert.match(prose, /Grouped by each product’s current category — order items do not record the category at the time of sale\./);
+    assert.match(prose, /a category never filters Cash, Cashless or other money figures\./);
+    assert.match(page, /Category: \$\{categoryScope\}/);
+    assert.match(page, /toggleCategoryChip\(\s+category\.value,\s+\)/);
     assert.match(page, /Order filters do not apply here/);
+    assert.doesNotMatch(page, /tableCategories|this table only/);
+    assert.match(components, /aria-pressed=\{on\}\s+onClick=\{\(\) => onPick\(category\)\}/);
+});
+
+test('category selection never feeds the payment method, KPI or collection figures', () => {
+    const donut = page.slice(page.indexOf('title="Payment method"'), page.indexOf('title="Order type"'));
+
+    assert.match(donut, /mix=\{analytics\.payment_mix\}/);
+    assert.doesNotMatch(donut, /categor/i);
+    assert.match(page, /<KpiGrid analytics=\{analytics\} comparison=\{comparison\} \/>/);
+    assert.doesNotMatch(page, /<PaymentMix\b/);
+});
+
+test('the payment method card has a default-off Include split checkbox in its header', () => {
+    assert.match(page, /const \[includeSplit, setIncludeSplit\] = useState\(false\);/);
+    assert.match(
+        page,
+        /action=\{\s+<label[^>]*>\s+<input\s+type="checkbox"\s+checked=\{includeSplit\}/,
+    );
+    assert.match(page, /Include split\s+<\/label>/);
+    assert.match(page, /includeSplit=\{includeSplit\}/);
 });
 
 test('Owner and Super Admin render the report inside their management shells', () => {

@@ -258,6 +258,129 @@ test('the cashier filter keeps only orders attributed to that cashier and lists 
         ->and(collect($analytics['filter_options']['cashiers'])->pluck('value')->sort()->values()->all())->toBe(collect([$main->id, $other->id])->sort()->values()->all());
 });
 
+/**
+ * @param  array<string, mixed>  $analytics
+ * @return array<string, array{transactions: int, sales: string, share: int|null, share_with_split: int|null}>
+ */
+function paymentMixRows(array $analytics): array
+{
+    return collect($analytics['payment_mix']['methods'])
+        ->mapWithKeys(fn (array $row): array => [$row['method'] => [
+            'transactions' => $row['transactions'],
+            'sales' => $row['sales'],
+            'share' => $row['share'],
+            'share_with_split' => $row['share_with_split'],
+        ]])
+        ->all();
+}
+
+test('the payment method mix classifies each paid order once from its persisted payments', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(1, 'cash');
+    $scenario->payNow(2, 'cash');
+    $scenario->payNow(1, 'cashless');
+    $scenario->payNow(3, 'split', '100.00');
+    $scenario->void($scenario->payNow(4, 'cash'));
+    $scenario->payLater(2);
+    $scenario->settle($scenario->payLater(1), 'cashless');
+
+    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk()->inertiaProps('analytics');
+
+    expect($analytics['payment_mix']['basis'])->toBe('transactions')
+        ->and(paymentMixRows($analytics))->toBe([
+            'cash' => ['transactions' => 2, 'sales' => '300.00', 'share' => 5000, 'share_with_split' => 4000],
+            'cashless' => ['transactions' => 2, 'sales' => '200.00', 'share' => 5000, 'share_with_split' => 4000],
+            'split' => ['transactions' => 1, 'sales' => '300.00', 'share' => null, 'share_with_split' => 2000],
+        ])
+        ->and($analytics['payment_mix']['unpaid'])->toBe(['transactions' => 1, 'sales' => '200.00'])
+        ->and(collect($analytics['payment_mix']['methods'])->sum('transactions') + $analytics['payment_mix']['unpaid']['transactions'])
+        ->toBe($analytics['kpis']['transactions']['value'])
+        ->and($analytics['collections']['split']['count'])->toBe(1);
+});
+
+test('payment method shares add up to exactly one hundred percent', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(1, 'cash');
+    $scenario->payNow(1, 'cashless');
+    $scenario->payNow(2, 'split', '100.00');
+
+    $rows = paymentMixRows(analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics'));
+
+    expect(array_sum(array_column($rows, 'share_with_split')))->toBe(10000)
+        ->and(array_column($rows, 'share_with_split'))->each->toBeIn([3330, 3340])
+        ->and($rows['cash']['share'] + $rows['cashless']['share'])->toBe(10000);
+});
+
+test('the payment method mix is truthful for single-method, split-only and unpaid periods', function (array $orders, array $expected) {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    foreach ($orders as $method) {
+        $method === 'unpaid' ? $scenario->payLater(1) : $scenario->payNow(2, $method, $method === 'split' ? '100.00' : null);
+    }
+
+    $rows = paymentMixRows(analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics'));
+
+    expect(array_map(fn (array $row): array => [$row['transactions'], $row['share'], $row['share_with_split']], $rows))->toBe($expected);
+})->with([
+    'no orders' => [[], ['cash' => [0, null, null], 'cashless' => [0, null, null], 'split' => [0, null, null]]],
+    'cash only' => [['cash', 'cash'], ['cash' => [2, 10000, 10000], 'cashless' => [0, 0, 0], 'split' => [0, null, 0]]],
+    'cashless only' => [['cashless'], ['cash' => [0, 0, 0], 'cashless' => [1, 10000, 10000], 'split' => [0, null, 0]]],
+    'split only' => [['split'], ['cash' => [0, null, 0], 'cashless' => [0, null, 0], 'split' => [1, null, 10000]]],
+    'unpaid pay later only' => [['unpaid'], ['cash' => [0, null, null], 'cashless' => [0, null, null], 'split' => [0, null, null]]],
+]);
+
+test('report-wide order filters scope the payment method mix', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(1, 'cash', null, ['order_type' => 'dine_in']);
+    $scenario->payNow(1, 'cash');
+    $scenario->payNow(1, 'cashless');
+    $scenario->payNow(2, 'split', '100.00', ['order_type' => 'dine_in']);
+
+    $dineIn = paymentMixRows(analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'order_types' => ['dine_in']])->inertiaProps('analytics'));
+    $cashOnly = paymentMixRows(analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'payment_methods' => ['cash']])->inertiaProps('analytics'));
+
+    expect(array_column($dineIn, 'transactions'))->toBe([1, 0, 1])
+        ->and($dineIn['cash']['share_with_split'])->toBe(5000)
+        ->and(array_column($cashOnly, 'transactions'))->toBe([2, 0, 0])
+        ->and($cashOnly['cash']['share'])->toBe(10000);
+});
+
+test('the category filter narrows product rows only and never money, payments or categories', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->product->category->update(['name' => 'Silog']);
+    $drink = Product::factory()->create(['name' => 'Iced Tea', 'default_price' => '50.00']);
+    $drink->category->update(['name' => 'Drinks']);
+    BranchProduct::factory()->for($scenario->branch)->for($drink)->create(['tracks_inventory' => false]);
+    $scenario->payNow(2, 'cash');
+    $scenario->payNow(3, 'cashless', null, [
+        'items' => [['product_id' => $drink->id, 'quantity' => 3, 'notes' => null, 'modifiers' => []]],
+    ]);
+    $all = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+
+    $drinks = analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'categories' => [$drink->category_id]])->inertiaProps('analytics');
+
+    expect($drinks['filters']['categories'])->toBe([$drink->category_id])
+        ->and($drinks['filters']['active'])->toBeFalse()
+        ->and(collect($drinks['products'])->pluck('name')->all())->toBe(['Iced Tea'])
+        ->and($drinks['products'][0]['share'])->toBe(4286)
+        ->and(collect($drinks['categories'])->pluck('name')->all())->toBe(['Silog', 'Drinks'])
+        ->and(collect($drinks['categories'])->firstWhere('name', 'Drinks')['ids'])->toBe([$drink->category_id])
+        ->and(collect($drinks['filter_options']['categories'])->pluck('label')->all())->toBe(['Drinks', 'Silog'])
+        ->and($drinks['kpis'])->toBe($all['kpis'])
+        ->and($drinks['collections'])->toBe($all['collections'])
+        ->and($drinks['payment_mix'])->toBe($all['payment_mix'])
+        ->and($drinks['categories'])->toBe($all['categories']);
+});
+
+test('the category and payment filters reject values outside the supported options', function (array $filters, string $error) {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+
+    analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), ...$filters])->assertSessionHasErrors([$error]);
+})->with([
+    'unknown category' => [['categories' => ['silog']], 'categories.0'],
+    'sql-like category' => [['categories' => ["1' OR '1'='1"]], 'categories.0'],
+    'unknown payment method' => [['payment_methods' => ['gcash']], 'payment_methods.0'],
+]);
+
 test('categories and products come from immutable order item snapshots', function () {
     $scenario = analyticsScenario('2026-09-23 09:00');
     $scenario->product->category->update(['name' => 'Silog']);
@@ -359,6 +482,36 @@ test('the csv export contains the same scoped and filtered figures and never ano
         ->toContain(['Branch scope', 'All Branches'])
         ->toContain(['Total sales', '700.00', '0.00'])
         ->toContain(['BRAVO · BRAVO Branch', '1', '1', '100.00', '0.00', '100.00', '0.00']);
+});
+
+test('the csv export carries the payment method mix and the category filter of the on-screen report', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->product->category->update(['name' => 'Silog']);
+    $drink = Product::factory()->create(['name' => 'Iced Tea', 'default_price' => '50.00']);
+    $drink->category->update(['name' => 'Drinks']);
+    BranchProduct::factory()->for($scenario->branch)->for($drink)->create(['tracks_inventory' => false]);
+    $scenario->payNow(2, 'cash');
+    $scenario->payNow(2, 'split', '100.00');
+    $scenario->payNow(3, 'cashless', null, [
+        'items' => [['product_id' => $drink->id, 'quantity' => 3, 'notes' => null, 'modifiers' => []]],
+    ]);
+
+    $csv = (string) $this->actingAs(analyticsViewer())
+        ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+        ->get(route('workspaces.reports.export', [...analyticsDay('2026-09-23'), 'categories' => [$drink->category_id]]))
+        ->assertOk()
+        ->getContent();
+    $rows = array_map(fn (string $line): array => str_getcsv($line, escape: ''), explode("\n", trim(ltrim($csv, "\u{FEFF}"))));
+
+    expect($rows)
+        ->toContain(['Active filters', 'Category (product tables only): Drinks'])
+        ->toContain(['Total sales', '550.00', '0.00'])
+        ->toContain(['Cash', '1', '200.00', '33.40', '50.00'])
+        ->toContain(['Cashless', '1', '150.00', '33.30', '50.00'])
+        ->toContain(['Split', '1', '200.00', '33.30', ''])
+        ->toContain(['Product (selected categories only)', 'Category', 'Qty sold', 'Orders', 'Total sales', '% of sales', 'Average price'])
+        ->toContain(['Iced Tea', 'Drinks', '3', '1', '150.00', '27.27', '50.00'])
+        ->and($csv)->not->toContain('Tapsilog');
 });
 
 test('staff without business reporting cannot export reports', function (string $role) {

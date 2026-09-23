@@ -12,6 +12,7 @@ import {
     Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import {
     DropdownMenu,
@@ -243,10 +244,11 @@ export function OwnerWorkspaceShell({
         <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
             <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
                 <div className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4">
+                    <AppLogoIcon alt="" className="size-11 shrink-0" />
                     <img
                         src="/images/branding/logo.png"
                         alt="PONGSKILOG"
-                        className="w-[168px]"
+                        className="w-[150px] min-w-0"
                     />
                 </div>
                 <div className="border-b border-white/10 p-3">
@@ -314,11 +316,7 @@ export function OwnerWorkspaceShell({
                     href={dashboardRoute}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
                 >
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="max-w-[70px]"
-                    />
+                    <AppLogoIcon className="size-11" />
                     <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
                         Owner
                     </span>
@@ -354,11 +352,7 @@ export function OwnerWorkspaceShell({
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
                 <header className="flex h-[60px] shrink-0 items-center gap-2.5 print:hidden border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[92px] shrink-0 md:hidden"
-                    />
+                    <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {pageTitle}
                     </p>

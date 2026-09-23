@@ -44,6 +44,8 @@ class ReportsRequest extends FormRequest
             'payment_methods.*' => ['string', 'distinct', Rule::in(array_keys(SalesAnalytics::PAYMENT_METHODS))],
             'cashiers' => ['nullable', 'array', 'max:50'],
             'cashiers.*' => ['integer', 'distinct', 'min:1'],
+            'categories' => ['nullable', 'array', 'max:100'],
+            'categories.*' => ['string', 'distinct', 'regex:'.SalesAnalytics::CATEGORY_PATTERN],
         ];
     }
 
@@ -72,6 +74,7 @@ class ReportsRequest extends FormRequest
             'from.required_if' => 'Choose a start date for the custom range.',
             'to.required_if' => 'Choose an end date for the custom range.',
             'to.after_or_equal' => 'The end date must be on or after the start date.',
+            'categories.*.regex' => 'Choose a category from the list.',
         ];
     }
 }

@@ -30,16 +30,34 @@
             }
         </style>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        {{-- Pongskilog brand icons, derived from the official logos in public/images/branding/source --}}
+        <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+        <link rel="icon" href="/images/branding/icons/icon-192.png" type="image/png" sizes="192x192">
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+        <meta name="application-name" content="{{ config('app.name', 'Pongskilog') }}">
+        <meta name="apple-mobile-web-app-title" content="{{ config('app.name', 'Pongskilog') }}">
+        <meta name="theme-color" content="#111111">
+        <meta name="description" content="Pongskilog · Est. 2022">
+
+        {{-- Link previews (Messenger, Facebook, Viber, X) --}}
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="{{ config('app.name', 'Pongskilog') }}">
+        <meta property="og:title" content="{{ config('app.name', 'Pongskilog') }}">
+        <meta property="og:description" content="Pongskilog · Est. 2022">
+        <meta property="og:image" content="{{ asset('images/branding/og-image.jpg') }}">
+        <meta property="og:image:type" content="image/jpeg">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta property="og:image:alt" content="Pongskilog logo: a chef tossing fried rice in a wok, est. 2022">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:image" content="{{ asset('images/branding/og-image.jpg') }}">
 
         @fonts
 
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
         <x-inertia::head>
-            <title>{{ config('app.name', 'Laravel') }}</title>
+            <title>{{ config('app.name', 'Pongskilog') }}</title>
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">

@@ -178,6 +178,20 @@ try {
     verifyPhase16a($dineIn['kpis']['sales']['value'] === '0.00' && $dineIn['collections']['total'] === '0.00', 'H: empty filter');
     echo 'H PASS: EXISTS payment classification and order-scoped flows narrow sales and collections together.'.PHP_EOL;
 
+    /** K: the Reports payment method mix counts each paid Order once and the category filter narrows products only. */
+    $mix = array_column($mainResult['analytics']['payment_mix']['methods'], null, 'method');
+    verifyPhase16a([$mix['cash']['transactions'], $mix['cashless']['transactions'], $mix['split']['transactions']] === [1, 1, 1], 'K: mix counts '.json_encode($mix));
+    verifyPhase16a([$mix['cash']['sales'], $mix['cashless']['sales'], $mix['split']['sales']] === ['99.99', '33.33', '66.66'], 'K: mix sales');
+    verifyPhase16a($mix['cash']['share'] + $mix['cashless']['share'] === 10000 && $mix['split']['share'] === null, 'K: shares without split');
+    verifyPhase16a($mix['cash']['share_with_split'] + $mix['cashless']['share_with_split'] + $mix['split']['share_with_split'] === 10000, 'K: shares with split');
+    $categoryId = (string) $main->product->category_id;
+    $narrowed = $analytics->for($main->branch, [...$day, 'categories' => [$categoryId]])['analytics'];
+    $none = $analytics->for($main->branch, [...$day, 'categories' => ['uncategorized']])['analytics'];
+    verifyPhase16a(count($narrowed['products']) === 1 && $none['products'] === [], 'K: category narrows products');
+    verifyPhase16a($none['kpis'] === $mainResult['analytics']['kpis'] && $none['payment_mix'] === $mainResult['analytics']['payment_mix'] && $none['collections'] === $mainResult['analytics']['collections'], 'K: category leaves money untouched');
+    verifyPhase16a(array_column($narrowed['filter_options']['categories'], 'value') === [$categoryId], 'K: category options');
+    echo 'K PASS: payment mix classifies each paid Order once (voided excluded); category narrows product rows only.'.PHP_EOL;
+
     /** I: committed-to-ready prep seconds on PostgreSQL. */
     phase16aAt('2026-09-23 11:00');
     $timed = $qave->payNow(1, 'cash');

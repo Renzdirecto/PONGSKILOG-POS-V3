@@ -20,7 +20,7 @@ import {
     HourBars,
     KpiGrid,
     MiniStat,
-    PaymentMix,
+    PaymentMethodDonut,
     SegmentedTabs,
     TopProductBars,
     TrendChart,
@@ -44,6 +44,7 @@ import {
 import type { SessionRow } from '@/components/report-store-sessions';
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogDescription,
     DialogHeader,
@@ -53,6 +54,7 @@ import {
     PRODUCT_SORTS,
     SERIES_COLORS,
     durationLabel,
+    nextCategorySelection,
     shareLabel,
     sortProducts,
 } from '@/lib/owner-analytics';
@@ -63,7 +65,9 @@ import type {
 } from '@/lib/owner-analytics';
 import {
     REPORT_TABS,
+    appliedSelection,
     customRangeError,
+    draftSelection,
     reportQuery,
     toggleFilterValue,
 } from '@/lib/reports';
@@ -167,7 +171,7 @@ export default function Reports({
     );
     const [topMetric, setTopMetric] = useState<'sales' | 'quantity'>('sales');
     const [productSort, setProductSort] = useState<ProductSort>('sales_desc');
-    const [tableCategories, setTableCategories] = useState<string[]>([]);
+    const [includeSplit, setIncludeSplit] = useState(false);
     const [cashierSort, setCashierSort] = useState<'sales' | 'transactions'>(
         'sales',
     );
@@ -186,19 +190,22 @@ export default function Reports({
         ? `vs ${analytics.comparison.description}`
         : null;
     const chips = filterChips(analytics);
-    const productCategories = [
-        ...new Set(analytics.products.map((product) => product.category)),
-    ];
-    const tableFilter =
-        tableCategories.length === 0 ||
-        tableCategories.length === productCategories.length
+    const categoryOptions = analytics.filter_options.categories;
+    const selectedCategories = analytics.filters.categories;
+    const categoryScope =
+        selectedCategories.length === 0
             ? null
-            : tableCategories;
-    const productRows = sortProducts(
-        analytics.products,
-        productSort,
-        tableFilter,
-    );
+            : selectedCategories
+                  .map(
+                      (value) =>
+                          categoryOptions.find(
+                              (option) => option.value === value,
+                          )?.label ?? 'Not in this period',
+                  )
+                  .join(', ');
+    /** Category narrows the product views only, so it reloads the report with the same order filters. */
+    const pickCategories = (categories: string[]) => visit({ categories });
+    const productRows = sortProducts(analytics.products, productSort, null);
     const cashiers = [...analytics.cashiers].sort((a, b) =>
         cashierSort === 'transactions'
             ? b.transactions - a.transactions || b.sales_cents - a.sales_cents
@@ -248,15 +255,17 @@ export default function Reports({
         }
     }
 
-    function toggleTableCategory(category: string) {
-        setTableCategories((current) => {
-            const base = current.length === 0 ? productCategories : current;
-            const next = toggleFilterValue(base, category);
-
-            return next.length === 0 || next.length === productCategories.length
-                ? []
-                : next;
-        });
+    /** Product performance chips toggle the same category filter as the modal and Sales by category. */
+    function toggleCategoryChip(value: string) {
+        pickCategories(
+            appliedSelection(
+                toggleFilterValue(
+                    draftSelection(selectedCategories, categoryOptions),
+                    value,
+                ),
+                categoryOptions,
+            ),
+        );
     }
 
     return (
@@ -440,6 +449,7 @@ export default function Reports({
                                     order_types: [],
                                     payment_methods: [],
                                     cashiers: [],
+                                    categories: [],
                                 })
                             }
                             className="inline-flex min-h-8 items-center px-[11px] text-[11.5px] font-semibold text-[#B91C1C]"
@@ -480,38 +490,61 @@ export default function Reports({
                         <AnalyticsCard
                             title="Sales by category"
                             hint={
-                                tableFilter
-                                    ? `Product performance narrowed to ${tableFilter.join(', ')} — tap again to show all`
-                                    : "Grouped by each product's current category. Tap one to narrow the Product performance table."
+                                categoryScope
+                                    ? 'Top products and Product performance show only the selected category — tap it again to show all. Sales, payments and collections are unchanged.'
+                                    : 'Tap a category to filter Top products and Product performance.'
+                            }
+                            action={
+                                categoryScope && (
+                                    <CategoryScopePill
+                                        label={categoryScope}
+                                        onClear={() => pickCategories([])}
+                                    />
+                                )
                             }
                         >
                             <CategoryBars
                                 categories={analytics.categories}
-                                selected={
-                                    tableFilter?.length === 1
-                                        ? tableFilter[0]
-                                        : null
-                                }
-                                onPick={(name) =>
-                                    setTableCategories((current) =>
-                                        current.length === 1 &&
-                                        current[0] === name
-                                            ? []
-                                            : productCategories.includes(name)
-                                              ? [name]
-                                              : current,
+                                selected={selectedCategories}
+                                onPick={(category) =>
+                                    pickCategories(
+                                        nextCategorySelection(
+                                            category,
+                                            selectedCategories,
+                                        ),
                                     )
                                 }
                             />
+                            <p className="text-[11px] leading-[1.5] text-[#8a8a8a]">
+                                Grouped by each product’s current category —
+                                order items do not record the category at the
+                                time of sale. Payments are recorded per order,
+                                so a category never filters Cash, Cashless or
+                                other money figures.
+                            </p>
                         </AnalyticsCard>
                         <AnalyticsCard
                             title="Payment method"
-                            hint={`${peso(analytics.collections.total)} collected in this period · net of corrections and voids`}
+                            hint="How paid transactions were paid in this period and filters"
+                            action={
+                                <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-[9px] border border-[#e5e5e5] bg-white px-3 text-xs font-semibold text-[#666] select-none has-checked:border-[#111] has-checked:text-[#111] has-focus-visible:ring-2 has-focus-visible:ring-[#111] md:min-h-[34px]">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeSplit}
+                                        onChange={(event) =>
+                                            setIncludeSplit(
+                                                event.target.checked,
+                                            )
+                                        }
+                                        className="size-4 shrink-0 cursor-pointer accent-[#111] outline-none"
+                                    />
+                                    Include split
+                                </label>
+                            }
                         >
-                            <PaymentMix
-                                collections={analytics.collections}
-                                size={132}
-                                bars
+                            <PaymentMethodDonut
+                                mix={analytics.payment_mix}
+                                includeSplit={includeSplit}
                             />
                         </AnalyticsCard>
                     </div>
@@ -641,7 +674,11 @@ export default function Reports({
 
                     <AnalyticsCard
                         title="Top products"
-                        hint="Ranked for the selected period and filters"
+                        hint={
+                            categoryScope
+                                ? `Ranked for the selected period and filters · Category: ${categoryScope}`
+                                : 'Ranked for the selected period and filters'
+                        }
                         action={
                             <SegmentedTabs
                                 label="Top products metric"
@@ -664,7 +701,7 @@ export default function Reports({
 
                     <AnalyticsCard
                         title="Product performance"
-                        hint={`${plural(productRows.length, 'product')}${tableFilter ? ` in ${tableFilter.join(', ')}` : ''} · this table only`}
+                        hint={`${plural(productRows.length, 'product')}${categoryScope ? ` in ${categoryScope}` : ''} · % of sales is of all sales in this period`}
                         action={
                             <label className="flex items-center gap-2">
                                 <span className="sr-only">Sort products</span>
@@ -686,24 +723,28 @@ export default function Reports({
                             </label>
                         }
                     >
-                        {productCategories.length > 1 && (
+                        {categoryOptions.length > 1 && (
                             <div
                                 role="group"
                                 aria-label="Product performance categories"
                                 className="flex flex-wrap gap-[7px] print:hidden"
                             >
-                                {productCategories.map((category) => {
+                                {categoryOptions.map((category) => {
                                     const on =
-                                        tableFilter === null ||
-                                        tableFilter.includes(category);
+                                        selectedCategories.length === 0 ||
+                                        selectedCategories.includes(
+                                            category.value,
+                                        );
 
                                     return (
                                         <button
-                                            key={category}
+                                            key={category.value}
                                             type="button"
                                             aria-pressed={on}
                                             onClick={() =>
-                                                toggleTableCategory(category)
+                                                toggleCategoryChip(
+                                                    category.value,
+                                                )
                                             }
                                             className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-[11px] text-xs font-semibold whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-[34px] ${on ? 'border-[#111] bg-[#111] text-white' : 'border-[#d8d8d8] bg-white text-[#666]'}`}
                                         >
@@ -713,7 +754,7 @@ export default function Reports({
                                                     aria-hidden="true"
                                                 />
                                             )}
-                                            {category}
+                                            {category.label}
                                         </button>
                                     );
                                 })}
@@ -721,7 +762,9 @@ export default function Reports({
                         )}
                         {productRows.length === 0 ? (
                             <EmptyNote>
-                                No products sold in this period.
+                                {categoryScope
+                                    ? `No products in ${categoryScope} sold in this period.`
+                                    : 'No products sold in this period.'}
                             </EmptyNote>
                         ) : (
                             <>
@@ -1410,6 +1453,28 @@ function CategoryDot({
     );
 }
 
+
+/** A small, clearable indication that the product views are narrowed to a category. */
+function CategoryScopePill({
+    label,
+    onClear,
+}: {
+    label: string;
+    onClear: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClear}
+            aria-label={`Clear category filter ${label}`}
+            className="inline-flex min-h-11 max-w-full items-center gap-[7px] rounded-full border border-[#111] bg-white px-[11px] text-[11.5px] font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-8"
+        >
+            <span className="truncate">Category: {label}</span>
+            <X className="size-3.5 shrink-0 text-[#767676]" aria-hidden="true" />
+        </button>
+    );
+}
+
 type Chip = { key: keyof ReportOrderFilters; label: string };
 
 function filterChips(analytics: Analytics): Chip[] {
@@ -1420,6 +1485,12 @@ function filterChips(analytics: Analytics): Chip[] {
         options.find((option) => option.value === value)?.label ??
         'Not in this period';
     const chips: Chip[] = [];
+    if (analytics.filters.categories.length > 0) {
+        chips.push({
+            key: 'categories',
+            label: `Category: ${analytics.filters.categories.map((value) => name(analytics.filter_options.categories, value)).join(', ')}`,
+        });
+    }
     if (analytics.filters.order_types.length > 0) {
         chips.push({
             key: 'order_types',
@@ -1442,7 +1513,19 @@ function filterChips(analytics: Analytics): Chip[] {
     return chips;
 }
 
-/** Order-level report filters; an empty group means every value. Category is table-only (see Sales by category). */
+type FilterDraft = {
+    categories: string[];
+    order_types: string[];
+    payment_methods: string[];
+    cashiers: number[];
+};
+
+/**
+ * The standalone "Filter this report" dialog: a 560px dialog on tablet and desktop and a bottom sheet on phones. Every
+ * option of an unfiltered group starts checked; applying a group with nothing or everything checked removes it.
+ * Order type, payment method and cashier are server filters for the whole report; Category narrows the product views
+ * only, because payments are recorded per order.
+ */
 function FilterDialog({
     open,
     onOpenChange,
@@ -1454,134 +1537,219 @@ function FilterDialog({
     analytics: Analytics;
     onApply: (filters: ReportOrderFilters) => void;
 }) {
-    const [draft, setDraft] = useState<{
-        order_types: string[];
-        payment_methods: string[];
-        cashiers: number[];
-    }>(analytics.filters);
-    const groups = [
+    const options = analytics.filter_options;
+    const everything = (): FilterDraft => ({
+        categories: draftSelection([], options.categories),
+        order_types: draftSelection([], options.order_types),
+        payment_methods: draftSelection([], options.payment_methods),
+        cashiers: draftSelection([], options.cashiers),
+    });
+    const [draft, setDraft] = useState<FilterDraft>(() => ({
+        categories: draftSelection(
+            analytics.filters.categories,
+            options.categories,
+        ),
+        order_types: draftSelection(
+            analytics.filters.order_types,
+            options.order_types,
+        ),
+        payment_methods: draftSelection(
+            analytics.filters.payment_methods,
+            options.payment_methods,
+        ),
+        cashiers: draftSelection(analytics.filters.cashiers, options.cashiers),
+    }));
+    const groups: {
+        key: keyof FilterDraft;
+        title: string;
+        scope?: string;
+        options: { value: string | number; label: string }[];
+        empty: string;
+    }[] = [
         {
-            key: 'order_types' as const,
+            key: 'categories',
+            title: 'Category',
+            scope: 'Product views only',
+            options: options.categories,
+            empty: 'No products sold in this period.',
+        },
+        {
+            key: 'order_types',
             title: 'Order type',
-            options: analytics.filter_options.order_types,
+            options: options.order_types,
+            empty: 'No order types.',
         },
         {
-            key: 'payment_methods' as const,
+            key: 'payment_methods',
             title: 'Payment method',
-            options: analytics.filter_options.payment_methods,
+            options: options.payment_methods,
+            empty: 'No payment methods.',
         },
         {
-            key: 'cashiers' as const,
+            key: 'cashiers',
             title: 'Cashier',
-            options: analytics.filter_options.cashiers,
+            options: options.cashiers,
+            empty: 'No cashier has transactions in this period.',
         },
     ];
 
+    function toggle(key: keyof FilterDraft, value: string | number) {
+        setDraft((current) => ({
+            ...current,
+            [key]: toggleFilterValue(
+                current[key] as (string | number)[],
+                value,
+            ),
+        }));
+    }
+
+    function selectAll(key: keyof FilterDraft) {
+        setDraft((current) => ({ ...current, [key]: everything()[key] }));
+    }
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="owner-surface top-auto bottom-0 left-0 max-h-[92dvh] w-full max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-t-[20px] rounded-b-none border-0 p-0 sm:top-[50%] sm:left-[50%] sm:max-w-[560px] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-[20px] [&>button]:top-3 [&>button]:right-3 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-xl">
-                <DialogHeader className="border-b border-[#ececec] px-5 pt-5 pr-16 pb-4 text-left">
-                    <DialogTitle className="text-base font-bold">
-                        Report filters
-                    </DialogTitle>
-                    <DialogDescription className="text-[12.5px] text-[#666]">
-                        Every card, chart and table is recalculated by the
-                        server. Leave a group empty to include everything.
-                    </DialogDescription>
+            <DialogContent
+                showCloseButton={false}
+                overlayClassName="bg-[rgba(17,17,17,0.44)]"
+                className="owner-surface top-auto bottom-0 left-0 flex max-h-[92dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-t-[20px] rounded-b-none border-0 bg-white p-0 text-[#111] shadow-[0_30px_70px_rgba(0,0,0,0.3)] sm:max-w-none md:top-[50%] md:bottom-auto md:left-[50%] md:max-h-[min(92dvh,940px)] md:max-w-[560px] md:translate-x-[-50%] md:translate-y-[-50%] md:rounded-[20px]"
+            >
+                <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-2.5 border-b border-[#e5e5e5] px-4 py-3.5 text-left">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-[11px] font-semibold tracking-[0.09em] text-[#8a8a8a] uppercase">
+                            Analytics filter
+                        </span>
+                        <DialogTitle className="text-base leading-tight font-bold tracking-[-0.01em]">
+                            Filter this report
+                        </DialogTitle>
+                    </div>
+                    <DialogClose
+                        aria-label="Close"
+                        className="inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] text-[#767676] hover:bg-[#f2f2f2] hover:text-[#111] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:size-10"
+                    >
+                        <X className="size-[18px]" aria-hidden="true" />
+                    </DialogClose>
                 </DialogHeader>
-                <div className="owner-scrollbar flex min-h-0 flex-col gap-5 overflow-y-auto px-5 py-4">
-                    {groups.map((group) => (
-                        <fieldset key={group.key} className="flex flex-col gap-2">
-                            <legend className="mb-2 flex w-full items-center justify-between gap-2">
-                                <span className={labelClass}>
-                                    {group.title}
-                                </span>
-                                <span className="text-[11px] text-[#8a8a8a]">
-                                    {draft[group.key].length === 0
-                                        ? 'All'
-                                        : `${draft[group.key].length} selected`}
-                                </span>
-                            </legend>
-                            {group.options.length === 0 ? (
-                                <p className="text-[12px] text-[#767676]">
-                                    No cashier has transactions in this period.
-                                </p>
-                            ) : (
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    {group.options.map((option) => {
-                                        const values = draft[group.key] as (
-                                            | string
-                                            | number
-                                        )[];
-                                        const on = values.includes(
-                                            option.value,
-                                        );
+                <div className="owner-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+                    <DialogDescription className="text-xs leading-[1.5] text-[#767676]">
+                        Order type, payment method and cashier apply to every
+                        KPI, chart and table (Store Session reconciliation
+                        always covers the whole drawer). Category narrows Top
+                        products and Product performance only.
+                    </DialogDescription>
+                    {groups.map((group) => {
+                        const values = draft[group.key] as (string | number)[];
+                        const titleId = `report-filter-${group.key}`;
 
-                                        return (
-                                            <button
-                                                key={option.value}
-                                                type="button"
-                                                aria-pressed={on}
-                                                onClick={() =>
-                                                    setDraft((current) => ({
-                                                        ...current,
-                                                        [group.key]:
-                                                            toggleFilterValue(
-                                                                current[
-                                                                    group.key
-                                                                ] as (
-                                                                    | string
-                                                                    | number
-                                                                )[],
-                                                                option.value,
-                                                            ),
-                                                    }))
-                                                }
-                                                className={`flex min-h-11 items-center gap-[9px] rounded-[11px] border px-3 text-left text-[13px] font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${on ? 'border-[#111] bg-[#fafafa] text-[#111]' : 'border-[#e5e5e5] bg-white text-[#666]'}`}
-                                            >
-                                                <span
-                                                    aria-hidden="true"
-                                                    className={`inline-flex size-5 shrink-0 items-center justify-center rounded-md border ${on ? 'border-[#111] bg-[#111] text-white' : 'border-[#c9c9c9] bg-white text-transparent'}`}
-                                                >
-                                                    <Check className="size-3" />
-                                                </span>
-                                                <span className="truncate">
-                                                    {option.label}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
+                        return (
+                            <div
+                                key={group.key}
+                                role="group"
+                                aria-labelledby={titleId}
+                                className="flex flex-col gap-2"
+                            >
+                                <div className="flex items-center justify-between gap-2.5">
+                                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <span
+                                            id={titleId}
+                                            className="text-[11px] font-semibold tracking-[0.06em] text-[#767676] uppercase"
+                                        >
+                                            {group.title}
+                                        </span>
+                                        {group.scope && (
+                                            <span className="rounded-full bg-[#f2f2f2] px-2 py-0.5 text-[10.5px] font-semibold text-[#666]">
+                                                {group.scope}
+                                            </span>
+                                        )}
+                                    </span>
+                                    {group.options.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => selectAll(group.key)}
+                                            className="-my-2 inline-flex min-h-11 shrink-0 items-center rounded-lg focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:my-0 md:min-h-7"
+                                        >
+                                            <span className="inline-flex h-7 items-center rounded-lg bg-[#f2f2f2] px-[9px] text-[11px] font-semibold text-[#666]">
+                                                Select all
+                                            </span>
+                                        </button>
+                                    )}
                                 </div>
-                            )}
-                        </fieldset>
-                    ))}
-                    <p className="text-[11.5px] leading-5 text-[#767676]">
-                        Category is not a report-wide filter: payments are
-                        recorded per order, not per item, so Cash and Cashless
-                        cannot be split by category. Use the category chips on
-                        Product performance instead.
-                    </p>
+                                {group.options.length === 0 ? (
+                                    <p className="text-[12px] text-[#767676]">
+                                        {group.empty}
+                                    </p>
+                                ) : (
+                                    <div className="grid gap-[7px] [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
+                                        {group.options.map((option) => {
+                                            const on = values.includes(
+                                                option.value,
+                                            );
+
+                                            return (
+                                                <button
+                                                    key={option.value}
+                                                    type="button"
+                                                    role="checkbox"
+                                                    aria-checked={on}
+                                                    onClick={() =>
+                                                        toggle(
+                                                            group.key,
+                                                            option.value,
+                                                        )
+                                                    }
+                                                    className={`flex h-11 w-full min-w-0 items-center gap-[9px] rounded-[11px] border px-3 text-left text-[13px] font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${on ? 'border-[#111] bg-[#fafafa] text-[#111]' : 'border-[#e5e5e5] bg-white text-[#666]'}`}
+                                                >
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className={`inline-flex size-5 shrink-0 items-center justify-center rounded-md border ${on ? 'border-[#111] bg-[#111] text-white' : 'border-[#c9c9c9] bg-white text-transparent'}`}
+                                                    >
+                                                        <Check className="size-[13px]" />
+                                                    </span>
+                                                    <span className="truncate">
+                                                        {option.label}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#ececec] px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+                <div className="flex shrink-0 gap-[9px] border-t border-[#e5e5e5] bg-white px-4 pt-3 pb-[calc(14px+env(safe-area-inset-bottom,0px))]">
                     <button
                         type="button"
-                        onClick={() =>
-                            setDraft({
-                                order_types: [],
-                                payment_methods: [],
-                                cashiers: [],
-                            })
-                        }
-                        className={ownerSecondaryActionClass}
+                        onClick={() => setDraft(everything())}
+                        className="inline-flex h-[52px] flex-[0_1_auto] items-center justify-center rounded-xl border border-[#949494] bg-white px-[18px] text-sm font-semibold focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
                     >
                         Reset
                     </button>
                     <button
                         type="button"
-                        onClick={() => onApply(draft)}
-                        className={`${ownerPrimaryActionClass} inline-flex items-center gap-2`}
+                        onClick={() =>
+                            onApply({
+                                categories: appliedSelection(
+                                    draft.categories,
+                                    options.categories,
+                                ),
+                                order_types: appliedSelection(
+                                    draft.order_types,
+                                    options.order_types,
+                                ),
+                                payment_methods: appliedSelection(
+                                    draft.payment_methods,
+                                    options.payment_methods,
+                                ),
+                                cashiers: appliedSelection(
+                                    draft.cashiers,
+                                    options.cashiers,
+                                ),
+                            })
+                        }
+                        className="inline-flex h-[52px] flex-[1_1_auto] items-center justify-center gap-2 rounded-xl border border-[#111] bg-[#111] text-[14.5px] font-semibold text-white hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                     >
-                        <Filter className="size-4" aria-hidden="true" />
+                        <Check className="size-4" aria-hidden="true" />
                         Apply filters
                     </button>
                 </div>

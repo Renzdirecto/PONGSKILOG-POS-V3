@@ -23,6 +23,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import {
     Dialog,
@@ -326,10 +327,11 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                     href={superAdmin()}
                     className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
                 >
+                    <AppLogoIcon alt="" className="size-11 shrink-0" />
                     <img
                         src="/images/branding/logo.png"
                         alt="PONGSKILOG"
-                        className="w-[168px]"
+                        className="w-[150px] min-w-0"
                     />
                 </Link>
                 <div className="border-b border-white/10 p-3">
@@ -390,11 +392,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                     href={superAdmin()}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
                 >
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="max-w-[70px]"
-                    />
+                    <AppLogoIcon className="size-11" />
                     <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
                         Admin
                     </span>
@@ -444,11 +442,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
                 <header className="flex h-[60px] shrink-0 print:hidden items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[92px] shrink-0 md:hidden"
-                    />
+                    <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {activeDestination?.label ?? 'Super Admin'}
                     </p>

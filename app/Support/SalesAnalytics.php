@@ -32,11 +32,18 @@ use Illuminate\Support\Facades\DB;
  * - The previous period has the same length and granularity; drilling into one Store Session has no comparison.
  *
  * Order filters (order type, how the Order was paid and the attributed cashier) narrow every figure, collections
- * included. Money is exact integer cents until presented as a decimal string.
+ * included. The category filter narrows only the product rows (Top products, Product performance): Payments are
+ * recorded per Order, so no money figure can be split by category. Money is exact integer cents until presented as a
+ * decimal string.
+ *
+ * The Payment method mix classifies each Order once by its persisted Payment legs (`paymentClassSql()`): Cash-only,
+ * Cashless-only or Split. Its shares are shares of paid transactions, so Split is never double-counted; unpaid Pay
+ * Later Orders are reported separately.
  *
  * @phpstan-import-type SessionRow from StoreSessionSalesReport
  *
  * @phpstan-type OrderFilters array{order_types?: list<string>, payment_methods?: list<string>, cashiers?: list<int>}
+ * @phpstan-type ProductFigure array{key: string, name: string, category: string, category_id: string|null, quantity: int, orders: int, sales: int}
  * @phpstan-type Tally array{orders: int, sales: int, items: int}
  * @phpstan-type Aggregate array{
  *     totals: array{orders: int, sales: int, items: int, done: int, prep_total: float, prep_count: int},
@@ -53,6 +60,12 @@ class SalesAnalytics
     public const ORDER_TYPES = ['dine_in' => 'Dine in', 'take_out' => 'Take out'];
 
     public const PAYMENT_METHODS = ['cash' => 'Cash', 'cashless' => 'Cashless', 'split' => 'Split'];
+
+    /** Products whose deleted product (or missing category) has no current category group together under this key. */
+    public const UNCATEGORIZED = 'uncategorized';
+
+    /** A category filter value: a category UUID or the uncategorized group. */
+    public const CATEGORY_PATTERN = '/^(uncategorized|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i';
 
     /** The default clock-hour window (6 AM–9 PM); it widens to include any real activity outside it. */
     private const HOUR_WINDOW = [6, 21];
@@ -92,6 +105,11 @@ class SalesAnalytics
         }
         $collections = $this->collectionTotals($collectionRows);
         $products = $this->products($selected, $orderFilters);
+        $categoryFilter = $this->categoryFilter($filters);
+        $categoryProducts = $categoryFilter === [] ? $products : array_values(array_filter(
+            $products,
+            fn (array $product): bool => in_array($product['category_id'] ?? self::UNCATEGORIZED, $categoryFilter, true),
+        ));
 
         return [
             'report' => $report,
@@ -105,16 +123,21 @@ class SalesAnalytics
                     'order_types' => $orderFilters['order_types'] ?? [],
                     'payment_methods' => $orderFilters['payment_methods'] ?? [],
                     'cashiers' => $orderFilters['cashiers'] ?? [],
+                    'categories' => $categoryFilter,
                     'active' => $orderFilters !== [],
                 ],
-                'filter_options' => $this->filterOptions($sessions),
+                'filter_options' => [
+                    ...$this->filterOptions($sessions),
+                    'categories' => $this->categoryOptions($products, $categoryFilter),
+                ],
                 'kpis' => $this->kpis($current, $previous, $collections, $previousCollections),
                 'trend' => $this->trend($period, $current, $previous),
                 'collections' => $this->presentCollections($collections, $current),
+                'payment_mix' => $this->paymentMix($current),
                 'categories' => $this->categories($products, $current['totals']['sales']),
                 'order_types' => $this->orderTypes($current),
                 ...$this->hours($current, $previous),
-                'products' => $this->presentProducts($products, $current['totals']['sales']),
+                'products' => $this->presentProducts($categoryProducts, $current['totals']['sales']),
                 'cashiers' => $this->cashiers($current),
                 'kitchen' => $this->kitchen($current, $previous),
                 'highlights' => $this->highlights($period, $current, $products, $collections),
@@ -148,7 +171,21 @@ class SalesAnalytics
     }
 
     /**
-     * Human-readable labels of the active order filters, e.g. "Order type: Dine in".
+     * The validated category filter: category UUIDs and/or the uncategorized group. It narrows product rows only.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<string>
+     */
+    public function categoryFilter(array $filters): array
+    {
+        return array_values(array_unique(array_filter(
+            is_array($filters['categories'] ?? null) ? array_map(fn (mixed $value): string => strtolower((string) $value), $filters['categories']) : [],
+            fn (string $value): bool => preg_match(self::CATEGORY_PATTERN, $value) === 1,
+        )));
+    }
+
+    /**
+     * Human-readable labels of the active filters, e.g. "Order type: Dine in".
      *
      * @param  array<string, mixed>  $analytics
      * @return list<string>
@@ -156,7 +193,7 @@ class SalesAnalytics
     public function filterLabels(array $analytics): array
     {
         $labels = [];
-        foreach (['order_types' => 'Order type', 'payment_methods' => 'Payment', 'cashiers' => 'Cashier'] as $group => $title) {
+        foreach (['order_types' => 'Order type', 'payment_methods' => 'Payment', 'cashiers' => 'Cashier', 'categories' => 'Category (product tables only)'] as $group => $title) {
             $values = $analytics['filters'][$group] ?? [];
             if (! is_array($values) || $values === []) {
                 continue;
@@ -508,15 +545,18 @@ class SalesAnalytics
     }
 
     /**
-     * @param  list<array{key: string, name: string, category: string, category_id: string|null, quantity: int, orders: int, sales: int}>  $products
-     * @return list<array{name: string, sales: string, sales_cents: int, items: int, share: int|null}>
+     * Category rows over every product of the period. Each row carries the category filter values it stands for, so
+     * the grouped "other categories" row can be selected as exactly those categories.
+     *
+     * @param  list<ProductFigure>  $products
+     * @return list<array{key: string, ids: list<string>, name: string, sales: string, sales_cents: int, items: int, share: int|null}>
      */
     private function categories(array $products, int $totalSales): array
     {
         $categories = [];
         foreach ($products as $product) {
-            $key = $product['category_id'] ?? 'uncategorized';
-            $categories[$key] ??= ['name' => $product['category'], 'sales' => 0, 'items' => 0];
+            $key = $product['category_id'] ?? self::UNCATEGORIZED;
+            $categories[$key] ??= ['key' => $key, 'ids' => [$key], 'name' => $product['category'], 'sales' => 0, 'items' => 0];
             $categories[$key]['sales'] += $product['sales'];
             $categories[$key]['items'] += $product['quantity'];
         }
@@ -524,6 +564,8 @@ class SalesAnalytics
         if (count($categories) > self::CATEGORY_LIMIT) {
             $others = array_slice($categories, self::CATEGORY_LIMIT - 1);
             $categories = [...array_slice($categories, 0, self::CATEGORY_LIMIT - 1), [
+                'key' => 'others',
+                'ids' => array_column($others, 'key'),
                 'name' => count($others).' other categories',
                 'sales' => array_sum(array_column($others, 'sales')),
                 'items' => array_sum(array_column($others, 'items')),
@@ -531,12 +573,77 @@ class SalesAnalytics
         }
 
         return array_map(fn (array $category): array => [
+            'key' => $category['key'],
+            'ids' => $category['ids'],
             'name' => $category['name'],
             'sales' => ExactMoney::decimal($category['sales']),
             'sales_cents' => $category['sales'],
             'items' => $category['items'],
             'share' => $this->share($category['sales'], $totalSales),
         ], $categories);
+    }
+
+    /**
+     * How the paid transactions were paid, one mutually exclusive class per Order (Cash-only, Cashless-only or Split)
+     * from the same grouped pass as every other figure, so Split is never counted again inside Cash or Cashless.
+     *
+     * `share` is the share of Cash + Cashless transactions (Split excluded from the whole); `share_with_split` is the
+     * share of all paid transactions. Both are basis points in 0.1% steps that add up to exactly 100%.
+     *
+     * @param  Aggregate  $current
+     * @return array{basis: string, methods: list<array{method: string, label: string, transactions: int, sales: string, sales_cents: int, share: int|null, share_with_split: int|null}>, unpaid: array{transactions: int, sales: string}}
+     */
+    private function paymentMix(array $current): array
+    {
+        $count = fn (string $class): int => $current['methods'][$class]['orders'] ?? 0;
+        $withoutSplit = $this->exactShares(['cash' => $count('cash'), 'cashless' => $count('cashless')]);
+        $withSplit = $this->exactShares(['cash' => $count('cash'), 'cashless' => $count('cashless'), 'split' => $count('split')]);
+        $methods = [];
+        foreach (self::PAYMENT_METHODS as $method => $label) {
+            $sales = $current['methods'][$method]['sales'] ?? 0;
+            $methods[] = [
+                'method' => $method,
+                'label' => $label,
+                'transactions' => $count($method),
+                'sales' => ExactMoney::decimal($sales),
+                'sales_cents' => $sales,
+                'share' => $withoutSplit[$method] ?? null,
+                'share_with_split' => $withSplit[$method],
+            ];
+        }
+
+        return [
+            'basis' => 'transactions',
+            'methods' => $methods,
+            'unpaid' => [
+                'transactions' => $count('unpaid'),
+                'sales' => ExactMoney::decimal($current['methods']['unpaid']['sales'] ?? 0),
+            ],
+        ];
+    }
+
+    /**
+     * Shares of a whole in basis points, allocated in 0.1% steps by largest remainder so they add up to exactly
+     * 100.0%; every share is null when the whole is empty.
+     *
+     * @param  array<string, int>  $counts
+     * @return array<string, int|null>
+     */
+    private function exactShares(array $counts): array
+    {
+        $total = array_sum($counts);
+        if ($total <= 0) {
+            return array_map(fn (): ?int => null, $counts);
+        }
+        $tenths = array_map(fn (int $count): int => intdiv($count * 1000, $total), $counts);
+        $remainders = array_map(fn (int $count): int => ($count * 1000) % $total, $counts);
+        $keys = array_keys($counts);
+        usort($keys, fn (string $a, string $b): int => [$remainders[$b], $counts[$b]] <=> [$remainders[$a], $counts[$a]]);
+        foreach (array_slice($keys, 0, 1000 - array_sum($tenths)) as $key) {
+            $tenths[$key]++;
+        }
+
+        return array_map(fn (int $value): int => $value * 10, $tenths);
     }
 
     /**
@@ -820,6 +927,32 @@ class SalesAnalytics
             'cashiers' => array_values(User::query()->whereKey($cashierIds)->orderBy('name')->get(['id', 'name'])
                 ->map(fn (User $user): array => ['value' => $user->id, 'label' => $user->name])->all()),
         ];
+    }
+
+    /**
+     * Categories offered by the category filter: every current category with product sales in this period and scope,
+     * plus any selected category (named from the catalog) so a selection can always be seen and removed.
+     *
+     * @param  list<ProductFigure>  $products
+     * @param  list<string>  $selected
+     * @return list<array{value: string, label: string}>
+     */
+    private function categoryOptions(array $products, array $selected): array
+    {
+        $options = [];
+        foreach ($products as $product) {
+            $options[$product['category_id'] ?? self::UNCATEGORIZED] = $product['category'];
+        }
+        $missing = array_values(array_diff($selected, array_keys($options), [self::UNCATEGORIZED]));
+        if ($missing !== []) {
+            $options += DB::table('categories')->whereIn('id', $missing)->pluck('name', 'id')->map(fn (mixed $name): string => (string) $name)->all();
+        }
+        if (in_array(self::UNCATEGORIZED, $selected, true)) {
+            $options[self::UNCATEGORIZED] ??= 'Uncategorized';
+        }
+        asort($options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return array_map(fn (string|int $value, string $label): array => ['value' => (string) $value, 'label' => $label], array_keys($options), $options);
     }
 
     /**

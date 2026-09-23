@@ -15,12 +15,42 @@ export type ReportFilters = {
     order_types?: string[];
     payment_methods?: string[];
     cashiers?: (number | string)[];
+    /** Category UUIDs or "uncategorized"; narrows the product views only. */
+    categories?: string[];
 };
 
+/** Every filter the Filter this report dialog applies; an empty list means every value. */
 export type ReportOrderFilters = Pick<
     ReportFilters,
-    'order_types' | 'payment_methods' | 'cashiers'
+    'order_types' | 'payment_methods' | 'cashiers' | 'categories'
 >;
+
+/**
+ * The standalone filter dialog lists every value checked when a group is unfiltered: an empty server filter opens
+ * with every option checked.
+ */
+export function draftSelection<T extends string | number>(
+    active: readonly T[],
+    options: readonly { value: T }[],
+): T[] {
+    return active.length === 0
+        ? options.map((option) => option.value)
+        : [...active];
+}
+
+/** Applying a group with nothing or everything checked removes that filter, like the standalone. */
+export function appliedSelection<T extends string | number>(
+    draft: readonly T[],
+    options: readonly { value: T }[],
+): T[] {
+    const checked = options
+        .map((option) => option.value)
+        .filter((value) => draft.includes(value));
+
+    return checked.length === 0 || checked.length === options.length
+        ? []
+        : checked;
+}
 
 /** The Owner standalone Reports period tabs, backed by server presets. */
 export const REPORT_TABS: readonly [ReportPreset, string][] = [

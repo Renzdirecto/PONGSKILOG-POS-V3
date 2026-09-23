@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Minus } from 'lucide-react';
 import { useId, useState } from 'react';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ComponentProps, KeyboardEvent, ReactNode } from 'react';
 import { ownerPanelClass } from '@/components/owner-ui';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -10,8 +10,10 @@ import {
     SERIES_COLORS,
     axisPeso,
     barWidth,
+    categoryRowSelected,
     chartGeometry,
     countLabel,
+    paymentMixSegments,
     roundedShare,
     shareLabel,
     visibleLabelIndexes,
@@ -22,6 +24,8 @@ import type {
     Daypart,
     Delta,
     HourBucket,
+    PaymentMethodKey,
+    PaymentMixData,
     ProductRow,
     TrendBucket,
 } from '@/lib/owner-analytics';
@@ -708,24 +712,251 @@ export function PaymentMix({
     );
 }
 
+/**
+ * The Reports Payment method donut: each paid Order counted once by how it was paid (Cash-only, Cashless-only, or
+ * Split when included). Segments and legend rows are real controls that select a method and show its exact
+ * percentage, transaction count and sales; selecting it again returns to the neutral summary.
+ */
+export function PaymentMethodDonut({
+    mix,
+    includeSplit,
+    size = 148,
+}: {
+    mix: PaymentMixData;
+    includeSplit: boolean;
+    size?: number;
+}) {
+    const [selected, setSelected] = useState<PaymentMethodKey | null>(null);
+    const detailId = useId();
+    const { segments, paidTransactions, excludedSplit } = paymentMixSegments(
+        mix,
+        includeSplit,
+    );
+    const active =
+        segments.find(
+            (segment) =>
+                segment.method === selected && segment.transactions > 0,
+        ) ?? null;
+    const toggle = (method: PaymentMethodKey) =>
+        setSelected((current) => (current === method ? null : method));
+    const onSegmentKey = (
+        event: KeyboardEvent<SVGCircleElement>,
+        method: PaymentMethodKey,
+    ) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggle(method);
+        }
+    };
+    const visibleNames = segments.map((segment) => segment.label).join(' and ');
+
+    return (
+        <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-[18px]">
+                <div
+                    className="relative shrink-0"
+                    style={{ width: size, height: size }}
+                >
+                    <svg
+                        role="group"
+                        aria-label={`Payment method: ${visibleNames}, share of ${countLabel(paidTransactions, 'paid transaction')}`}
+                        viewBox="0 0 42 42"
+                        className="size-full -rotate-90"
+                    >
+                        <circle
+                            cx="21"
+                            cy="21"
+                            r="15.9"
+                            fill="none"
+                            stroke="#F2F2F2"
+                            strokeWidth="6"
+                        />
+                        {segments.map((segment) =>
+                            segment.visibleShare === null ||
+                            segment.transactions === 0 ? null : (
+                                <circle
+                                    key={segment.method}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-pressed={active?.method === segment.method}
+                                    aria-describedby={detailId}
+                                    aria-label={`${segment.label}: ${shareLabel(segment.visibleShare)}, ${countLabel(segment.transactions, 'transaction')}, ${peso(segment.sales)} in sales`}
+                                    onClick={() => toggle(segment.method)}
+                                    onKeyDown={(event) =>
+                                        onSegmentKey(event, segment.method)
+                                    }
+                                    cx="21"
+                                    cy="21"
+                                    r="15.9"
+                                    fill="none"
+                                    pathLength={100}
+                                    stroke={segment.color}
+                                    strokeWidth={
+                                        active?.method === segment.method
+                                            ? 7.5
+                                            : 6
+                                    }
+                                    strokeDasharray={segment.dash}
+                                    strokeDashoffset={segment.offset}
+                                    className={`cursor-pointer transition-[opacity,stroke-width] outline-none focus-visible:stroke-8 ${active && active.method !== segment.method ? 'opacity-35' : ''}`}
+                                />
+                            ),
+                        )}
+                    </svg>
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-px px-6 text-center"
+                    >
+                        <span className="text-[9px] font-semibold tracking-[0.08em] text-[#8a8a8a] uppercase">
+                            {active ? active.label : 'Paid'}
+                        </span>
+                        <span className="text-[20px] leading-tight font-bold tracking-[-0.02em] tabular-nums">
+                            {active
+                                ? shareLabel(active.visibleShare)
+                                : paidTransactions.toLocaleString('en-PH')}
+                        </span>
+                        <span className="text-[10px] leading-tight text-[#767676] tabular-nums">
+                            {active
+                                ? countLabel(active.transactions, 'transaction')
+                                : paidTransactions === 1
+                                  ? 'transaction'
+                                  : 'transactions'}
+                        </span>
+                    </div>
+                </div>
+                <ul className="flex min-w-0 flex-[1_1_170px] flex-col gap-1.5">
+                    {segments.map((segment) => {
+                        const on = active?.method === segment.method;
+
+                        return (
+                            <li key={segment.method}>
+                                <button
+                                    type="button"
+                                    aria-pressed={on}
+                                    aria-describedby={detailId}
+                                    disabled={segment.transactions === 0}
+                                    onClick={() => toggle(segment.method)}
+                                    className={`flex min-h-11 w-full flex-col gap-1.5 rounded-xl border px-2.5 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none disabled:cursor-default ${on ? 'border-[#111] bg-[#fafafa]' : 'border-transparent enabled:hover:bg-[#fafafa]'} ${active && !on ? 'opacity-55' : ''}`}
+                                >
+                                    <span className="flex w-full items-center gap-[9px]">
+                                        <span
+                                            aria-hidden="true"
+                                            className="size-2.5 shrink-0 rounded-[3px]"
+                                            style={{ background: segment.color }}
+                                        />
+                                        <span className="flex min-w-0 flex-1 flex-col">
+                                            <span className="text-[13px] font-semibold">
+                                                {segment.label}
+                                            </span>
+                                            <span className="text-[11px] text-[#8a8a8a] tabular-nums">
+                                                {countLabel(
+                                                    segment.transactions,
+                                                    'transaction',
+                                                )}
+                                            </span>
+                                        </span>
+                                        <span className="flex shrink-0 flex-col items-end">
+                                            <span className="text-[13px] font-semibold whitespace-nowrap tabular-nums">
+                                                {peso(segment.sales)}
+                                            </span>
+                                            <span className="text-[11px] text-[#767676] tabular-nums">
+                                                {shareLabel(segment.visibleShare)}
+                                            </span>
+                                        </span>
+                                    </span>
+                                    <span
+                                        aria-hidden="true"
+                                        className="block h-[7px] w-full overflow-hidden rounded-full bg-[#f2f2f2]"
+                                    >
+                                        <span
+                                            className="block h-full rounded-full"
+                                            style={{
+                                                width: `${segment.visibleShare === null ? 0 : barWidth(segment.visibleShare, 10000)}%`,
+                                                background: segment.color,
+                                            }}
+                                        />
+                                    </span>
+                                </button>
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
+            <p
+                id={detailId}
+                aria-live="polite"
+                className="rounded-[11px] border border-[#efefef] bg-[#fafafa] px-3 py-2.5 text-[11.5px] leading-[1.5] text-[#666] tabular-nums"
+            >
+                {active ? (
+                    <>
+                        <span className="font-semibold text-[#111]">
+                            {active.label} · {shareLabel(active.visibleShare)}
+                        </span>{' '}
+                        of {countLabel(paidTransactions, 'paid transaction')} ·{' '}
+                        {countLabel(active.transactions, 'transaction')} ·{' '}
+                        {peso(active.sales)} in sales
+                    </>
+                ) : paidTransactions === 0 ? (
+                    excludedSplit > 0 ? (
+                        'No Cash-only or Cashless-only transactions in this period.'
+                    ) : (
+                        'No paid transactions in this period.'
+                    )
+                ) : (
+                    `${countLabel(paidTransactions, 'paid transaction')} · tap a method or its segment for the exact count and sales.`
+                )}
+            </p>
+            {excludedSplit > 0 && (
+                <p className="text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
+                    <span className="font-semibold text-[#111]">
+                        {countLabel(excludedSplit, 'split transaction')}{' '}
+                        excluded
+                    </span>{' '}
+                    · enable Include split to show them.
+                </p>
+            )}
+            {mix.unpaid.transactions > 0 && (
+                <p className="text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
+                    {countLabel(mix.unpaid.transactions, 'unpaid Pay Later order')}{' '}
+                    ({peso(mix.unpaid.sales)}) not in this chart until settled.
+                </p>
+            )}
+            <p className="text-[11px] leading-[1.5] text-[#8a8a8a]">
+                Percentages are shares of transactions: each paid order is
+                counted once by how it was paid
+                {includeSplit
+                    ? ' — Split means Cash and Cashless on the same order.'
+                    : '.'}{' '}
+                Amounts are those orders’ sales.
+            </p>
+        </div>
+    );
+}
+
+/**
+ * Sales by category. With `onPick`, each row is a real toggle button for the category filter values it stands for;
+ * `selected` holds the active category filter.
+ */
 export function CategoryBars({
     categories,
-    selected,
+    selected = [],
     onPick,
 }: {
     categories: CategoryRow[];
-    selected?: string | null;
-    onPick?: (name: string) => void;
+    selected?: readonly string[];
+    onPick?: (category: CategoryRow) => void;
 }) {
     if (categories.length === 0) {
         return <EmptyNote>No items sold in this period.</EmptyNote>;
     }
     const max = Math.max(...categories.map((category) => category.sales_cents));
+    const filtering = selected.length > 0;
 
     return (
-        <ul className="flex flex-col gap-[11px]">
+        <ul className="flex flex-col gap-[9px]">
             {categories.map((category, index) => {
                 const color = SERIES_COLORS[index % SERIES_COLORS.length];
+                const on = categoryRowSelected(category, selected);
                 const content = (
                     <>
                         <span className="flex w-full items-center gap-[9px]">
@@ -735,8 +966,16 @@ export function CategoryBars({
                                 style={{ background: color }}
                             />
                             <span className="flex min-w-0 flex-1 flex-col text-left">
-                                <span className="truncate text-[13px] font-semibold">
-                                    {category.name}
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                    <span className="truncate text-[13px] font-semibold">
+                                        {category.name}
+                                    </span>
+                                    {onPick && on && (
+                                        <Check
+                                            className="size-3.5 shrink-0"
+                                            aria-hidden="true"
+                                        />
+                                    )}
                                 </span>
                                 <span className="text-[11px] text-[#8a8a8a] tabular-nums">
                                     {countLabel(category.items, 'item')} sold
@@ -762,13 +1001,13 @@ export function CategoryBars({
                 );
 
                 return (
-                    <li key={category.name}>
+                    <li key={category.key}>
                         {onPick ? (
                             <button
                                 type="button"
-                                aria-pressed={selected === category.name}
-                                onClick={() => onPick(category.name)}
-                                className={`flex w-full flex-col gap-[7px] rounded-xl border px-[11px] py-2.5 text-left focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${selected === category.name ? 'border-[#111] bg-[#fafafa]' : 'border-[#efefef] bg-white'}`}
+                                aria-pressed={on}
+                                onClick={() => onPick(category)}
+                                className={`flex min-h-11 w-full flex-col gap-[7px] rounded-xl border px-[11px] py-2.5 text-left transition focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${on ? 'border-[#111] bg-[#fafafa]' : `border-[#efefef] bg-white hover:border-[#c9c9c9] ${filtering ? 'opacity-55 hover:opacity-100' : ''}`}`}
                             >
                                 {content}
                             </button>

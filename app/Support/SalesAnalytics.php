@@ -36,9 +36,10 @@ use Illuminate\Support\Facades\DB;
  * recorded per Order, so no money figure can be split by category. Money is exact integer cents until presented as a
  * decimal string.
  *
- * The Payment method mix classifies each Order once by its persisted Payment legs (`paymentClassSql()`): Cash-only,
- * Cashless-only or Split. Its shares are shares of paid transactions, so Split is never double-counted; unpaid Pay
- * Later Orders are reported separately.
+ * The Payment method mix is a share of paid sales (₱). By default a Split Order's cash and cashless parts join Cash and
+ * Cashless; with Split shown, each Order is classified once by its persisted Payment legs (`paymentClassSql()`):
+ * Cash-only, Cashless-only or Split. Either way the paid total is the same and nothing is counted twice; unpaid Pay Later
+ * Orders are reported separately.
  *
  * @phpstan-import-type SessionRow from StoreSessionSalesReport
  *
@@ -133,7 +134,7 @@ class SalesAnalytics
                 'kpis' => $this->kpis($current, $previous, $collections, $previousCollections),
                 'trend' => $this->trend($period, $current, $previous),
                 'collections' => $this->presentCollections($collections, $current),
-                'payment_mix' => $this->paymentMix($current),
+                'payment_mix' => $this->paymentMix($selected, $current, $orderFilters),
                 'categories' => $this->categories($products, $current['totals']['sales']),
                 'order_types' => $this->orderTypes($current),
                 ...$this->hours($current, $previous),
@@ -584,41 +585,98 @@ class SalesAnalytics
     }
 
     /**
-     * How the paid transactions were paid, one mutually exclusive class per Order (Cash-only, Cashless-only or Split)
-     * from the same grouped pass as every other figure, so Split is never counted again inside Cash or Cashless.
+     * The Payment method mix of paid sales (₱), in two views of the same paid Orders:
      *
-     * `share` is the share of Cash + Cashless transactions (Split excluded from the whole); `share_with_split` is the
-     * share of all paid transactions. Both are basis points in 0.1% steps that add up to exactly 100%.
+     * - `combined` (Include split off): Cash = Cash-only Orders + the cash part of Split Orders; Cashless = Cashless-only
+     *   Orders + the cashless part of Split Orders.
+     * - `separate` (Include split on): Cash-only, Cashless-only and Split Orders, each Order counted once.
      *
+     * Order amounts are the current `orders.total` of the same eligible, filtered Orders as every other figure (voided and
+     * unpaid Pay Later Orders excluded). A Split Order's parts are its Payment legs net of its allocated corrections; a
+     * correction still pending allocation is reported, never guessed. Shares are basis points in 0.1% steps that add up
+     * to exactly 100%.
+     *
+     * @param  Collection<int, StoreSession>  $sessions
      * @param  Aggregate  $current
-     * @return array{basis: string, methods: list<array{method: string, label: string, transactions: int, sales: string, sales_cents: int, share: int|null, share_with_split: int|null}>, unpaid: array{transactions: int, sales: string}}
+     * @param  OrderFilters  $filters
+     * @return array<string, mixed>
      */
-    private function paymentMix(array $current): array
+    private function paymentMix(Collection $sessions, array $current, array $filters): array
     {
         $count = fn (string $class): int => $current['methods'][$class]['orders'] ?? 0;
-        $withoutSplit = $this->exactShares(['cash' => $count('cash'), 'cashless' => $count('cashless')]);
-        $withSplit = $this->exactShares(['cash' => $count('cash'), 'cashless' => $count('cashless'), 'split' => $count('split')]);
-        $methods = [];
-        foreach (self::PAYMENT_METHODS as $method => $label) {
-            $sales = $current['methods'][$method]['sales'] ?? 0;
-            $methods[] = [
-                'method' => $method,
-                'label' => $label,
-                'transactions' => $count($method),
-                'sales' => ExactMoney::decimal($sales),
-                'sales_cents' => $sales,
-                'share' => $withoutSplit[$method] ?? null,
-                'share_with_split' => $withSplit[$method],
-            ];
-        }
+        $sales = fn (string $class): int => $current['methods'][$class]['sales'] ?? 0;
+        $legs = $this->splitLegs($sessions, $filters);
+        $separate = ['cash' => $sales('cash'), 'cashless' => $sales('cashless'), 'split' => $sales('split')];
+        $combined = ['cash' => $sales('cash') + $legs['cash'], 'cashless' => $sales('cashless') + $legs['cashless']];
+        $separateShares = $this->exactShares($separate);
+        $combinedShares = $this->exactShares($combined);
+        $row = fn (string $method, string $label, int $cents, int $orders, int $split, ?int $share): array => [
+            'method' => $method,
+            'label' => $label,
+            'amount' => ExactMoney::decimal($cents),
+            'amount_cents' => $cents,
+            'orders' => $orders,
+            'split_orders' => $split,
+            'share' => $share,
+        ];
 
         return [
-            'basis' => 'transactions',
-            'methods' => $methods,
+            'basis' => 'sales',
+            'paid_orders' => $count('cash') + $count('cashless') + $count('split'),
+            'split_orders' => $count('split'),
+            'combined' => [
+                $row('cash', 'Cash', $combined['cash'], $count('cash') + $count('split'), $count('split'), $combinedShares['cash']),
+                $row('cashless', 'Cashless', $combined['cashless'], $count('cashless') + $count('split'), $count('split'), $combinedShares['cashless']),
+            ],
+            'separate' => [
+                $row('cash', 'Cash', $separate['cash'], $count('cash'), 0, $separateShares['cash']),
+                $row('cashless', 'Cashless', $separate['cashless'], $count('cashless'), 0, $separateShares['cashless']),
+                $row('split', 'Split', $separate['split'], $count('split'), $count('split'), $separateShares['split']),
+            ],
+            'totals' => [
+                'combined' => ExactMoney::decimal(array_sum($combined)),
+                'separate' => ExactMoney::decimal(array_sum($separate)),
+            ],
+            'split_pending' => ExactMoney::decimal($legs['pending']),
             'unpaid' => [
                 'transactions' => $count('unpaid'),
-                'sales' => ExactMoney::decimal($current['methods']['unpaid']['sales'] ?? 0),
+                'sales' => ExactMoney::decimal($sales('unpaid')),
             ],
+        ];
+    }
+
+    /**
+     * The cash and cashless parts of the eligible Split Orders: Payment legs by method, less their corrections with an
+     * allocated cash/cashless portion. Corrections without an allocation are returned as `pending`.
+     *
+     * @param  Collection<int, StoreSession>  $sessions
+     * @param  OrderFilters  $filters
+     * @return array{cash: int, cashless: int, pending: int}
+     */
+    private function splitLegs(Collection $sessions, array $filters): array
+    {
+        if ($sessions->isEmpty()) {
+            return ['cash' => 0, 'cashless' => 0, 'pending' => 0];
+        }
+        $splitOrders = $this->eligibleOrders($sessions)->whereRaw(self::paymentClassSql()." = 'split'")->select('orders.id');
+        $this->applyOrderFilters($splitOrders, $filters);
+        $payments = DB::table('payments')
+            ->whereIn('payments.order_id', $splitOrders)
+            ->groupBy('payments.method')
+            ->pluck(DB::raw('COALESCE(SUM(CAST(ROUND(payments.amount * 100) AS BIGINT)), 0) AS cents'), 'payments.method');
+        $allocated = 'order_adjustments.cash_amount IS NOT NULL AND order_adjustments.cashless_amount IS NOT NULL';
+        $corrections = DB::table('order_adjustments')
+            ->whereIn('order_adjustments.order_id', clone $splitOrders)
+            ->first([
+                DB::raw("COALESCE(SUM(CASE WHEN {$allocated} THEN CAST(ROUND(order_adjustments.cash_amount * 100) AS BIGINT) ELSE 0 END), 0) AS cash"),
+                DB::raw("COALESCE(SUM(CASE WHEN {$allocated} THEN CAST(ROUND(order_adjustments.cashless_amount * 100) AS BIGINT) ELSE 0 END), 0) AS cashless"),
+                DB::raw("COALESCE(SUM(CASE WHEN {$allocated} THEN 0 ELSE CAST(ROUND(order_adjustments.amount * 100) AS BIGINT) END), 0) AS pending"),
+            ]);
+
+        return [
+            'cash' => max(0, (int) ($payments['cash'] ?? 0) - (int) ($corrections->cash ?? 0)),
+            'cashless' => max(0, (int) ($payments['cashless'] ?? 0) - (int) ($corrections->cashless ?? 0)),
+            'pending' => (int) ($corrections->pending ?? 0),
         ];
     }
 

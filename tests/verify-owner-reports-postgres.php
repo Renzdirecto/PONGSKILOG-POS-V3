@@ -179,18 +179,21 @@ try {
     echo 'H PASS: EXISTS payment classification and order-scoped flows narrow sales and collections together.'.PHP_EOL;
 
     /** K: the Reports payment method mix counts each paid Order once and the category filter narrows products only. */
-    $mix = array_column($mainResult['analytics']['payment_mix']['methods'], null, 'method');
-    verifyPhase16a([$mix['cash']['transactions'], $mix['cashless']['transactions'], $mix['split']['transactions']] === [1, 1, 1], 'K: mix counts '.json_encode($mix));
-    verifyPhase16a([$mix['cash']['sales'], $mix['cashless']['sales'], $mix['split']['sales']] === ['99.99', '33.33', '66.66'], 'K: mix sales');
-    verifyPhase16a($mix['cash']['share'] + $mix['cashless']['share'] === 10000 && $mix['split']['share'] === null, 'K: shares without split');
-    verifyPhase16a($mix['cash']['share_with_split'] + $mix['cashless']['share_with_split'] + $mix['split']['share_with_split'] === 10000, 'K: shares with split');
+    $mix = $mainResult['analytics']['payment_mix'];
+    $combined = array_column($mix['combined'], null, 'method');
+    $separate = array_column($mix['separate'], null, 'method');
+    verifyPhase16a([$combined['cash']['amount'], $combined['cashless']['amount']] === ['149.98', '50.00'], 'K: split parts inside Cash/Cashless '.json_encode($combined));
+    verifyPhase16a([$combined['cash']['amount'], $combined['cashless']['amount']] === [$mainResult['analytics']['collections']['cash'], $mainResult['analytics']['collections']['cashless']], 'K: combined view equals reconciled collections');
+    verifyPhase16a([$separate['cash']['amount'], $separate['cashless']['amount'], $separate['split']['amount']] === ['99.99', '33.33', '66.66'], 'K: separate view '.json_encode($separate));
+    verifyPhase16a($mix['totals'] === ['combined' => '199.98', 'separate' => '199.98'] && $mix['split_pending'] === '0.00', 'K: totals '.json_encode($mix['totals']));
+    verifyPhase16a(array_sum(array_column($mix['combined'], 'share')) === 10000 && array_sum(array_column($mix['separate'], 'share')) === 10000, 'K: shares');
     $categoryId = (string) $main->product->category_id;
     $narrowed = $analytics->for($main->branch, [...$day, 'categories' => [$categoryId]])['analytics'];
     $none = $analytics->for($main->branch, [...$day, 'categories' => ['uncategorized']])['analytics'];
     verifyPhase16a(count($narrowed['products']) === 1 && $none['products'] === [], 'K: category narrows products');
     verifyPhase16a($none['kpis'] === $mainResult['analytics']['kpis'] && $none['payment_mix'] === $mainResult['analytics']['payment_mix'] && $none['collections'] === $mainResult['analytics']['collections'], 'K: category leaves money untouched');
     verifyPhase16a(array_column($narrowed['filter_options']['categories'], 'value') === [$categoryId], 'K: category options');
-    echo 'K PASS: payment mix classifies each paid Order once (voided excluded); category narrows product rows only.'.PHP_EOL;
+    echo 'K PASS: payment mix puts split parts inside Cash/Cashless (= collections) or shows Split once; category narrows product rows only.'.PHP_EOL;
 
     /** I: committed-to-ready prep seconds on PostgreSQL. */
     phase16aAt('2026-09-23 11:00');

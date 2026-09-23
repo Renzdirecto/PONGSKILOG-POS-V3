@@ -30,7 +30,7 @@
             }
         </style>
 
-        {{-- Browser tab: round emblem. Home-screen / PWA-ready icons: square logo. Sources in public/images/branding/source --}}
+        {{-- Browser tab: the rounded-square chef icon. Home-screen / PWA-ready icons: square logo. Sources in public/images/branding/source --}}
         <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
         <link rel="icon" href="/images/branding/icons/favicon-192.png" type="image/png" sizes="192x192">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
@@ -42,13 +42,13 @@
         {{-- Link previews (Messenger, Facebook, Viber, X) --}}
         <meta property="og:type" content="website">
         <meta property="og:site_name" content="{{ config('app.name', 'Pongskilog') }}">
-        <meta property="og:title" content="{{ config('app.name', 'Pongskilog') }} POS System">
-        <meta property="og:description" content="Pongskilog POS System · Orders, Kitchen, Inventory and Reports">
+        <meta property="og:title" content="{{ config('app.name', 'Pongskilog') }}">
+        <meta property="og:description" content="Pongskilog · Est. 2022">
         <meta property="og:image" content="{{ asset('images/branding/og-image.jpg') }}">
         <meta property="og:image:type" content="image/jpeg">
         <meta property="og:image:width" content="1200">
         <meta property="og:image:height" content="630">
-        <meta property="og:image:alt" content="Pongskilog POS System">
+        <meta property="og:image:alt" content="Pongskilog logo: a chef tossing fried rice in a wok, est. 2022">
         <meta name="twitter:card" content="summary_large_image">
         <meta name="twitter:image" content="{{ asset('images/branding/og-image.jpg') }}">
 

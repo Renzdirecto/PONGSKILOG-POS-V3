@@ -42,6 +42,7 @@ import {
     plural,
 } from '@/components/report-store-sessions';
 import type { SessionRow } from '@/components/report-store-sessions';
+import { useReportsRealtimeRefresh } from '@/hooks/use-reports-realtime-refresh';
 import {
     Dialog,
     DialogClose,
@@ -224,6 +225,12 @@ export default function Reports({
         ...analytics.kitchen.by_hour.map((hour) => hour.average_seconds ?? 0),
     );
     const currentQuery = reportQuery(filters, {});
+
+    /** New orders, payments, voids, expenses and Store changes reload the report in place, keeping the filters. */
+    useReportsRealtimeRefresh(
+        ['report', 'analytics', 'kitchenNow'],
+        report.scope?.id ?? null,
+    );
 
     function visit(next: ReportFilters) {
         router.get(reports(), reportQuery(filters, next), {

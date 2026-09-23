@@ -6,6 +6,7 @@ use App\Actions\Audit\AuditRecorder;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerCatalogChanged;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\StoreSession;
 use App\Models\User;
@@ -87,6 +88,7 @@ class OpenStoreSession
                     ],
                 );
                 CustomerCatalogChanged::dispatch($branch->id);
+                ReportsChanged::dispatch((string) $branch->id, 'store.opened');
 
                 return $session;
             } catch (UniqueConstraintViolationException $exception) {

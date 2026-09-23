@@ -1,12 +1,47 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
     createBranchEventGuard,
     createQrVersionRecovery,
     createRealtimeRefresh,
+    createReportsEventGuard,
     getAuditRealtimeFallbackAction,
 } from '../resources/js/lib/realtime-refresh.ts';
 import { shouldRefetchCatalogAfterConnectionChange } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+const jsSource = (path: string): string =>
+    readFileSync(new URL(`../resources/js/${path}`, import.meta.url), 'utf8');
+
+test('reports signals refresh every branch for All Branches and only the selected branch otherwise', () => {
+    const allBranches = createReportsEventGuard(null);
+    const main = createReportsEventGuard('main');
+
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), true);
+    assert.equal(allBranches({ event_id: 'b', branch_id: 'qave' }), true);
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), false);
+    assert.equal(allBranches({ event_id: 'c' }), false);
+    assert.equal(main({ event_id: 'd', branch_id: 'qave' }), false);
+    assert.equal(main({ event_id: 'e', branch_id: 'main' }), true);
+});
+
+test('owner dashboard and reports reload their report props from the reports channel', () => {
+    const hook = jsSource('hooks/use-reports-realtime-refresh.ts');
+    const dashboard = jsSource('pages/workspaces/owner-dashboard.tsx');
+    const reports = jsSource('pages/workspaces/reports.tsx');
+
+    assert.match(hook, /'reports',\s+\['\.reports\.changed'\]/);
+    assert.match(hook, /router\.reload\(\{ only: onlyRef\.current, onFinish \}\)/);
+    assert.match(hook, /usePoll\(\s+30_000,/);
+    assert.match(
+        dashboard,
+        /useReportsRealtimeRefresh\(\s+\['analytics', 'report', \.\.\.LIVE_PROPS\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+    assert.match(
+        reports,
+        /useReportsRealtimeRefresh\(\s+\['report', 'analytics', 'kitchenNow'\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+});
 
 test('audit realtime stops fallback polling while Echo is connected', () => {
     const action = getAuditRealtimeFallbackAction('connected', 'connected');

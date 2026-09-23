@@ -120,18 +120,26 @@ export type PaymentMethodKey = 'cash' | 'cashless' | 'split';
 export type PaymentMixMethod = {
     method: PaymentMethodKey;
     label: string;
-    transactions: number;
-    sales: string;
-    sales_cents: number;
-    /** Share of Cash + Cashless transactions in basis points; always null for Split. */
+    amount: string;
+    amount_cents: number;
+    /** Paid orders with a payment in this method (Split orders appear in both Cash and Cashless when combined). */
+    orders: number;
+    /** How many of those orders are Split orders. */
+    split_orders: number;
+    /** Share of the view's paid sales in basis points (0.1% steps, exactly 100% in total). */
     share: number | null;
-    /** Share of all paid transactions in basis points. */
-    share_with_split: number | null;
 };
 
 export type PaymentMixData = {
-    basis: 'transactions';
-    methods: PaymentMixMethod[];
+    basis: 'sales';
+    paid_orders: number;
+    split_orders: number;
+    /** Include split off: Split orders' cash and cashless parts inside Cash and Cashless. */
+    combined: PaymentMixMethod[];
+    /** Include split on: Cash-only, Cashless-only and Split orders. */
+    separate: PaymentMixMethod[];
+    totals: { combined: string; separate: string };
+    split_pending: string;
     unpaid: { transactions: number; sales: string };
 };
 
@@ -242,8 +250,6 @@ export const METHOD_COLORS: Record<PaymentMethodKey, string> = {
 };
 
 export type PaymentMixSegment = PaymentMixMethod & {
-    /** The server share for the visible whole, in basis points (null when that whole is empty). */
-    visibleShare: number | null;
     color: string;
     /** SVG dash geometry on a pathLength of 100. */
     dash: string;
@@ -251,32 +257,23 @@ export type PaymentMixSegment = PaymentMixMethod & {
 };
 
 /**
- * The Payment method donut: Cash and Cashless by default, plus Split when it is included. Every method is a
- * mutually exclusive order class, so Split is added as its own segment and never on top of Cash or Cashless. The
- * shares come from the server (exactly 100.0% of the visible transactions); this only lays them out.
+ * The Payment method donut, a share of paid sales (₱). Include split off: Cash and Cashless, with each Split order's
+ * cash and cashless parts inside them. Include split on: Cash-only, Cashless-only and Split, each order once. Both
+ * views come from the server with shares that add up to exactly 100.0%; this only lays them out.
  */
 export function paymentMixSegments(
     mix: PaymentMixData,
     includeSplit: boolean,
-): {
-    segments: PaymentMixSegment[];
-    paidTransactions: number;
-    excludedSplit: number;
-} {
+): { segments: PaymentMixSegment[]; total: string } {
     let offset = 0;
-    const segments = mix.methods
-        .filter((method) => includeSplit || method.method !== 'split')
-        .map((method) => {
-            const visibleShare = includeSplit
-                ? method.share_with_split
-                : method.share;
+    const segments = (includeSplit ? mix.separate : mix.combined).map(
+        (method) => {
             const percent =
-                visibleShare === null || method.transactions === 0
+                method.share === null || method.amount_cents <= 0
                     ? 0
-                    : visibleShare / 100;
+                    : method.share / 100;
             const segment = {
                 ...method,
-                visibleShare,
                 color: METHOD_COLORS[method.method],
                 dash: `${percent.toFixed(2)} ${Math.max(0, 100 - percent).toFixed(2)}`,
                 offset: (-offset).toFixed(2),
@@ -284,18 +281,12 @@ export function paymentMixSegments(
             offset += percent;
 
             return segment;
-        });
+        },
+    );
 
     return {
         segments,
-        paidTransactions: segments.reduce(
-            (total, segment) => total + segment.transactions,
-            0,
-        ),
-        excludedSplit: includeSplit
-            ? 0
-            : (mix.methods.find((method) => method.method === 'split')
-                  ?.transactions ?? 0),
+        total: includeSplit ? mix.totals.separate : mix.totals.combined,
     };
 }
 

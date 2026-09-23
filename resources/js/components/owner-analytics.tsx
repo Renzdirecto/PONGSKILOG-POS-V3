@@ -26,6 +26,7 @@ import type {
     HourBucket,
     PaymentMethodKey,
     PaymentMixData,
+    PaymentMixSegment,
     ProductRow,
     TrendBucket,
 } from '@/lib/owner-analytics';
@@ -713,9 +714,10 @@ export function PaymentMix({
 }
 
 /**
- * The Reports Payment method donut: each paid Order counted once by how it was paid (Cash-only, Cashless-only, or
- * Split when included). Segments and legend rows are real controls that select a method and show its exact
- * percentage, transaction count and sales; selecting it again returns to the neutral summary.
+ * The Reports Payment method donut, a share of paid sales (₱). By default a Split order's cash and cashless parts are
+ * inside Cash and Cashless; with Include split, Split is its own segment and Cash/Cashless are single-method orders.
+ * Segments and legend rows are real controls that select a method and show its exact percentage, amount and orders;
+ * selecting it again returns to the neutral summary.
  */
 export function PaymentMethodDonut({
     mix,
@@ -728,15 +730,13 @@ export function PaymentMethodDonut({
 }) {
     const [selected, setSelected] = useState<PaymentMethodKey | null>(null);
     const detailId = useId();
-    const { segments, paidTransactions, excludedSplit } = paymentMixSegments(
-        mix,
-        includeSplit,
-    );
+    const { segments, total } = paymentMixSegments(mix, includeSplit);
     const active =
         segments.find(
             (segment) =>
-                segment.method === selected && segment.transactions > 0,
+                segment.method === selected && segment.amount_cents > 0,
         ) ?? null;
+    const paid = segments.some((segment) => segment.amount_cents > 0);
     const toggle = (method: PaymentMethodKey) =>
         setSelected((current) => (current === method ? null : method));
     const onSegmentKey = (
@@ -748,7 +748,10 @@ export function PaymentMethodDonut({
             toggle(method);
         }
     };
-    const visibleNames = segments.map((segment) => segment.label).join(' and ');
+    const ordersText = (segment: PaymentMixSegment) =>
+        !includeSplit && segment.split_orders > 0
+            ? `${countLabel(segment.orders, 'order')} · ${segment.split_orders} split`
+            : countLabel(segment.orders, 'order');
 
     return (
         <div className="flex flex-col gap-3">
@@ -759,7 +762,7 @@ export function PaymentMethodDonut({
                 >
                     <svg
                         role="group"
-                        aria-label={`Payment method: ${visibleNames}, share of ${countLabel(paidTransactions, 'paid transaction')}`}
+                        aria-label={`Payment method: share of ${peso(total)} paid sales`}
                         viewBox="0 0 42 42"
                         className="size-full -rotate-90"
                     >
@@ -772,15 +775,15 @@ export function PaymentMethodDonut({
                             strokeWidth="6"
                         />
                         {segments.map((segment) =>
-                            segment.visibleShare === null ||
-                            segment.transactions === 0 ? null : (
+                            segment.share === null ||
+                            segment.amount_cents <= 0 ? null : (
                                 <circle
                                     key={segment.method}
                                     role="button"
                                     tabIndex={0}
                                     aria-pressed={active?.method === segment.method}
                                     aria-describedby={detailId}
-                                    aria-label={`${segment.label}: ${shareLabel(segment.visibleShare)}, ${countLabel(segment.transactions, 'transaction')}, ${peso(segment.sales)} in sales`}
+                                    aria-label={`${segment.label}: ${shareLabel(segment.share)}, ${peso(segment.amount)}, ${ordersText(segment)}`}
                                     onClick={() => toggle(segment.method)}
                                     onKeyDown={(event) =>
                                         onSegmentKey(event, segment.method)
@@ -810,17 +813,15 @@ export function PaymentMethodDonut({
                         <span className="text-[9px] font-semibold tracking-[0.08em] text-[#8a8a8a] uppercase">
                             {active ? active.label : 'Paid'}
                         </span>
-                        <span className="text-[20px] leading-tight font-bold tracking-[-0.02em] tabular-nums">
-                            {active
-                                ? shareLabel(active.visibleShare)
-                                : paidTransactions.toLocaleString('en-PH')}
+                        <span
+                            className={`leading-tight font-bold tracking-[-0.02em] tabular-nums ${active ? 'text-[20px]' : 'text-[14px]'}`}
+                        >
+                            {active ? shareLabel(active.share) : peso(total)}
                         </span>
                         <span className="text-[10px] leading-tight text-[#767676] tabular-nums">
                             {active
-                                ? countLabel(active.transactions, 'transaction')
-                                : paidTransactions === 1
-                                  ? 'transaction'
-                                  : 'transactions'}
+                                ? peso(active.amount)
+                                : countLabel(mix.paid_orders, 'order')}
                         </span>
                     </div>
                 </div>
@@ -834,7 +835,7 @@ export function PaymentMethodDonut({
                                     type="button"
                                     aria-pressed={on}
                                     aria-describedby={detailId}
-                                    disabled={segment.transactions === 0}
+                                    disabled={segment.amount_cents <= 0}
                                     onClick={() => toggle(segment.method)}
                                     className={`flex min-h-11 w-full flex-col gap-1.5 rounded-xl border px-2.5 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none disabled:cursor-default ${on ? 'border-[#111] bg-[#fafafa]' : 'border-transparent enabled:hover:bg-[#fafafa]'} ${active && !on ? 'opacity-55' : ''}`}
                                 >
@@ -849,18 +850,15 @@ export function PaymentMethodDonut({
                                                 {segment.label}
                                             </span>
                                             <span className="text-[11px] text-[#8a8a8a] tabular-nums">
-                                                {countLabel(
-                                                    segment.transactions,
-                                                    'transaction',
-                                                )}
+                                                {ordersText(segment)}
                                             </span>
                                         </span>
                                         <span className="flex shrink-0 flex-col items-end">
                                             <span className="text-[13px] font-semibold whitespace-nowrap tabular-nums">
-                                                {peso(segment.sales)}
+                                                {peso(segment.amount)}
                                             </span>
                                             <span className="text-[11px] text-[#767676] tabular-nums">
-                                                {shareLabel(segment.visibleShare)}
+                                                {shareLabel(segment.share)}
                                             </span>
                                         </span>
                                     </span>
@@ -871,7 +869,7 @@ export function PaymentMethodDonut({
                                         <span
                                             className="block h-full rounded-full"
                                             style={{
-                                                width: `${segment.visibleShare === null ? 0 : barWidth(segment.visibleShare, 10000)}%`,
+                                                width: `${segment.share === null ? 0 : barWidth(segment.share, 10000)}%`,
                                                 background: segment.color,
                                             }}
                                         />
@@ -890,29 +888,28 @@ export function PaymentMethodDonut({
                 {active ? (
                     <>
                         <span className="font-semibold text-[#111]">
-                            {active.label} · {shareLabel(active.visibleShare)}
+                            {active.label} · {shareLabel(active.share)}
                         </span>{' '}
-                        of {countLabel(paidTransactions, 'paid transaction')} ·{' '}
-                        {countLabel(active.transactions, 'transaction')} ·{' '}
-                        {peso(active.sales)} in sales
+                        of {peso(total)} paid · {peso(active.amount)} ·{' '}
+                        {ordersText(active)}
                     </>
-                ) : paidTransactions === 0 ? (
-                    excludedSplit > 0 ? (
-                        'No Cash-only or Cashless-only transactions in this period.'
-                    ) : (
-                        'No paid transactions in this period.'
-                    )
+                ) : paid ? (
+                    `${peso(total)} paid across ${countLabel(mix.paid_orders, 'order')} · tap a method or its segment for the exact amount.`
                 ) : (
-                    `${countLabel(paidTransactions, 'paid transaction')} · tap a method or its segment for the exact count and sales.`
+                    'No paid sales in this period.'
                 )}
             </p>
-            {excludedSplit > 0 && (
+            {mix.split_orders > 0 && (
                 <p className="text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
-                    <span className="font-semibold text-[#111]">
-                        {countLabel(excludedSplit, 'split transaction')}{' '}
-                        excluded
-                    </span>{' '}
-                    · enable Include split to show them.
+                    {includeSplit
+                        ? `Split = ${countLabel(mix.split_orders, 'order')} paid with both Cash and Cashless, shown as one amount.`
+                        : `${countLabel(mix.split_orders, 'split order')} ${mix.split_orders === 1 ? 'is' : 'are'} counted by ${mix.split_orders === 1 ? 'its' : 'their'} cash and cashless parts · check Include split to show Split separately.`}
+                </p>
+            )}
+            {!isZeroAmount(mix.split_pending) && (
+                <p className="text-[11.5px] leading-[1.5] text-[#8a4b00] tabular-nums">
+                    {peso(mix.split_pending)} of corrections on split orders is
+                    pending allocation and not deducted from Cash or Cashless.
                 </p>
             )}
             {mix.unpaid.transactions > 0 && (
@@ -922,15 +919,15 @@ export function PaymentMethodDonut({
                 </p>
             )}
             <p className="text-[11px] leading-[1.5] text-[#8a8a8a]">
-                Percentages are shares of transactions: each paid order is
-                counted once by how it was paid
-                {includeSplit
-                    ? ' — Split means Cash and Cashless on the same order.'
-                    : '.'}{' '}
-                Amounts are those orders’ sales.
+                Percentages are shares of paid sales (₱).
             </p>
         </div>
     );
+}
+
+/** True for a zero decimal money string such as "0.00". */
+function isZeroAmount(amount: string): boolean {
+    return /^-?0+(\.0+)?$/.test(amount);
 }
 
 /**

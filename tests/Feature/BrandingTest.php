@@ -6,7 +6,8 @@ test('every page head carries the Pongskilog icons and link preview instead of L
     expect($html)
         ->toContain('<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">')
         ->toContain('<link rel="icon" href="/images/branding/icons/favicon-192.png" type="image/png" sizes="192x192">')
-        ->toContain('<meta property="og:title" content="'.e(config('app.name')).' POS System">')
+        ->toContain('<meta property="og:title" content="'.e(config('app.name')).'">')
+        ->toContain('<meta property="og:description" content="Pongskilog · Est. 2022">')
         ->toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">')
         ->toContain('<meta name="theme-color" content="#111111">')
         ->toContain('<meta property="og:image" content="'.asset('images/branding/og-image.jpg').'">')
@@ -47,13 +48,20 @@ test('the favicon is a multi-size icon file', function () {
         ->and($sizes)->toBe([16, 32, 48]);
 });
 
-test('the browser tab icon is the round emblem with transparent corners', function () {
+test('the browser tab icon is the rounded-square chef icon cut on its gold edge', function () {
     $tab = imagecreatefrompng(public_path('images/branding/icons/favicon-192.png'));
-    $centre = imagecolorsforindex($tab, imagecolorat($tab, 96, 96));
+    $pixel = fn (int $x, int $y): array => imagecolorsforindex($tab, imagecolorat($tab, $x, $y));
 
-    expect(imagecolorsforindex($tab, imagecolorat($tab, 0, 0))['alpha'])->toBe(127)
-        ->and(imagecolorsforindex($tab, imagecolorat($tab, 191, 191))['alpha'])->toBe(127)
-        ->and($centre['alpha'])->toBe(0);
+    expect($pixel(0, 0)['alpha'])->toBe(127)
+        ->and($pixel(191, 191)['alpha'])->toBe(127)
+        ->and($pixel(96, 2)['alpha'])->toBe(0)
+        ->and($pixel(96, 2)['red'])->toBeGreaterThan($pixel(96, 2)['blue'] + 60)
+        ->and($pixel(96, 96)['alpha'])->toBe(0);
+});
+
+test('the approved link preview and tab icon sources are kept', function () {
+    expect(file_exists(public_path('images/branding/source/pongskilog-link-preview-mockup.png')))->toBeTrue()
+        ->and(file_exists(public_path('images/branding/source/pongskilog-tab-icon.png')))->toBeTrue();
 });
 
 test('the maskable icon keeps a full-bleed opaque background for launcher masks', function () {

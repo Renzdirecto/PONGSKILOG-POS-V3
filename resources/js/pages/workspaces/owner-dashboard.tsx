@@ -31,6 +31,7 @@ import {
     ownerPanelClass,
     ownerSecondaryActionClass,
 } from '@/components/owner-ui';
+import { useReportsRealtimeRefresh } from '@/hooks/use-reports-realtime-refresh';
 import {
     KITCHEN_CHIP,
     PAYMENT_METHOD_LABELS,
@@ -145,8 +146,13 @@ export default function OwnerDashboard({
         query: period === 'today' ? {} : { date: period },
     });
 
-    /** Kitchen, inventory and the latest transactions refresh on their own; period analytics reload on demand. */
+    /** Kitchen, inventory and the latest transactions also refresh on a timer (ages and waiting times). */
     usePoll(30_000, { only: LIVE_PROPS });
+    /** Sales, payments and sessions update as soon as an order, payment, void, expense or Store change happens. */
+    useReportsRealtimeRefresh(
+        ['analytics', 'report', ...LIVE_PROPS],
+        report.scope?.id ?? null,
+    );
 
     function choose(next: DashboardPeriod) {
         router.get(owner(), next === 'today' ? {} : { period: next }, {

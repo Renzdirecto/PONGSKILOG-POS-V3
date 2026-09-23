@@ -81,6 +81,32 @@ export function createBranchEventGuard(branchId: string) {
     };
 }
 
+/**
+ * Accepts a business-wide `reports.changed` signal once: every Branch for All Branches (null), otherwise only the
+ * selected Branch.
+ */
+export function createReportsEventGuard(branchId: string | null) {
+    const seen = new Set<string>();
+    return (event: Record<string, unknown>) => {
+        if (typeof event.branch_id !== 'string') {
+            return false;
+        }
+        if (branchId !== null && event.branch_id !== branchId) {
+            return false;
+        }
+        if (typeof event.event_id === 'string') {
+            if (seen.has(event.event_id)) {
+                return false;
+            }
+            seen.add(event.event_id);
+            if (seen.size > 512) {
+                seen.delete(seen.values().next().value!);
+            }
+        }
+        return true;
+    };
+}
+
 export function getAuditRealtimeFallbackAction(
     previousStatus: string,
     connectionStatus: string,

@@ -141,63 +141,79 @@ test('split is explained and never drawn as a third payment segment', () => {
     assert.doesNotMatch(components, /key: 'split' as const/);
 });
 
-/** A server payment mix as SalesAnalytics::paymentMix() presents it. */
-const mix = (
-    cash: [number, number | null, number | null],
-    cashless: [number, number | null, number | null],
-    split: [number, number | null],
-): PaymentMixData => ({
-    basis: 'transactions',
-    methods: [
-        { method: 'cash', label: 'Cash', transactions: cash[0], sales: '100.00', sales_cents: 10000, share: cash[1], share_with_split: cash[2] },
-        { method: 'cashless', label: 'Cashless', transactions: cashless[0], sales: '4250.00', sales_cents: 425000, share: cashless[1], share_with_split: cashless[2] },
-        { method: 'split', label: 'Split', transactions: split[0], sales: '300.00', sales_cents: 30000, share: null, share_with_split: split[1] },
-    ],
+/** A server payment mix as SalesAnalytics::paymentMix() presents it: one cash order ₱100 and one split ₱100 (₱50/₱50). */
+const row = (
+    method: 'cash' | 'cashless' | 'split',
+    amount: string,
+    orders: number,
+    splitOrders: number,
+    share: number | null,
+) => ({
+    method,
+    label: { cash: 'Cash', cashless: 'Cashless', split: 'Split' }[method],
+    amount,
+    amount_cents: Math.round(Number(amount) * 100),
+    orders,
+    split_orders: splitOrders,
+    share,
+});
+const mix = (overrides: Partial<PaymentMixData> = {}): PaymentMixData => ({
+    basis: 'sales',
+    paid_orders: 2,
+    split_orders: 1,
+    combined: [row('cash', '150.00', 2, 1, 7500), row('cashless', '50.00', 1, 1, 2500)],
+    separate: [row('cash', '100.00', 1, 0, 5000), row('cashless', '0.00', 0, 0, 0), row('split', '100.00', 1, 1, 5000)],
+    totals: { combined: '200.00', separate: '200.00' },
+    split_pending: '0.00',
     unpaid: { transactions: 0, sales: '0.00' },
+    ...overrides,
 });
 
-test('the payment donut shows only mutually exclusive Cash and Cashless by default', () => {
-    const view = paymentMixSegments(mix([4, 5000, 4000], [4, 5000, 4000], [2, 2000]), false);
+test('include split off: split parts sit inside Cash and Cashless (Cash 150, Cashless 50)', () => {
+    const view = paymentMixSegments(mix(), false);
 
-    assert.deepEqual(view.segments.map((segment) => segment.method), ['cash', 'cashless']);
-    assert.deepEqual(view.segments.map((segment) => segment.visibleShare), [5000, 5000]);
-    assert.equal(view.paidTransactions, 8);
-    assert.equal(view.excludedSplit, 2);
-    assert.deepEqual(view.segments.map((segment) => segment.dash), ['50.00 50.00', '50.00 50.00']);
-    assert.deepEqual(view.segments.map((segment) => segment.offset), ['0.00', '-50.00']);
-});
-
-test('including split adds it as its own segment and never double-counts it', () => {
-    const view = paymentMixSegments(mix([4, 5000, 4000], [4, 5000, 4000], [2, 2000]), true);
-
-    assert.deepEqual(view.segments.map((segment) => [segment.method, segment.visibleShare, segment.transactions]), [
-        ['cash', 4000, 4],
-        ['cashless', 4000, 4],
-        ['split', 2000, 2],
+    assert.deepEqual(view.segments.map((segment) => [segment.method, segment.amount, segment.share]), [
+        ['cash', '150.00', 7500],
+        ['cashless', '50.00', 2500],
     ]);
-    assert.equal(view.segments.reduce((total, segment) => total + (segment.visibleShare ?? 0), 0), 10000);
-    assert.equal(view.paidTransactions, 10);
-    assert.equal(view.excludedSplit, 0);
-    assert.deepEqual(view.segments.map((segment) => segment.offset), ['0.00', '-40.00', '-80.00']);
+    assert.equal(view.total, '200.00');
+    assert.deepEqual(view.segments.map((segment) => segment.dash), ['75.00 25.00', '25.00 75.00']);
+    assert.deepEqual(view.segments.map((segment) => segment.offset), ['0.00', '-75.00']);
+});
+
+test('include split on: Cash 100, Cashless 0, Split 100 and never counted twice', () => {
+    const view = paymentMixSegments(mix(), true);
+
+    assert.deepEqual(view.segments.map((segment) => [segment.method, segment.amount, segment.share]), [
+        ['cash', '100.00', 5000],
+        ['cashless', '0.00', 0],
+        ['split', '100.00', 5000],
+    ]);
+    assert.equal(view.total, '200.00');
+    assert.equal(view.segments.reduce((total, segment) => total + (segment.share ?? 0), 0), 10000);
+    assert.deepEqual(view.segments.map((segment) => segment.offset), ['0.00', '-50.00', '-50.00']);
     assert.deepEqual(view.segments.map((segment) => segment.color), [METHOD_COLORS.cash, METHOD_COLORS.cashless, METHOD_COLORS.split]);
     assert.equal(METHOD_COLORS.split, '#8A8A8A');
 });
 
 test('payment donut edge cases stay truthful', () => {
-    const empty = paymentMixSegments(mix([0, null, null], [0, null, null], [0, null]), false);
-    assert.equal(empty.paidTransactions, 0);
+    const empty = paymentMixSegments(
+        mix({
+            paid_orders: 0,
+            split_orders: 0,
+            combined: [row('cash', '0.00', 0, 0, null), row('cashless', '0.00', 0, 0, null)],
+            separate: [row('cash', '0.00', 0, 0, null), row('cashless', '0.00', 0, 0, null), row('split', '0.00', 0, 0, null)],
+            totals: { combined: '0.00', separate: '0.00' },
+        }),
+        false,
+    );
     assert.ok(empty.segments.every((segment) => segment.dash === '0.00 100.00'));
 
-    const cashOnly = paymentMixSegments(mix([3, 10000, 10000], [0, 0, 0], [0, 0]), false);
+    const cashOnly = paymentMixSegments(
+        mix({ combined: [row('cash', '300.00', 3, 0, 10000), row('cashless', '0.00', 0, 0, 0)] }),
+        false,
+    );
     assert.deepEqual(cashOnly.segments.map((segment) => segment.dash), ['100.00 0.00', '0.00 100.00']);
-
-    const splitOnlyHidden = paymentMixSegments(mix([0, null, 0], [0, null, 0], [3, 10000]), false);
-    assert.equal(splitOnlyHidden.paidTransactions, 0);
-    assert.equal(splitOnlyHidden.excludedSplit, 3);
-    assert.ok(splitOnlyHidden.segments.every((segment) => segment.dash === '0.00 100.00'));
-
-    const splitOnlyShown = paymentMixSegments(mix([0, null, 0], [0, null, 0], [3, 10000]), true);
-    assert.deepEqual(splitOnlyShown.segments.map((segment) => segment.dash), ['0.00 100.00', '0.00 100.00', '100.00 0.00']);
 });
 
 test('category rows select and clear exactly their categories', () => {
@@ -214,7 +230,7 @@ test('category rows select and clear exactly their categories', () => {
     assert.deepEqual(nextCategorySelection(others, ['drinks-id', 'addons-id']), []);
 });
 
-test('the reports payment donut is clickable, keyboard reachable and shows exact counts', () => {
+test('the reports payment donut is clickable, keyboard reachable and shows exact amounts', () => {
     assert.match(components, /export function PaymentMethodDonut/);
     assert.match(components, /role="button"\s+tabIndex=\{0\}/);
     assert.match(components, /onKeyDown=\{\(event\) =>\s+onSegmentKey\(event, segment\.method\)/);
@@ -222,10 +238,11 @@ test('the reports payment donut is clickable, keyboard reachable and shows exact
     assert.match(components, /onClick=\{\(\) => toggle\(segment\.method\)\}/);
     assert.match(components, /setSelected\(\(current\) => \(current === method \? null : method\)\)/);
     assert.match(components, /aria-live="polite"/);
-    assert.match(components, /\{peso\(active\.sales\)\} in sales/);
-    assert.match(components, /countLabel\(active\.transactions, 'transaction'\)/);
-    assert.match(components, /enable Include split to show them\./);
+    assert.match(components, /of \{peso\(total\)\} paid · \{peso\(active\.amount\)\}/);
+    assert.match(components, /check Include split to show Split separately\./);
+    assert.match(components, /pending allocation and not deducted from Cash or Cashless/);
     assert.match(components, /not in this chart until settled/);
+    assert.match(components, /Percentages are shares of paid sales/);
     assert.doesNotMatch(components.slice(components.indexOf('export function PaymentMethodDonut'), components.indexOf('export function CategoryBars')), /onMouseEnter|title=/);
 });
 
@@ -260,4 +277,16 @@ test('owner transactions reuse the cashier page inside the management shell', ()
 test('the staff page picks its routes from the server-provided surface', () => {
     assert.match(staff, /owner: \{ index: ownerStaffIndex, store: ownerStaffStore \}/);
     assert.match(staff, /form\.submit\(STAFF_ROUTES\[surface\]\.store\(\)/);
+});
+
+test('staff lists name first with the employee id beneath it and defaults to tiled', () => {
+    assert.match(staff, /useState<OwnerViewMode>\('tile'\)/);
+    assert.match(staff, /\['tile', LayoutGrid, 'Tiled view'\]/);
+    assert.match(staff, /\['list', List, 'List view'\]/);
+    assert.match(staff, /aria-pressed=\{viewMode === mode\}/);
+    assert.match(
+        staff,
+        /\{member\.name\}\s*<\/span>\s*<span className="font-mono[^"]*">\s*\{member\.employee_id \?\? 'No Employee ID'\}/,
+    );
+    assert.doesNotMatch(staff, />\s*Employee ID\s*<\/th>/);
 });

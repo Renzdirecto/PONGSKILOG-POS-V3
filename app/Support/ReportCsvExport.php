@@ -42,12 +42,18 @@ class ReportCsvExport
             ['Split payments (already in Cash and Cashless)', $analytics['collections']['split']['total']],
             ['Corrections pending allocation', $analytics['collections']['unallocated']],
             [],
-            ['Payment method (each paid order counted once)', 'Transactions', 'Sales', '% of paid transactions', '% of Cash + Cashless transactions'],
+            ['Payment method (split parts inside Cash and Cashless)', 'Amount', '% of paid sales', 'Orders', 'Of which split'],
         ];
-        foreach ($analytics['payment_mix']['methods'] as $method) {
-            $rows[] = [$method['label'], $method['transactions'], $method['sales'], $share($method['share_with_split']), $share($method['share'])];
+        foreach ($analytics['payment_mix']['combined'] as $method) {
+            $rows[] = [$method['label'], $method['amount'], $share($method['share']), $method['orders'], $method['split_orders']];
         }
-        $rows[] = ['Unpaid (Pay Later, not in the mix)', $analytics['payment_mix']['unpaid']['transactions'], $analytics['payment_mix']['unpaid']['sales']];
+        $rows[] = [];
+        $rows[] = ['Payment method (split shown separately)', 'Amount', '% of paid sales', 'Orders'];
+        foreach ($analytics['payment_mix']['separate'] as $method) {
+            $rows[] = [$method['label'], $method['amount'], $share($method['share']), $method['orders']];
+        }
+        $rows[] = ['Split corrections pending allocation', $analytics['payment_mix']['split_pending']];
+        $rows[] = ['Unpaid (Pay Later, not in the mix)', $analytics['payment_mix']['unpaid']['sales'], '', $analytics['payment_mix']['unpaid']['transactions']];
         $rows[] = [];
         $rows[] = ['Sales trend', 'Sales', 'Transactions', 'Previous sales', 'Previous transactions'];
         foreach ($analytics['trend']['buckets'] as $bucket) {

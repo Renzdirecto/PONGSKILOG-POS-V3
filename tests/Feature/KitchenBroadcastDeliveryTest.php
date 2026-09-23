@@ -21,7 +21,8 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
     $events = [new KitchenTicketCreated($order, $ticket), new KitchenStatusChanged($order, KitchenStatus::Kitchen, KitchenStatus::Ready, now()), new KitchenOrderUpdated($order), new DisplayOrdersChanged($branch, now())];
     $delivered = [];
     $broadcaster = Mockery::mock(Broadcaster::class);
-    $broadcaster->shouldReceive('broadcast')->times(4)->andReturnUsing(function ($channels, $name, $payload) use (&$delivered): void {
+    /** The kitchen status change also invalidates Owner reports through the reports.changed signal. */
+    $broadcaster->shouldReceive('broadcast')->times(5)->andReturnUsing(function ($channels, $name, $payload) use (&$delivered): void {
         $delivered[] = $name;
     });
     Broadcast::extend('kitchen-test', fn () => $broadcaster);
@@ -37,7 +38,7 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
         expect($delivered)->toBe([]);
     });
 
-    expect($delivered)->toBe(['kitchen.ticket_created', 'kitchen.status_changed', 'kitchen.order_updated', 'display.orders_changed']);
+    expect($delivered)->toBe(['kitchen.ticket_created', 'kitchen.status_changed', 'reports.changed', 'kitchen.order_updated', 'display.orders_changed']);
     Queue::assertNothingPushed();
 
     DB::beginTransaction();
@@ -45,7 +46,7 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
         event($event);
     }
     DB::rollBack();
-    expect($delivered)->toHaveCount(4);
+    expect($delivered)->toHaveCount(5);
 });
 
 test('a realtime transport failure is reported without undoing the committed write', function () {

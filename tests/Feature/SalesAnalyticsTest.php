@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\StoreCloseScenario;
 
@@ -260,72 +261,101 @@ test('the cashier filter keeps only orders attributed to that cashier and lists 
 
 /**
  * @param  array<string, mixed>  $analytics
- * @return array<string, array{transactions: int, sales: string, share: int|null, share_with_split: int|null}>
+ * @return array<string, array{amount: string, orders: int, split_orders: int, share: int|null}>
  */
-function paymentMixRows(array $analytics): array
+function paymentMixView(array $analytics, string $view): array
 {
-    return collect($analytics['payment_mix']['methods'])
+    return collect($analytics['payment_mix'][$view])
         ->mapWithKeys(fn (array $row): array => [$row['method'] => [
-            'transactions' => $row['transactions'],
-            'sales' => $row['sales'],
+            'amount' => $row['amount'],
+            'orders' => $row['orders'],
+            'split_orders' => $row['split_orders'],
             'share' => $row['share'],
-            'share_with_split' => $row['share_with_split'],
         ]])
         ->all();
 }
 
-test('the payment method mix classifies each paid order once from its persisted payments', function () {
+test('split parts join cash and cashless by default and stand alone when split is included', function () {
     $scenario = analyticsScenario('2026-09-23 09:00');
     $scenario->payNow(1, 'cash');
-    $scenario->payNow(2, 'cash');
+    $scenario->payNow(1, 'split', '50.00');
+
+    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk()->inertiaProps('analytics');
+
+    expect($analytics['payment_mix']['basis'])->toBe('sales')
+        ->and($analytics['payment_mix']['paid_orders'])->toBe(2)
+        ->and($analytics['payment_mix']['split_orders'])->toBe(1)
+        ->and(paymentMixView($analytics, 'combined'))->toBe([
+            'cash' => ['amount' => '150.00', 'orders' => 2, 'split_orders' => 1, 'share' => 7500],
+            'cashless' => ['amount' => '50.00', 'orders' => 1, 'split_orders' => 1, 'share' => 2500],
+        ])
+        ->and(paymentMixView($analytics, 'separate'))->toBe([
+            'cash' => ['amount' => '100.00', 'orders' => 1, 'split_orders' => 0, 'share' => 5000],
+            'cashless' => ['amount' => '0.00', 'orders' => 0, 'split_orders' => 0, 'share' => 0],
+            'split' => ['amount' => '100.00', 'orders' => 1, 'split_orders' => 1, 'share' => 5000],
+        ]);
+});
+
+test('both payment views add up to the same paid sales and exactly one hundred percent', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(1, 'cash');
     $scenario->payNow(1, 'cashless');
     $scenario->payNow(3, 'split', '100.00');
     $scenario->void($scenario->payNow(4, 'cash'));
     $scenario->payLater(2);
     $scenario->settle($scenario->payLater(1), 'cashless');
 
-    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk()->inertiaProps('analytics');
+    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+    $combined = paymentMixView($analytics, 'combined');
+    $separate = paymentMixView($analytics, 'separate');
+    $cents = fn (array $rows): int => (int) round(array_sum(array_map(fn (array $row): float => (float) $row['amount'] * 100, $rows)));
 
-    expect($analytics['payment_mix']['basis'])->toBe('transactions')
-        ->and(paymentMixRows($analytics))->toBe([
-            'cash' => ['transactions' => 2, 'sales' => '300.00', 'share' => 5000, 'share_with_split' => 4000],
-            'cashless' => ['transactions' => 2, 'sales' => '200.00', 'share' => 5000, 'share_with_split' => 4000],
-            'split' => ['transactions' => 1, 'sales' => '300.00', 'share' => null, 'share_with_split' => 2000],
-        ])
+    expect($combined['cash']['amount'])->toBe('300.00')
+        ->and($combined['cashless']['amount'])->toBe('300.00')
+        ->and(array_column($separate, 'amount'))->toBe(['100.00', '200.00', '300.00'])
+        ->and($cents($combined))->toBe(60000)
+        ->and($cents($separate))->toBe(60000)
+        ->and(array_sum(array_column($combined, 'share')))->toBe(10000)
+        ->and(array_sum(array_column($separate, 'share')))->toBe(10000)
+        ->and($analytics['payment_mix']['paid_orders'])->toBe(4)
         ->and($analytics['payment_mix']['unpaid'])->toBe(['transactions' => 1, 'sales' => '200.00'])
-        ->and(collect($analytics['payment_mix']['methods'])->sum('transactions') + $analytics['payment_mix']['unpaid']['transactions'])
-        ->toBe($analytics['kpis']['transactions']['value'])
-        ->and($analytics['collections']['split']['count'])->toBe(1);
+        ->and($analytics['payment_mix']['split_pending'])->toBe('0.00');
 });
 
-test('payment method shares add up to exactly one hundred percent', function () {
+test('a corrected split order contributes its net cash and cashless parts', function () {
     $scenario = analyticsScenario('2026-09-23 09:00');
-    $scenario->payNow(1, 'cash');
-    $scenario->payNow(1, 'cashless');
-    $scenario->payNow(2, 'split', '100.00');
+    $split = $scenario->payNow(3, 'split', '100.00');
+    $scenario->edit($split, 2, ['refund_cash_amount' => '100.00']);
 
-    $rows = paymentMixRows(analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics'));
+    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
 
-    expect(array_sum(array_column($rows, 'share_with_split')))->toBe(10000)
-        ->and(array_column($rows, 'share_with_split'))->each->toBeIn([3330, 3340])
-        ->and($rows['cash']['share'] + $rows['cashless']['share'])->toBe(10000);
+    expect(array_column(paymentMixView($analytics, 'combined'), 'amount'))->toBe(['100.00', '100.00'])
+        ->and(paymentMixView($analytics, 'separate')['split']['amount'])->toBe('200.00')
+        ->and($analytics['payment_mix']['split_pending'])->toBe('0.00');
+
+    DB::table('order_adjustments')->where('order_id', $split->id)->update(['cash_amount' => null, 'cashless_amount' => null]);
+    $pending = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+
+    expect(array_column(paymentMixView($pending, 'combined'), 'amount'))->toBe(['200.00', '100.00'])
+        ->and($pending['payment_mix']['split_pending'])->toBe('100.00');
 });
 
-test('the payment method mix is truthful for single-method, split-only and unpaid periods', function (array $orders, array $expected) {
+test('the payment method mix is truthful for single-method, split-only and unpaid periods', function (array $orders, array $combined, array $separate) {
     $scenario = analyticsScenario('2026-09-23 09:00');
     foreach ($orders as $method) {
-        $method === 'unpaid' ? $scenario->payLater(1) : $scenario->payNow(2, $method, $method === 'split' ? '100.00' : null);
+        $method === 'unpaid' ? $scenario->payLater(1) : $scenario->payNow(2, $method, $method === 'split' ? '50.00' : null);
     }
 
-    $rows = paymentMixRows(analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics'));
+    $analytics = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
 
-    expect(array_map(fn (array $row): array => [$row['transactions'], $row['share'], $row['share_with_split']], $rows))->toBe($expected);
+    expect(array_map(fn (array $row): array => [$row['amount'], $row['share']], paymentMixView($analytics, 'combined')))->toBe($combined)
+        ->and(array_map(fn (array $row): array => [$row['amount'], $row['share']], paymentMixView($analytics, 'separate')))->toBe($separate);
 })->with([
-    'no orders' => [[], ['cash' => [0, null, null], 'cashless' => [0, null, null], 'split' => [0, null, null]]],
-    'cash only' => [['cash', 'cash'], ['cash' => [2, 10000, 10000], 'cashless' => [0, 0, 0], 'split' => [0, null, 0]]],
-    'cashless only' => [['cashless'], ['cash' => [0, 0, 0], 'cashless' => [1, 10000, 10000], 'split' => [0, null, 0]]],
-    'split only' => [['split'], ['cash' => [0, null, 0], 'cashless' => [0, null, 0], 'split' => [1, null, 10000]]],
-    'unpaid pay later only' => [['unpaid'], ['cash' => [0, null, null], 'cashless' => [0, null, null], 'split' => [0, null, null]]],
+    'no orders' => [[], ['cash' => ['0.00', null], 'cashless' => ['0.00', null]], ['cash' => ['0.00', null], 'cashless' => ['0.00', null], 'split' => ['0.00', null]]],
+    'cash only' => [['cash'], ['cash' => ['200.00', 10000], 'cashless' => ['0.00', 0]], ['cash' => ['200.00', 10000], 'cashless' => ['0.00', 0], 'split' => ['0.00', 0]]],
+    'cashless only' => [['cashless'], ['cash' => ['0.00', 0], 'cashless' => ['200.00', 10000]], ['cash' => ['0.00', 0], 'cashless' => ['200.00', 10000], 'split' => ['0.00', 0]]],
+    'split only' => [['split'], ['cash' => ['150.00', 7500], 'cashless' => ['50.00', 2500]], ['cash' => ['0.00', 0], 'cashless' => ['0.00', 0], 'split' => ['200.00', 10000]]],
+    'unpaid pay later only' => [['unpaid'], ['cash' => ['0.00', null], 'cashless' => ['0.00', null]], ['cash' => ['0.00', null], 'cashless' => ['0.00', null], 'split' => ['0.00', null]]],
 ]);
 
 test('report-wide order filters scope the payment method mix', function () {
@@ -333,15 +363,15 @@ test('report-wide order filters scope the payment method mix', function () {
     $scenario->payNow(1, 'cash', null, ['order_type' => 'dine_in']);
     $scenario->payNow(1, 'cash');
     $scenario->payNow(1, 'cashless');
-    $scenario->payNow(2, 'split', '100.00', ['order_type' => 'dine_in']);
+    $scenario->payNow(2, 'split', '50.00', ['order_type' => 'dine_in']);
 
-    $dineIn = paymentMixRows(analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'order_types' => ['dine_in']])->inertiaProps('analytics'));
-    $cashOnly = paymentMixRows(analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'payment_methods' => ['cash']])->inertiaProps('analytics'));
+    $dineIn = analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'order_types' => ['dine_in']])->inertiaProps('analytics');
+    $cashOnly = analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'payment_methods' => ['cash']])->inertiaProps('analytics');
 
-    expect(array_column($dineIn, 'transactions'))->toBe([1, 0, 1])
-        ->and($dineIn['cash']['share_with_split'])->toBe(5000)
-        ->and(array_column($cashOnly, 'transactions'))->toBe([2, 0, 0])
-        ->and($cashOnly['cash']['share'])->toBe(10000);
+    expect(array_column(paymentMixView($dineIn, 'combined'), 'amount'))->toBe(['250.00', '50.00'])
+        ->and(array_column(paymentMixView($dineIn, 'separate'), 'amount'))->toBe(['100.00', '0.00', '200.00'])
+        ->and(array_column(paymentMixView($cashOnly, 'combined'), 'amount'))->toBe(['200.00', '0.00'])
+        ->and($cashOnly['payment_mix']['split_orders'])->toBe(0);
 });
 
 test('the category filter narrows product rows only and never money, payments or categories', function () {
@@ -506,9 +536,13 @@ test('the csv export carries the payment method mix and the category filter of t
     expect($rows)
         ->toContain(['Active filters', 'Category (product tables only): Drinks'])
         ->toContain(['Total sales', '550.00', '0.00'])
-        ->toContain(['Cash', '1', '200.00', '33.40', '50.00'])
-        ->toContain(['Cashless', '1', '150.00', '33.30', '50.00'])
-        ->toContain(['Split', '1', '200.00', '33.30', ''])
+        ->toContain(['Payment method (split parts inside Cash and Cashless)', 'Amount', '% of paid sales', 'Orders', 'Of which split'])
+        ->toContain(['Cash', '300.00', '54.50', '2', '1'])
+        ->toContain(['Cashless', '250.00', '45.50', '2', '1'])
+        ->toContain(['Payment method (split shown separately)', 'Amount', '% of paid sales', 'Orders'])
+        ->toContain(['Cash', '200.00', '36.40', '1'])
+        ->toContain(['Cashless', '150.00', '27.30', '1'])
+        ->toContain(['Split', '200.00', '36.30', '1'])
         ->toContain(['Product (selected categories only)', 'Category', 'Qty sold', 'Orders', 'Total sales', '% of sales', 'Average price'])
         ->toContain(['Iced Tea', 'Drinks', '3', '1', '150.00', '27.27', '50.00'])
         ->and($csv)->not->toContain('Tapsilog');

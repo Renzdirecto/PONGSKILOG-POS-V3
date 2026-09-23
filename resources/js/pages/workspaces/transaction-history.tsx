@@ -43,7 +43,12 @@ import {
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import { createClientUuid } from '@/lib/client-uuid';
 import { canTransitionKitchenStatus } from '@/lib/kitchen';
-import { lineCents, pesos } from '@/lib/pos-money';
+import { cents, lineCents, pesos } from '@/lib/pos-money';
+import {
+    correctionRefundBounds,
+    normalizeMoneyInput,
+    signedCents,
+} from '@/lib/store-close';
 import { stockAvailabilityLabel } from '@/lib/pos-order';
 import { update as updateKitchenStatus } from '@/routes/orders/kitchen-status';
 import { store as settle } from '@/routes/pos/orders/settlements';
@@ -126,6 +131,7 @@ type Summary = {
 };
 type Detail = Summary & {
     items: DetailItem[];
+    refund_sources: { cash_available: string; cashless_available: string };
     payment_groups: {
         id: string;
         method: 'cash' | 'cashless' | 'split';
@@ -146,6 +152,8 @@ type Detail = Summary & {
         id: string;
         type: string;
         amount: string;
+        cash_amount: string | null;
+        cashless_amount: string | null;
         reason: string | null;
         created_at: string;
         created_by: string;
@@ -1892,6 +1900,7 @@ function EditDialog({
     const [productSearch, setProductSearch] = useState('');
     const [kitchenStatus, setKitchenStatus] = useState(detail.kitchen_status);
     const [confirmLower, setConfirmLower] = useState(false);
+    const [refundCash, setRefundCash] = useState('');
     const [lines, setLines] = useState<EditLine[]>(() =>
         detail.items.flatMap((item) => {
             const product = catalog.products.find(
@@ -1927,6 +1936,28 @@ function EditDialog({
         Number(detail.amount_paid) - Number(detail.adjustment_total),
     );
     const difference = Math.round((Number(total) - settled) * 100) / 100;
+    /** A refund funded by both methods needs the Cashier's Cash/Cashless answer; it is never guessed. */
+    const settledCents = cents(detail.amount_paid) - cents(detail.adjustment_total);
+    const refundCents =
+        settledCents > totalCents ? settledCents - totalCents : 0n;
+    const refundBounds =
+        refundCents > 0n
+            ? correctionRefundBounds(
+                  refundCents,
+                  detail.refund_sources.cash_available,
+                  detail.refund_sources.cashless_available,
+              )
+            : null;
+    const refundChoiceRequired =
+        refundBounds !== null && refundBounds.min < refundBounds.max;
+    const refundCashValue = normalizeMoneyInput(refundCash);
+    const refundCashCents =
+        refundCashValue === null ? null : signedCents(refundCashValue);
+    const refundChoiceValid =
+        !refundChoiceRequired ||
+        (refundCashCents !== null &&
+            refundCashCents >= refundBounds.min &&
+            refundCashCents <= refundBounds.max);
     const filteredProducts = catalog.products.filter(
         (product) =>
             (category === 'all' || product.category_id === category) &&
@@ -1947,6 +1978,9 @@ function EditDialog({
                     customer_label: customer || null,
                     branch_table_id: tableId || null,
                     reason: reason || null,
+                    refund_cash_amount: refundChoiceRequired
+                        ? refundCashValue
+                        : null,
                     items: lines.map((line) => ({
                         existing_order_item_id: line.existingOrderItemId,
                         product_id: line.product.id,
@@ -2044,6 +2078,41 @@ function EditDialog({
                             strong
                         />
                     </div>
+                    {refundBounds && !refundChoiceRequired && (
+                        <p className="rounded-xl bg-neutral-100 px-3 py-2 text-[12px] font-semibold">
+                            Returned from Cash {pesos(refundBounds.min)} ·
+                            Cashless {pesos(refundCents - refundBounds.min)}
+                        </p>
+                    )}
+                    {refundBounds && refundChoiceRequired && (
+                        <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <label
+                                htmlFor="refund-cash-amount"
+                                className="text-[12px] font-bold text-amber-950"
+                            >
+                                Returned in Cash
+                            </label>
+                            <input
+                                id="refund-cash-amount"
+                                value={refundCash}
+                                onChange={(event) =>
+                                    setRefundCash(event.target.value)
+                                }
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                className="h-11 w-full rounded-xl border border-amber-300 bg-white px-3 text-sm font-bold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                            />
+                            <p className="text-[11px] leading-4 text-amber-900">
+                                This order was paid with Cash and Cashless.
+                                Enter {pesos(refundBounds.min)} –{' '}
+                                {pesos(refundBounds.max)}; the rest is returned
+                                as Cashless.
+                                {refundChoiceValid && refundCashCents !== null
+                                    ? ` Cashless ${pesos(refundCents - refundCashCents)}.`
+                                    : ''}
+                            </p>
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                         <button
                             type="button"
@@ -2054,7 +2123,7 @@ function EditDialog({
                         </button>
                         <button
                             type="button"
-                            disabled={processing}
+                            disabled={processing || !refundChoiceValid}
                             onClick={() => void persist()}
                             className="h-12 rounded-xl bg-[#111] text-sm font-semibold text-white disabled:bg-neutral-500"
                         >

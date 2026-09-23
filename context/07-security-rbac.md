@@ -508,3 +508,7 @@ Frozen:
 - The server derives the active Branch and current OPEN Store Session. Client Branch/Session identifiers are not authoritative. Creation takes the current Session shared lock, while future Close Store must take that boundary exclusively.
 - Receipts accept only validated JPG/JPEG/PNG/WebP images within the existing 2 MB and dimension bounds. Objects stay on the configured private disk and are served through an authorized Branch-scoped route with `private, no-store`; raw storage paths are never returned. Failed transactions remove newly stored objects.
 - Expense records and items reject normal update/delete behavior. Audit metadata excludes receipt bytes/path and credentials. A truly offline browser cannot submit and no irreversible expense is queued locally. A Reverb/Echo disconnect alone is not treated as network offline and does not block an authoritative HTTP expense commit.
+
+## Phase 15 Close Store authorization - 2026-09-23
+
+Preview and close require an active user with `pos.access` and `store.open_close`, a Cashier or Cashier+Kitchen role, and an active assignment to the active Branch; the server derives the Branch and OPEN Store Session. Kitchen-only, Owner, unassigned and inactive users are denied; Super Admin is denied unless actually assigned as a Cashier. Payment-correction allocation additionally requires `transactions.view`. Reconciliation values stay in authorized HTTP responses and the protected Audit Trail and are never broadcast.

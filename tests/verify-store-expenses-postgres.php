@@ -153,7 +153,7 @@ try {
     verifyPhase14(($constraints['inventory_movements_expense_foreign']->confdeltype ?? null) === 'r', 'Inventory expense FK must restrict deletes.');
     verifyPhase14(str_contains($constraints->first(fn (object $constraint): bool => str_contains($constraint->definition, 'amount >'))?->definition ?? '', 'amount >'), 'Positive amount constraint is missing.');
 
-    verifyPhase14(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 14 rollback failed.');
+    verifyPhase14(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_23_032757')), '--force' => true, '--no-interaction' => true]) === 0, 'Phase 14 rollback failed.');
     verifyPhase14(! DB::getSchemaBuilder()->hasTable('store_session_expenses'), 'Expense table survived rollback.');
     verifyPhase14(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 14 reapply failed.');
     echo 'MIGRATION PASS: fresh, constraints, rollback, and reapply.'.PHP_EOL;

@@ -188,7 +188,7 @@ try {
     $observer->statement('CREATE SCHEMA "'.$schema.'"');
     $createdSchema = true;
     phase12Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Fresh migration failed.');
-    phase12Verify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 12 rollback failed.');
+    phase12Verify(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_22_125245')), '--force' => true, '--no-interaction' => true]) === 0, 'Phase 12 rollback failed.');
     phase12Verify(! DB::getSchemaBuilder()->hasTable('payment_invoice_proofs'), 'Phase 12 rollback left proof schema behind.');
     phase12Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 12 reapply failed.');
     (new RbacSeeder)->run();
@@ -258,7 +258,7 @@ try {
     $payload = phase12Edit($order, [['existing_order_item_id' => $item->id, 'product_id' => $product->id, 'quantity' => 2, 'notes' => null, 'modifiers' => []]]);
     app(EditCommittedOrder::class)->execute($user, $branch, $order, $payload);
     app(EditCommittedOrder::class)->execute($user, $branch, $order, $payload);
-    phase12Verify(AuditLog::where('auditable_id', $order->id)->count() === 1 && InventoryMovement::where('order_id', $order->id)->where('movement_type', 'order_edit_delta')->count() === 1, 'F: replay duplicated effects.');
+    phase12Verify(AuditLog::where('auditable_id', $order->id)->where('action', 'committed_order_edited')->count() === 1 && InventoryMovement::where('order_id', $order->id)->where('movement_type', 'order_edit_delta')->count() === 1, 'F: replay duplicated effects.');
     echo 'CASE F PASS: exact edit replay has no duplicate audit or inventory effect.'.PHP_EOL;
 
     // G: reverse Product request order across two Orders.

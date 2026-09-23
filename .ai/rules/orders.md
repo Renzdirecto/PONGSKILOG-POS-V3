@@ -26,3 +26,6 @@ Customer QR submission allocates only a per-Store-Session qr_sequence from custo
 
 ## Committed order edits preserve histories and lock order
 Committed-order mutations require the Order's current OPEN Store Session, then lock Session shared -> Order exclusive -> tracked Product inventory rows in sorted Product ID order. Retained item/modifier configurations keep committed price/name snapshots; only new or materially reconfigured lines use current catalog values. Reconcile stock with one append-only order_edit_delta per tracked Product, money with append-only Payments/order_adjustments, and require expected version plus idempotency key.
+
+## Loaded QR claims block Store Close
+Store Close archives only submitted, unclaimed, uncommitted Customer QR orders with `archive_reason = store_closed`. A QR order still loaded by a Cashier is a pre-close blocker (complete payment or Cancel LOAD); Close never clears `loaded_by_user_id` or archives an in-progress claim.

@@ -25,6 +25,19 @@ class ExactMoney
         return intdiv($cents, 100).'.'.str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 
+    /** Reconciliation values such as variances may be negative; the magnitude keeps the same bound. */
+    public static function signedDecimal(int $cents): string
+    {
+        return ($cents < 0 ? '-' : '').self::decimal(abs($cents));
+    }
+
+    public static function display(int $cents): string
+    {
+        [$whole, $fraction] = explode('.', self::decimal(abs($cents)));
+
+        return ($cents < 0 ? '-' : '').'₱'.number_format((int) $whole).'.'.$fraction;
+    }
+
     public static function add(int $left, int $right): int
     {
         self::guard($left);

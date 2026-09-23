@@ -17,6 +17,16 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $opening_cash_amount
  * @property string $opening_cashless_amount
+ * @property string|null $closing_cash_amount
+ * @property string|null $closing_cashless_amount
+ * @property string|null $expected_cash_amount
+ * @property string|null $expected_cashless_amount
+ * @property string|null $cash_variance
+ * @property string|null $cashless_variance
+ * @property string|null $closing_note
+ * @property array<string, mixed>|null $reconciliation_snapshot
+ * @property int|null $closed_by_user_id
+ * @property Carbon|null $closed_at
  * @property StoreSessionStatus $status
  */
 #[Fillable([
@@ -24,13 +34,23 @@ use Illuminate\Support\Carbon;
     'opening_cash_amount', 'opening_cashless_amount',
     'closing_cash_amount', 'closing_cashless_amount',
     'expected_cash_amount', 'expected_cashless_amount',
-    'cash_variance', 'cashless_variance', 'closing_note',
+    'cash_variance', 'cashless_variance', 'closing_note', 'reconciliation_snapshot',
     'closed_by_user_id', 'closed_at',
 ])]
 class StoreSession extends Model
 {
     /** @use HasFactory<StoreSessionFactory> */
     use HasFactory, HasUuids;
+
+    protected static function booted(): void
+    {
+        /** A closed session's reconciliation snapshot is historical truth; there is no reopen or correction path. */
+        static::updating(function (StoreSession $session): void {
+            if ($session->getRawOriginal('status') === StoreSessionStatus::Closed->value) {
+                throw new \LogicException('A closed Store Session cannot be changed.');
+            }
+        });
+    }
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -47,6 +67,7 @@ class StoreSession extends Model
             'expected_cashless_amount' => 'decimal:2',
             'cash_variance' => 'decimal:2',
             'cashless_variance' => 'decimal:2',
+            'reconciliation_snapshot' => 'array',
         ];
     }
 

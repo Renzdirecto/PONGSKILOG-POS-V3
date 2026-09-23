@@ -5,6 +5,7 @@ import {
     Camera,
     ChevronRight,
     FileImage,
+    LockKeyhole,
     PackagePlus,
     Plus,
     ReceiptText,
@@ -25,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { StoreCloseFlow } from '@/components/store-close-flow';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
@@ -41,10 +43,11 @@ import {
 import { store } from '@/routes/store-session-expenses';
 import type {
     CurrentStoreSession,
+    StoreCloseResult,
     StoreSessionExpense,
 } from '@/types';
 
-type View = 'overview' | 'add' | 'detail';
+type View = 'overview' | 'add' | 'detail' | 'close';
 
 const manilaTime = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
@@ -475,6 +478,10 @@ export function StoreSessionDetailsDialog({
     branchId,
     loadState,
     refreshSession,
+    canCloseStore = false,
+    canOpenKitchen = false,
+    canOpenHistory = false,
+    onStoreClosed,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -482,9 +489,14 @@ export function StoreSessionDetailsDialog({
     branchId: string;
     loadState: StoreSessionLoadState;
     refreshSession: () => Promise<void>;
+    canCloseStore?: boolean;
+    canOpenKitchen?: boolean;
+    canOpenHistory?: boolean;
+    onStoreClosed?: (result: StoreCloseResult) => void;
 }) {
     const [view, setView] = useState<View>('overview');
     const [selected, setSelected] = useState<StoreSessionExpense | null>(null);
+    const [closeBusy, setCloseBusy] = useState(false);
     const connectionStatus = useStoreExpenseRealtime(
         branchId,
         refreshSession,
@@ -492,6 +504,10 @@ export function StoreSessionDetailsDialog({
     const loadMessage = storeSessionLoadMessage(loadState);
 
     function changeOpen(next: boolean) {
+        /** The modal stays open until the server confirms or rejects Close Store. */
+        if (!next && closeBusy) {
+            return;
+        }
         if (!next) {
             setView('overview');
             setSelected(null);
@@ -501,7 +517,10 @@ export function StoreSessionDetailsDialog({
 
     return (
         <Dialog open={open} onOpenChange={changeOpen}>
-            <DialogContent className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[760px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
+            <DialogContent
+                onEscapeKeyDown={(event) => closeBusy && event.preventDefault()}
+                onInteractOutside={(event) => closeBusy && event.preventDefault()}
+                className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[760px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-1 [&>button]:right-1 [&>button]:flex [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:items-center [&>button]:justify-center">
                 {view === 'overview' && (
                     <>
                         <DialogHeader className="shrink-0 pr-9 text-left">
@@ -623,6 +642,29 @@ export function StoreSessionDetailsDialog({
                                         </p>
                                     )}
                                 </section>
+                                {canCloseStore && (
+                                    <section className="rounded-xl border border-red-200 bg-red-50/60 p-3.5" aria-labelledby="close-store-heading">
+                                        <div className="flex items-start gap-3">
+                                            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-red-700 ring-1 ring-red-200">
+                                                <LockKeyhole className="size-4" />
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p id="close-store-heading" className="text-sm font-bold text-red-900">Close Store</p>
+                                                <p className="mt-0.5 text-xs leading-5 text-red-900/80">
+                                                    Review the current session, resolve blockers, and reconcile Cash / Cashless before closing.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => setView('close')}
+                                            className="mt-3 min-h-11 w-full rounded-xl border-red-300 bg-white font-semibold text-red-700 hover:bg-red-100 hover:text-red-800 sm:w-auto"
+                                        >
+                                            Review &amp; Close Store
+                                        </Button>
+                                    </section>
+                                )}
                             </div>
                         )}
                     </>
@@ -639,6 +681,18 @@ export function StoreSessionDetailsDialog({
                 )}
                 {view === 'detail' && session && selected && (
                     <ExpenseDetail expense={selected} session={session} onBack={() => setView('overview')} />
+                )}
+                {view === 'close' && (
+                    <StoreCloseFlow
+                        branchId={branchId}
+                        canOpenKitchen={canOpenKitchen}
+                        canOpenHistory={canOpenHistory}
+                        onBack={() => setView('overview')}
+                        onBusyChange={setCloseBusy}
+                        onClosed={(result) => onStoreClosed?.(result)}
+                        onDone={() => changeOpen(false)}
+                        onNavigate={() => changeOpen(false)}
+                    />
                 )}
             </DialogContent>
         </Dialog>

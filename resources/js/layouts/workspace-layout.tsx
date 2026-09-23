@@ -1,4 +1,4 @@
-import { Link, useHttp, usePage } from '@inertiajs/react';
+import { Link, router, useHttp, usePage } from '@inertiajs/react';
 import {
     ChefHat,
     LayoutDashboard,
@@ -13,6 +13,7 @@ import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
+import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
 import {
     cashier,
     customerDisplay,
@@ -32,9 +33,11 @@ import type {
     BranchContext,
     CurrentStoreSession,
     PosReadyOrder,
+    StoreClosedRealtimeEvent,
     StoreContext,
 } from '@/types';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 type SharedProps = {
     auth: Auth;
@@ -44,6 +47,20 @@ type SharedProps = {
     readyOrders?: PosReadyOrder[];
     qrWaitingCount?: number;
 };
+
+function StoreClosedListener({
+    branchId,
+    channel,
+    onClosed,
+}: {
+    branchId: string;
+    channel: 'pos' | 'kitchen';
+    onClosed: (event: StoreClosedRealtimeEvent) => void;
+}) {
+    useStoreClosedRealtime(branchId, channel, onClosed);
+
+    return null;
+}
 
 function roleLabel(role?: string): string {
     if (!role) {
@@ -72,6 +89,8 @@ export default function WorkspaceLayout({
         useState<CurrentStoreSession | null>(null);
     const [storeSessionLoadState, setStoreSessionLoadState] =
         useState<StoreSessionLoadState>('idle');
+    /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
+    const ownClosedSessionId = useRef<string | null>(null);
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
@@ -110,6 +129,20 @@ export default function WorkspaceLayout({
     }, [storeSessionRequest]);
 
     if (isOperational) {
+        const storeClosedChannel = auth.permissions.includes('pos.access')
+            ? 'pos'
+            : auth.permissions.includes('kitchen.access')
+              ? 'kitchen'
+              : null;
+        const handleStoreClosed = (event: StoreClosedRealtimeEvent) => {
+            if (event.store_session_id !== ownClosedSessionId.current) {
+                setStoreSessionDialogOpen(false);
+                toast.info(
+                    'The Store was closed. Operational actions are now disabled.',
+                );
+            }
+            router.reload();
+        };
         const openStoreSessionDetails = async () => {
             const openingState = openStoreSessionDialogState();
             setStoreSessionDialogOpen(openingState.open);
@@ -289,6 +322,26 @@ export default function WorkspaceLayout({
                             session={storeSession}
                             loadState={storeSessionLoadState}
                             refreshSession={refreshStoreSession}
+                            canCloseStore={auth.permissions.includes(
+                                'store.open_close',
+                            )}
+                            canOpenKitchen={auth.permissions.includes(
+                                'kitchen.access',
+                            )}
+                            canOpenHistory={auth.permissions.includes(
+                                'transactions.view',
+                            )}
+                            onStoreClosed={(result) => {
+                                ownClosedSessionId.current =
+                                    result.store_session.id;
+                            }}
+                        />
+                    )}
+                    {branchContext.current && storeClosedChannel && (
+                        <StoreClosedListener
+                            branchId={branchContext.current.id}
+                            channel={storeClosedChannel}
+                            onClosed={handleStoreClosed}
                         />
                     )}
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">

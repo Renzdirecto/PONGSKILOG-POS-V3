@@ -6,7 +6,7 @@ use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class EditCommittedOrderRequest extends FormRequest
+class AllocateOrderAdjustmentRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -15,7 +15,10 @@ class EditCommittedOrderRequest extends FormRequest
     {
         $user = $this->user();
 
-        return $user instanceof User && $user->hasPermission('transactions.view')
+        return $user instanceof User
+            && $user->is_active
+            && $user->hasPermission('pos.access')
+            && $user->hasPermission('transactions.view')
             && ($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'));
     }
 
@@ -26,13 +29,14 @@ class EditCommittedOrderRequest extends FormRequest
      */
     public function rules(): array
     {
+        return self::allocationRules();
+    }
+
+    /** @return array<string, list<string>> */
+    public static function allocationRules(): array
+    {
         return [
-            ...StorePosDraftOrderRequest::draftRules(),
-            'idempotency_key' => ['required', 'uuid'],
-            'expected_version' => ['required', 'integer:strict', 'min:0'],
-            'reason' => ['nullable', 'string', 'max:1000'],
-            'refund_cash_amount' => ['nullable', 'string', 'regex:/\A[0-9]{1,12}(?:\.[0-9]{1,2})?\z/'],
-            'items.*.existing_order_item_id' => ['nullable', 'uuid', 'distinct'],
+            'cash_amount' => ['required', 'string', 'regex:/\A[0-9]{1,12}(?:\.[0-9]{1,2})?\z/'],
         ];
     }
 }

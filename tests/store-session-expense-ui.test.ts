@@ -45,7 +45,9 @@ test('STORE OPEN launches the reusable current-session expense surface', () => {
     assert.match(dialog, /Restock inventory/);
     assert.match(dialog, /View private receipt/);
     assert.match(dialog, /h-\[min\(92svh,780px\)\]/);
-    assert.doesNotMatch(dialog, /Close Store/i);
+    /** Phase 15 extends this same surface; Close Store never becomes a navigation page. */
+    assert.match(dialog, /view === 'close' && \(\s*<StoreCloseFlow/);
+    assert.doesNotMatch(workspace, /label: 'Close Store'/);
 });
 
 test('current-session load failures distinguish HTTP and network outcomes', () => {

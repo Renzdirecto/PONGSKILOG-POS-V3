@@ -32,6 +32,7 @@ class StoreStaffRequest extends FormRequest
     {
         $this->merge([
             'name' => is_string($this->input('name')) ? trim($this->input('name')) : $this->input('name'),
+            'employee_id' => is_string($this->input('employee_id')) ? trim($this->input('employee_id')) : $this->input('employee_id'),
             'email' => is_string($this->input('email')) ? mb_strtolower(trim($this->input('email'))) : $this->input('email'),
         ]);
     }
@@ -48,6 +49,13 @@ class StoreStaffRequest extends FormRequest
 
         return [
             'name' => $this->nameRules(),
+            /** Super Admin assigns it manually as MMDDYY plus a two-digit number, for example 09242601. */
+            'employee_id' => [
+                'required',
+                'string',
+                'regex:/\A(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[0-9]{2}[0-9]{2}\z/',
+                Rule::unique(User::class, 'employee_id'),
+            ],
             'email' => [
                 'required',
                 'string',
@@ -78,6 +86,8 @@ class StoreStaffRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'employee_id.regex' => 'Use MMDDYY followed by a two-digit number, for example 09242601.',
+            'employee_id.unique' => 'This Employee ID is already used by another account.',
             'branch_ids.required' => 'Choose at least one active Branch for this role.',
             'branch_ids.min' => 'Choose at least one active Branch for this role.',
             'branch_ids.prohibited' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',

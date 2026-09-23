@@ -22,7 +22,7 @@ class CreateStaffAccount
      * Create a login account, its single canonical Role, its Branch assignments and one Audit record atomically.
      * The temporary password is hashed by the User cast and never leaves this method in any other form.
      *
-     * @param  array{name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool}  $data
+     * @param  array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool}  $data
      */
     public function execute(User $actor, array $data): User
     {
@@ -42,6 +42,7 @@ class CreateStaffAccount
 
                 $user = new User;
                 $user->forceFill([
+                    'employee_id' => $data['employee_id'],
                     'name' => $data['name'],
                     'email' => $data['email'],
                     'password' => $data['password'],
@@ -62,6 +63,7 @@ class CreateStaffAccount
                     auditableId: (string) $user->id,
                     after: [
                         'user_id' => $user->id,
+                        'employee_id' => $user->employee_id,
                         'name' => $user->name,
                         'email' => $user->email,
                         'role' => $role->name,
@@ -74,8 +76,10 @@ class CreateStaffAccount
 
                 return $user;
             });
-        } catch (UniqueConstraintViolationException) {
-            throw ValidationException::withMessages(['email' => 'This email is already used by another account.']);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw str_contains($exception->getMessage(), 'employee_id')
+                ? ValidationException::withMessages(['employee_id' => 'This Employee ID is already used by another account.'])
+                : ValidationException::withMessages(['email' => 'This email is already used by another account.']);
         }
     }
 

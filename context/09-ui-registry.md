@@ -903,8 +903,8 @@ Navigation comes from the registry in `resources/js/lib/super-admin-navigation.t
 
 ### Staff (Super Admin → Control → Staff)
 
-- List: Name, Email, Role, Branch access, Status; debounced name/email search plus Role and Active/Inactive filters; 25 per page. Credentials are never projected.
-- Add Staff dialog (bottom sheet on mobile): Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
+- List: Employee ID, Name, Email, Role, Branch access, Status; debounced name/email/Employee ID search plus Role and Active/Inactive filters; 25 per page. Credentials are never projected.
+- Add Staff dialog (bottom sheet on mobile): Employee ID (typed by the Super Admin as `MMDDYY` + a two-digit number, e.g. `09242601`; required and unique), Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
 - Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
 - Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
 - Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing or deactivating existing staff is not part of this slice.

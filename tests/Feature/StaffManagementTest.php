@@ -28,6 +28,7 @@ beforeEach(function () {
 function staffPayload(array $overrides = []): array
 {
     return [
+        'employee_id' => '09242601',
         'name' => 'Jamie Cruz',
         'email' => 'jamie@pongskilog.test',
         'password' => 'Temporary-Pass-42',
@@ -46,15 +47,17 @@ function createStaffRequest(array $payload, ?User $actor = null): TestResponse
 
 test('super admin sees staff accounts with role branch access and status but never credentials', function () {
     $cashier = User::factory()->create(['name' => 'Bea Santos', 'email' => 'bea@pongskilog.test']);
+    $cashier->forceFill(['employee_id' => '09242601'])->save();
     $cashier->roles()->attach(Role::query()->where('name', 'cashier')->sole());
     $cashier->branches()->attach($this->branch, ['is_active' => true]);
 
     $this->actingAs($this->superAdmin)
-        ->get(route('super-admin.staff.index', ['search' => 'BEA']))
+        ->get(route('super-admin.staff.index', ['search' => '092426']))
         ->assertInertia(fn (Assert $page) => $page
             ->component('super-admin/staff')
             ->has('staff.data', 1)
             ->where('staff.data.0.email', 'bea@pongskilog.test')
+            ->where('staff.data.0.employee_id', '09242601')
             ->where('staff.data.0.roles.0.label', 'Cashier')
             ->where('staff.data.0.branches.0.code', 'ALPHA')
             ->where('staff.data.0.business_wide', false)
@@ -101,12 +104,13 @@ test('super admin creates operational staff with a hashed temporary password bra
     Mail::fake();
     Notification::fake();
 
-    createStaffRequest(staffPayload(['role' => $role, 'email' => '  Jamie@PongSkilog.TEST ']))
+    createStaffRequest(staffPayload(['role' => $role, 'email' => '  Jamie@PongSkilog.TEST ', 'employee_id' => ' 09242601 ']))
         ->assertRedirectToRoute('super-admin.staff.index')
         ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
 
     $user = User::query()->where('email', 'jamie@pongskilog.test')->sole();
     expect($user->name)->toBe('Jamie Cruz')
+        ->and($user->employee_id)->toBe('09242601')
         ->and($user->is_active)->toBeTrue()
         ->and($user->password)->not->toBe('Temporary-Pass-42')
         ->and(Hash::check('Temporary-Pass-42', $user->password))->toBeTrue()
@@ -118,6 +122,7 @@ test('super admin creates operational staff with a hashed temporary password bra
         ->and($audit->auditable_id)->toBe((string) $user->id)
         ->and($audit->after)->toBe([
             'user_id' => $user->id,
+            'employee_id' => '09242601',
             'name' => 'Jamie Cruz',
             'email' => 'jamie@pongskilog.test',
             'role' => $role,
@@ -167,7 +172,7 @@ test('staff creation defaults to active and can create an inactive account', fun
 ]);
 
 test('staff creation rejects invalid input without creating an account', function (array $overrides, string $field, string $message) {
-    User::factory()->create(['email' => 'taken@pongskilog.test']);
+    User::factory()->create(['email' => 'taken@pongskilog.test'])->forceFill(['employee_id' => '09232601'])->save();
     $inactiveBranch = Branch::factory()->create(['status' => BranchStatus::Inactive]);
     $overrides = array_map(fn (mixed $value) => $value === 'INACTIVE_BRANCH' ? [$inactiveBranch->id] : $value, $overrides);
 
@@ -177,6 +182,10 @@ test('staff creation rejects invalid input without creating an account', functio
     $this->assertDatabaseCount('audit_logs', 0);
 })->with([
     'duplicate email ignoring case' => [['email' => 'TAKEN@pongskilog.test'], 'email', 'This email is already used by another account.'],
+    'missing employee id' => [['employee_id' => ''], 'employee_id', 'The employee id field is required.'],
+    'employee id not mmddyy plus two digits' => [['employee_id' => '13242601'], 'employee_id', 'Use MMDDYY followed by a two-digit number, for example 09242601.'],
+    'employee id too long' => [['employee_id' => '092426001'], 'employee_id', 'Use MMDDYY followed by a two-digit number, for example 09242601.'],
+    'duplicate employee id' => [['employee_id' => '09232601'], 'employee_id', 'This Employee ID is already used by another account.'],
     'invalid email' => [['email' => 'not-an-email'], 'email', 'The email field must be a valid email address.'],
     'missing name' => [['name' => '   '], 'name', 'The name field is required.'],
     'password mismatch' => [['password_confirmation' => 'Different-Pass-42'], 'password', 'The password field confirmation does not match.'],
@@ -202,6 +211,7 @@ test('a branch that becomes inactive before commit rolls back the whole account'
     $this->branch->update(['status' => BranchStatus::Inactive]);
 
     expect(fn () => app(CreateStaffAccount::class)->execute($this->superAdmin, [
+        'employee_id' => '09242601',
         'name' => 'Jamie Cruz',
         'email' => 'jamie@pongskilog.test',
         'password' => 'Temporary-Pass-42',
@@ -219,6 +229,7 @@ test('an audit failure rolls back the user role and branch assignment', function
     $roleAssignmentsBefore = DB::table('user_roles')->count();
 
     expect(fn () => app(CreateStaffAccount::class)->execute($this->superAdmin, [
+        'employee_id' => '09242601',
         'name' => 'Jamie Cruz',
         'email' => 'jamie@pongskilog.test',
         'password' => 'Temporary-Pass-42',
@@ -244,6 +255,7 @@ test('an inactive super admin cannot create staff through the action', function 
     $this->superAdmin->forceFill(['is_active' => false])->save();
 
     expect(fn () => app(CreateStaffAccount::class)->execute($this->superAdmin, [
+        'employee_id' => '09242601',
         'name' => 'Jamie Cruz',
         'email' => 'jamie@pongskilog.test',
         'password' => 'Temporary-Pass-42',

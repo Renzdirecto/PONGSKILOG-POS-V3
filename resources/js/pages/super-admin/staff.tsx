@@ -36,6 +36,7 @@ import type { BranchSummary } from '@/types';
 type StaffRole = { name: string; label: string; business_wide: boolean };
 type StaffMember = {
     id: number;
+    employee_id: string | null;
     name: string;
     email: string;
     is_active: boolean;
@@ -150,7 +151,9 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                     className={`${ownerPanelClass} grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_180px_160px]`}
                 >
                     <label className="relative block">
-                        <span className="sr-only">Search by name or email</span>
+                        <span className="sr-only">
+                            Search by name, email, or Employee ID
+                        </span>
                         <Search
                             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#999]"
                             aria-hidden="true"
@@ -161,7 +164,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                             onChange={(event) =>
                                 changeSearch(event.target.value)
                             }
-                            placeholder="Search name or email"
+                            placeholder="Search name, email, or ID"
                             maxLength={150}
                             className={`${ownerControlClass} w-full pl-9`}
                         />
@@ -222,7 +225,7 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                         </h2>
                         <p className="mt-1 text-[12.5px] text-[#767676]">
                             {hasFilters
-                                ? 'Try a different name, email, role, or status.'
+                                ? 'Try a different name, email, Employee ID, role, or status.'
                                 : 'Add a staff account to give someone access.'}
                         </p>
                         {hasFilters && (
@@ -250,13 +253,19 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                 <tr>
                                     <th
                                         scope="col"
-                                        className="w-[22%] px-4 py-3"
+                                        className="w-[110px] px-4 py-3"
+                                    >
+                                        Employee ID
+                                    </th>
+                                    <th
+                                        scope="col"
+                                        className="w-[20%] px-4 py-3"
                                     >
                                         Name
                                     </th>
                                     <th
                                         scope="col"
-                                        className="w-[26%] px-4 py-3"
+                                        className="w-[24%] px-4 py-3"
                                     >
                                         Email
                                     </th>
@@ -280,6 +289,9 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                             <tbody className="divide-y divide-[#f0f0f0]">
                                 {staff.data.map((member) => (
                                     <tr key={member.id} className="align-top">
+                                        <td className="px-4 py-3 font-mono text-[12.5px] text-[#444]">
+                                            {member.employee_id ?? '—'}
+                                        </td>
                                         <td className="px-4 py-3 text-[13px] font-semibold wrap-break-word">
                                             {member.name}
                                         </td>
@@ -316,6 +328,9 @@ export default function Staff({ staff, filters, roles, branches }: Props) {
                                             </p>
                                             <p className="text-[12px] break-all text-[#666]">
                                                 {member.email}
+                                            </p>
+                                            <p className="font-mono text-[11.5px] text-[#888]">
+                                                ID {member.employee_id ?? '—'}
                                             </p>
                                         </div>
                                         <StatusBadge
@@ -409,6 +424,7 @@ function AddStaffForm({
     onCreated: () => void;
 }) {
     const form = useForm({
+        employee_id: '',
         name: '',
         email: '',
         password: '',
@@ -476,6 +492,36 @@ function AddStaffForm({
                 <legend className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-[#888] uppercase">
                     Basic information
                 </legend>
+                <div className="space-y-2">
+                    <Label htmlFor="staff-employee_id">Employee ID</Label>
+                    <Input
+                        id="staff-employee_id"
+                        name="employee_id"
+                        autoComplete="off"
+                        inputMode="numeric"
+                        placeholder="MMDDYY01"
+                        value={form.data.employee_id}
+                        onChange={(event) =>
+                            form.setData('employee_id', event.target.value)
+                        }
+                        required
+                        maxLength={8}
+                        aria-invalid={!!form.errors.employee_id}
+                        aria-describedby="staff-employee_id-hint staff-employee_id-error"
+                        className={`${ownerControlClass} w-full font-mono`}
+                    />
+                    <p
+                        id="staff-employee_id-hint"
+                        className="text-xs text-neutral-500"
+                    >
+                        MMDDYY followed by a two-digit number, for example
+                        09242601.
+                    </p>
+                    <FieldError
+                        id="staff-employee_id-error"
+                        message={form.errors.employee_id}
+                    />
+                </div>
                 <div className="space-y-2">
                     <Label htmlFor="staff-name">Full name</Label>
                     <Input

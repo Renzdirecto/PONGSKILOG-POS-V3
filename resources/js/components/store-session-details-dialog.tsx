@@ -487,6 +487,7 @@ export function StoreSessionDetailsDialog({
     canCloseStore = false,
     canOpenKitchen = false,
     canOpenHistory = false,
+    onStoreClosing,
     onStoreClosed,
 }: {
     open: boolean;
@@ -498,6 +499,7 @@ export function StoreSessionDetailsDialog({
     canCloseStore?: boolean;
     canOpenKitchen?: boolean;
     canOpenHistory?: boolean;
+    onStoreClosing?: (storeSessionId: string | null) => void;
     onStoreClosed?: (result: StoreCloseResult) => void;
 }) {
     const [view, setView] = useState<View>('overview');
@@ -527,7 +529,9 @@ export function StoreSessionDetailsDialog({
                 onEscapeKeyDown={(event) => closeBusy && event.preventDefault()}
                 onInteractOutside={(event) => closeBusy && event.preventDefault()}
                 className="flex h-[min(92svh,780px)] w-[calc(100%-16px)] max-w-[calc(100%-16px)] sm:max-w-[614px] flex-col overflow-hidden bg-white p-3 text-neutral-950 sm:p-5 [&>button]:top-3 [&>button]:right-3 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-[10px] [&>button]:text-[#767676] [&>button]:opacity-100 [&>button]:transition-colors [&>button]:hover:bg-[#F2F2F2] [&>button]:hover:text-[#111111] [&>button]:focus:ring-0 [&>button]:focus:ring-offset-0 [&>button]:focus-visible:ring-2 [&>button]:focus-visible:ring-neutral-950 sm:[&>button]:top-5 sm:[&>button]:right-5 [&>button>svg]:!size-5">
-                {view === 'overview' && (
+                {/* A discarded session (404/403/401/419) falls back to the overview load message. */}
+                {(view === 'overview' ||
+                    (view !== 'close' && session === null)) && (
                     <>
                         <DialogHeader className="shrink-0 pr-12 text-left">
                             <div className="flex items-center gap-3">
@@ -744,6 +748,7 @@ export function StoreSessionDetailsDialog({
                         canOpenHistory={canOpenHistory}
                         onBack={() => setView('overview')}
                         onBusyChange={setCloseBusy}
+                        onClosing={(id) => onStoreClosing?.(id)}
                         onClosed={(result) => onStoreClosed?.(result)}
                         onDone={() => changeOpen(false)}
                         onNavigate={() => changeOpen(false)}

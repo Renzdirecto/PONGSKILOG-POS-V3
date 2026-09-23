@@ -1,5 +1,7 @@
 <?php
 
+use App\Actions\Audit\AuditRecorder;
+use App\Actions\StoreSessions\RecordStoreSessionInventoryAdjustment;
 use App\Events\CustomerCatalogChanged;
 use App\Events\InventoryChanged;
 use App\Models\AuditLog;
@@ -132,6 +134,62 @@ test('roles without Store Session operations are rejected', function (string $ro
 
     expect($this->scenario->stock->fresh()->on_hand)->toBe(50);
 })->with(['kitchen_staff', 'owner']);
+
+test('a cashier with kitchen access may adjust inventory', function () {
+    inventoryAdjustment($this->scenario, [], $this->scenario->user('cashier_kitchen'))->assertOk();
+
+    expect($this->scenario->stock->fresh()->on_hand)->toBe(49);
+});
+
+test('guests, inactive users and unassigned cashiers cannot adjust the active branch inventory', function (string $case, int $status) {
+    $scenario = $this->scenario;
+    $request = match ($case) {
+        'guest' => fn () => $this->postJson(route('store-session-inventory-adjustments.store'), [
+            'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 1,
+        ]),
+        'inactive user' => fn () => inventoryAdjustment($scenario, [], $scenario->user('cashier', active: false)),
+        'inactive assignment' => fn () => inventoryAdjustment($scenario, [], $scenario->user('cashier', assignmentActive: false)),
+        'other branch cashier' => fn () => inventoryAdjustment($scenario, [], $scenario->user('cashier', Branch::factory()->create())),
+    };
+
+    $request()->assertStatus($status);
+
+    expect($scenario->stock->fresh()->on_hand)->toBe(50);
+    $this->assertDatabaseCount('store_session_inventory_adjustments', 0);
+    $this->assertDatabaseCount('inventory_movements', 0);
+})->with([
+    'guest' => ['guest', 401],
+    'inactive user' => ['inactive user', 401],
+    'inactive assignment' => ['inactive assignment', 302],
+    /** Branch context resolves to the cashier's own branch, which has no open Store Session. */
+    'other branch cashier' => ['other branch cashier', 422],
+]);
+
+test('a failed adjustment write rolls back stock, movement and attribution without realtime', function (string $failure) {
+    Event::fake([InventoryChanged::class, CustomerCatalogChanged::class]);
+    match ($failure) {
+        'adjustment record' => StoreSessionInventoryAdjustment::creating(fn () => throw new RuntimeException('Injected adjustment failure')),
+        'audit' => app()->instance(AuditRecorder::class, new class extends AuditRecorder
+        {
+            public function record(...$arguments): AuditLog
+            {
+                throw new RuntimeException('Injected audit failure');
+            }
+        }),
+    };
+
+    expect(fn () => app(RecordStoreSessionInventoryAdjustment::class)->execute($this->scenario->cashier, $this->scenario->branch, [
+        'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'damaged', 'product_id' => $this->scenario->product->id, 'quantity' => 2,
+    ]))->toThrow(RuntimeException::class);
+
+    expect($this->scenario->stock->fresh()->on_hand)->toBe(50)
+        ->and($this->scenario->stock->fresh()->version)->toBe($this->scenario->stock->version);
+    $this->assertDatabaseCount('store_session_inventory_adjustments', 0);
+    $this->assertDatabaseCount('inventory_movements', 0);
+    expect(AuditLog::query()->where('action', 'store_session.inventory_adjusted')->count())->toBe(0);
+    Event::assertNotDispatched(InventoryChanged::class);
+    Event::assertNotDispatched(CustomerCatalogChanged::class);
+})->with(['adjustment record', 'audit']);
 
 test('adjustments appear in the current-session projection without changing money totals', function () {
     inventoryAdjustment($this->scenario, ['reason_code' => 'wastage', 'quantity' => 2, 'note' => 'Dropped tray'])->assertOk();

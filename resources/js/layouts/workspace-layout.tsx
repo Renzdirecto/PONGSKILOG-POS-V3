@@ -341,6 +341,9 @@ export default function WorkspaceLayout({
                             canOpenHistory={auth.permissions.includes(
                                 'transactions.view',
                             )}
+                            onStoreClosing={(id) => {
+                                ownClosedSessionId.current = id;
+                            }}
                             onStoreClosed={(result) => {
                                 ownClosedSessionId.current =
                                     result.store_session.id;

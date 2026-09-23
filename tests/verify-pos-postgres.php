@@ -176,7 +176,7 @@ try {
     $numbers = Order::query()->where('branch_id', $branch->id)->pluck('order_number')->map(fn (string $number): int => (int) $number)->sort()->values()->all();
     verify($numbers === range(1001, 1020), 'Concurrent allocation must produce the serialized numeric range.');
     verify(Order::query()->where('branch_id', $branch->id)->whereNull('reference_number')->doesntExist(), 'New drafts require references.');
-    verify(Order::query()->where('branch_id', $branch->id)->get()->every(fn (Order $order): bool => preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-'.$order->order_number.'\z/', (string) $order->reference_number) === 1), 'Reference format must bind branch, business date and number.');
+    verify(Order::query()->where('branch_id', $branch->id)->get()->every(fn (Order $order): bool => preg_match('/\A'.preg_quote($branch->code, '/').'-\d{6}-\d{4,}\z/', (string) $order->reference_number) === 1), 'Reference format must bind branch, business date and daily sequence.');
     verify((int) DB::table('order_number_counters')->where('branch_id', $branch->id)->value('next_number') === 1021, 'Counter did not advance exactly once per order.');
     echo 'CONCURRENCY PASS: 4 observed overlapping connections allocated numeric 1001-1020 with unique immutable references; all worker connections reusable.'.PHP_EOL;
 

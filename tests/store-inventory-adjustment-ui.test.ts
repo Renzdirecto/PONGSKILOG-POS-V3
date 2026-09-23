@@ -74,6 +74,13 @@ test('Adjust inventory lives inside the Store Session dialog and never posts mon
     assert.match(realtime, /\['\.inventory\.changed'\]/);
 });
 
+test('a discarded session returns session-bound views to the overview load message', () => {
+    assert.match(
+        dialog,
+        /\{\(view === 'overview' \|\|\s*\(view !== 'close' && session === null\)\) && \(/,
+    );
+});
+
 test('stock adjustments join the session history newest-first without money', () => {
     const activity = sessionActivity(
         [{ id: 'e1', created_at: '2026-09-23T10:00:00+08:00' }],

@@ -198,6 +198,21 @@ test('realtime only invalidates and refetches authoritative close state', () => 
     assert.match(workspace, /router\.reload\(\)/);
 });
 
+test('the closing cashier is identified before store.closed can arrive ahead of the response', () => {
+    const request = flow.indexOf('...closeStore()');
+    const claim = flow.indexOf('onClosing(preview.store_session.id);');
+    assert.ok(claim > 0 && claim < request);
+    assert.match(
+        flow,
+        /if \(failure\.kind !== 'network'\) \{\s*setAttempt\(null\);\s*onClosing\(null\);/,
+    );
+    assert.match(dialog, /onClosing=\{\(id\) => onStoreClosing\?\.\(id\)\}/);
+    assert.match(
+        workspace,
+        /onStoreClosing=\{\(id\) => \{\s*ownClosedSessionId\.current = id;/,
+    );
+});
+
 test('mixed-method lower-total edits capture an explicit refund source', () => {
     assert.match(history, /refund_cash_amount: refundChoiceRequired/);
     assert.match(history, /Returned in Cash/);
@@ -252,4 +267,13 @@ test('Store Closed POS page keeps Open Store permission-gated and Browse availab
     assert.match(page, /Browse Read-Only/);
     assert.match(page, /Ready when you are/);
     assert.match(page, /aria-hidden="true"/);
+});
+
+test('the desktop Store Closed header keeps long branch names beside the illustration', () => {
+    const page = source('components/cashier-store.tsx');
+    assert.match(page, /sm:w-\[300px\]/);
+    assert.match(
+        page,
+        /closedHero \? 'lg:max-w-\[calc\(50%-10\.5rem\)\]' : ''/,
+    );
 });

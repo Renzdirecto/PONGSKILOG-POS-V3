@@ -75,7 +75,10 @@ export function CashierStore({
                 <header
                     className={`flex items-start justify-between gap-3 ${closedHero ? 'mb-4 lg:absolute lg:inset-x-10 lg:top-10 lg:mb-0' : 'mb-6 border-b border-neutral-200 pb-5'}`}
                 >
-                    <div className="min-w-0 space-y-1">
+                    {/* At lg the header overlays the centred 300px illustration; keep the name beside it. */}
+                    <div
+                        className={`min-w-0 space-y-1 ${closedHero ? 'lg:max-w-[calc(50%-10.5rem)]' : ''}`}
+                    >
                         <p className="text-[11px] font-bold tracking-[0.18em] text-[#8c671e] uppercase">
                             Cashier / POS
                         </p>

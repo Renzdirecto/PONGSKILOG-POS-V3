@@ -603,6 +603,7 @@ export function StoreCloseFlow({
     canOpenHistory,
     onBack,
     onBusyChange,
+    onClosing,
     onClosed,
     onDone,
     onNavigate,
@@ -613,6 +614,7 @@ export function StoreCloseFlow({
     canOpenHistory: boolean;
     onBack: () => void;
     onBusyChange: (busy: boolean) => void;
+    onClosing: (storeSessionId: string | null) => void;
     onClosed: (result: StoreCloseResult) => void;
     onDone: () => void;
     onNavigate: () => void;
@@ -713,6 +715,8 @@ export function StoreCloseFlow({
         }
         setSubmitting(true);
         setSubmitError('');
+        /** store.closed is broadcast before this response returns, so claim the session first. */
+        onClosing(preview.store_session.id);
         try {
             const response = await http.getClient().request({
                 ...closeStore(),
@@ -736,6 +740,7 @@ export function StoreCloseFlow({
             /** An ambiguous network result keeps the same key so a retry recovers instead of closing twice. */
             if (failure.kind !== 'network') {
                 setAttempt(null);
+                onClosing(null);
             }
             if (
                 failure.kind === 'blocker' ||

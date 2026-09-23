@@ -2,6 +2,7 @@
 
 use App\Actions\Audit\AuditRecorder;
 use App\Actions\Orders\ArchiveCustomerQrOrder;
+use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\StoreSessions\CloseStoreSession;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
@@ -413,6 +414,31 @@ test('operational mutations are rejected by the backend after close', function (
     expect($scenario->session->fresh()->status)->toBe(StoreSessionStatus::Closed)
         ->and(StoreSession::query()->where('status', 'open')->count())->toBe(0)
         ->and($qr->fresh()->commercial_status)->toBe(CommercialStatus::ArchivedUnclaimed);
+});
+
+test('pay later, settlement and inventory adjustment are rejected by the backend after close', function () {
+    $scenario = StoreCloseScenario::create();
+    $draft = app(CreatePosDraftOrder::class)->execute($scenario->cashier, $scenario->branch, [
+        'order_type' => 'take_out', 'customer_label' => 'Tab', 'items' => $scenario->items(1),
+    ]);
+    $paid = $scenario->payNow(1, 'cash');
+    $scenario->done($paid);
+    closeStoreRequest($scenario, $scenario->closePayload('1100.00', '0.00'))->assertOk();
+    $http = $this->actingAs($scenario->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id]);
+
+    $http->postJson(route('pos.orders.pay-later.store', $draft), ['idempotency_key' => (string) Str::uuid()])
+        ->assertUnprocessable()->assertJsonValidationErrors(['store']);
+    $http->postJson(route('pos.orders.settlements.store', $paid), [
+        'idempotency_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'cash_received' => '100.00',
+    ])->assertUnprocessable()->assertJsonValidationErrors(['store']);
+    $http->postJson(route('store-session-inventory-adjustments.store'), [
+        'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 1,
+    ])->assertUnprocessable()->assertJsonValidationErrors(['store']);
+
+    expect($draft->fresh()->committed_at)->toBeNull()
+        ->and($paid->payments()->count())->toBe(1)
+        ->and($scenario->stock->fresh()->on_hand)->toBe(199);
+    $this->assertDatabaseCount('store_session_inventory_adjustments', 0);
 });
 
 test('a cashier with kitchen access may close while a guest may not', function () {

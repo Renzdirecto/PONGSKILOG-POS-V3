@@ -6,6 +6,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchQrSettingsController;
 use App\Http\Controllers\BranchSelectionController;
+use App\Http\Controllers\CashierDashboardController;
 use App\Http\Controllers\CashierWorkspaceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommittedOrderEditController;
@@ -111,6 +112,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
         ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier');
+
+    Route::get('workspaces/cashier-dashboard', CashierDashboardController::class)
+        ->middleware(['permission:pos.access', 'branch'])->name('workspaces.cashier-dashboard');
 
     Route::get('workspaces/transaction-history', [TransactionHistoryController::class, 'index'])
         ->middleware(['permission:transactions.view', 'branch'])->name('workspaces.transaction-history');

@@ -22,7 +22,11 @@ import {
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
-import { openStoreSessionDialogState } from '@/lib/store-session';
+import {
+    openStoreSessionDialogState,
+    storeSessionLoadFailure,
+    type StoreSessionLoadState,
+} from '@/lib/store-session';
 import type {
     Auth,
     BranchContext,
@@ -66,8 +70,8 @@ export default function WorkspaceLayout({
     const [storeSessionDialogOpen, setStoreSessionDialogOpen] = useState(false);
     const [storeSession, setStoreSession] =
         useState<CurrentStoreSession | null>(null);
-    const [storeSessionUnavailable, setStoreSessionUnavailable] =
-        useState(false);
+    const [storeSessionLoadState, setStoreSessionLoadState] =
+        useState<StoreSessionLoadState>('idle');
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
@@ -91,19 +95,17 @@ export default function WorkspaceLayout({
                 page.props.workspace === 'Super Admin'));
 
     const refreshStoreSession = useCallback(async () => {
-        setStoreSessionUnavailable(false);
+        setStoreSessionLoadState('loading');
 
         try {
-            const detail = await storeSessionRequest.submit(
-                currentStoreSession(),
-                {
-                    onHttpException: () => true,
-                    onNetworkError: () => true,
-                },
+            const detail = await storeSessionRequest.get(
+                currentStoreSession.url(),
+                { headers: { Accept: 'application/json' } },
             );
             setStoreSession(detail);
-        } catch {
-            setStoreSessionUnavailable(true);
+            setStoreSessionLoadState('loaded');
+        } catch (reason) {
+            setStoreSessionLoadState(storeSessionLoadFailure(reason));
         }
     }, [storeSessionRequest]);
 
@@ -112,7 +114,7 @@ export default function WorkspaceLayout({
             const openingState = openStoreSessionDialogState();
             setStoreSessionDialogOpen(openingState.open);
             setStoreSession(openingState.session);
-            setStoreSessionUnavailable(openingState.unavailable);
+            setStoreSessionLoadState(openingState.loadState);
 
             await refreshStoreSession();
         };
@@ -285,8 +287,7 @@ export default function WorkspaceLayout({
                             onOpenChange={setStoreSessionDialogOpen}
                             branchId={branchContext.current.id}
                             session={storeSession}
-                            loading={storeSessionRequest.processing}
-                            unavailable={storeSessionUnavailable}
+                            loadState={storeSessionLoadState}
                             refreshSession={refreshStoreSession}
                         />
                     )}

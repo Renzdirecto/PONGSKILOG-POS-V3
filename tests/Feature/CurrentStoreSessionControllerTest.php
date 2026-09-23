@@ -1,9 +1,13 @@
 <?php
 
+use App\Actions\StoreSessions\OpenStoreSession;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
+use App\Models\BranchProduct;
+use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
+use App\Models\StoreSessionExpense;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
@@ -59,6 +63,53 @@ test('authorized cashier retrieves only the current branch open session detail',
             'restock_products' => [],
         ]);
 })->with(['cashier', 'cashier_kitchen']);
+
+test('cashier kitchen retrieves the Phase 14 projection for an already open MAIN session', function () {
+    $branch = Branch::factory()->create(['code' => 'MAIN', 'name' => 'MAIN']);
+    $cashier = currentStoreSessionUser($branch, 'cashier_kitchen');
+    $session = StoreSession::factory()->for($branch)->for($cashier, 'openedBy')->create();
+    $expense = StoreSessionExpense::factory()
+        ->for($branch)
+        ->for($session, 'storeSession')
+        ->for($cashier, 'createdBy')
+        ->create([
+            'description' => 'Cooking gas',
+            'amount' => '850.00',
+            'payment_source' => 'cash',
+        ]);
+    $product = Product::factory()->create(['name' => 'Rice']);
+    BranchProduct::factory()->for($branch)->for($product)->create([
+        'tracks_inventory' => true,
+    ]);
+
+    $this->actingAs($cashier)->getJson(route('store-sessions.current'))
+        ->assertOk()
+        ->assertJsonPath('id', $session->id)
+        ->assertJsonPath('branch.id', $branch->id)
+        ->assertJsonPath('branch.code', 'MAIN')
+        ->assertJsonPath('expense_totals.cash', '850.00')
+        ->assertJsonPath('expense_count', 1)
+        ->assertJsonPath('expenses.0.id', $expense->id)
+        ->assertJsonPath('restock_products.0.id', $product->id);
+});
+
+test('cashier kitchen retrieves a freshly opened MAIN session', function () {
+    $branch = Branch::factory()->create(['code' => 'MAIN', 'name' => 'MAIN']);
+    $cashier = currentStoreSessionUser($branch, 'cashier_kitchen');
+    $session = app(OpenStoreSession::class)->execute(
+        $cashier,
+        $branch,
+        '1200.00',
+        '300.00',
+    );
+
+    $this->actingAs($cashier)->getJson(route('store-sessions.current'))
+        ->assertOk()
+        ->assertJsonPath('id', $session->id)
+        ->assertJsonPath('opening_cash_amount', '1200.00')
+        ->assertJsonPath('opening_cashless_amount', '300.00')
+        ->assertJsonPath('expense_totals.total', '0.00');
+});
 
 test('guest is denied current Store Session detail', function () {
     $this->getJson(route('store-sessions.current'))->assertUnauthorized();

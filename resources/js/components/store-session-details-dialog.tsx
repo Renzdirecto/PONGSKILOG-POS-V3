@@ -32,8 +32,11 @@ import {
     storeExpenseError,
 } from '@/lib/store-session-expense';
 import {
+    canRetryStoreSessionLoad,
     formatStoreSessionMoney,
+    storeSessionLoadMessage,
     storeSessionDetailRows,
+    type StoreSessionLoadState,
 } from '@/lib/store-session';
 import { store } from '@/routes/store-session-expenses';
 import type {
@@ -471,16 +474,14 @@ export function StoreSessionDetailsDialog({
     onOpenChange,
     session,
     branchId,
-    loading,
-    unavailable,
+    loadState,
     refreshSession,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     session: CurrentStoreSession | null;
     branchId: string;
-    loading: boolean;
-    unavailable: boolean;
+    loadState: StoreSessionLoadState;
     refreshSession: () => Promise<void>;
 }) {
     const [view, setView] = useState<View>('overview');
@@ -489,6 +490,7 @@ export function StoreSessionDetailsDialog({
         branchId,
         refreshSession,
     );
+    const loadMessage = storeSessionLoadMessage(loadState);
 
     function changeOpen(next: boolean) {
         if (!next) {
@@ -527,14 +529,24 @@ export function StoreSessionDetailsDialog({
                             </div>
                         </DialogHeader>
 
-                        {loading && !session && (
+                        {loadState === 'loading' && !session && (
                             <div className="flex min-h-52 flex-1 items-center justify-center gap-2 text-sm text-neutral-500" role="status">
                                 <Spinner /> Loading Store Session…
                             </div>
                         )}
-                        {!loading && unavailable && !session && (
-                            <div role="alert" className="my-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-                                This Store Session is no longer available. The store state may have changed; close this window and refresh the POS.
+                        {loadMessage && !session && (
+                            <div role="alert" className="my-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                                <p>{loadMessage}</p>
+                                {canRetryStoreSessionLoad(loadState) && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => void refreshSession()}
+                                        className="min-h-11 rounded-xl border-amber-300 bg-white px-4 text-amber-950 hover:bg-amber-100"
+                                    >
+                                        Retry
+                                    </Button>
+                                )}
                             </div>
                         )}
                         {session && (

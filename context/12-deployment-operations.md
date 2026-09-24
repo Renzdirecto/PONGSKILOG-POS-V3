@@ -498,7 +498,7 @@ Before production launch:
 
 ## 26. POST-PHASE-16 PLANNED PWA SLICE (accepted plan, NOT implemented)
 
-**Status: PLANNED, NOT IMPLEMENTED.** Accepted by the user on 2026-09-24 during Phase 16 Final QA. There is currently **no service worker, no web manifest, no install prompt, no offline cache and no manifest-driven PWA release**. Phase 16 only prepared branding assets. The PWA needs its own dedicated implementation slice with its own tests and QA; it has no build-plan phase number yet and must not be marked complete until that slice ships.
+**Status: PLANNED, NOT IMPLEMENTED.** Accepted by the user on 2026-09-24 during Phase 16 Final QA. There is currently **no service worker, no web manifest, no install prompt, no offline cache and no manifest-driven PWA release**. Phase 16 only prepared branding assets. The PWA needs its own dedicated implementation slice with its own tests and QA; it is tracked as **Phase 19.5 — PWA / Installable Web App** (PLANNED / NOT STARTED) in `13-progress-tracker.md` and must not be marked complete until that slice ships.
 
 ### Mental model
 

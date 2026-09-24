@@ -912,6 +912,14 @@ Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of
 
 ## Phase 17 — Stock Transfers
 
+**Status: DEFERRED**
+
+Reason: Pongskilog currently operates with only one real active branch, so branch-to-branch stock transfer workflows are not needed yet.
+
+Revisit Phase 17 when Pongskilog has a second real operating branch that actually transfers stock between locations. The original scope below is kept for that future work; none of it is implemented.
+
+Original scope (deferred):
+
 - [ ] Create transfer
 - [ ] Source branch
 - [ ] Destination branch
@@ -964,6 +972,50 @@ Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency c
 - [ ] Product image optimization verification
 - [ ] Owner all-branch query optimization
 - [ ] POS performance verification
+
+---
+
+## Phase 19.5 — PWA / Installable Web App
+
+**Status: PLANNED / NOT STARTED**
+
+**PWA is NOT implemented yet.** There is no web manifest, service worker, install prompt or offline cache. Detailed plan and branding asset registry: `12-deployment-operations.md` §26.
+
+Direction:
+
+- Convert the existing web app into an installable PWA.
+- Internet/WiFi-first architecture.
+- Do NOT design this as a full offline transactional POS.
+
+Offline/degraded behavior:
+
+- Safe read-only/degraded mode.
+- Show `Last synced` where appropriate.
+- Cached app shell/assets.
+- Selected read-only snapshots may be available offline.
+
+Potential offline-readable areas:
+
+- Catalog/product browsing
+- Selected Owner dashboard/report snapshots
+- Transaction/history snapshots where safe
+- Operations/Pamamalengke reference data where safe
+
+Never allow offline writes for: Pay Now, Pay Later, settlement, Void, Edit Transaction, Store Open / Close, expenses/purchases, inventory adjustments, ingredient movements, giveaway, Kitchen status mutations, and any other financial/stock/security-sensitive writes.
+
+Planned technical scope:
+
+- [ ] Web app manifest
+- [ ] Final launcher/icon assets
+- [ ] Service worker
+- [ ] Installability
+- [ ] Cached static/app-shell assets
+- [ ] Safe cache strategy
+- [ ] Offline/degraded UI
+- [ ] Reconnect detection
+- [ ] Authoritative backend refresh/revalidation after reconnect
+- [ ] Realtime reconnection
+- [ ] Update/version handling
 
 ---
 

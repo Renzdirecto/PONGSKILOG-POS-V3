@@ -4,10 +4,9 @@ namespace App\Http\Middleware;
 
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
-use App\Models\Permission;
-use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\EffectivePermissions;
 use App\Support\StoreState;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -61,6 +60,7 @@ class HandleInertiaRequests extends Middleware
             'auth' => $this->authProps($user),
             'branchContext' => $this->branchContextProps($user, $currentBranch),
             'storeContext' => fn (): array => $this->storeContextProps($currentBranch),
+            'notificationCenter' => fn (): ?array => $this->notificationCenterProps($user),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
@@ -76,27 +76,30 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $roles = $user->roles()
-            ->with('permissions:id,name')
-            ->orderBy('name')
-            ->get(['roles.id', 'roles.name']);
-
         return [
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
             ],
-            'roles' => array_values($roles
-                ->map(fn (Role $role): string => $role->name)
-                ->all()),
-            'permissions' => array_values($roles
-                ->flatMap(fn (Role $role) => $role->permissions
-                    ->map(fn (Permission $permission): string => $permission->name))
-                ->unique()
-                ->sort()
-                ->all()),
+            'roles' => array_values($user->roles()->orderBy('name')->pluck('name')->all()),
+            'permissions' => EffectivePermissions::names($user),
         ];
+    }
+
+    /**
+     * The Control Center unread badge: a real count of the viewer's unread in-app notifications, only for accounts
+     * that hold the notification center (Super Admin access control). Never a placeholder number.
+     *
+     * @return array{unread: int}|null
+     */
+    private function notificationCenterProps(?User $user): ?array
+    {
+        if ($user === null || ! $user->is_active || ! $user->hasPermission('access_control.manage')) {
+            return null;
+        }
+
+        return ['unread' => $user->unreadNotifications()->count()];
     }
 
     /** @return array{current: array{id: string, name: string, code: string}|null, businessWide: bool, selectableBranches: list<array{id: string, name: string, code: string}>} */

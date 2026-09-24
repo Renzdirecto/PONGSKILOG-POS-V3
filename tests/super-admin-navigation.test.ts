@@ -16,7 +16,8 @@ const source = (path: string): string =>
 const shell = source('components/super-admin-shell.tsx');
 const layout = source('layouts/workspace-layout.tsx');
 const staffPage = source('pages/super-admin/staff.tsx');
-const placeholderPage = source('pages/super-admin/placeholder.tsx');
+const accessControlPage = source('pages/super-admin/access-control.tsx');
+const notificationsPage = source('pages/super-admin/notifications.tsx');
 
 const superAdminPermissions = [
     'pos.access',
@@ -93,7 +94,7 @@ test('super admin navigation exposes the required sections in order', () => {
     );
 });
 
-test('existing destinations point at real routes and only unbuilt pages are planned', () => {
+test('every destination points at a real live route', () => {
     const routes = Object.fromEntries(
         superAdminDestinations.map((destination) => [
             destination.id,
@@ -103,7 +104,7 @@ test('existing destinations point at real routes and only unbuilt pages are plan
 
     assert.deepEqual(routes, {
         dashboard: ['workspaces.super-admin', 'live'],
-        notifications: ['super-admin.notifications', 'planned'],
+        notifications: ['super-admin.notifications', 'live'],
         'cashier-dashboard': ['workspaces.cashier-dashboard', 'live'],
         pos: ['workspaces.cashier', 'live'],
         'qr-orders': ['workspaces.cashier', 'live'],
@@ -125,7 +126,7 @@ test('existing destinations point at real routes and only unbuilt pages are plan
         'audit-trail': ['workspaces.audit-trail', 'live'],
         'void-orders': ['workspaces.void-orders', 'live'],
         staff: ['super-admin.staff.index', 'live'],
-        'access-control': ['super-admin.access-control', 'planned'],
+        'access-control': ['super-admin.access-control', 'live'],
         settings: ['branches.index', 'live'],
     });
 });
@@ -154,12 +155,12 @@ test('the active destination follows the rendered page', () => {
         [
             [{ component: 'super-admin/dashboard', url: '/' }, 'dashboard'],
             [
-                {
-                    component: 'super-admin/placeholder',
-                    url: '/',
-                    destination: 'access-control',
-                },
+                { component: 'super-admin/access-control', url: '/' },
                 'access-control',
+            ],
+            [
+                { component: 'super-admin/notifications', url: '/' },
+                'notifications',
             ],
             [{ component: 'super-admin/staff', url: '/' }, 'staff'],
             [{ component: 'workspaces/reports', url: '/' }, 'reports'],
@@ -200,11 +201,7 @@ test('the active destination follows the rendered page', () => {
         assert.equal(activeSuperAdminDestination(page), expected);
     }
     assert.equal(
-        activeSuperAdminDestination({
-            component: 'super-admin/placeholder',
-            url: '/',
-            destination: 'staff',
-        }),
+        activeSuperAdminDestination({ component: 'unknown/page', url: '/' }),
         null,
     );
 });
@@ -244,14 +241,20 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
         source('components/owner-workspace-shell.tsx'),
         /<main className="owner-scrollbar relative /,
     );
-    assert.doesNotMatch(shell, /unread|badgeCount/i);
+    // The only unread number is the real server count; there is no invented badge value.
+    assert.match(shell, /useUnreadNotifications\(userId, initialUnread\)/);
+    assert.match(shell, /unreadBadgeLabel\(unread\)/);
+    assert.doesNotMatch(shell, /coming later|Planned notifications/i);
     assert.match(layout, /<SuperAdminShell>\{children\}<\/SuperAdminShell>/);
     assert.match(layout, /Back to Super Admin Control Center/);
 });
 
-test('planned pages and the staff form never fake controls or echo credentials', () => {
-    assert.match(placeholderPage, /Planned/);
-    assert.doesNotMatch(placeholderPage, /type="checkbox"|role="switch"/);
+test('access control, notifications and the staff form never fake data or echo credentials', () => {
+    assert.match(accessControlPage, /role="radiogroup"/);
+    assert.match(accessControlPage, /Locked · Full access/);
+    assert.match(accessControlPage, /Reset all custom access/);
+    assert.doesNotMatch(notificationsPage, /Planned|placeholder/i);
+    assert.match(notificationsPage, /No notifications yet/);
     assert.match(
         staffPage,
         /form\.reset\('password', 'password_confirmation'\)/,

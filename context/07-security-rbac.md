@@ -347,6 +347,8 @@ Super Admin / Owner elevation must not be available through normal staff CRUD un
 
 Access Control page remains Super Admin-only.
 
+Phase 18 (2026-09-25): editing existing accounts, Role baselines and per-account custom access are specified in "Phase 18 — Access Control, Staff administration and Notifications" at the end of this file.
+
 ---
 
 ## 15. Customer QR Security
@@ -531,11 +533,11 @@ Preview and close require an active user with `pos.access` and `store.open_close
 - The temporary password is chosen by the Super Admin, validated with `Password::default()` plus confirmation, and hashed by the User `hashed` cast. It is never persisted in plaintext, logged, audited, broadcast, returned in page props, or shown again. There is no invite email, forced password change, first-login flow, or password expiry.
 - User, role, Branch assignments, active state, and one `staff/staff.created` Audit record commit in one transaction. The Audit records user id, Employee ID, name, email, role, Branch ids/codes, business-wide flag, and active state, with no password, confirmation, hash, secret, or token. Duplicate emails, including races on the unique index, return a validation error, so retries cannot create a second user or Audit record.
 - An optional staff profile picture set by the Super Admin (JPG/PNG/WebP, 64–8000px, up to 2 MB, no SVG) is stored on the private `staff_avatars_disk` (default `local`) under `staff-avatars/{user}` and served only through `super-admin.staff.avatar` (`access_control.manage`, `nosniff`) or, for operational Staff an Owner manages, `staff.avatar` (404 for any account outside that scope, e.g. Owner or Super Admin). A failed creation deletes the stored file. The Audit records only `has_profile_picture`, never the path. This is admin-set; staff self-service avatar upload remains out of scope.
-- The Access Control matrix remains unimplemented. Its page is a read-only placeholder with no interactive toggles.
+- ~~The Access Control matrix remains unimplemented.~~ Superseded by Phase 18 (below): Access Control is a real, backend-enforced page.
 
 ### Phase 16B–16D Owner workspace authorization - 2026-09-24
 
-- `workspaces.owner` (Owner Dashboard), `workspaces.reports` and `workspaces.reports.export` require `reports.view` plus business-wide scope (Owner, Super Admin). The export is throttled and built only from the authorized, scoped and filtered report arrays.
+- `workspaces.owner` (Owner Dashboard), `workspaces.reports` and `workspaces.reports.export` require `reports.view` plus business-wide scope (Owner, Super Admin). *Phase 18: Reports and its export also accept a Branch-scoped account with custom `reports.view`, limited to its selected assigned Branch (see Phase 18 below); the Owner Dashboard stays business-wide only.* The export is throttled and built only from the authorized, scoped and filtered report arrays.
 - `workspaces.transactions` and `workspaces.transactions.show` require `transactions.view` plus business-wide scope. A selected Branch limits both to that Branch (another Branch's Order is 404). Voided Orders are 404. Capabilities (`can_edit`/`can_settle`/`can_void`) are computed on the server from POS access to the selected Branch; the Owner never has it, so the Owner's POS write requests are 403 (`permission:pos.access`). The Cashier `workspaces.transaction-history` route and its `hasCashierOperationsRole` authorization are unchanged.
 - Settings reuse the existing Branch Management, receipt and QR endpoints (`BranchPolicy`, `settings.manage` + business-wide); operational staff remain 403.
 
@@ -553,3 +555,63 @@ Preview and close require an active user with `pos.access` and `store.open_close
 - **Customer QR capacity** (`qr.recipe-capacity`) now also requires an active Branch with QR ordering enabled, like the QR menu and submission. It returns fit booleans only; the coarse yes/no for a chosen quantity is an accepted disclosure equal to what order submission already reveals.
 - **Branch switch return path**: only a same-application path (`/…`, no scheme, host, `//`, backslash or whitespace) is followed; the Branch selection policy is unchanged.
 - Pamamalengke: a skip mark is accepted only for an active Ingredient of the Plan, and the manual-item delete route cannot remove skip marks.
+
+## Phase 18 — Access Control, Staff administration and Notifications — 2026-09-25
+
+### Effective permissions (one authority)
+
+- Role = baseline permissions (`role_permissions`); account = optional explicit exception (`user_permission_overrides`, `allow` or `deny`; no row = INHERIT).
+- `App\Support\EffectivePermissions` is the only resolver. `User::hasPermission()`, the `permission:` middleware, every FormRequest/action check, broadcast channels and the shared `auth.permissions` prop all resolve through it, so navigation and backend decisions always agree. Nothing is cached between requests: a revoked permission is denied on the very next request or mutation.
+- For a non-Super-Admin: ALLOW override → yes; DENY override → no; otherwise the Role baseline (union over its roles).
+- **Super Admin is locked full access**: its baseline is always every permission (the seeder re-completes it), overrides are ignored for it and are never written for it, and its baseline cannot be edited. An ALLOW override never grants `audit.view`, `void_orders.manage` or `access_control.manage`, even if such a row were inserted directly.
+- Permission = WHAT; Role + Branch assignment = WHERE. A permission never widens scope.
+
+### Grant envelope (PermissionCatalog)
+
+`App\Support\PermissionCatalog` is the single catalog (label, description, category, scope, first-install defaults, grant envelope, lock reasons) used by the seeder, the actions and the Access Control page.
+
+| Role | May hold (baseline or custom) | Locked, with reason |
+| --- | --- | --- |
+| Owner | Transactions, Reports, Products, Inventory, Staff, Settings | POS, QR, Store Open/Close, Expenses, Kitchen, Customer Display (operations belong to Branch staff); Control permissions (Super Admin only) |
+| Cashier | POS, Transactions, Store Open/Close, Expenses, Kitchen, Customer Display, **Reports (own Branch)** | Products, Inventory, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control (Super Admin only) |
+| Kitchen Staff | Kitchen, Customer Display, **Reports (own Branch)** | Cashier operations (need a Cashier role); business-wide and Control permissions |
+| Cashier + Kitchen | derived: union of Cashier and Kitchen Staff | not edited directly |
+| Super Admin | everything | locked full access |
+
+QR Orders has no route of its own (it is enforced through POS) and always follows POS in a Role baseline; it is not individually configurable.
+
+### Writes
+
+- Access Control routes (`super-admin.access-control*`) require an active account with `access_control.manage`; the actions re-read the actor inside the transaction.
+- **Role baseline** (`UpdateRolePermissions`): Owner, Cashier or Kitchen Staff only; only catalog permissions inside the envelope (unknown names are rejected, not ignored); locked baseline entries are kept; Roles are locked `FOR UPDATE` in id order and Cashier + Kitchen is re-derived as the union in the same transaction; an unchanged submission records nothing. Audit `access_control/access.role_permissions_updated` with before/after lists, added/removed and the derived Cashier + Kitchen before/after.
+- **Custom access** (`UpdateUserPermissionOverrides`): locks the account row (serializing with Staff role changes); accounts must have exactly one staff role; Super Admin accounts are refused. INHERIT deletes; an ALLOW of an included permission or a DENY of an excluded one is stored as INHERIT (no meaningless rows). Audit `access.user_override_updated` / `access.user_overrides_reset` with before/after maps.
+
+### RBAC seeding rule (live configuration is never reset)
+
+`RbacSeeder` stays safe for fresh installs, tests and every deployment rerun:
+
+- a Role receives its catalog defaults only when the seeder creates that Role;
+- a Permission new in this run is granted to the Roles whose defaults include it;
+- existing Role ↔ Permission pairs are never removed or re-added, so an edited baseline survives;
+- Super Admin is always completed to every permission; Cashier + Kitchen is always re-derived from Cashier ∪ Kitchen Staff.
+
+### Branch-scoped Reports (custom access)
+
+- `ReportsRequest` requires `reports.view` only; `ReportsController` then derives the scope: Owner/Super Admin keep the selected Branch or All Branches; a Branch-scoped account uses its selected **assigned** Branch (`ActiveBranchContext`, which rejects any other Branch) and is redirected to choose one instead of ever receiving All Branches. The session filter only matches that Branch's Store Sessions. The CSV export follows the same scope.
+- The Owner Dashboard (`workspaces.owner`) stays business-wide only. Branch staff see Reports inside their operational shell.
+- Realtime: `branch.{branch}.reports` (reports.view + access to that Branch) for Branch-scoped viewers; the business-wide `reports` channel still requires business-wide scope.
+
+### Staff administration
+
+- `PUT super-admin/staff/{user}` (Super Admin, every account) and `PUT workspaces/staff/{user}` (Owner `staff.manage`, operational accounts only) run `UpdateStaffAccount`: name, email (unique ignoring case), one Role, Branch access, active status, picture replace/remove. The Employee ID is never changed.
+- Locks every Super Admin row plus actor and target in id order first. **At least one active Super Admin always remains**; nobody changes their own role or deactivates themselves; a crossing race (A deactivates/demotes B while B deactivates/demotes A) lets exactly one win (verified on PostgreSQL).
+- A Role change clears Branch assignments for Owner/Super Admin, requires at least one active Branch for operational Roles, and **resets custom access to INHERIT** (recorded in the audit).
+- Deactivation rotates the remember token and, with the database session driver, deletes that account's session rows; `EnsureUserIsActive` signs an inactive account out on its next request and channels refuse inactive users. Accounts are never deleted.
+- `PUT super-admin/staff/{user}/password` (Super Admin only, never oneself): new temporary password with `Password::default()` + confirmation, hashed by the User cast, never returned, logged, audited or notified; the remember token is rotated, database sessions are deleted, and `AuthenticateSession` (web middleware) signs out any other session whose stored password hash no longer matches.
+- Audit (`module = staff`): `staff.updated`, `staff.role_changed`, `staff.branch_access_changed`, `staff.deactivated`, `staff.reactivated`, `staff.avatar_updated`, `staff.avatar_removed`, `staff.password_reset` — one row per distinct change category, readable before/after, no credentials.
+
+### Notifications
+
+- In-app only (Laravel database notifications, `notifications` table). The Control Center notification center is Super Admin only (`access_control.manage`); a viewer reads and marks only their own rows (another account's id is 404).
+- Recipients: active Super Admins, excluding the actor. Delivery runs after the business transaction commits and is rescued (a failed notification never fails the change). Payloads hold category, title, summary and a server-generated same-app link only — no credentials, audit payloads or money.
+- Realtime: `notifications.changed` (event id/type/time only) on the recipient's own `App.Models.User.{id}` channel, which now also requires an active account.

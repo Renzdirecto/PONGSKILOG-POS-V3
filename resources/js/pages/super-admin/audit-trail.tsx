@@ -110,6 +110,51 @@ const actionStyles: Record<
         iconClass: 'bg-blue-50 text-blue-700 ring-blue-100',
         badge: 'blue',
     },
+    'staff.updated': {
+        icon: Pencil,
+        iconClass: 'bg-blue-50 text-blue-700 ring-blue-100',
+        badge: 'blue',
+    },
+    'staff.role_changed': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'staff.branch_access_changed': {
+        icon: Store,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'staff.deactivated': {
+        icon: ShieldBan,
+        iconClass: 'bg-red-50 text-red-700 ring-red-100',
+        badge: 'red',
+    },
+    'staff.reactivated': {
+        icon: CircleUserRound,
+        iconClass: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+        badge: 'green',
+    },
+    'staff.password_reset': {
+        icon: KeyRound,
+        iconClass: 'bg-amber-50 text-amber-700 ring-amber-100',
+        badge: 'amber',
+    },
+    'access.role_permissions_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.user_override_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.user_overrides_reset': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
 };
 
 export function auditActionLabel(action: string): string {
@@ -120,6 +165,17 @@ export function auditActionLabel(action: string): string {
         'order.voided': 'Order voided',
         'void_pin.configured': 'Void PIN configured',
         'staff.created': 'Staff account created',
+        'staff.updated': 'Staff details updated',
+        'staff.role_changed': 'Staff role changed',
+        'staff.branch_access_changed': 'Staff Branch access changed',
+        'staff.deactivated': 'Staff account deactivated',
+        'staff.reactivated': 'Staff account reactivated',
+        'staff.avatar_updated': 'Staff photo updated',
+        'staff.avatar_removed': 'Staff photo removed',
+        'staff.password_reset': 'Staff password reset',
+        'access.role_permissions_updated': 'Role permissions changed',
+        'access.user_override_updated': 'User custom access changed',
+        'access.user_overrides_reset': 'User custom access reset',
     };
 
     return (

@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Staff\CreateStaffAccount;
+use App\Actions\Staff\ResetStaffPassword;
+use App\Actions\Staff\UpdateStaffAccount;
 use App\Enums\BranchStatus;
+use App\Http\Requests\ResetStaffPasswordRequest;
 use App\Http\Requests\StaffIndexRequest;
 use App\Http\Requests\StoreStaffRequest;
+use App\Http\Requests\UpdateStaffRequest;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
@@ -41,6 +45,7 @@ class StaffController extends Controller
                     ->wherePivot('is_active', true)
                     ->orderBy('branches.name'),
             ])
+            ->withCount('permissionOverrides')
             ->when(! $fullAccess, fn (Builder $query) => $this->scopeToManageable($query, $manageable))
             ->when($filters['search'] ?? null, function (Builder $query, string $search): void {
                 $term = '%'.mb_strtolower(trim($search)).'%';
@@ -57,7 +62,7 @@ class StaffController extends Controller
             ->orderBy('id')
             ->paginate(25)
             ->withQueryString()
-            ->through(function (User $user) use ($surface): array {
+            ->through(function (User $user) use ($surface, $actor): array {
                 $roleNames = $user->roles->pluck('name')->all();
 
                 return [
@@ -79,6 +84,8 @@ class StaffController extends Controller
                         ->values()
                         ->all(),
                     'created_at' => $user->created_at?->toIso8601String(),
+                    'is_self' => $user->is($actor),
+                    'custom_access_count' => $surface === 'owner' ? 0 : (int) $user->permission_overrides_count,
                 ];
             });
 
@@ -112,6 +119,42 @@ class StaffController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
 
         return to_route($this->surface($request) === 'owner' ? 'staff.index' : 'super-admin.staff.index');
+    }
+
+    /**
+     * Save an existing account (details, Role, Branch access, status, picture). The Employee ID never changes.
+     */
+    public function update(UpdateStaffRequest $request, User $user, UpdateStaffAccount $updateStaffAccount): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+
+        /** @var array{name: string, email: string, role: string, branch_ids?: list<string>, is_active: bool, remove_avatar?: bool} $data */
+        $data = $request->safe()->only(['name', 'email', 'role', 'branch_ids', 'is_active', 'remove_avatar']);
+        $actions = $updateStaffAccount->execute($actor, $user, [
+            ...$data,
+            'is_active' => $request->boolean('is_active'),
+            'remove_avatar' => $request->boolean('remove_avatar'),
+            'avatar' => $request->file('avatar'),
+        ]);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $actions === [] ? 'No changes to save.' : 'Staff account saved.']);
+
+        return to_route($this->surface($request) === 'owner' ? 'staff.index' : 'super-admin.staff.index', $request->query());
+    }
+
+    /**
+     * Super Admin administrative password reset. The new temporary password is never returned or shown again.
+     */
+    public function password(ResetStaffPasswordRequest $request, User $user, ResetStaffPassword $resetStaffPassword): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+        $resetStaffPassword->execute($actor, $user, (string) $request->validated('password'));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Temporary password set. '.$user->name.' was signed out of other sessions.']);
+
+        return to_route('super-admin.staff.index', $request->query());
     }
 
     /**

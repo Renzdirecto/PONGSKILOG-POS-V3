@@ -2,6 +2,8 @@ import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     Camera,
     ChevronLeft,
+    KeyRound,
+    Pencil,
     ChevronRight,
     Globe2,
     LayoutGrid,
@@ -23,6 +25,10 @@ import {
     ownerSecondaryActionClass,
 } from '@/components/owner-ui';
 import PasswordInput from '@/components/password-input';
+import {
+    EditStaffForm,
+    ResetStaffPasswordForm,
+} from '@/components/staff-account-dialogs';
 import {
     Dialog,
     DialogContent,
@@ -54,6 +60,8 @@ type StaffMember = {
     business_wide: boolean;
     branches: BranchSummary[];
     created_at: string | null;
+    is_self: boolean;
+    custom_access_count: number;
 };
 type Filters = { search?: string; role?: string; status?: string };
 type Props = {
@@ -195,6 +203,8 @@ export default function Staff({
     const ownerSurface = surface === 'owner';
     const [search, setSearch] = useState(filters.search ?? '');
     const [adding, setAdding] = useState(false);
+    const [managing, setManaging] = useState<StaffMember | null>(null);
+    const [resetting, setResetting] = useState<StaffMember | null>(null);
     /** Tiled is the default; the viewer's last choice is remembered on this device only. */
     const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
     const searchTimer = useRef<number | undefined>(undefined);
@@ -429,6 +439,14 @@ export default function Staff({
                                         <div className="border-t border-[#eeeeee] pt-2.5">
                                             <BranchAccess member={member} />
                                         </div>
+                                        <StaffActions
+                                            member={member}
+                                            ownerSurface={ownerSurface}
+                                            onManage={() => setManaging(member)}
+                                            onResetPassword={() =>
+                                                setResetting(member)
+                                            }
+                                        />
                                     </li>
                                 ))}
                             </ul>
@@ -458,7 +476,10 @@ export default function Staff({
                                             >
                                                 Role
                                             </th>
-                                            <th scope="col" className="px-4 py-3">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3"
+                                            >
                                                 Branch access
                                             </th>
                                             <th
@@ -466,6 +487,14 @@ export default function Staff({
                                                 className="w-[110px] px-4 py-3"
                                             >
                                                 Status
+                                            </th>
+                                            <th
+                                                scope="col"
+                                                className="w-[150px] px-4 py-3"
+                                            >
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
                                             </th>
                                         </tr>
                                     </thead>
@@ -493,8 +522,12 @@ export default function Staff({
                                                 </td>
                                                 <td className="px-4 py-3 text-[12.5px]">
                                                     {member.roles
-                                                        .map((role) => role.label)
-                                                        .join(', ') || 'No role'}
+                                                        .map(
+                                                            (role) =>
+                                                                role.label,
+                                                        )
+                                                        .join(', ') ||
+                                                        'No role'}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <BranchAccess
@@ -506,6 +539,21 @@ export default function Staff({
                                                         active={
                                                             member.is_active
                                                         }
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <StaffActions
+                                                        member={member}
+                                                        ownerSurface={
+                                                            ownerSurface
+                                                        }
+                                                        onManage={() =>
+                                                            setManaging(member)
+                                                        }
+                                                        onResetPassword={() =>
+                                                            setResetting(member)
+                                                        }
+                                                        compact
                                                     />
                                                 </td>
                                             </tr>
@@ -524,7 +572,9 @@ export default function Staff({
                                                     url={member.avatar_url}
                                                     size="size-11"
                                                 />
-                                                <StaffIdentity member={member} />
+                                                <StaffIdentity
+                                                    member={member}
+                                                />
                                                 <StatusBadge
                                                     active={member.is_active}
                                                 />
@@ -538,6 +588,16 @@ export default function Staff({
                                                     .join(', ') || 'No role'}
                                             </p>
                                             <BranchAccess member={member} />
+                                            <StaffActions
+                                                member={member}
+                                                ownerSurface={ownerSurface}
+                                                onManage={() =>
+                                                    setManaging(member)
+                                                }
+                                                onResetPassword={() =>
+                                                    setResetting(member)
+                                                }
+                                            />
                                         </li>
                                     ))}
                                 </ul>
@@ -601,7 +661,109 @@ export default function Staff({
                     )}
                 </DialogContent>
             </Dialog>
+
+            <Dialog
+                open={managing !== null}
+                onOpenChange={(open) => !open && setManaging(null)}
+            >
+                <DialogContent className={sheetClass}>
+                    <DialogHeader>
+                        <DialogTitle className="text-[16px] font-semibold">
+                            Manage {managing?.name}
+                        </DialogTitle>
+                        <DialogDescription className="text-[12.5px] text-neutral-600">
+                            Update details, role, Branch access and status.
+                            Changes are recorded in the Audit Trail.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {managing && (
+                        <EditStaffForm
+                            key={managing.id}
+                            member={managing}
+                            roles={roles}
+                            branches={branches}
+                            surface={surface}
+                            onSaved={() => setManaging(null)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {!ownerSurface && (
+                <Dialog
+                    open={resetting !== null}
+                    onOpenChange={(open) => !open && setResetting(null)}
+                >
+                    <DialogContent className={sheetClass}>
+                        <DialogHeader>
+                            <DialogTitle className="text-[16px] font-semibold">
+                                Reset password for {resetting?.name}
+                            </DialogTitle>
+                            <DialogDescription className="text-[12.5px] text-neutral-600">
+                                Set a new temporary password. It is never shown
+                                again and is not recorded anywhere.
+                            </DialogDescription>
+                        </DialogHeader>
+                        {resetting && (
+                            <ResetStaffPasswordForm
+                                key={resetting.id}
+                                member={resetting}
+                                onDone={() => setResetting(null)}
+                            />
+                        )}
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
+    );
+}
+
+const sheetClass =
+    'owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center';
+
+/** Manage opens the edit sheet; the administrative password reset is Super Admin only and never for oneself. */
+function StaffActions({
+    member,
+    ownerSurface,
+    onManage,
+    onResetPassword,
+    compact = false,
+}: {
+    member: StaffMember;
+    ownerSurface: boolean;
+    onManage: () => void;
+    onResetPassword: () => void;
+    compact?: boolean;
+}) {
+    return (
+        <div className={`flex flex-wrap gap-2 ${compact ? '' : 'pt-1'}`}>
+            <button
+                type="button"
+                onClick={onManage}
+                aria-label={`Manage ${member.name}`}
+                className={`${ownerSecondaryActionClass} inline-flex items-center gap-1.5`}
+            >
+                <Pencil className="size-3.5" aria-hidden="true" />
+                Manage
+            </button>
+            {!ownerSurface && !member.is_self && (
+                <button
+                    type="button"
+                    onClick={onResetPassword}
+                    aria-label={`Reset password for ${member.name}`}
+                    title="Reset password"
+                    className={`${ownerSecondaryActionClass} inline-flex items-center gap-1.5`}
+                >
+                    <KeyRound className="size-3.5" aria-hidden="true" />
+                    {compact ? null : 'Reset password'}
+                </button>
+            )}
+            {!ownerSurface && member.custom_access_count > 0 && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 text-[10px] font-semibold text-blue-800">
+                    {member.custom_access_count} custom access
+                </span>
+            )}
+        </div>
     );
 }
 

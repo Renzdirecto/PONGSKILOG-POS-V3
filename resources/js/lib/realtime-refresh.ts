@@ -39,7 +39,8 @@ export function createRealtimeRefresh(
                     schedule(0);
                 }
             });
-            cancelInFlight = finished || typeof cancel !== 'function' ? undefined : cancel;
+            cancelInFlight =
+                finished || typeof cancel !== 'function' ? undefined : cancel;
         }, delay);
     };
     return {
@@ -142,6 +143,19 @@ export function createReportsEventGuard(branchId: string | null) {
     };
 }
 
+/**
+ * Owner and Super Admin listen on the business-wide `reports` channel; a Branch-scoped account with custom Reports
+ * access listens only on its selected Branch's `branch.{id}.reports` channel, so it never sees other Branches' signals.
+ */
+export function reportsChannelFor(
+    businessWide: boolean,
+    branchId: string | null,
+): string {
+    return businessWide || branchId === null
+        ? 'reports'
+        : `branch.${branchId}.reports`;
+}
+
 export function getAuditRealtimeFallbackAction(
     previousStatus: string,
     connectionStatus: string,
@@ -149,7 +163,6 @@ export function getAuditRealtimeFallbackAction(
     return {
         shouldPoll: connectionStatus !== 'connected',
         shouldRefresh:
-            previousStatus !== 'connected' &&
-            connectionStatus === 'connected',
+            previousStatus !== 'connected' && connectionStatus === 'connected',
     };
 }

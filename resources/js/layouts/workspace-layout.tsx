@@ -1,5 +1,6 @@
 import { Link, router, useHttp, usePage } from '@inertiajs/react';
 import {
+    BarChart3,
     ChefHat,
     LayoutDashboard,
     LogOut,
@@ -23,6 +24,7 @@ import {
     cashierDashboard,
     customerDisplay,
     kitchen,
+    reports,
     superAdmin,
     transactionHistory,
 } from '@/routes/workspaces';
@@ -122,14 +124,18 @@ export default function WorkspaceLayout({
         page.component === 'workspaces/transaction-history' &&
         !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
-    const isOperational = isPos || isKitchen || isHistory || isDashboard;
+    /** Branch staff with custom Reports access read their own Branch report inside the operational shell. */
+    const isBranchReports =
+        page.component === 'workspaces/reports' && !branchContext.businessWide;
+    const isOperational =
+        isPos || isKitchen || isHistory || isDashboard || isBranchReports;
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
         page.component.startsWith('operations/') ||
         page.component.startsWith('super-admin/') ||
         page.component === 'branches/index' ||
-        page.component === 'workspaces/reports' ||
+        (page.component === 'workspaces/reports' && !isBranchReports) ||
         page.component === 'workspaces/owner-dashboard' ||
         isBusinessHistory;
 
@@ -224,6 +230,18 @@ export default function WorkspaceLayout({
                 href: customerDisplay(),
                 active: false,
             },
+            ...(auth.permissions.includes('reports.view') &&
+            !branchContext.businessWide
+                ? [
+                      {
+                          label: 'Reports',
+                          icon: BarChart3,
+                          available: true,
+                          href: reports(),
+                          active: isBranchReports,
+                      },
+                  ]
+                : []),
         ];
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
@@ -288,13 +306,15 @@ export default function WorkspaceLayout({
                             <h1 className="truncate text-[15px] font-bold">
                                 {isDashboard
                                     ? 'Dashboard'
-                                    : isKitchen
-                                      ? 'Kitchen display'
-                                      : isHistory
-                                      ? 'Transaction history'
-                                    : isQr
-                                      ? 'QR Orders'
-                                      : 'POS / Order'}
+                                    : isBranchReports
+                                      ? 'Reports'
+                                      : isKitchen
+                                        ? 'Kitchen display'
+                                        : isHistory
+                                          ? 'Transaction history'
+                                          : isQr
+                                            ? 'QR Orders'
+                                            : 'POS / Order'}
                             </h1>
                             <p className="truncate text-[11px] text-neutral-500">
                                 {branchContext.current?.name}
@@ -406,7 +426,10 @@ export default function WorkspaceLayout({
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] grid-cols-6 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        style={{
+                            gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
+                        }}
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
                             ({ label, icon: Icon, available, href, active }) =>

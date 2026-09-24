@@ -842,3 +842,15 @@ Migration `2026_09_24_134328_create_store_session_giveaways`:
 - `ingredient_movements.store_session_giveaway_id` (indexed; FK on PostgreSQL) and partial unique indexes `ingredient_movements_giveaway_once` / `ingredient_movements_giveaway_reversal_once` on (`store_session_giveaway_id`, `ingredient_id`).
 - `movement_type` CHECK constraints of `ingredient_movements` and `inventory_movements` extended with `giveaway` and `giveaway_reversal` (PostgreSQL constraint swap; SQLite definition-preserving rebuild). Rollback refuses while giveaway history exists.
 - Known PostgreSQL identifier truncation (functional, no collision; guarded against new ones by the harness): `operation_plan_ingredients_…_uniq`, `order_recipe_snapshot_lines_…_ingredient`, `pamamalengke_list_entries_…_entry_typ` and three pre-existing `store_session_inventory_adjustments_*` names.
+
+## Phase 18 — Access Control and Notifications (additive) — 2026-09-25
+
+Migration `2026_09_24_165603_create_user_permission_overrides_table`:
+
+- `user_permission_overrides`: `id`, `user_id` (FK users, cascade), `permission_id` (FK permissions, cascade), `effect` `varchar(5)` CHECK (`allow`, `deny`), timestamps; **unique (`user_id`, `permission_id`)**, index `permission_id`. No row = INHERIT. Users are deactivated, never deleted, so the cascade removes only exceptions of a genuinely removed row; audit history is untouched.
+
+Migration `2026_09_24_165604_create_notifications_table` (Laravel's standard database notifications table):
+
+- `notifications`: UUID `id`, `type` (`admin.access`, `admin.staff`, `admin.stock`), morph `notifiable`, JSON-text `data` (`category`, `title`, `body`, `url`), `read_at`, timestamps; index (`notifiable_type`, `notifiable_id`, `read_at`) for the unread badge.
+
+Role baselines keep using `role_permissions`; Cashier + Kitchen rows are always the union of Cashier and Kitchen Staff. Index names stay under PostgreSQL's 63-byte limit (checked by `tests/verify-access-admin-postgres.php`).

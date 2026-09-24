@@ -4,8 +4,9 @@ use App\Models\Branch;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
-Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
-    return (int) $user->id === (int) $id;
+/** A user's own private channel (notification signals): only the same, still-active account. */
+Broadcast::channel('App.Models.User.{id}', function (User $user, $id): bool {
+    return $user->is_active && (int) $user->id === (int) $id;
 });
 
 foreach ([
@@ -35,6 +36,11 @@ Broadcast::channel('branch.{branch}.store-session', function (User $user, Branch
 /** Business-wide report invalidation signals for the Owner/Super Admin Dashboard and Reports. */
 Broadcast::channel('reports', function (User $user): bool {
     return $user->is_active && $user->hasPermission('reports.view') && $user->hasBusinessWideScope();
+});
+
+/** Branch-scoped report invalidation for accounts with Reports access at that Branch (custom Reports for Branch staff). */
+Broadcast::channel('branch.{branch}.reports', function (User $user, Branch $branch): bool {
+    return $user->is_active && $user->hasPermission('reports.view') && $user->canAccessBranch($branch);
 });
 
 Broadcast::channel('audit-trail', function (User $user): bool {

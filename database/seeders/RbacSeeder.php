@@ -4,76 +4,50 @@ namespace Database\Seeders;
 
 use App\Models\Permission;
 use App\Models\Role;
+use App\Support\PermissionCatalog;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class RbacSeeder extends Seeder
 {
-    private const PERMISSIONS = [
-        'pos.access',
-        'qr_orders.access',
-        'transactions.view',
-        'store.open_close',
-        'store_expenses.manage',
-        'kitchen.access',
-        'customer_display.launch',
-        'reports.view',
-        'products.manage',
-        'inventory.manage',
-        'staff.manage',
-        'settings.manage',
-        'audit.view',
-        'void_orders.manage',
-        'access_control.manage',
-    ];
-
-    private const ROLE_PERMISSIONS = [
-        'super_admin' => self::PERMISSIONS,
-        'owner' => [
-            'transactions.view',
-            'reports.view',
-            'products.manage',
-            'inventory.manage',
-            'staff.manage',
-            'settings.manage',
-        ],
-        'cashier' => [
-            'pos.access',
-            'qr_orders.access',
-            'transactions.view',
-            'store.open_close',
-            'store_expenses.manage',
-        ],
-        'kitchen_staff' => [
-            'kitchen.access',
-            'customer_display.launch',
-        ],
-        'cashier_kitchen' => [
-            'pos.access',
-            'qr_orders.access',
-            'transactions.view',
-            'store.open_close',
-            'store_expenses.manage',
-            'kitchen.access',
-            'customer_display.launch',
-        ],
-    ];
-
     /**
-     * Run the database seeds.
+     * Seeds the canonical Roles and Permissions for fresh installs and tests without ever erasing a live Access Control
+     * configuration on a rerun:
+     *
+     * - a Role receives its catalog defaults only when the Role itself is created by this run;
+     * - a Permission that is new in this run is granted to the Roles whose defaults include it;
+     * - existing Role ↔ Permission pairs are never removed or re-added, so edited baselines survive;
+     * - Super Admin is always completed to every Permission (locked full access);
+     * - Cashier + Kitchen is always re-derived as the union of the Cashier and Kitchen Staff baselines.
      */
     public function run(): void
     {
-        foreach (self::PERMISSIONS as $permissionName) {
-            Permission::query()->firstOrCreate(['name' => $permissionName]);
-        }
+        DB::transaction(function (): void {
+            $newPermissions = [];
+            foreach (PermissionCatalog::names() as $permissionName) {
+                $permission = Permission::query()->firstOrCreate(['name' => $permissionName]);
+                if ($permission->wasRecentlyCreated) {
+                    $newPermissions[] = $permissionName;
+                }
+            }
+            $permissionIds = Permission::query()->pluck('id', 'name');
 
-        foreach (self::ROLE_PERMISSIONS as $roleName => $permissionNames) {
-            $role = Role::query()->firstOrCreate(['name' => $roleName]);
-            $permissionIds = Permission::query()
-                ->whereIn('name', $permissionNames)
-                ->pluck('id');
+            foreach (PermissionCatalog::ROLES as $roleName) {
+                $role = Role::query()->firstOrCreate(['name' => $roleName]);
+                $defaults = PermissionCatalog::defaultsFor($roleName);
+                $grant = $role->wasRecentlyCreated ? $defaults : array_values(array_intersect($defaults, $newPermissions));
 
-            $role->permissions()->sync($permissionIds);
-        }
+                if ($grant !== []) {
+                    $role->permissions()->syncWithoutDetaching($permissionIds->only($grant)->values()->all());
+                }
+            }
+
+            $superAdmin = Role::query()->where('name', PermissionCatalog::SUPER_ADMIN)->sole();
+            $superAdmin->permissions()->syncWithoutDetaching($permissionIds->only(PermissionCatalog::names())->values()->all());
+
+            $derived = Role::query()->where('name', PermissionCatalog::DERIVED_ROLE)->sole();
+            $sources = Role::query()->whereIn('name', PermissionCatalog::DERIVED_FROM)->with('permissions:id')->get();
+            $derived->permissions()->sync($sources->flatMap(fn (Role $role) => $role->permissions->pluck('id'))->unique()->values()->all());
+        });
     }
 }

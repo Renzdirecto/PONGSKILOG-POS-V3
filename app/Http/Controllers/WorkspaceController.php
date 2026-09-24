@@ -43,13 +43,35 @@ class WorkspaceController extends Controller
         $routeName = match (true) {
             $roleNames->contains('super_admin') => 'workspaces.super-admin',
             $roleNames->contains('owner') => 'workspaces.owner',
-            $roleNames->contains('cashier'), $roleNames->contains('cashier_kitchen') => 'workspaces.cashier',
-            $roleNames->contains('kitchen_staff') => 'workspaces.kitchen',
+            $roleNames->contains('cashier'), $roleNames->contains('cashier_kitchen'), $roleNames->contains('kitchen_staff') => $this->branchStaffWorkspace($user, ! $roleNames->contains('cashier') && ! $roleNames->contains('cashier_kitchen')),
             default => null,
         };
 
         abort_if($routeName === null, 403);
 
         return to_route($routeName);
+    }
+
+    /**
+     * Branch staff land on their Role's home workspace, or on the first workspace their effective permissions still
+     * allow when Access Control removed it (so a changed baseline never strands an account on a 403).
+     */
+    private function branchStaffWorkspace(User $user, bool $kitchenFirst): ?string
+    {
+        $candidates = $kitchenFirst
+            ? ['kitchen.access' => 'workspaces.kitchen', 'pos.access' => 'workspaces.cashier']
+            : ['pos.access' => 'workspaces.cashier', 'kitchen.access' => 'workspaces.kitchen'];
+        $candidates += [
+            'transactions.view' => 'workspaces.transaction-history',
+            'reports.view' => 'workspaces.reports',
+        ];
+
+        foreach ($candidates as $permission => $routeName) {
+            if ($user->hasPermission($permission)) {
+                return $routeName;
+            }
+        }
+
+        return null;
     }
 }

@@ -95,13 +95,14 @@ test('opening a store session signals the reports channel', function () {
         && $event->broadcastWith()['branch_id'] === $scenario->branch->id);
 });
 
-test('the reports signal is privacy-minimal and business-wide', function () {
+test('the reports signal is privacy-minimal on the business-wide and its own branch channel', function () {
     $branch = Branch::factory()->create();
     $event = new ReportsChanged($branch->id, 'order.committed');
 
     expect(array_keys($event->broadcastWith()))->toBe(['event_id', 'event_type', 'branch_id', 'reason', 'occurred_at'])
         ->and($event->broadcastAs())->toBe('reports.changed')
-        ->and($event->broadcastOn()->name)->toBe('private-reports');
+        ->and(array_map(fn ($channel) => $channel->name, $event->broadcastOn()))
+        ->toBe(['private-reports', 'private-branch.'.$branch->id.'.reports']);
 });
 
 test('owner and super admin may listen to the reports channel', function (string $role) {

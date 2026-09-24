@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccessControlController;
 use App\Http\Controllers\ActiveBranchController;
 use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\BranchController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\OperationPlanController;
 use App\Http\Controllers\OperationsController;
@@ -105,10 +107,20 @@ Route::middleware(['auth'])->group(function () {
         Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
         Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('staff.store');
         Route::get('staff/{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('staff.avatar');
-        Route::inertia('notifications', 'super-admin/placeholder', ['destination' => 'notifications'])
-            ->name('notifications');
-        Route::inertia('access-control', 'super-admin/placeholder', ['destination' => 'access-control'])
-            ->name('access-control');
+        Route::put('staff/{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('staff.update');
+        Route::put('staff/{user}/password', [StaffController::class, 'password'])->whereNumber('user')->middleware('throttle:10,1')->name('staff.password');
+
+        Route::get('notifications', [NotificationController::class, 'index'])->name('notifications');
+        Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount'])->middleware('throttle:120,1')->name('notifications.unread-count');
+        Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+        Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification')->name('notifications.read');
+
+        Route::get('access-control', [AccessControlController::class, 'index'])->name('access-control');
+        Route::middleware('throttle:30,1')->group(function () {
+            Route::put('access-control/roles/{role}', [AccessControlController::class, 'updateRole'])->where('role', '[a-z_]+')->name('access-control.roles.update');
+            Route::put('access-control/users/{user}', [AccessControlController::class, 'updateUser'])->whereNumber('user')->name('access-control.users.update');
+            Route::delete('access-control/users/{user}', [AccessControlController::class, 'resetUser'])->whereNumber('user')->name('access-control.users.reset');
+        });
     });
 
     Route::get('workspaces/audit-trail', AuditTrailController::class)
@@ -174,6 +186,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [StaffController::class, 'index'])->name('index');
         Route::post('/', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('store');
         Route::get('{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('avatar');
+        Route::put('{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('update');
     });
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)

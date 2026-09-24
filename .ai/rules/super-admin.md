@@ -2,6 +2,7 @@
 paths:
   - '{app/Actions/Staff/**,app/Http/Controllers/StaffController.php,app/Http/Requests/StoreStaffRequest.php,resources/js/pages/super-admin/staff.tsx}'
   - app/Support/StaffRoles.php
+  - '{app/Actions/Staff/**,app/Http/Requests/{UpdateStaffRequest,ResetStaffPasswordRequest}.php,resources/js/components/staff-account-dialogs.tsx}'
 ---
 
 # Super Admin
@@ -11,3 +12,6 @@ Staff creation is scoped by `StaffRoles::manageableBy()`: access_control.manage 
 
 ## Map unique violations from parsed columns, never the message
 A UniqueConstraintViolationException message embeds the full INSERT SQL, so it always names every inserted column (employee_id, email). Decide which field collided from `$exception->columns` / `$exception->index` (e.g. `users_employee_id_unique`) so a racing duplicate email is not reported as a duplicate Employee ID.
+
+## Editing existing Staff keeps one active Super Admin
+`UpdateStaffAccount` locks every Super Admin row plus actor and target in id order before deciding, so crossing deactivate/demote requests serialize; at least one active Super Admin always remains and nobody changes their own role or deactivates themselves. The Employee ID is immutable. A Role change clears Branch access for Owner/Super Admin, needs an active Branch otherwise, and resets custom access to INHERIT. Deactivation and the Super Admin-only password reset rotate the remember token and end sessions (database rows + `AuthenticateSession`); the password is never returned, logged, audited or notified.

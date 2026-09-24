@@ -550,3 +550,10 @@ Owner Operations pages (Overview, Ingredient Stock, Purchases) are possible futu
 ### Phase 16E Final QA note (2026-09-24)
 
 Deploying the Final QA corrections adds one forward migration, `2026_09_24_134328_create_store_session_giveaways` (`php artisan migrate --force`). No seeder, queue or environment change. `php artisan operations:seed-qa` remains LOCAL QA ONLY (refuses outside local/testing, never part of `DatabaseSeeder`).
+
+## 27. Phase 18 deployment note — Access Control, Staff administration and Notifications (2026-09-25)
+
+- Two additive migrations: `2026_09_24_165603_create_user_permission_overrides_table` and `2026_09_24_165604_create_notifications_table` (`php artisan migrate --force`). No queue or environment change.
+- `php artisan db:seed --class=RbacSeeder` (or `DatabaseSeeder`) is **safe to rerun**: it never removes or re-adds existing Role ↔ Permission pairs, so Role baselines configured in Access Control survive deployments. It only seeds defaults for Roles/Permissions it creates, completes Super Admin, and re-derives Cashier + Kitchen.
+- `AuthenticateSession` is now in the web middleware group: after an administrative password reset, other sessions of that account are signed out on their next request with any session driver (database sessions are also deleted immediately).
+- PWA remains NOT implemented (§26 / Phase 19.5).

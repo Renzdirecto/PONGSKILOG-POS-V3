@@ -256,7 +256,10 @@ test('Owner and Super Admin render the report inside their management shells', (
         ownerShell,
         /const isReports = page\.component === 'workspaces\/reports';/,
     );
-    assert.match(layout, /page\.component === 'workspaces\/reports' \|\|/);
+    assert.match(
+        layout,
+        /\(page\.component === 'workspaces\/reports' && !isBranchReports\) \|\|/,
+    );
 });
 
 test('report filter chips, reset and the custom range fit phones with 44px targets', () => {

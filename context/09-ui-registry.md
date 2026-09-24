@@ -904,14 +904,14 @@ This supersedes the §7 core navigation list. No Super Admin standalone is autho
 | Section | Destination | Status |
 | --- | --- | --- |
 | Overview | Dashboard | Control Center landing: quick links to Staff, Audit Trail, Void Orders, and Settings plus Branch workspace guidance. No analytics. |
-| Overview | Notifications | Placeholder (`super-admin.notifications`). No notification service, database, or unread count. |
+| Overview | Notifications | Real (Phase 18): persisted in-app notifications with unread/read state and a real unread badge. |
 | Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
 | Owner | Owner Dashboard, Products, Inventory | Real existing pages. The Owner Dashboard is the Phase 16C analytics dashboard. |
 | Owner | Transactions | Real: the shared Transaction History on the business surface (`workspaces.transactions`, Phase 16B). |
 | Owner | Reports | Real: the shared Sales & Store Sessions report (`workspaces.reports`, Phase 16A). The former `super-admin.reports` placeholder route was removed. |
 | Control | Audit Trail, Void Orders | Real existing registers. |
 | Control | Staff | Real: account list and Add Staff (below). |
-| Control | Access Control | Placeholder (`super-admin.access-control`) with a read-only role-group overview. No toggles. |
+| Control | Access Control | Real (Phase 18): Role baselines and per-account custom access, backend-enforced. |
 | Control | Settings | Real existing Branch Management / Receipt / QR settings (`branches.index`). Not duplicated under Owner. |
 
 Navigation comes from the registry in `resources/js/lib/super-admin-navigation.ts` (label, section, route, required permission, availability, Branch requirement), so future permission-driven Access Control can filter the same source.
@@ -922,7 +922,7 @@ Navigation comes from the registry in `resources/js/lib/super-admin-navigation.t
 - Add Staff dialog (bottom sheet on mobile): optional profile picture (JPG/PNG/WebP up to 2 MB, preview, Remove), Employee ID (typed by the Super Admin as `MMDDYY` + a two-digit number, e.g. `09242601`; required and unique), Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
 - Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
 - Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
-- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing or deactivating existing staff is not part of this slice.
+- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing, deactivating and password reset of existing staff arrived in Phase 18 (below).
 
 ### Staff (Owner → Administration → Staff, Phase 16D)
 
@@ -956,3 +956,25 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 
 - LOAD switches to the POS immediately using the order LOAD returned (no second full page round trip before the switch); the waiting count refreshes in the background.
 - A loaded QR order shows the customer's submitted items read-only, and the Cashier can add more items below them (editable: quantity, edit, remove). Totals, Pay Now and Pay Later include them; Cancel LOAD discards them.
+
+## Phase 18 — Access Control, Staff management and Notifications — 2026-09-25
+
+### Access Control (Control → Access Control)
+
+- Two views: **Roles** and **Staff overrides** (URL `tab`).
+- Roles: five role chips (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin). The selected Role shows permission groups (Operations, Management, Control) with label, plain description and state — Included / Not included / Locked (with the reason) / Derived. Editable Roles use labelled checkboxes and a sticky save bar with Discard; saving opens a confirmation listing what is added and removed and noting the Cashier + Kitchen effect. Super Admin shows "Locked · Full access"; Cashier + Kitchen shows "Derived from Cashier + Kitchen Staff". From `md` up an "All roles at a glance" read-only matrix follows; phones keep the grouped cards (no horizontal document scroll).
+- Staff overrides: search (debounced) and pick an account; the panel shows Name, Employee ID, email, Role, status and Branch access with a reminder that custom access never widens Branch access. Each permission has a keyboard-usable Inherit / Allow / Deny radio group (options equal to the Role default are disabled with a tooltip), "Role default: …", a lock reason when locked, and the effective result badge (Included by role / Custom access / No access / No access · removed). Save and "Reset all custom access" both confirm first. Super Admin accounts show the locked full-access note.
+
+### Staff (Control → Staff and Owner → Staff)
+
+- Every card and list row has **Manage** (and, for Super Admin, **Reset password**, never on one's own account); accounts with custom access show an "N custom access" label (managed in Access Control → Staff overrides).
+- Manage sheet (bottom sheet on mobile): photo replace/remove, **read-only Employee ID** with a lock, name, email, Role, Branch access (active Branches plus any currently assigned one), Active/Inactive. Own account: Role and status are disabled with an explanation. High-impact changes (any Role change — custom access resets —, into/out of Owner or Super Admin, deactivation, removed Branch access) show a plain-language confirmation step before saving.
+- Reset password sheet: new temporary password + confirmation with show/hide, then a confirmation that the person is signed out everywhere. The password is never shown again.
+
+### Notifications (Overview → Notifications)
+
+- Header bell and sidebar item show the real unread count (hidden at zero, "99+" cap, count in the accessible name). The page lists the viewer's notifications newest first (20 per page, All / Unread), each with category, Unread label (text, not colour only), time, Open (marks read and follows the same-app link) and Mark read; Mark all read. Empty state: "No notifications yet".
+
+### Branch staff with custom Reports
+
+- A Cashier / Kitchen account with custom Reports access gets a **Reports** item in its operational rail/dock and reads the Branch report inside the operational shell (never the Owner shell, never All Branches).

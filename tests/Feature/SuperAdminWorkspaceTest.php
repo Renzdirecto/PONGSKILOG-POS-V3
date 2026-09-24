@@ -32,15 +32,13 @@ test('super admin opens the control center landing page', function () {
         ->assertInertia(fn (Assert $page) => $page->component('super-admin/dashboard'));
 });
 
-test('planned super admin destinations render protected placeholders', function (string $routeName, string $destination) {
+test('notifications and access control are live super admin pages', function (string $routeName, string $component) {
     $this->actingAs(superAdminWorkspaceUser())
         ->get(route($routeName))
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('super-admin/placeholder')
-            ->where('destination', $destination));
+        ->assertInertia(fn (Assert $page) => $page->component($component));
 })->with([
-    'notifications' => ['super-admin.notifications', 'notifications'],
-    'access control' => ['super-admin.access-control', 'access-control'],
+    'notifications' => ['super-admin.notifications', 'super-admin/notifications'],
+    'access control' => ['super-admin.access-control', 'super-admin/access-control'],
 ]);
 
 test('guests are sent to login from super admin control center routes', function (string $routeName) {

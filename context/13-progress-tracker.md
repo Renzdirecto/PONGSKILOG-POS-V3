@@ -950,13 +950,27 @@ Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency c
 - Not complete: the Access Control matrix, Notifications service, Owner Reports, Super Admin analytics, editing or deactivating existing staff, and profile settings. Final visual and device acceptance is **USER MANUAL QA**. No checkbox below is marked by this slice.
 - Final QA — 2026-09-24: **USER MANUAL QA: PASSED BY USER**. Engineering fixes: a Staff unique-index race now reports the actually violated field (email vs Employee ID) from the parsed constraint instead of the SQL message; staff avatars fall back to initials if the image fails to load; the avatar Remove control is named. Added regressions for avatar denial (Cashier, Kitchen, Cashier + Kitchen, guest, inactive Super Admin), spoofed-content uploads, duplicate races, and Super Admin Store expense, Store inventory adjustment, and `store-session` channel parity. Complete suite **1,513 tests / 10,127 assertions**, frontend **114 passed**; Pint, PHPStan, lint, TypeScript, build, and `git diff --check` passed. Disposable-schema PostgreSQL verified the two additive migrations (fresh, rollback, reapply, existing rows) and atomic Staff creation; the Void, Close Store, and Pay Now PostgreSQL harnesses passed. The normal local development database was not reset.
 
-- [ ] Dashboard
-- [ ] Audit Trail
-- [ ] Void Orders
-- [ ] Access Control
-- [ ] Settings / system controls
-- [ ] Cross-branch visibility
-- [ ] Protected Super Admin authorization
+### Phase 18 — Access Control, Staff administration & Notifications — 2026-09-25
+
+Branch `feature/access-admin-cleanup` (0 behind / 1 ahead of `origin/dev` at `c60e8e0` at start; the roadmap commit `7b97482` is preserved). No dependency change. Two additive migrations: `2026_09_24_165603_create_user_permission_overrides_table`, `2026_09_24_165604_create_notifications_table`. Rules: `07-security-rbac.md` "Phase 18"; schema `05`; realtime `06`; UI `08`/`09`; deploy `12` §27.
+
+- **Access Control (real):** Role = baseline, account = optional ALLOW/DENY exception. One resolver (`EffectivePermissions`) behind `User::hasPermission()`, middleware, requests, channels and the shared `auth.permissions`, so navigation and backend always agree and revocation applies on the next request. One `PermissionCatalog` (labels, categories, scope, defaults, grant envelope, lock reasons). Super Admin locked full access (no overrides, baseline not editable). Cashier + Kitchen derived as the union of Cashier and Kitchen Staff inside the same transaction. Audit, Void Orders and Access Control never leave Super Admin; Products, Inventory, Staff and Settings stay business-wide (locked for Branch roles).
+- **Custom Reports for Branch staff:** a Cashier/Kitchen account with Reports ALLOW reads only its selected assigned Branch (never All Branches; forged Branch/session rejected or ignored; CSV follows the same scope; Owner Dashboard stays business-wide), inside the operational shell with a Reports nav item and a Branch-scoped realtime channel.
+- **RbacSeeder** no longer resets live configuration: defaults only for newly created Roles/Permissions; Super Admin completed; Cashier + Kitchen re-derived.
+- **Staff administration (existing Staff page):** Manage sheet (name, email, Role, Branch access, Active/Inactive, photo replace/remove; Employee ID read-only), Super Admin password reset; Owner limited to operational Staff. Last active Super Admin protected (row locks; crossing two-admin race leaves exactly one), no self-demotion/self-deactivation, Role change resets custom access, deactivation/password reset end sessions (remember token, database sessions, `AuthenticateSession`). Audit `staff.*` / `access.*` actions without credentials.
+- **Notifications (real):** persisted in-app notifications for Super Admins (access/Staff security changes by another Super Admin; Product or Ingredient out-of-stock transitions, deduplicated by the locked stock transition), unread badge, mark read / mark all read, pagination, private per-user realtime signal. No email/SMS/push.
+- Verification: new `AccessControlTest`, `StaffAdministrationTest`, `AdminNotificationsTest`, `BranchScopedReportsTest`; focused regression 682 + 699 tests passed; frontend 195 passed; Pint, PHPStan (0 errors), lint, TypeScript, production build and `git diff --check` clean. PostgreSQL: new `tests/verify-access-admin-postgres.php` (cases A–H incl. real crossing Super Admin deactivate/demote races and concurrent sell-out alert dedupe) plus the inventory and operations harnesses passed on disposable schemas (dropped). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. Not Final QA, not merged, no PR. The complete Laravel suite is reserved for Phase 18 FINAL QA.
+
+- [x] Dashboard (Control Center landing — Phase 18 foundation)
+- [x] Audit Trail (real register, filters, detail, realtime)
+- [x] Void Orders (protected history, detail, global Void approval PIN)
+- [x] Access Control (Phase 18 — pending USER MANUAL QA)
+- [x] Settings / system controls (Branch Management, QR, receipt settings)
+- [x] Cross-branch visibility (business-wide scope + BranchSwitcher + selected-Branch operational parity)
+- [x] Protected Super Admin authorization
+- [x] Staff administration (create + edit/role/Branch/status/photo/password reset — Phase 18, pending USER MANUAL QA)
+- [x] Notifications (Phase 18, pending USER MANUAL QA)
 
 ---
 

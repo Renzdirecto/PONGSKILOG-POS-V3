@@ -235,6 +235,9 @@ try {
         $check = DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = ?::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'", [$table])->def ?? '';
         verifyPhase16E(str_contains($check, "'giveaway'") && str_contains($check, "'giveaway_reversal'"), "{$table}.movement_type does not accept giveaways.");
     }
+    /** Later additive migrations (Phase 18 and beyond) are rolled back first so the giveaway migration is the newest. */
+    $laterSteps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) > '2026_09_24_134328_create_store_session_giveaways.php'));
+    verifyPhase16E($laterSteps === 0 || Artisan::call('migrate:rollback', ['--step' => $laterSteps, '--force' => true, '--no-interaction' => true]) === 0, 'Later migration rollback failed.');
     verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Giveaway rollback failed.');
     verifyPhase16E(! DB::getSchemaBuilder()->hasTable('store_session_giveaways') && ! DB::getSchemaBuilder()->hasColumn('ingredient_movements', 'store_session_giveaway_id')
         && ! str_contains(DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'inventory_movements'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'")->def, 'giveaway')

@@ -79,11 +79,18 @@ import {
     transactions,
     voidOrders,
 } from '@/routes/workspaces';
+import { useUnreadNotifications } from '@/hooks/use-notification-center';
+import {
+    notificationBellLabel,
+    unreadBadgeLabel,
+    type NotificationCenter,
+} from '@/lib/notifications';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
     auth: Auth;
     branchContext: BranchContext;
+    notificationCenter?: NotificationCenter;
     workspace?: string;
     destination?: string;
     surface?: string;
@@ -122,7 +129,10 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
             icon: ShoppingCart,
             href: operationsRoutes.pamamalengke(),
         },
-        'ops-purchases': { icon: ReceiptText, href: operationsRoutes.purchases() },
+        'ops-purchases': {
+            icon: ReceiptText,
+            href: operationsRoutes.purchases(),
+        },
         'audit-trail': { icon: ClipboardList, href: auditTrail() },
         'void-orders': { icon: ShieldBan, href: voidOrders() },
         staff: { icon: Users, href: staffIndex() },
@@ -148,16 +158,20 @@ function DestinationControl({
     active,
     hasBranch,
     compact = false,
+    unread = null,
     onNavigate,
 }: {
     destination: SuperAdminDestination;
     active: boolean;
     hasBranch: boolean;
     compact?: boolean;
+    unread?: number | null;
     onNavigate?: () => void;
 }) {
     const { icon: Icon, href } = destinationBindings[destination.id];
     const blocked = destination.requiresBranch && !hasBranch;
+    const badge =
+        destination.id === 'notifications' ? unreadBadgeLabel(unread) : null;
     const className = compact
         ? `relative flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 text-center text-[10px] leading-tight font-semibold transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${active ? 'bg-white text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`
         : `flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none min-[1180px]:min-h-[42px] ${active ? 'bg-white font-semibold text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`;
@@ -167,6 +181,14 @@ function DestinationControl({
             <span className={compact ? '' : 'min-w-0 flex-1 truncate'}>
                 {compact ? destination.shortLabel : destination.label}
             </span>
+            {!compact && badge !== null && (
+                <span
+                    className={`min-w-5 rounded-full px-1.5 text-center text-[10px] leading-5 font-bold ${active ? 'bg-[#111] text-white' : 'bg-red-600 text-white'}`}
+                >
+                    <span className="sr-only">Unread: </span>
+                    {badge}
+                </span>
+            )}
             {!compact && blocked && (
                 <span className="text-[9px] font-semibold tracking-[0.06em] uppercase">
                     Branch
@@ -200,6 +222,11 @@ function DestinationControl({
         <Link
             href={href}
             aria-current={active ? 'page' : undefined}
+            aria-label={
+                badge === null
+                    ? undefined
+                    : `${destination.label}, ${badge} unread`
+            }
             className={className}
             onClick={onNavigate}
         >
@@ -216,6 +243,7 @@ function CollapsibleNavigation({
     hasBranch,
     idPrefix,
     touch = false,
+    unread,
     onNavigate,
 }: {
     groups: ReturnType<typeof superAdminNavigation>;
@@ -225,6 +253,7 @@ function CollapsibleNavigation({
     hasBranch: boolean;
     idPrefix: string;
     touch?: boolean;
+    unread: number | null;
     onNavigate?: () => void;
 }) {
     return (
@@ -280,6 +309,7 @@ function CollapsibleNavigation({
                                     destination={destination}
                                     active={destination.id === activeId}
                                     hasBranch={hasBranch}
+                                    unread={unread}
                                     onNavigate={onNavigate}
                                 />
                             ))}
@@ -291,9 +321,50 @@ function CollapsibleNavigation({
     );
 }
 
+/**
+ * The unread count only exists for accounts that hold the notification center; without it no badge or channel is used.
+ */
 export function SuperAdminShell({ children }: { children: React.ReactNode }) {
+    const { auth, notificationCenter } = usePage<SharedProps>().props;
+
+    return auth.user && notificationCenter ? (
+        <LiveSuperAdminShell
+            userId={auth.user.id}
+            initialUnread={notificationCenter.unread}
+        >
+            {children}
+        </LiveSuperAdminShell>
+    ) : (
+        <SuperAdminShellFrame unread={null}>{children}</SuperAdminShellFrame>
+    );
+}
+
+function LiveSuperAdminShell({
+    userId,
+    initialUnread,
+    children,
+}: {
+    userId: number;
+    initialUnread: number;
+    children: React.ReactNode;
+}) {
+    const unread = useUnreadNotifications(userId, initialUnread);
+
+    return (
+        <SuperAdminShellFrame unread={unread}>{children}</SuperAdminShellFrame>
+    );
+}
+
+function SuperAdminShellFrame({
+    unread,
+    children,
+}: {
+    unread: number | null;
+    children: React.ReactNode;
+}) {
     const page = usePage<SharedProps>();
     const { auth, branchContext } = page.props;
+    const unreadLabel = unreadBadgeLabel(unread);
     const [menuOpen, setMenuOpen] = useState(false);
     const activeId = activeSuperAdminDestination({
         component: page.component,
@@ -375,6 +446,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                         expanded={expanded}
                         onToggle={toggleSection}
                         hasBranch={hasBranch}
+                        unread={unread}
                         idPrefix="super-admin-sidebar"
                     />
                 </nav>
@@ -461,7 +533,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
-                <header className="flex h-[60px] shrink-0 print:hidden items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
+                <header className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5 print:hidden">
                     <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {activeDestination?.label ?? 'Super Admin'}
@@ -482,14 +554,22 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                     </div>
                     <Link
                         href={notifications()}
-                        aria-label="Notifications"
+                        aria-label={notificationBellLabel(unread)}
                         title="Notifications"
                         aria-current={
                             activeId === 'notifications' ? 'page' : undefined
                         }
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#e5e5e5] bg-white text-[#555] hover:border-[#bbb] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
+                        className="relative flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#e5e5e5] bg-white text-[#555] hover:border-[#bbb] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
                     >
-                        <Bell className="size-[18px]" />
+                        <Bell className="size-[18px]" aria-hidden="true" />
+                        {unreadLabel !== null && (
+                            <span
+                                aria-hidden="true"
+                                className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full border-2 border-white bg-red-600 px-1 text-center text-[10px] leading-4 font-bold text-white"
+                            >
+                                {unreadLabel}
+                            </span>
+                        )}
                     </Link>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -585,6 +665,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                             expanded={expanded}
                             onToggle={toggleSection}
                             hasBranch={hasBranch}
+                            unread={unread}
                             idPrefix="super-admin-menu"
                             touch
                             onNavigate={() => setMenuOpen(false)}

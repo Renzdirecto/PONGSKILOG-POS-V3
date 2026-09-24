@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\EffectivePermissions;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -66,13 +67,18 @@ class User extends Authenticatable
             ->exists();
     }
 
+    /**
+     * The account's effective permission: Role baseline plus explicit per-user overrides (Super Admin is locked full).
+     */
     public function hasPermission(string $permission): bool
     {
-        return $this->roles()
-            ->whereHas('permissions', function (Builder $query) use ($permission): void {
-                $query->where('permissions.name', $permission);
-            })
-            ->exists();
+        return EffectivePermissions::has($this, $permission);
+    }
+
+    /** @return HasMany<UserPermissionOverride, $this> */
+    public function permissionOverrides(): HasMany
+    {
+        return $this->hasMany(UserPermissionOverride::class);
     }
 
     public function hasBusinessWideScope(): bool

@@ -30,7 +30,8 @@ test('owner dashboard and reports reload their report props from the reports cha
     const dashboard = jsSource('pages/workspaces/owner-dashboard.tsx');
     const reports = jsSource('pages/workspaces/reports.tsx');
 
-    assert.match(hook, /'reports',\s+\['\.reports\.changed'\]/);
+    assert.match(hook, /channel,\s+\['\.reports\.changed'\]/);
+    assert.match(hook, /reportsChannelFor\(branchContext\.businessWide, branchId\)/);
     assert.match(hook, /router\.reload\(\{\s+only: onlyRef\.current,\s+onCancelToken:/);
     assert.match(hook, /REPORTS_FALLBACK_POLL_MS = 30_000/);
     assert.match(hook, /if \(!shouldPoll\) \{\s+return;\s+\}/);

@@ -3,6 +3,8 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The canonical seeded roles a Super Admin may assign to a staff login account.
@@ -55,6 +57,17 @@ class StaffRoles
         $roles = $staff->roles()->pluck('name')->all();
 
         return $allowed !== [] && $roles !== [] && array_diff($roles, $allowed) === [];
+    }
+
+    /**
+     * The ids of every account holding the Super Admin role, as a subquery-ready builder.
+     */
+    public static function superAdminUserIds(): Builder
+    {
+        return DB::table('user_roles')
+            ->join('roles', 'roles.id', '=', 'user_roles.role_id')
+            ->where('roles.name', 'super_admin')
+            ->select('user_roles.user_id');
     }
 
     /** @return list<string> */

@@ -57,13 +57,14 @@ class OperationsWorkspace
     public function context(string $page, ?Branch $branch, EloquentCollection $plans, ?OperationPlan $active): array
     {
         $productCounts = OperationPlanProduct::query()->whereIn('operation_plan_id', $plans->modelKeys())
-            ->groupBy('operation_plan_id')->pluck(DB::raw('COUNT(*)'), 'operation_plan_id');
+            ->groupBy('operation_plan_id')->selectRaw('operation_plan_id, COUNT(*) AS total')->pluck('total', 'operation_plan_id');
         $ingredientCounts = DB::table('operation_plan_ingredients')
             ->join('ingredients', 'ingredients.id', '=', 'operation_plan_ingredients.ingredient_id')
             ->whereNull('ingredients.archived_at')
             ->whereIn('operation_plan_ingredients.operation_plan_id', $plans->modelKeys())
             ->groupBy('operation_plan_ingredients.operation_plan_id')
-            ->pluck(DB::raw('COUNT(*)'), 'operation_plan_ingredients.operation_plan_id');
+            ->selectRaw('operation_plan_ingredients.operation_plan_id AS plan_id, COUNT(*) AS total')
+            ->pluck('total', 'plan_id');
 
         return [
             'page' => $page,

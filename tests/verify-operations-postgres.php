@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\ExactQuantity;
 use App\Support\OperationsSummary;
+use App\Support\OperationsWorkspace;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Connection;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -288,6 +289,23 @@ try {
     verifyPhase16E($ledger === $afterMixed, 'Ledger sum and balance disagree.');
     verifyPhase16E(OrderRecipeSnapshot::query()->count() > 0, 'No recipe snapshots were written.');
     echo 'L PASS: duplicate confirmation replays once; concurrent sale and wastage keep the balance equal to the ledger.'.PHP_EOL;
+    /** P. Every Operations page projection runs on PostgreSQL, for one Branch and for All Branches. */
+    $workspace = app(OperationsWorkspace::class);
+    foreach ([$ops->branch, null] as $scope) {
+        $plans = $workspace->activePlans();
+        $workspace->context('plans', $scope, $plans, $ops->drinks);
+        $workspace->plansPage($scope, $plans);
+        $workspace->overviewPage($scope, $ops->drinks);
+        $workspace->ingredientsPage($scope);
+        $workspace->recipesPage($scope, $ops->drinks);
+        $workspace->pamamalengkePage($scope, $ops->drinks);
+        $workspace->purchasesPage($scope, $ops->drinks, 1);
+        $workspace->purchasesPage($scope, null, 1);
+        if ($scope !== null) {
+            $workspace->stockPage($scope, $ops->drinks);
+        }
+    }
+    echo 'P PASS: every Operations page projection runs on PostgreSQL (Branch and All Branches).'.PHP_EOL;
     echo 'PASS: PostgreSQL Phase 16E Operations invariants.'.PHP_EOL;
 } finally {
     while (DB::transactionLevel() > 0) {

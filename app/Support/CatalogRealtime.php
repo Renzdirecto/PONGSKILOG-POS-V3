@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\BranchStatus;
 use App\Events\CustomerCatalogChanged;
 use App\Events\IngredientStockChanged;
 use App\Events\ProductAvailabilityChanged;
@@ -64,7 +65,8 @@ class CatalogRealtime
      */
     public function ingredientsChanged(?Branch $branch, string $reason): void
     {
-        $branchIds = $branch === null ? Branch::query()->orderBy('id')->pluck('id')->all() : [$branch->id];
+        /** A business-wide change reaches only active Branches: inactive ones have no POS or Customer QR clients. */
+        $branchIds = $branch === null ? Branch::query()->where('status', BranchStatus::Active)->orderBy('id')->pluck('id')->all() : [$branch->id];
         foreach ($branchIds as $branchId) {
             IngredientStockChanged::dispatch($branchId, $reason);
             CustomerCatalogChanged::dispatch($branchId);

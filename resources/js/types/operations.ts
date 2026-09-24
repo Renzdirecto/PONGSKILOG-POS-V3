@@ -59,6 +59,7 @@ export type OperationsIngredient = {
         consumed: string;
         purchased: string;
         wastage: string;
+        giveaway: string;
         correction: string;
         updated_at: string | null;
     } | null;
@@ -106,6 +107,13 @@ export type OperationsSummaryProps = {
     plans: Record<string, OperationsFigures>;
     business: OperationsFigures;
     outside_plan_sales_cents: number;
+    /** Non-revenue free items today: never in sales, COGS or profit. */
+    giveaways: {
+        count: number;
+        items: number;
+        cost_cents: number;
+        uncosted: number;
+    };
 };
 
 export type MarketPlan = {
@@ -147,7 +155,9 @@ export type IngredientMovementGroup = {
         | 'void_restoration'
         | 'purchase_restock'
         | 'wastage'
-        | 'count_correction';
+        | 'count_correction'
+        | 'giveaway'
+        | 'giveaway_reversal';
     label: string;
     created_at: string;
     plan: { id: string; name: string } | null;
@@ -201,6 +211,7 @@ export type RecipeProduct = {
     image_url: string | null;
     no_recipe_needed: boolean;
     tracked_at: string[];
+    tracked_branches: { id: string; code: string; name: string }[];
     inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
     size_conflict: string[] | null;
     state: RecipeState;

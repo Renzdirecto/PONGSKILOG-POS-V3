@@ -174,7 +174,7 @@ class OperationsWorkspace
             'market' => [...$market, 'manual' => $manual, 'estimate_cents' => $market['estimate_cents'] + array_sum(array_map(fn (array $entry): int => $entry['estimate_cents'] ?? 0, $manual)), 'unknown' => $market['unknown'] + count(array_filter($manual, fn (array $entry): bool => $entry['estimate_cents'] === null))],
             'recipes' => $recipes,
             'consumption' => $consumption,
-            'movements' => $branch === null ? [] : array_slice($this->movements($branch, array_map(fn (array $row): string => $row['ingredient']->id, $rows)), 0, 5),
+            'movements' => $branch === null ? [] : $this->movements($branch, array_map(fn (array $row): string => $row['ingredient']->id, $rows), 5),
             'summary' => $this->presentSummary($summary, $plan),
             'earlier' => $this->purchasesToday($branch, $plan),
         ];
@@ -207,7 +207,8 @@ class OperationsWorkspace
             ->keyBy(fn (ProductModifierEffect $effect): string => $effect->product_id.'|'.$effect->modifier_option_id);
         $tracked = BranchProduct::query()->whereIn('product_id', $products->modelKeys())->where('tracks_inventory', true)
             ->join('branches', 'branches.id', '=', 'branch_products.branch_id')
-            ->get(['branch_products.product_id', 'branches.code'])->groupBy('product_id');
+            ->orderBy('branches.code')
+            ->get(['branch_products.product_id', 'branches.id AS branch_id', 'branches.code', 'branches.name'])->groupBy('product_id');
         $prices = $branch === null ? collect() : BranchProduct::query()->where('branch_id', $branch->id)
             ->whereIn('product_id', $products->modelKeys())->whereNotNull('price_override')->pluck('price_override', 'product_id');
         $availability = $branch === null ? [] : $this->capacity->catalog($branch, $products->map(fn (Product $product): string => $product->id)->values()->all());
@@ -256,6 +257,12 @@ class OperationsWorkspace
                     'image_url' => $this->images->safeCardUrl($product),
                     'no_recipe_needed' => $product->no_recipe_needed,
                     'tracked_at' => $trackedAt,
+                    /** Every Branch whose direct Product stock blocks Ingredient recipe mode, to open its own settings. */
+                    'tracked_branches' => $tracked->get($product->id)?->map(fn (BranchProduct $row): array => [
+                        'id' => (string) $row->getAttribute('branch_id'),
+                        'code' => (string) $row->getAttribute('code'),
+                        'name' => (string) $row->getAttribute('name'),
+                    ])->values()->all() ?? [],
                     'inventory_mode' => match (true) {
                         $trackedAt !== [] => 'product_stock',
                         $product->no_recipe_needed => 'no_recipe_needed',
@@ -435,6 +442,7 @@ class OperationsWorkspace
                 'consumed' => ExactQuantity::display($stock['consumed']),
                 'purchased' => ExactQuantity::display($stock['purchased']),
                 'wastage' => ExactQuantity::display($stock['wastage']),
+                'giveaway' => ExactQuantity::display($stock['giveaway']),
                 'correction' => ExactQuantity::display($stock['correction'] + $stock['opening']),
                 'updated_at' => $stock['updated_at'],
             ],
@@ -470,12 +478,13 @@ class OperationsWorkspace
                     ->where('created_at', '>=', IngredientStockReport::startOfToday())->whereIn('ingredient_id', $ingredientIds)->whereNotNull('order_id')))
             ->with(['ingredient:id,name,base_unit', 'createdBy:id,name', 'plan:id,name', 'order:id,order_number,reference_number', 'snapshot:id,product_name_snapshot,size_name_snapshot'])
             ->orderByDesc('created_at')->orderByDesc('id')
-            ->limit(400)
+            /** Enough rows for $limit grouped entries (one row per Ingredient), never an unbounded history. */
+            ->limit(min(400, $limit * 20))
             ->get();
 
         $groups = [];
         foreach ($movements as $movement) {
-            $key = $movement->movement_type->value.'|'.($movement->order_id ?? $movement->pamamalengke_purchase_id ?? $movement->id).'|'.$movement->created_at->format('Y-m-d H:i:s');
+            $key = $movement->movement_type->value.'|'.($movement->order_id ?? $movement->pamamalengke_purchase_id ?? $movement->store_session_giveaway_id ?? $movement->id).'|'.$movement->created_at->format('Y-m-d H:i:s');
             if (! isset($groups[$key])) {
                 if (count($groups) >= $limit) {
                     continue;
@@ -514,7 +523,7 @@ class OperationsWorkspace
     }
 
     /**
-     * @param  array{plans: array<string, array<string, mixed>>, business: array<string, mixed>, outside_plan_sales_cents: int, business_date: string}  $summary
+     * @param  array{plans: array<string, array<string, mixed>>, business: array<string, mixed>, outside_plan_sales_cents: int, giveaways: array{count: int, items: int, cost_cents: int, uncosted: int}, business_date: string}  $summary
      * @return array<string, mixed>
      */
     private function presentSummary(array $summary, ?OperationPlan $plan = null): array
@@ -525,6 +534,7 @@ class OperationsWorkspace
             'plans' => $summary['plans'],
             'business' => $summary['business'],
             'outside_plan_sales_cents' => $summary['outside_plan_sales_cents'],
+            'giveaways' => $summary['giveaways'],
         ];
     }
 

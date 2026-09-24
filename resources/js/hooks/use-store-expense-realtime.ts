@@ -31,10 +31,10 @@ export function useStoreExpenseRealtime(
         [branchId, guard, refresh],
     );
 
-    /** Stock shown for restocks and adjustments follows the branch inventory invalidation. */
+    /** Stock shown for restocks, adjustments and giveaways follows the branch inventory invalidations. */
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.inventory`,
-        ['.inventory.changed'],
+        ['.inventory.changed', '.ingredients.changed'],
         (event) => {
             if (guard(event)) {
                 refresh.schedule();

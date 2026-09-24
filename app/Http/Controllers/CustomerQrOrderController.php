@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Orders\SubmitCustomerQrOrder;
+use App\Enums\BranchStatus;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Http\Requests\RecipeCapacityRequest;
@@ -36,6 +37,8 @@ class CustomerQrOrderController extends Controller
     public function capacity(RecipeCapacityRequest $request, Branch $branch, RecipeCapacity $capacity): JsonResponse
     {
         $this->access->requireSession($request, $branch);
+        /** The same Branch gate as the QR menu and submission: no answers for an inactive Branch or disabled QR. */
+        abort_unless($branch->status === BranchStatus::Active && $branch->qr_ordering_enabled, 404);
         $result = $capacity->configuration($branch, $request->lines(), $request->focus());
         $quantity = (int) $request->validated('focus.quantity', 1);
 

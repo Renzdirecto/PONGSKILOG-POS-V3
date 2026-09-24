@@ -71,7 +71,7 @@ class ApplyIngredientMovement
     /**
      * Appends one movement of an exact base-unit delta (ten-thousandths, see ExactQuantity) and moves the balance.
      *
-     * @param  array{order_id?: string|null, order_recipe_snapshot_id?: string|null, operation_plan_id?: string|null, pamamalengke_purchase_id?: string|null, store_session_expense_id?: string|null, estimated_cost_cents?: int|null, reason_code?: string|null, reason?: string|null, created_by_user_id?: int|null, idempotency_key?: string|null}  $attributes
+     * @param  array{order_id?: string|null, order_recipe_snapshot_id?: string|null, operation_plan_id?: string|null, pamamalengke_purchase_id?: string|null, store_session_expense_id?: string|null, store_session_giveaway_id?: string|null, estimated_cost_cents?: int|null, reason_code?: string|null, reason?: string|null, created_by_user_id?: int|null, idempotency_key?: string|null}  $attributes
      */
     public function execute(Branch $branch, string $ingredientId, IngredientMovementType $type, int $delta, array $attributes = [], ?BranchIngredientStock $locked = null): IngredientMovement
     {

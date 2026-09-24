@@ -70,7 +70,8 @@ class ManagePamamalengkeList
     {
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
-        abort_unless($entry->branch_id === $branch->id, 404);
+        /** Only a manual item of this Branch; skip marks change through setSkipped(). */
+        abort_unless($entry->branch_id === $branch->id && $entry->entry_type === 'manual', 404);
         $entry->delete();
     }
 
@@ -79,6 +80,10 @@ class ManagePamamalengkeList
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
         $this->activePlan($plan);
+        if ($skipped && ($ingredient->archived_at !== null || ! DB::table('operation_plan_ingredients')
+            ->where('operation_plan_id', $plan->id)->where('ingredient_id', $ingredient->id)->exists())) {
+            throw ValidationException::withMessages(['ingredient' => 'Only an active ingredient of this plan can be skipped.']);
+        }
         DB::transaction(function () use ($actor, $branch, $plan, $ingredient, $skipped): void {
             $existing = PamamalengkeListEntry::query()->where('branch_id', $branch->id)->where('operation_plan_id', $plan->id)
                 ->where('entry_type', 'skip')->where('ingredient_id', $ingredient->id)->lockForUpdate()->first();

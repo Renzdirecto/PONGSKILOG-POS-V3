@@ -7,14 +7,22 @@
  * (the normal local development data) is never migrated, truncated, or written.
  */
 
+use App\Actions\Inventory\AdjustInventory;
 use App\Actions\Operations\AdjustIngredientStock;
 use App\Actions\Operations\ConfirmPamamalengke;
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\PayNowOrder;
+use App\Actions\Orders\SettlePayLaterOrder;
+use App\Actions\Orders\VoidOrder;
+use App\Actions\StoreSessions\RecordStoreSessionExpense;
+use App\Actions\StoreSessions\RecordStoreSessionGiveaway;
+use App\Actions\StoreSessions\RecordStoreSessionInventoryAdjustment;
+use App\Actions\StoreSessions\ReverseStoreSessionGiveaway;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
+use App\Models\BranchInventory;
 use App\Models\Ingredient;
 use App\Models\IngredientMovement;
 use App\Models\KitchenTicket;
@@ -23,7 +31,10 @@ use App\Models\Order;
 use App\Models\OrderRecipeSnapshot;
 use App\Models\PamamalengkePurchase;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\StoreSessionExpense;
+use App\Models\StoreSessionGiveaway;
+use App\Models\StoreSessionGiveawayReversal;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
@@ -32,6 +43,7 @@ use App\Support\OperationsSummary;
 use App\Support\OperationsWorkspace;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Connection;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -137,12 +149,36 @@ if ($worker) {
             'wastage' => app(AdjustIngredientStock::class)->execute($user, Ingredient::query()->findOrFail($argv[8]), [
                 'mode' => 'wastage', 'quantity' => '0.5', 'reason' => 'Spoiled', 'idempotency_key' => $key,
             ])->id,
+            'adjust_product' => app(AdjustInventory::class)->execute($user, $branch, Product::query()->findOrFail($argv[8]), -1, 'Recount')->id,
+            'store_expense' => app(RecordStoreSessionExpense::class)->execute($user, $branch, [
+                'idempotency_key' => $key, 'description' => 'Race purchase', 'amount' => '25.00', 'payment_source' => 'cash', 'note' => null,
+                ...($argv[8] === 'none' ? ['restock' => false] : ['restock' => true, 'product_id' => $argv[8], 'quantity' => 2]),
+            ])->id,
+            'store_adjust' => app(RecordStoreSessionInventoryAdjustment::class)->execute($user, $branch, [
+                'idempotency_key' => $key, 'reason_code' => 'damaged', 'product_id' => $argv[8], 'quantity' => 1, 'note' => null,
+            ])->id,
+            'settle' => app(SettlePayLaterOrder::class)->execute($user, $branch, Order::query()->findOrFail($argv[8]), [
+                'idempotency_key' => $key, 'payment_method' => 'cash', 'cash_received' => '9999.00', 'cashless_amount' => null,
+            ])->id,
+            'void' => app(VoidOrder::class)->execute($user, $branch, Order::query()->findOrFail($argv[8]), [
+                'reason_code' => 'wrong_item', 'reason_text' => null, 'authorization_pin' => '1234',
+                'idempotency_key' => $key, 'expected_version' => (int) $argv[9],
+            ])->id,
+            'giveaway' => app(RecordStoreSessionGiveaway::class)->execute($user, $branch, [
+                'idempotency_key' => $key, 'product_id' => $argv[8], 'quantity' => 1, 'reason_code' => 'complimentary', 'note' => null,
+                'modifiers' => json_decode($argv[9], true, flags: JSON_THROW_ON_ERROR),
+            ])->id,
+            'reverse_giveaway' => app(ReverseStoreSessionGiveaway::class)->execute($user, $branch, StoreSessionGiveaway::query()->findOrFail($argv[8]), [
+                'idempotency_key' => $key, 'reason' => 'Recorded by mistake',
+            ])->id,
         };
         echo json_encode(['status' => 200, 'id' => $result], JSON_THROW_ON_ERROR).PHP_EOL;
     } catch (HttpExceptionInterface $exception) {
         echo json_encode(['status' => $exception->getStatusCode()], JSON_THROW_ON_ERROR).PHP_EOL;
     } catch (ValidationException $exception) {
         echo json_encode(['status' => 422, 'errors' => $exception->errors()], JSON_THROW_ON_ERROR).PHP_EOL;
+    } catch (QueryException $exception) {
+        echo json_encode(['status' => 500, 'sqlstate' => $exception->errorInfo[0] ?? null, 'message' => mb_substr($exception->getMessage(), 0, 200)], JSON_THROW_ON_ERROR).PHP_EOL;
     }
 
     exit(0);
@@ -176,12 +212,39 @@ try {
     foreach (['branch_ingredient_stocks_branch_id_ingredient_id_unique', 'operation_plan_products_product_id_unique', 'ingredient_movements_branch_id_ingredient_id_created_at_index', 'pamamalengke_purchases_store_session_expense_id_unique', 'pamamalengke_purchases_idempotency_key_unique', 'order_recipe_snapshots_order_id_product_id_size_key_unique', 'product_modifier_effects_product_id_modifier_option_id_unique', 'product_modifier_effect_lines_unique', 'order_recipe_snapshot_modifiers_unique', 'order_recipe_snapshot_modifier_lines_unique'] as $index) {
         verifyPhase16E($indexes->has($index), "Index {$index} is missing.");
     }
+    foreach (['giveaway' => 'giveaway', 'giveaway_reversal_once' => 'giveaway_reversal'] as $name => $type) {
+        $definition = $indexes['ingredient_movements_'.($name === 'giveaway' ? 'giveaway_once' : $name)]->indexdef ?? '';
+        verifyPhase16E(str_starts_with($definition, 'CREATE UNIQUE INDEX') && preg_match("/WHERE .*movement_type.*'{$type}'/", $definition) === 1, "Partial unique index {$name} is missing.");
+    }
+    foreach (['store_session_giveaways_idempotency_key_unique', 'store_session_giveaways_inventory_movement_id_unique', 'store_session_giveaway_reversals_giveaway_id_unique', 'store_session_giveaway_reversals_idempotency_key_unique', 'ingredient_movements_store_session_giveaway_id_index'] as $index) {
+        verifyPhase16E($indexes->has($index), "Index {$index} is missing.");
+    }
+    /**
+     * PostgreSQL silently truncates Laravel-generated names at 63 bytes. These known ones are truncated deterministically
+     * without collision (creation would fail otherwise); any new truncated index or key name fails this check.
+     */
+    $knownTruncated = [
+        'operation_plan_ingredients_operation_plan_id_ingredient_id_uniq', 'order_recipe_snapshot_lines_order_recipe_snapshot_id_ingredient',
+        'pamamalengke_list_entries_branch_id_operation_plan_id_entry_typ', 'store_session_inventory_adjustments_inventory_movement_id_forei',
+        'store_session_inventory_adjustments_inventory_movement_id_uniqu', 'store_session_inventory_adjustments_store_session_id_created_at',
+    ];
+    $long = array_values(array_diff(array_column(DB::select("SELECT conname AS name FROM pg_constraint WHERE connamespace = ?::regnamespace AND contype IN ('p', 'u', 'f') AND length(conname) >= 63
+        UNION SELECT indexname FROM pg_indexes WHERE schemaname = ? AND length(indexname) >= 63", [$schema, $schema]), 'name'), $knownTruncated));
+    verifyPhase16E($long === [], 'New identifier truncated at the PostgreSQL length limit: '.json_encode($long));
+    foreach (['ingredient_movements', 'inventory_movements'] as $table) {
+        $check = DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = ?::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'", [$table])->def ?? '';
+        verifyPhase16E(str_contains($check, "'giveaway'") && str_contains($check, "'giveaway_reversal'"), "{$table}.movement_type does not accept giveaways.");
+    }
+    verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Giveaway rollback failed.');
+    verifyPhase16E(! DB::getSchemaBuilder()->hasTable('store_session_giveaways') && ! DB::getSchemaBuilder()->hasColumn('ingredient_movements', 'store_session_giveaway_id')
+        && ! str_contains(DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'inventory_movements'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'")->def, 'giveaway')
+        && DB::getSchemaBuilder()->hasTable('product_modifier_effects'), 'Giveaway rollback was not isolated.');
     verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Add-on effects rollback failed.');
     verifyPhase16E(! DB::getSchemaBuilder()->hasTable('product_modifier_effects') && ! DB::getSchemaBuilder()->hasTable('order_recipe_snapshot_modifier_lines') && DB::getSchemaBuilder()->hasTable('ingredient_movements'), 'Add-on effects rollback was not isolated.');
     verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 16E rollback failed.');
     verifyPhase16E(! DB::getSchemaBuilder()->hasTable('ingredient_movements') && ! DB::getSchemaBuilder()->hasColumn('products', 'no_recipe_needed'), 'Phase 16E rollback left tables behind.');
     verifyPhase16E(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 16E reapply failed.');
-    echo 'MIGRATION PASS: numeric(18,4) quantities, partial unique indexes, short PostgreSQL constraint names, rollback and reapply.'.PHP_EOL;
+    echo 'MIGRATION PASS: numeric(18,4) quantities, partial unique indexes, giveaway movement types, no new truncated identifiers, rollback and reapply.'.PHP_EOL;
 
     $ops = OperationsScenario::create()->withAddOns();
     $lemonId = $ops->ingredients['lemon']->id;
@@ -402,10 +465,147 @@ try {
     $ledgerMatches('yakult');
     echo 'R-D PASS: a usage-increasing edit racing a sale for the last Yakult: '.($editWon ? 'edit' : 'sale').' won, no negative stock or partial state.'.PHP_EOL;
 
+    /** R-F. A Void restoring Yakult races a sale needing Yakult: both commit in either order and the ledger holds. */
+    $ops->setStock('yakult', '2');
+    $voided = $ops->payNow([$ops->line($ops->lemonYakult, 1, 'm')]);
+    $results = $start('rf', [
+        ['void', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $voided->id, (string) $voided->fresh()->version],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+    ], $stockRow, [$ops->branch->id, $ops->ingredients['yakult']->id]);
+    verifyPhase16E(array_column($results, 'status') === [200, 200] && $ops->stock('yakult') === '1', 'R-F: void vs sale lost an update: '.json_encode($results).' yakult '.$ops->stock('yakult'));
+    $ledgerMatches('yakult');
+    echo 'R-F PASS: a Void restoring Yakult and a sale consuming it both commit; Yakult 1, ledger = balance.'.PHP_EOL;
+
+    /** R-G. A pamamalengke restock of Lemon races a sale using Lemon: both commit and the restock is never lost. */
+    $ops->setStock('lemon', '0.5');
+    $results = $start('rg', [
+        ['confirm', (string) $ops->owner->id, $ops->branch->id, (string) Str::uuid(), $ops->drinks->id, $lemonId],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+    ], $stockRow, [$ops->branch->id, $lemonId]);
+    verifyPhase16E(array_column($results, 'status') === [200, 200] && $ops->stock('lemon') === '2', 'R-G: restock vs sale lost an update: '.json_encode($results).' lemon '.$ops->stock('lemon'));
+    $ledgerMatches('lemon');
+    echo 'R-G PASS: a pamamalengke restock and a sale on the same Lemon both commit; Lemon 0.5 + 2 − 0.5 = 2.'.PHP_EOL;
+
     /** R-E. None of these races deadlocked (Branch → Session → Order → Product stock → Ingredient balances). */
     usleep(300_000);
     verifyPhase16E($deadlocks() === $deadlocksBefore, 'R-E: PostgreSQL recorded a deadlock during the Recipe races.');
     echo 'R-E PASS: no deadlocks during the Recipe availability races.'.PHP_EOL;
+
+    /**
+     * S. Direct Product stock (Coke) writers racing a Pay Now sale. Each writer is queued FIRST behind the held row,
+     * then the sale, so the writer runs first after release while the sale already holds the Branch FOR UPDATE: the
+     * exact interleaving that deadlocks unless every writer takes the Branch (FOR SHARE) before its other locks.
+     */
+    $startInOrder = function (string $label, array $workerArgs, string $lockSql, array $lockBindings) use ($schema, $connection, &$processes): array {
+        DB::beginTransaction();
+        DB::select($lockSql, $lockBindings);
+        $workers = [];
+        foreach ($workerArgs as $index => $args) {
+            $process = new Process([PHP_BINARY, __FILE__, '--worker', $schema, $schema.'_'.$label.'_'.$index, ...$args], dirname(__DIR__), [
+                'APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_URL' => 'null',
+                'DB_HOST' => $connection['host'], 'DB_PORT' => (string) $connection['port'],
+                'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'],
+                'DB_PASSWORD' => $connection['password'], 'DB_SSLMODE' => $connection['sslmode'],
+            ], timeout: 40);
+            $processes[] = $process;
+            $workers[] = $process;
+            $process->start();
+            awaitPhase16ELocks(DB::connection('phase16e_admin'), $schema.'_'.$label.'_', $workers);
+        }
+        DB::commit();
+
+        return array_map(function (Process $process): array {
+            verifyPhase16E($process->wait() === 0, 'Worker failed: '.$process->getErrorOutput().$process->getOutput());
+
+            return json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        }, $workers);
+    };
+    $cokeSale = fn (): array => ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->coke->id, '[]'];
+    $cokeLedgerMatches = function (string $scenario) use ($ops): void {
+        $balance = BranchInventory::query()->where('branch_id', $ops->branch->id)->where('product_id', $ops->coke->id)->value('on_hand');
+        $ledger = (int) DB::selectOne('SELECT COALESCE(SUM(quantity_delta), 0) AS total FROM inventory_movements WHERE branch_id = ? AND product_id = ?', [$ops->branch->id, $ops->coke->id])->total;
+        verifyPhase16E($balance >= 0, "{$scenario}: Coke went negative.");
+        verifyPhase16E($ledger === $balance - 20, "{$scenario}: Coke ledger and balance disagree ({$ledger} vs {$balance}).");
+    };
+    $sessionRow = 'SELECT id FROM store_sessions WHERE id = ? FOR UPDATE';
+    $productRow = 'SELECT id FROM branch_products WHERE branch_id = ? AND product_id = ? FOR UPDATE';
+    $cokeLater = $ops->payLater([$ops->line($ops->coke, 1)]);
+    $cokePaid = $ops->payNow([$ops->line($ops->coke, 1)]);
+    $deadlocksBefore = $deadlocks();
+    $failures = [];
+    foreach ([
+        'sa' => ['manual Product inventory adjustment', ['adjust_product', (string) $ops->owner->id, $ops->branch->id, (string) Str::uuid(), $ops->coke->id], $productRow, [$ops->branch->id, $ops->coke->id]],
+        'sb' => ['Store Purchase restock', ['store_expense', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->coke->id], $sessionRow, [$ops->session->id]],
+        'sc' => ['Store Session inventory adjustment', ['store_adjust', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->coke->id], $sessionRow, [$ops->session->id]],
+        'sd' => ['plain Store Expense', ['store_expense', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), 'none'], $sessionRow, [$ops->session->id]],
+        'se' => ['Pay Later settlement', ['settle', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $cokeLater->id], $sessionRow, [$ops->session->id]],
+        'sf' => ['Void of a Coke sale', ['void', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $cokePaid->id, (string) $cokePaid->fresh()->version], $sessionRow, [$ops->session->id]],
+    ] as $label => [$name, $writer, $lockSql, $bindings]) {
+        $results = $startInOrder($label, [$writer, $cokeSale()], $lockSql, $bindings);
+        $cokeLedgerMatches(strtoupper($label));
+        usleep(300_000);
+        $recorded = $deadlocks() - $deadlocksBefore;
+        $deadlocksBefore += $recorded;
+        if (array_column($results, 'status') !== [200, 200] || $recorded !== 0) {
+            $failures[] = strtoupper($label).": {$name} vs Pay Now: {$recorded} deadlock(s), results ".json_encode($results);
+            echo strtoupper($label)." FAIL: {$name} vs Pay Now deadlocked.".PHP_EOL;
+
+            continue;
+        }
+        echo strtoupper($label)." PASS: {$name} queued ahead of a Coke Pay Now: both commit, no deadlock, ledger = balance.".PHP_EOL;
+    }
+    verifyPhase16E($failures === [], implode(PHP_EOL, $failures));
+
+    /**
+     * G. Giveaways race sales and each other: a giveaway and a Pay Now for the last Medium Yakult (exactly one wins, no
+     * negative stock), a direct-stock giveaway queued ahead of a Coke sale (no deadlock), a duplicate submit (one
+     * record) and two different reversal requests (restored exactly once).
+     */
+    $deadlocksBefore = $deadlocks();
+    $ops->setStock('yakult', '1');
+    $giveawayCount = StoreSessionGiveaway::query()->count();
+    $before = $effects();
+    $results = $start('ga', [
+        ['giveaway', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+    ], $stockRow, [$ops->branch->id, $ops->ingredients['yakult']->id]);
+    $oneWinner($results, 'G-A');
+    $giveawayWon = $results[0]['status'] === 200;
+    verifyPhase16E($ops->stock('yakult') === '0', 'G-A: Yakult is not exactly 0.');
+    verifyPhase16E(StoreSessionGiveaway::query()->count() === $giveawayCount + ($giveawayWon ? 1 : 0), 'G-A: the losing giveaway left a record.');
+    verifyPhase16E($effects()['payments'] === $before['payments'] + ($giveawayWon ? 0 : 1), 'G-A: a giveaway created a Payment or the losing sale left one.');
+    $ledgerMatches('yakult');
+    echo 'G-A PASS: a giveaway and a Pay Now race for the last Yakult: '.($giveawayWon ? 'giveaway' : 'sale').' won, the other got 422, Yakult 0.'.PHP_EOL;
+
+    $results = $startInOrder('gb', [
+        ['giveaway', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->coke->id, '[]'],
+        $cokeSale(),
+    ], $sessionRow, [$ops->session->id]);
+    verifyPhase16E(array_column($results, 'status') === [200, 200], 'G-B: Coke giveaway vs Pay Now did not both succeed: '.json_encode($results));
+    $cokeLedgerMatches('G-B');
+    echo 'G-B PASS: a Product-stock giveaway queued ahead of a Coke Pay Now: both commit, ledger = balance.'.PHP_EOL;
+
+    $ops->setStock('yakult', '5');
+    $giveawayKey = strtolower((string) Str::uuid());
+    $results = $start('gc', [
+        ['giveaway', (string) $ops->cashier->id, $ops->branch->id, $giveawayKey, $ops->lemonYakult->id, $modifiers('m')],
+        ['giveaway', (string) $ops->cashier->id, $ops->branch->id, $giveawayKey, $ops->lemonYakult->id, $modifiers('m')],
+    ], 'SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [$ops->branch->id.':giveaway:'.$giveawayKey]);
+    verifyPhase16E(array_column($results, 'status') === [200, 200] && count(array_unique(array_column($results, 'id'))) === 1, 'G-C: duplicate giveaway did not replay: '.json_encode($results));
+    verifyPhase16E($ops->stock('yakult') === '4', 'G-C: a duplicate giveaway deducted twice: '.$ops->stock('yakult'));
+    echo 'G-C PASS: a duplicate giveaway submit records once and deducts once.'.PHP_EOL;
+
+    $giveawayId = $results[0]['id'];
+    $results = $start('gd', [
+        ['reverse_giveaway', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $giveawayId],
+        ['reverse_giveaway', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $giveawayId],
+    ], 'SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ['giveaway-reversal:'.$giveawayId]);
+    $oneWinner($results, 'G-D');
+    verifyPhase16E(StoreSessionGiveawayReversal::query()->where('giveaway_id', $giveawayId)->count() === 1 && $ops->stock('yakult') === '5', 'G-D: a giveaway was restored more than once.');
+    $ledgerMatches('yakult');
+    usleep(300_000);
+    verifyPhase16E($deadlocks() === $deadlocksBefore, 'G: PostgreSQL recorded a deadlock during the giveaway races.');
+    echo 'G-D PASS: two different reversal requests restore the giveaway exactly once; no deadlocks in G.'.PHP_EOL;
 
     /** P. Every Operations page projection runs on PostgreSQL, for one Branch and for All Branches. */
     $workspace = app(OperationsWorkspace::class);

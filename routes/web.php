@@ -44,6 +44,7 @@ use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
 use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
+use App\Http\Controllers\StoreSessionGiveawayController;
 use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
@@ -237,6 +238,16 @@ Route::middleware(['auth'])->group(function () {
     Route::post('store-sessions/current/inventory-adjustments', StoreSessionInventoryAdjustmentController::class)
         ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:30,1'])
         ->name('store-session-inventory-adjustments.store');
+    Route::get('store-sessions/current/giveaway-catalog', [StoreSessionGiveawayController::class, 'catalog'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch'])
+        ->name('store-session-giveaways.catalog');
+    Route::post('store-sessions/current/giveaways', [StoreSessionGiveawayController::class, 'store'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-giveaways.store');
+    Route::post('store-session-giveaways/{giveaway}/reversal', [StoreSessionGiveawayController::class, 'reverse'])
+        ->whereUuid('giveaway')
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-giveaways.reverse');
     Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
         ->whereUuid('expense')
         ->middleware(['permission:store_expenses.manage', 'branch'])

@@ -53,6 +53,30 @@ export type CurrentStoreSession = {
     }[];
     inventory_adjustments: StoreSessionInventoryAdjustment[];
     inventory_adjustment_count: number;
+    giveaways: StoreSessionGiveaway[];
+    giveaway_count: number;
+};
+
+/** A free item given away in the Store Session: stock only, ₱0 revenue, never a Payment or Expense. */
+export type StoreSessionGiveaway = {
+    id: string;
+    product_name: string;
+    size_name: string | null;
+    add_ons: string[];
+    instructions: string[];
+    quantity: number;
+    reason_code: string;
+    reason_label: string;
+    note: string | null;
+    stock_mode: 'recipe' | 'product_stock' | 'none';
+    stock_effects: { name: string; quantity: string; unit: string }[];
+    created_at: string;
+    created_by: { name: string };
+    reversal: {
+        reason: string;
+        created_at: string;
+        created_by: { name: string };
+    } | null;
 };
 
 export type StoreSessionInventoryAdjustment = {

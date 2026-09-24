@@ -609,3 +609,12 @@ A feature/release cannot be considered production-ready until:
 - `OperationsManagementTest` adds the Recipes page states (Product stock vs No recipe needed vs missing, settings link, switching back, servings per Size and none for All Branches).
 - `tests/recipe-availability.test.ts`: Group behaviour labels/help, one-Size-group hint, Recipes page states and sections, availability labels, option availability, quantity cap/errors, cart sharing, POS/QR wiring and 44px targets.
 - `tests/verify-operations-postgres.php` adds the new tables/indexes and rollback of the follow-up migration, the no-oversell sale check, and real two-process races R-A (last stock, Pay Now ×2), R-B (two Products sharing Water), R-C (Size + Add-on drafts via Pay Later commit), R-D (usage-increasing edit vs sale) and R-E (`pg_stat_database.deadlocks` unchanged).
+
+### Phase 16E Final QA verification (2026-09-24)
+
+- `tests/verify-operations-postgres.php` (isolated random schema, removed afterwards) now also covers:
+  - **S — legacy direct Product-stock deadlock audit.** Each writer is queued first behind a held row, then a Coke Pay Now. Before the fix, SA Catalog inventory adjustment, SB Store Purchase restock, SC Store Session inventory adjustment, SD plain Store Expense and SE Pay Later settlement each produced a real PostgreSQL deadlock (SQLSTATE 40P01); SF Void did not (it already took the Branch first). After the Branch-FOR-SHARE-first fix all six commit with zero deadlocks and ledger = balance.
+  - **R-F** Void restoring vs sale consuming the same Ingredient; **R-G** Pamamalengke restock vs sale on the same Ingredient.
+  - **G-A..G-D** Giveaway vs Pay Now for the last stock (one winner), direct-stock Giveaway vs Pay Now (no deadlock), duplicate Giveaway submit (one record, one deduction), two different reversal requests (restored once).
+  - Giveaway migration rollback/re-apply, movement-type constraints, partial unique indexes and a guard against new PostgreSQL identifier truncation.
+- Pest: `StoreSessionGiveawayTest`, `RecipeBranchModeTest`, `OperationsFinalQaTest` (QR gate, change-only broadcasts, list validation, bounded query counts for the POS catalog with recipe Products and the Operations summary). Frontend: `store-giveaway-ui.test.ts`.

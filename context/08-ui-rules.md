@@ -624,3 +624,7 @@ Branch operational workspaces (Cashier Dashboard, POS, QR Orders, Transaction Hi
 ## Owner Operations presentation — 2026-09-24
 
 Operations follows the approved Owner Operations v2 standalone inside the real Owner shell (no second shell): compact 14–16px-radius white cards, 10px uppercase labels, gold `#C8962E` for AUTO/market, amber for attention, red for negative/out, green for restock/at target. Mobile: 12–14px body text, 44px targets (`min-h-11`), tables become cards (Ingredients <980px, Stock <1040px), dialogs are bottom sheets, the Shopping checklist review bar is fixed above the mobile dock, and pages never scroll horizontally. Status always has text, never colour alone. The standalone's CONCEPT / mock-data banner, demo sale/edit/void simulator and reset button are design-review aids and are not implemented; production shows only server data and truthful empty states (no plans, no products, no ingredients, no recipe, cost unknown, no suggestion, no purchases, choose a Branch, Store closed).
+
+## Required-field visual rule (Phase 16E Final QA, manual QA)
+
+Required and still empty/invalid/unconfigured → **red outline** + readable text ("Required …", "Recipe required") + `aria-invalid` (+ `aria-describedby` to the text). Valid → **neutral gray** outline. Optional controls never turn red. Text inputs use the shared Input's `aria-invalid` styling; cards, chip groups and pick lists use `resources/js/lib/required-field.ts` (`requiredOutline`, `requiredGroupOutline`). Do not repaint every input globally; apply it to required controls deliberately.

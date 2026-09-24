@@ -742,3 +742,9 @@ Operations pages reuse the private `reports` invalidation channel and `useReport
 ### Phase 16E follow-up: Recipe availability invalidation - 2026-09-24
 
 `IngredientStockChanged` broadcasts `ingredients.changed` on the existing private `branch.{branch}.inventory` channel with only `event_id`, `event_type`, `branch_id`, `reason` (`sale`, `order_edit`, `void`, `wastage`, `count_correction`, `opening_balance`, `purchase_restock`, `recipe_changed`) and `occurred_at` — no quantities, costs or order data. `CatalogRealtime::ingredientsChanged()` dispatches it together with the existing `qr.catalog_changed` after commit. Cashier POS adds `.ingredients.changed` to its debounced partial `catalog` refetch; Customer QR already refetches on `qr.catalog_changed`. An open customization dialog re-asks the capacity endpoint when its catalog row changes. No polling was added.
+
+### Phase 16E Final QA realtime (2026-09-24)
+
+- Giveaways and their reversals broadcast only through existing after-commit events: Product-stock ones via `inventory.changed` + `qr.catalog_changed` (from `ApplyInventoryMovement`), Recipe ones via `ingredients.changed` (reasons `giveaway`, `giveaway_reversal`), and `ReportsChanged` (`giveaway.recorded`, `giveaway.reversed`). No payload carries quantities, costs or money. The Store Session dialog now also refreshes on `.ingredients.changed`.
+- Recipe, Add-on effect and recipe-mode saves broadcast **only when something changed**, from inside the action (after commit), and a business-wide invalidation reaches **active Branches only**.
+- Correction: the Operations events above carry no money. The pre-existing Phase 14 `store.expense_recorded` event (Cashier Store Session channel) still includes the expense `amount` and payment source, including for a Pamamalengke confirmation's expense; Cashiers already see those amounts in the Store Session dialog.

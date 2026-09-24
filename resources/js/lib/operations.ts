@@ -340,7 +340,7 @@ export function recipeNavNote(product: {
         case 'configuration_error':
             return 'Size groups need fixing';
         case 'missing':
-            return 'Recipe not set';
+            return 'Recipe required';
         default:
             return product.sizes.length === 1
                 ? 'Recipe set'

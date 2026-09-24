@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'branch_id', 'ingredient_id', 'movement_type', 'quantity_delta', 'balance_after', 'estimated_cost_cents',
     'order_id', 'order_recipe_snapshot_id', 'operation_plan_id', 'pamamalengke_purchase_id', 'store_session_expense_id',
+    'store_session_giveaway_id',
     'reason_code', 'reason', 'created_by_user_id', 'idempotency_key',
 ])]
 class IngredientMovement extends Model

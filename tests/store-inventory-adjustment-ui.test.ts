@@ -71,7 +71,10 @@ test('Adjust inventory lives inside the Store Session dialog and never posts mon
     assert.match(form, /Inventory adjustment recorded\./);
     assert.match(form, /Current stock: \{item\.on_hand\}/);
     assert.doesNotMatch(form, /amount|payment_source/);
-    assert.match(realtime, /\['\.inventory\.changed'\]/);
+    assert.match(
+        realtime,
+        /\['\.inventory\.changed', '\.ingredients\.changed'\]/,
+    );
 });
 
 test('a discarded session returns session-bound views to the overview load message', () => {
@@ -93,7 +96,7 @@ test('stock adjustments join the session history newest-first without money', ()
     const flow = source('components/store-close-flow.tsx');
     assert.match(
         dialog,
-        /sessionActivity\(session\.expenses, session\.inventory_adjustments\)/,
+        /sessionActivity\(session\.expenses, session\.inventory_adjustments, session\.giveaways \?\? \[\]\)/,
     );
     assert.match(
         flow,

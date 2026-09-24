@@ -885,8 +885,8 @@ Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of
 - [x] Purchases
 - [x] View summary (Cash / Profit / divider)
 - [x] Manual QA follow-up: Group semantics, one Size group, Recipe setup states, Add-on effects, Recipe-based availability
-- [ ] USER MANUAL QA
-- [ ] FINAL QA
+- [ ] USER MANUAL QA (Final QA UI changes)
+- [x] FINAL AUTOMATED QA
 
 ### Phase 16E Manual QA follow-up — Recipe configuration, Add-on effects & Recipe availability (2026-09-24)
 
@@ -896,6 +896,16 @@ Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of
 - `RecipeCapacity` drives per-Size availability in `BranchCatalog`, the POS/QR customization dialogs (server capacity endpoints) and a whole-order pre-check; the authoritative no-oversell check runs under the Ingredient locks. **Rule change: sales and usage-increasing edits can no longer drive Recipe Ingredient stock negative.**
 - Lock order fix found while designing the edit-vs-sale race: Edit and Void now take the Branch FOR SHARE before the Store Session.
 - **Status: READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. Not Final QA, not merged, no PR. Normal local development DB not reset; run `php artisan migrate` (forward only).
+
+### Phase 16E FINAL QA — 2026-09-24
+
+- **Status: IMPLEMENTATION COMPLETE · FINAL AUTOMATED QA COMPLETE.** USER MANUAL QA of the Final QA UI changes: PENDING (no browser/device QA was performed by the agent). Not merged, no PR. Branch was 5 ahead / 0 behind `origin/dev` (`0031fc8`) at start.
+- **Legacy deadlock audit — real, fixed.** Scenario S in `tests/verify-operations-postgres.php` reproduced PostgreSQL deadlocks (40P01) between Pay Now and: Catalog inventory adjustment, Store Purchase restock, Store Session inventory adjustment, plain Store Expense and Pay Later settlement (Void was already safe). Fix: Branch FOR SHARE first in `AdjustInventory`, `RecordStoreSessionExpense`, `RecordStoreSessionInventoryAdjustment`, `SettlePayLaterOrder` and `AllocateOrderAdjustment`; all six races now commit with 0 deadlocks.
+- **Giveaway (Record giveaway)** added to the Store Session dialog with audited, exactly-once reversal; additive migration `2026_09_24_134328_create_store_session_giveaways` (rules `02` §39.2, schema `05`).
+- **Manual QA corrections:** required-field red/gray rule; Recipes "Uses Product stock" names every blocking Branch with per-Branch settings actions; missing Size recipes shown as red "Recipe required".
+- **Other audit fixes:** Customer QR capacity gated by Branch active + QR enabled; recipe/effect/mode broadcasts only on real change and only to active Branches; Pamamalengke skip/manual-item validation; Operations summary uses order subqueries (no growing bind lists); overview movement fetch bounded; Products-tab Ingredient count cheap; new bounded query-count tests.
+- **Verification:** complete Laravel suite 1,810 tests / 12,735 assertions passed; frontend 185 tests passed; Pint, PHPStan (0 errors), frontend lint (173 files), TypeScript, production build and `git diff --check` clean; all 13 PostgreSQL harnesses passed on disposable schemas (none left behind). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- Known limitations: six Laravel-generated index/key names are truncated by PostgreSQL at 63 bytes (functional, no collision; harness blocks new ones); the Customer QR "fits" yes/no for a chosen quantity is an accepted disclosure equal to what submission reveals; Giveaway reversal is limited to the Giveaway's own open Store Session.
 
 ---
 

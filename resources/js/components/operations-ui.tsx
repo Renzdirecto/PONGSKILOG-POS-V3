@@ -574,6 +574,8 @@ const MOVEMENT_TONE: Record<IngredientMovementGroup['type'], ChipTone> = {
     purchase_restock: 'green',
     wastage: 'amber',
     count_correction: 'outline',
+    giveaway: 'amber',
+    giveaway_reversal: 'outline',
 };
 
 const timeFormat = new Intl.DateTimeFormat('en-PH', {
@@ -1010,6 +1012,41 @@ export function SummaryDialog({
                                             : 'All plans includes every sale and each store-wide expense once.'}
                                     </p>
                                 </section>
+                                {scope === 'all' &&
+                                    summary.giveaways.count > 0 && (
+                                        <section
+                                            aria-label="Giveaways today"
+                                            className="flex flex-col gap-1 rounded-xl border border-dashed border-[#d4d4d4] p-3"
+                                        >
+                                            <span className="text-sm font-bold">
+                                                Giveaways today
+                                            </span>
+                                            <KeyValue
+                                                label="Free items given"
+                                                value={`${summary.giveaways.items}`}
+                                                sub={`${summary.giveaways.count} giveaway${summary.giveaways.count === 1 ? '' : 's'} recorded in the Store Session`}
+                                            />
+                                            <KeyValue
+                                                label="Estimated giveaway cost"
+                                                value={formatPeso(
+                                                    summary.giveaways
+                                                        .cost_cents,
+                                                )}
+                                                sub={
+                                                    summary.giveaways.uncosted >
+                                                    0
+                                                        ? `Incomplete: ${summary.giveaways.uncosted} giveaway${summary.giveaways.uncosted === 1 ? ' has' : 's have'} no recipe cost`
+                                                        : 'Ingredient cost recorded when given'
+                                                }
+                                            />
+                                            <p className="pt-1 text-[11.5px] leading-5 text-[#666]">
+                                                Giveaways earn ₱0 and are not
+                                                sales, expenses or COGS. They
+                                                are not subtracted from the
+                                                profit above.
+                                            </p>
+                                        </section>
+                                    )}
                                 <section
                                     aria-label="Divide estimated profit"
                                     className="flex flex-col gap-2.5 rounded-xl bg-[#f7f7f7] p-3"

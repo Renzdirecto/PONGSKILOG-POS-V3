@@ -9,6 +9,7 @@ use App\Enums\RecipeState;
 use App\Models\Branch;
 use App\Models\Recipe;
 use App\Models\StoreSession;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,15 +24,18 @@ use Illuminate\Support\Facades\DB;
  *   (there is no trustworthy direct Product cost), never as ₱0 cost.
  * - Store-wide expenses are never allocated to a Plan; only the business summary subtracts them, once.
  * - Cash after purchases = Sales − Pamamalengke − other Store expenses. It is not profit.
+ * - Giveaways (free items recorded in the Store Session) are non-revenue stock-outs: never Net Sales, orders, COGS or
+ *   expenses. Their estimated Ingredient cost is reported separately and is incomplete when any line has no cost.
  *
  * @phpstan-type ProductFigures array{product_id: string, name: string, quantity: int, sales_cents: int, state: string}
+ * @phpstan-type GiveawayFigures array{count: int, items: int, cost_cents: int, uncosted: int}
  * @phpstan-type Figures array{sales_cents: int, orders: int, items: int, uncosted_sales_cents: int, cogs_cents: int, unknown_cost_lines: int, gross_profit_cents: int, pamamalengke_cents: int, non_stock_cents: int, other_expenses_cents: int, cash_after_cents: int, operating_profit_cents: int, incomplete: bool, products: list<ProductFigures>}
  */
 class OperationsSummary
 {
     public function __construct(private StoreSessionSalesReport $report) {}
 
-    /** @return array{plans: array<string, Figures>, business: Figures, outside_plan_sales_cents: int, business_date: string} */
+    /** @return array{plans: array<string, Figures>, business: Figures, outside_plan_sales_cents: int, giveaways: GiveawayFigures, business_date: string} */
     public function today(?Branch $branch): array
     {
         $period = ReportPeriod::fromFilters(['date' => 'today']);
@@ -41,11 +45,12 @@ class OperationsSummary
         $expenses = array_sum(array_map(fn (array $row): int => $row['flows']['expenses']['cash'] + $row['flows']['expenses']['cashless'], $rows));
         $sessionIds = $sessions->map(fn (StoreSession $session): string => $session->id)->values()->all();
 
-        $orderIds = $sessionIds === [] ? [] : DB::table('orders')
+        /** A subquery, never a PHP id list, so a busy day or All Branches cannot outgrow the bind-parameter limit. */
+        $orderIds = $sessionIds === [] ? null : DB::table('orders')
+            ->select('id')
             ->whereIn('store_session_id', $sessionIds)
             ->whereNotNull('committed_at')
-            ->whereIn('commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value])
-            ->pluck('id')->map(fn ($id): string => (string) $id)->values()->all();
+            ->whereIn('commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value]);
 
         $plans = [];
         $business = $this->empty();
@@ -94,7 +99,7 @@ class OperationsSummary
         }
 
         $business['sales_cents'] = $netSales;
-        $business['orders'] = count($orderIds);
+        $business['orders'] = $orderIds === null ? 0 : (clone $orderIds)->count();
         $business['uncosted_sales_cents'] = max(0, $netSales - $costedSales);
         $business['other_expenses_cents'] = max(0, $expenses - $business['pamamalengke_cents']);
 
@@ -102,7 +107,41 @@ class OperationsSummary
             'plans' => array_map(fn (array $figures): array => $this->finish($figures), $plans),
             'business' => $this->finish($business, countOrders: false),
             'outside_plan_sales_cents' => $outsideSales,
+            'giveaways' => $this->giveaways($sessionIds),
             'business_date' => $period->from->toDateString(),
+        ];
+    }
+
+    /**
+     * Today's Giveaways that were not reversed: count, items and their estimated Ingredient cost from the cost recorded
+     * on their own movements. A direct-stock, untracked or unknown-cost Giveaway is counted as uncosted, never ₱0.
+     *
+     * @param  array<int, string>  $sessionIds
+     * @return GiveawayFigures
+     */
+    private function giveaways(array $sessionIds): array
+    {
+        if ($sessionIds === []) {
+            return ['count' => 0, 'items' => 0, 'cost_cents' => 0, 'uncosted' => 0];
+        }
+        $active = fn () => DB::table('store_session_giveaways')
+            ->whereIn('store_session_giveaways.store_session_id', $sessionIds)
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('store_session_giveaway_reversals')
+                ->whereColumn('store_session_giveaway_reversals.giveaway_id', 'store_session_giveaways.id'));
+        $unknownCost = fn ($query) => $query->selectRaw('1')->from('ingredient_movements')
+            ->whereColumn('ingredient_movements.store_session_giveaway_id', 'store_session_giveaways.id')
+            ->where('ingredient_movements.movement_type', IngredientMovementType::Giveaway->value)
+            ->whereNull('ingredient_movements.estimated_cost_cents');
+        $totals = $active()->selectRaw('COUNT(*) AS count, COALESCE(SUM(quantity), 0) AS items')->first();
+
+        return [
+            'count' => (int) ($totals->count ?? 0),
+            'items' => (int) ($totals->items ?? 0),
+            'cost_cents' => (int) DB::table('ingredient_movements')
+                ->whereIn('store_session_giveaway_id', $active()->select('store_session_giveaways.id'))
+                ->where('movement_type', IngredientMovementType::Giveaway->value)
+                ->sum('estimated_cost_cents'),
+            'uncosted' => $active()->where(fn ($query) => $query->where('stock_mode', '!=', 'recipe')->orWhereExists($unknownCost))->count(),
         ];
     }
 
@@ -110,20 +149,20 @@ class OperationsSummary
      * Every eligible Order line with its historical Plan and recipe state. Lines committed before Operations existed
      * have no snapshot and are reported outside every Plan and uncosted.
      *
-     * @param  array<int, string>  $orderIds
      * @return array<int, array{order_id: string, product_id: string, name: string, quantity: int, cents: int, plan_id: string|null, state: string}>
      */
-    private function lines(array $orderIds): array
+    private function lines(?Builder $orderIds): array
     {
-        if ($orderIds === []) {
+        if ($orderIds === null) {
             return [];
         }
-        $items = DB::table('order_items')->whereIn('order_id', $orderIds)->whereNotNull('product_id')
+        $items = DB::table('order_items')->whereIn('order_id', clone $orderIds)->whereNotNull('product_id')
             ->get(['id', 'order_id', 'product_id', 'product_name_snapshot', 'quantity', DB::raw('CAST(ROUND(line_total * 100) AS BIGINT) AS cents')]);
-        $sizes = DB::table('order_item_modifiers')->whereIn('order_item_id', $items->pluck('id'))
+        $sizes = DB::table('order_item_modifiers')
+            ->whereIn('order_item_id', DB::table('order_items')->select('id')->whereIn('order_id', clone $orderIds))
             ->where('semantic_role_snapshot', ModifierSemanticRole::Size->value)->whereNotNull('modifier_option_id')
             ->pluck('modifier_option_id', 'order_item_id');
-        $snapshots = DB::table('order_recipe_snapshots')->whereIn('order_id', $orderIds)
+        $snapshots = DB::table('order_recipe_snapshots')->whereIn('order_id', clone $orderIds)
             ->get(['order_id', 'product_id', 'size_key', 'recipe_state', 'operation_plan_id'])
             ->keyBy(fn (object $row): string => $row->order_id.'|'.$row->product_id.'|'.$row->size_key);
 
@@ -146,17 +185,16 @@ class OperationsSummary
     /**
      * Net snapshotted consumption cost per historical Plan (sale, edit and void movements of the eligible Orders).
      *
-     * @param  array<int, string>  $orderIds
      * @return array<int, array{plan_id: string|null, cents: int, unknown: int}>
      */
-    private function costs(array $orderIds): array
+    private function costs(?Builder $orderIds): array
     {
-        if ($orderIds === []) {
+        if ($orderIds === null) {
             return [];
         }
 
         return DB::table('ingredient_movements')
-            ->whereIn('order_id', $orderIds)
+            ->whereIn('order_id', clone $orderIds)
             ->whereIn('movement_type', [
                 IngredientMovementType::SaleConsumption->value,
                 IngredientMovementType::OrderEditAdjustment->value,

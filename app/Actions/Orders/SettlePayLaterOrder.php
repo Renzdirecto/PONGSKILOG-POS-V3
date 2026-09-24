@@ -42,7 +42,8 @@ class SettlePayLaterOrder
                 DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [$data['idempotency_key']]);
             }
 
-            $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
+            /** Branch FOR SHARE first: POS commits hold it FOR UPDATE before the Store Session, and every insert below needs a KEY SHARE on it. */
+            $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
             $user = $this->access->authorize($user, $branch);
             if ($replay = $this->replay($user, $branch, $requestedOrder, $data)) {
                 return $replay;

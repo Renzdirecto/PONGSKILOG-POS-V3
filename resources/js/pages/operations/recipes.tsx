@@ -31,6 +31,8 @@ import {
     recipeNavNote,
     recipeSetupState,
 } from '@/lib/operations';
+import ActiveBranchController from '@/actions/App/Http/Controllers/ActiveBranchController';
+import { requiredOutline } from '@/lib/required-field';
 import operationsRoutes from '@/routes/operations';
 import type {
     OperationsContext,
@@ -50,8 +52,8 @@ type Props = {
 
 const STATE_TONE: Record<RecipeState, string> = {
     set: 'text-[#15803d]',
-    partial: 'font-semibold text-[#b45309]',
-    missing: 'font-semibold text-[#b45309]',
+    partial: 'font-semibold text-[#b91c1c]',
+    missing: 'font-semibold text-[#b91c1c]',
     not_needed: 'text-[#8a8a8a]',
     product_stock: 'text-[#8a8a8a]',
     configuration_error: 'font-semibold text-[#b91c1c]',
@@ -144,7 +146,14 @@ export default function OperationsRecipes({
         (item) => item.key !== size?.key && item.lines?.length,
     );
     const anyRecipe = product.sizes.some((item) => item.lines?.length);
-    const trackedAt = product.tracked_at.join(', ');
+    const blockingBranches = product.tracked_branches
+        .map((branch) => `${branch.code} (${branch.name})`)
+        .join(', ');
+    /** Switch to the blocking Branch through the existing Branch context, then open that Product's Branch settings. */
+    const openBranchSettings = (branchId: string) =>
+        router.put(ActiveBranchController.update.url(branchId), {
+            redirect: `${product.settings_url}&section=branch`,
+        });
 
     const save = () => {
         const bad = rows.find((row) => !(parseQuantity(row.quantity) ?? 0));
@@ -344,16 +353,22 @@ export default function OperationsRecipes({
                         <StatePanel
                             icon={<Box className="size-6" aria-hidden="true" />}
                             title="Uses Product stock"
-                            body={`This Product currently deducts Product stock from Catalog › Inventory${trackedAt ? ` at ${trackedAt}` : ''}. Product stock tracking must be turned off before using an Ingredient recipe to prevent double inventory deduction.`}
-                            note="Nothing changes automatically: existing Product stock is kept until you decide."
+                            body={`Ingredient recipes cannot be enabled while ${product.name} tracks direct Product stock in: ${blockingBranches}. Recipes are shared by every Branch, so Product stock tracking must be turned off in ${product.tracked_branches.length > 1 ? 'each Branch listed' : 'that Branch'} to prevent double inventory deduction.`}
+                            note="Nothing changes automatically: existing Product stock is kept until you decide. Selling prices can still differ by Branch."
                         >
-                            <Link
-                                href={`${product.settings_url}&section=branch`}
-                                className={opsPrimaryClass}
-                            >
-                                <Settings2 className="size-4" /> Open Product
-                                settings
-                            </Link>
+                            {product.tracked_branches.map((branch) => (
+                                <button
+                                    key={branch.id}
+                                    type="button"
+                                    className={opsPrimaryClass}
+                                    onClick={() =>
+                                        openBranchSettings(branch.id)
+                                    }
+                                >
+                                    <Settings2 className="size-4" /> Open{' '}
+                                    {branch.code} product settings
+                                </button>
+                            ))}
                         </StatePanel>
                     ) : setup === 'no_recipe_needed' ? (
                         <StatePanel
@@ -428,25 +443,29 @@ export default function OperationsRecipes({
                                                     setSizeKey(item.key);
                                                     setErrors({});
                                                 }}
-                                                className={`flex min-h-14 min-w-0 flex-col items-start gap-0.5 rounded-xl bg-white px-2.5 py-2 text-left ${item.key === size.key ? 'border-[1.5px] border-[#111]' : 'border border-[#e5e5e5]'}`}
+                                                aria-invalid={
+                                                    !item.lines?.length ||
+                                                    undefined
+                                                }
+                                                className={`flex min-h-14 min-w-0 flex-col items-start gap-0.5 rounded-xl bg-white px-2.5 py-2 text-left ${requiredOutline(!item.lines?.length, item.key === size.key)}`}
                                             >
                                                 <span className="flex w-full items-center justify-between gap-2">
                                                     <span className="truncate text-[13.5px] font-bold">
                                                         {item.name}
                                                     </span>
                                                     <span
-                                                        className={`size-2 shrink-0 rounded-full ${item.lines?.length ? 'bg-[#15803d]' : 'bg-[#b45309]'}`}
+                                                        className={`size-2 shrink-0 rounded-full ${item.lines?.length ? 'bg-[#15803d]' : 'bg-[#b91c1c]'}`}
                                                         aria-hidden="true"
                                                     />
                                                 </span>
                                                 <span
-                                                    className={`text-[11px] ${item.lines?.length ? 'text-[#666]' : 'font-semibold text-[#b45309]'}`}
+                                                    className={`text-[11px] ${item.lines?.length ? 'text-[#666]' : 'font-semibold text-[#b91c1c]'}`}
                                                 >
                                                     {item.lines?.length
                                                         ? item.servings === null
                                                             ? `${item.lines.length} ingredients`
                                                             : `${item.servings} can be made`
-                                                        : 'Recipe not set'}
+                                                        : 'Recipe required'}
                                                 </span>
                                             </button>
                                         ))}
@@ -563,18 +582,18 @@ export default function OperationsRecipes({
                                     </div>
                                 ) : (
                                     <StatePanel
-                                        tone="warning"
+                                        tone="error"
                                         icon={
                                             <CircleAlert
-                                                className="size-6 text-[#b45309]"
+                                                className="size-6 text-[#b91c1c]"
                                                 aria-hidden="true"
                                             />
                                         }
-                                        title={`Recipe not set for ${sizeLabel}`}
+                                        title={`Recipe required for ${sizeLabel}`}
                                         body={
                                             anyRecipe
-                                                ? `Other sizes of ${product.name} use ingredient recipes, so ${sizeLabel} shows “Recipe required” and cannot be sold until its recipe is set.`
-                                                : 'Until a recipe is set, sales still work but no ingredient stock moves and the cost is missing from estimated COGS.'
+                                                ? `Other sizes of ${product.name} use ingredient recipes, so ${sizeLabel} cannot be sold until its recipe is set.`
+                                                : 'Set up the recipe, or mark the product No recipe needed. Until then, sales still work but no ingredient stock moves and the cost is missing from estimated COGS.'
                                         }
                                         error={Object.values(errors)[0]}
                                     >
@@ -652,15 +671,16 @@ function StatePanel({
     tone?: 'neutral' | 'warning' | 'error';
     children: ReactNode;
 }) {
+    /** A required-but-unconfigured state is outlined red; informational states stay neutral. */
     const background = {
-        neutral: 'bg-[#f7f7f7]',
-        warning: 'bg-[#fbf6e9]',
-        error: 'bg-[#fdf0f0]',
+        neutral: 'border-transparent bg-[#f7f7f7]',
+        warning: 'border-transparent bg-[#fbf6e9]',
+        error: 'border-[#b91c1c] bg-[#fdf0f0]',
     }[tone];
 
     return (
         <div
-            className={`flex flex-col items-center gap-2 rounded-xl ${background} px-4 py-8 text-center`}
+            className={`flex flex-col items-center gap-2 rounded-xl border ${background} px-4 py-8 text-center`}
         >
             {icon}
             <span className="text-[15px] font-semibold">{title}</span>

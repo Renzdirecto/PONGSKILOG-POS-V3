@@ -832,3 +832,13 @@ Migration `2026_09_24_072528_add_product_modifier_effects` adds four tables; no 
 
 - `product_modifier_effects` (UUID, Product, Modifier option, updater; **unique Product + option**) and `product_modifier_effect_lines` (unique effect + Ingredient, `quantity numeric(18,4) > 0`). Current configuration only; Business-wide definition, Branch-specific stock.
 - `order_recipe_snapshot_modifiers` (immutable; unique snapshot + option; option/group name snapshots) and `order_recipe_snapshot_modifier_lines` (`quantity_per_selection numeric(18,4) > 0`, cost basis like recipe snapshot lines). A modifier snapshot without lines records "no Ingredient effect". Add-on usage is merged into the Product/size snapshot's per-Ingredient movements, so the existing sale/void partial unique indexes still apply.
+
+### Phase 16E Final QA: Store Session Giveaways (additive)
+
+Migration `2026_09_24_134328_create_store_session_giveaways`:
+
+- `store_session_giveaways`: `branch_id`, `store_session_id`, `product_id` (restrict), `product_name_snapshot`, `size_key`, `size_name_snapshot`, `selections` (JSON: group, role, option snapshots), `quantity` (CHECK > 0), `stock_mode` (`recipe` / `product_stock` / `none`), `stock_basis` (JSON per-serving base recipe + Add-on effects), `inventory_movement_id` (unique, nullable), `reason_code`, `note`, `created_by_user_id`, `idempotency_key` (unique), `intent_hash`, timestamps. Immutable (model guards).
+- `store_session_giveaway_reversals`: `giveaway_id` (**unique** → at most one reversal), `branch_id`, `store_session_id`, `inventory_movement_id` (unique, nullable), `reason`, actor, `idempotency_key` (unique), `intent_hash`. Immutable.
+- `ingredient_movements.store_session_giveaway_id` (indexed; FK on PostgreSQL) and partial unique indexes `ingredient_movements_giveaway_once` / `ingredient_movements_giveaway_reversal_once` on (`store_session_giveaway_id`, `ingredient_id`).
+- `movement_type` CHECK constraints of `ingredient_movements` and `inventory_movements` extended with `giveaway` and `giveaway_reversal` (PostgreSQL constraint swap; SQLite definition-preserving rebuild). Rollback refuses while giveaway history exists.
+- Known PostgreSQL identifier truncation (functional, no collision; guarded against new ones by the harness): `operation_plan_ingredients_…_uniq`, `order_recipe_snapshot_lines_…_ingredient`, `pamamalengke_list_entries_…_entry_typ` and three pre-existing `store_session_inventory_adjustments_*` names.

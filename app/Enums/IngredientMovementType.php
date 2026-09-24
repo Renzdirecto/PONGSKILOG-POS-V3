@@ -11,6 +11,8 @@ enum IngredientMovementType: string
     case PurchaseRestock = 'purchase_restock';
     case Wastage = 'wastage';
     case CountCorrection = 'count_correction';
+    case Giveaway = 'giveaway';
+    case GiveawayReversal = 'giveaway_reversal';
 
     public function label(): string
     {
@@ -22,6 +24,8 @@ enum IngredientMovementType: string
             self::PurchaseRestock => 'Purchase',
             self::Wastage => 'Wastage',
             self::CountCorrection => 'Count correction',
+            self::Giveaway => 'Giveaway',
+            self::GiveawayReversal => 'Giveaway reversed',
         };
     }
 
@@ -29,5 +33,11 @@ enum IngredientMovementType: string
     public function isOrderConsumption(): bool
     {
         return in_array($this, [self::SaleConsumption, self::OrderEditAdjustment, self::VoidRestoration], true);
+    }
+
+    /** Non-revenue stock-out of a Store Session Giveaway and its reversal; never Sales COGS. */
+    public function isGiveaway(): bool
+    {
+        return in_array($this, [self::Giveaway, self::GiveawayReversal], true);
     }
 }

@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Recipe;
 use App\Models\RecipeLine;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
 use App\Support\ProductSizes;
@@ -24,7 +25,7 @@ use Illuminate\Validation\ValidationException;
  */
 class SaveRecipe
 {
-    public function __construct(private OperationsAccess $access, private ProductSizes $sizes, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private ProductSizes $sizes, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     /** @return array<string, mixed> */
     public static function rules(): array
@@ -109,6 +110,8 @@ class SaveRecipe
                     before: ['size' => $size['name'], 'lines' => $before],
                     after: ['size' => $size['name'], 'lines' => $after],
                 );
+                /** Only a real change invalidates Branch catalogs (after commit). */
+                $this->realtime->ingredientsChanged(null, 'recipe_changed');
             }
 
             return $recipe;

@@ -182,7 +182,7 @@ test('the recipes page separates product stock, no recipe needed and a missing r
     );
     assert.equal(
         recipeNavNote({ state: 'missing', sizes: [] }),
-        'Recipe not set',
+        'Recipe required',
     );
     assert.equal(
         recipeNavNote({
@@ -195,14 +195,21 @@ test('the recipes page separates product stock, no recipe needed and a missing r
     assert.match(recipes, /title="Uses Product stock"/);
     assert.match(
         recipes,
-        /Product stock tracking must be turned off before using an Ingredient recipe to prevent double inventory deduction\./,
+        /Ingredient recipes cannot be enabled while \$\{product\.name\} tracks direct Product stock in: \$\{blockingBranches\}/,
     );
+    assert.match(recipes, /to prevent double inventory deduction/);
     assert.match(recipes, /existing Product stock is kept/);
+    /** Each blocking Branch gets its own action through the existing Branch context, never the global selection. */
+    assert.match(recipes, /product\.tracked_branches\.map\(\(branch\) => \(/);
+    assert.match(recipes, /\{branch\.code\} product settings/);
     assert.match(
         recipes,
-        /href=\{`\$\{product\.settings_url\}&section=branch`\}/,
+        /router\.put\(ActiveBranchController\.update\.url\(branchId\), \{\s*redirect: `\$\{product\.settings_url\}&section=branch`,/,
     );
-    assert.match(recipes, /Open Product settings/);
+    assert.doesNotMatch(
+        recipes,
+        /Open Product\s+settings\s*<\/Link>[\s\S]*Uses Product stock/,
+    );
     assert.match(recipes, /Use ingredient recipe/);
     assert.match(recipes, /<Plus className="size-4" \/> Set up recipe/);
     assert.match(products, /requested\.get\('section'\) === 'branch'/);

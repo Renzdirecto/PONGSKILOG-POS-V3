@@ -7,19 +7,15 @@ use App\Actions\Operations\SaveRecipe;
 use App\Actions\Operations\SetProductRecipeMode;
 use App\Models\ModifierOption;
 use App\Models\Product;
-use App\Support\CatalogRealtime;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class RecipeController extends Controller
 {
-    public function __construct(private CatalogRealtime $realtime) {}
-
     public function update(Request $request, Product $product, SaveRecipe $save): RedirectResponse
     {
         $recipe = $save->execute($request->user(), $product, $request->only(['size_option_id', 'lines']));
-        $this->realtime->ingredientsChanged(null, 'recipe_changed');
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => $recipe === null ? 'Recipe removed. Future sales of this size are not costed.' : 'Recipe saved. It applies to future sales; past sales keep their recipe.',
@@ -31,7 +27,6 @@ class RecipeController extends Controller
     public function effect(Request $request, Product $product, ModifierOption $option, SaveModifierEffect $save): RedirectResponse
     {
         $effect = $save->execute($request->user(), $product, $option, $request->only(['lines']));
-        $this->realtime->ingredientsChanged(null, 'recipe_changed');
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => $effect === null
@@ -46,7 +41,6 @@ class RecipeController extends Controller
     {
         $request->validate(['no_recipe_needed' => ['required', 'boolean']]);
         $product = $mode->execute($request->user(), $product, $request->boolean('no_recipe_needed'));
-        $this->realtime->ingredientsChanged(null, 'recipe_changed');
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => $product->no_recipe_needed

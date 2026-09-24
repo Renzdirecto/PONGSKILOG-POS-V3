@@ -14,6 +14,7 @@ import {
     inventoryAdjustmentPreview,
     type InventoryAdjustmentReason,
 } from '@/lib/store-inventory-adjustment';
+import { isBlank, requiredGroupOutline } from '@/lib/required-field';
 import { isExpenseWriteOnline } from '@/lib/store-session-expense';
 import { store } from '@/routes/store-session-inventory-adjustments';
 import type {
@@ -60,6 +61,8 @@ export function StoreInventoryAdjustmentForm({
     const reasonLabel =
         INVENTORY_ADJUSTMENT_REASONS.find((item) => item.value === reason)
             ?.label ?? '';
+    const noteMissing = noteRequired && isBlank(note);
+    const quantityMissing = !preview.valid;
     const canSave =
         reason !== null &&
         product !== null &&
@@ -132,9 +135,17 @@ export function StoreInventoryAdjustmentForm({
                     affect Cash or Cashless totals.
                 </DialogDescription>
 
-                <fieldset className="space-y-1.5">
+                <fieldset
+                    className="space-y-1.5"
+                    aria-invalid={reason === null || undefined}
+                    aria-describedby={
+                        reason === null ? 'adjust-reason-required' : undefined
+                    }
+                >
                     <legend className="text-sm font-medium">Reason</legend>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div
+                        className={`grid grid-cols-2 gap-2 rounded-xl border p-1 sm:grid-cols-3 ${requiredGroupOutline(reason === null)}`}
+                    >
                         {INVENTORY_ADJUSTMENT_REASONS.map((item) => (
                             <button
                                 key={item.value}
@@ -147,6 +158,14 @@ export function StoreInventoryAdjustmentForm({
                             </button>
                         ))}
                     </div>
+                    {reason === null && (
+                        <p
+                            id="adjust-reason-required"
+                            className="text-xs text-red-700"
+                        >
+                            Required · choose a reason
+                        </p>
+                    )}
                 </fieldset>
 
                 <div className="space-y-1.5">
@@ -161,7 +180,17 @@ export function StoreInventoryAdjustmentForm({
                             placeholder="Search tracked products"
                         />
                     </div>
-                    <div className="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-neutral-200 p-1">
+                    <div
+                        role="group"
+                        aria-label="Tracked product"
+                        aria-invalid={product === null || undefined}
+                        aria-describedby={
+                            product === null
+                                ? 'adjust-product-required'
+                                : undefined
+                        }
+                        className={`max-h-44 space-y-1 overflow-y-auto rounded-xl border p-1 ${requiredGroupOutline(product === null)}`}
+                    >
                         {products.length === 0 ? (
                             <p className="p-3 text-center text-xs text-neutral-500">
                                 No tracked products found.
@@ -190,6 +219,14 @@ export function StoreInventoryAdjustmentForm({
                             ))
                         )}
                     </div>
+                    {product === null && (
+                        <p
+                            id="adjust-product-required"
+                            className="text-xs text-red-700"
+                        >
+                            Required · choose the product that left stock
+                        </p>
+                    )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -205,12 +242,24 @@ export function StoreInventoryAdjustmentForm({
                         min="1"
                         max={product?.on_hand ?? undefined}
                         step="1"
-                        aria-invalid={quantity !== '' && !preview.valid}
+                        aria-invalid={quantityMissing}
+                        aria-describedby={
+                            quantityMissing
+                                ? 'adjust-quantity-message'
+                                : undefined
+                        }
                         className="min-h-12 rounded-xl text-base font-bold tabular-nums"
                     />
-                    {preview.message && (
-                        <p role="alert" className="text-xs text-red-800">
-                            {preview.message}
+                    {quantityMissing && (
+                        <p
+                            id="adjust-quantity-message"
+                            role={preview.message ? 'alert' : undefined}
+                            className="text-xs text-red-800"
+                        >
+                            {preview.message ??
+                                (product === null
+                                    ? 'Required · choose a product, then enter the quantity'
+                                    : 'Required · enter a whole quantity of at least 1')}
                         </p>
                     )}
                 </div>
@@ -228,9 +277,22 @@ export function StoreInventoryAdjustmentForm({
                         }
                         maxLength={500}
                         rows={2}
-                        className="border-input w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-neutral-950"
+                        required={noteRequired}
+                        aria-invalid={noteMissing}
+                        aria-describedby={
+                            noteMissing ? 'adjust-note-required' : undefined
+                        }
+                        className={`w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${noteMissing ? 'border-red-700' : 'border-input'}`}
                         placeholder="e.g. Free drink given due to delayed order."
                     />
+                    {noteMissing && (
+                        <p
+                            id="adjust-note-required"
+                            className="text-xs text-red-700"
+                        >
+                            Required when the reason is Other
+                        </p>
+                    )}
                 </div>
 
                 {product && (

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { isMoneyInput } from '@/lib/required-field';
 import { open } from '@/routes/store-sessions';
 import type { BranchSummary, StoreContext } from '@/types';
 import type { CashierCatalog as CashierCatalogData } from '@/types/catalog';
@@ -404,6 +405,8 @@ function OpenStoreForm({
     const submitting = useRef(false);
     const cashInput = useRef<HTMLInputElement>(null);
     const cashlessInput = useRef<HTMLInputElement>(null);
+    const cashMissing = !isMoneyInput(data.opening_cash_amount);
+    const cashlessMissing = !isMoneyInput(data.opening_cashless_amount);
 
     function openStore(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -460,11 +463,15 @@ function OpenStoreForm({
                             setData('opening_cash_amount', event.target.value)
                         }
                         disabled={processing}
-                        aria-invalid={!!errors.opening_cash_amount}
+                        aria-invalid={
+                            !!errors.opening_cash_amount || cashMissing
+                        }
                         aria-describedby={
                             errors.opening_cash_amount
                                 ? 'opening-cash-error'
-                                : undefined
+                                : cashMissing
+                                  ? 'opening-cash-required'
+                                  : undefined
                         }
                         className="h-12 rounded-xl text-base"
                     />
@@ -475,6 +482,14 @@ function OpenStoreForm({
                             className="text-sm text-red-700"
                         >
                             {errors.opening_cash_amount}
+                        </p>
+                    )}
+                    {!errors.opening_cash_amount && cashMissing && (
+                        <p
+                            id="opening-cash-required"
+                            className="text-xs text-red-700"
+                        >
+                            Required · enter 0 if there is no opening cash.
                         </p>
                     )}
                 </div>
@@ -501,11 +516,15 @@ function OpenStoreForm({
                             )
                         }
                         disabled={processing}
-                        aria-invalid={!!errors.opening_cashless_amount}
+                        aria-invalid={
+                            !!errors.opening_cashless_amount || cashlessMissing
+                        }
                         aria-describedby={
                             errors.opening_cashless_amount
                                 ? 'opening-cashless-error'
-                                : undefined
+                                : cashlessMissing
+                                  ? 'opening-cashless-required'
+                                  : undefined
                         }
                         className="h-12 rounded-xl text-base"
                     />
@@ -516,6 +535,14 @@ function OpenStoreForm({
                             className="text-sm text-red-700"
                         >
                             {errors.opening_cashless_amount}
+                        </p>
+                    )}
+                    {!errors.opening_cashless_amount && cashlessMissing && (
+                        <p
+                            id="opening-cashless-required"
+                            className="text-xs text-red-700"
+                        >
+                            Required · enter 0 if there is no opening cashless.
                         </p>
                     )}
                 </div>

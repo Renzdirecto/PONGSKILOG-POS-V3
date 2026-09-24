@@ -223,6 +223,7 @@ export default function OperationsStock({
                                             'Consumed',
                                             'Purchased',
                                             'Wastage',
+                                            'Giveaway',
                                             'Correction',
                                             'Current',
                                             'Target',
@@ -231,7 +232,7 @@ export default function OperationsStock({
                                             <th
                                                 key={label || 'actions'}
                                                 scope="col"
-                                                className={`px-3 py-2.5 ${opsLabelClass} ${index > 0 && index < 8 ? 'text-right' : ''}`}
+                                                className={`px-3 py-2.5 ${opsLabelClass} ${index > 0 && index < 9 ? 'text-right' : ''}`}
                                             >
                                                 {label || (
                                                     <span className="sr-only">
@@ -317,6 +318,11 @@ export default function OperationsStock({
                                                     signed
                                                 />
                                                 <NumberCell
+                                                    value={stock.giveaway}
+                                                    tone="text-[#be123c]"
+                                                    signed
+                                                />
+                                                <NumberCell
                                                     value={stock.correction}
                                                     tone="text-[#111]"
                                                     signed
@@ -399,7 +405,7 @@ export default function OperationsStock({
                                                     ingredient={ingredient}
                                                 />
                                             </div>
-                                            <dl className="grid grid-cols-5 gap-1.5 rounded-[10px] bg-[#fafafa] p-2">
+                                            <dl className="grid grid-cols-3 gap-1.5 rounded-[10px] bg-[#fafafa] p-2 min-[430px]:grid-cols-6">
                                                 {(
                                                     [
                                                         [
@@ -431,6 +437,13 @@ export default function OperationsStock({
                                                                 stock.wastage,
                                                             ),
                                                             'text-[#b45309]',
+                                                        ],
+                                                        [
+                                                            'Given',
+                                                            formatDelta(
+                                                                stock.giveaway,
+                                                            ),
+                                                            'text-[#be123c]',
                                                         ],
                                                         [
                                                             'Count',

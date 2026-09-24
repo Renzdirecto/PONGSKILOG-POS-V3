@@ -943,3 +943,11 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 - **Purchases**: plan / all plans, purchased today, last 7 days, actual vs estimate, run cards (estimated, actual, items, bought by, Stock + expense / Expense only) with details and the canonical Store Purchase reference; pagination.
 - **View summary** (dialog; bottom sheet on phones): *Pamamalengke* (auto/manual estimates, estimated market cost, shopping progress, already bought today) and *Sales & profit* (Plan / All plans scope, Cash view, Profit view marked Estimated, Divide estimated profit).
 - **Catalog › Inventory** gains an **All / Products / Ingredients** type filter; ingredient rows show type, status, exact on-hand and target and link to Operations › Ingredient Stock for changes.
+
+### Phase 16E Final QA UI (2026-09-24)
+
+- **Store Session dialog**: actions stack on mobile and wrap on wider screens — **Add expense / purchase**, **Adjust inventory**, **Record giveaway**. Record giveaway: product search list → the POS customization dialog in giveaway mode (no price, notes or cart; "Use this item") → selected item card (Change) → reason chips → optional note (required for Other) → Review giveaway → Confirm giveaway. History rows show giveaways as ₱0.00 "Stock only" with a Reversed badge; a row opens Giveaway detail (selections, stock that left, reversal with a required reason).
+- **Close Store** session list includes giveaways.
+- **POS customization dialog**: a required Group without enough choices is outlined red with "Required · choose …".
+- **Recipes**: Size tiles missing a recipe are outlined red with "Recipe required"; the missing-recipe panel is a red "Recipe required for …" state; Uses Product stock names the blocking Branches with one "Open {CODE} product settings" action each.
+- **Ingredient Stock**: separate Giveaway column / "Given" cell. **View summary › All plans**: "Giveaways today" section.

@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @phpstan-import-type Recommendation from ReplenishmentAdvisor
  *
- * @phpstan-type StockFigures array{current: int, start: int, consumed: int, purchased: int, wastage: int, correction: int, opening: int, consumed_by_plan: array<string, int>, updated_at: string|null}
+ * @phpstan-type StockFigures array{current: int, start: int, consumed: int, purchased: int, wastage: int, giveaway: int, correction: int, opening: int, consumed_by_plan: array<string, int>, updated_at: string|null}
  * @phpstan-type IngredientRow array{ingredient: Ingredient, plan_ids: array<int, string>, locked_unit: bool, stock: StockFigures|null, recommendation: Recommendation|null, status: string|null}
  */
 class IngredientStockReport
@@ -159,6 +159,7 @@ class IngredientStockReport
                     IngredientMovementType::SaleConsumption, IngredientMovementType::OrderEditAdjustment, IngredientMovementType::VoidRestoration => $figure['consumed'] -= $quantity,
                     IngredientMovementType::PurchaseRestock => $figure['purchased'] += $quantity,
                     IngredientMovementType::Wastage => $figure['wastage'] += $quantity,
+                    IngredientMovementType::Giveaway, IngredientMovementType::GiveawayReversal => $figure['giveaway'] += $quantity,
                     IngredientMovementType::CountCorrection => $figure['correction'] += $quantity,
                     IngredientMovementType::OpeningBalance => $figure['opening'] += $quantity,
                 };
@@ -179,6 +180,6 @@ class IngredientStockReport
     /** @return StockFigures */
     private function emptyFigures(): array
     {
-        return ['current' => 0, 'start' => 0, 'consumed' => 0, 'purchased' => 0, 'wastage' => 0, 'correction' => 0, 'opening' => 0, 'consumed_by_plan' => [], 'updated_at' => null];
+        return ['current' => 0, 'start' => 0, 'consumed' => 0, 'purchased' => 0, 'wastage' => 0, 'giveaway' => 0, 'correction' => 0, 'opening' => 0, 'consumed_by_plan' => [], 'updated_at' => null];
     }
 }

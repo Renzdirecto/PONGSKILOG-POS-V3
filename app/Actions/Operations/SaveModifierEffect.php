@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductModifierEffect;
 use App\Models\ProductModifierEffectLine;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ use Illuminate\Validation\ValidationException;
  */
 class SaveModifierEffect
 {
-    public function __construct(private OperationsAccess $access, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     /** @return array<string, mixed> */
     public static function rules(): array
@@ -104,6 +105,8 @@ class SaveModifierEffect
                     before: ['add_on' => $option->name, 'group' => $group->name, 'lines' => $before],
                     after: ['add_on' => $option->name, 'group' => $group->name, 'lines' => $after],
                 );
+                /** Only a real change invalidates Branch catalogs (after commit). */
+                $this->realtime->ingredientsChanged(null, 'recipe_changed');
             }
 
             return $effect;

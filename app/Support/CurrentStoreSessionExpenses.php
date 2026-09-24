@@ -2,9 +2,14 @@
 
 namespace App\Support;
 
+use App\Enums\GiveawayStockMode;
+use App\Enums\IngredientMovementType;
+use App\Enums\ModifierSemanticRole;
 use App\Models\Branch;
+use App\Models\IngredientMovement;
 use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
+use App\Models\StoreSessionGiveaway;
 use App\Models\StoreSessionInventoryAdjustment;
 use Illuminate\Support\Facades\DB;
 
@@ -50,6 +55,10 @@ class CurrentStoreSessionExpenses
             ->where('branch_id', $branch->id)
             ->where('store_session_id', $session->id);
         $adjustmentCount = (clone $adjustments)->count();
+        $giveaways = StoreSessionGiveaway::query()
+            ->where('branch_id', $branch->id)
+            ->where('store_session_id', $session->id);
+        $giveawayCount = (clone $giveaways)->count();
 
         return [
             'expense_totals' => [
@@ -75,6 +84,61 @@ class CurrentStoreSessionExpenses
                     'created_by' => ['name' => $adjustment->createdBy->name],
                 ])->all(),
             'inventory_adjustment_count' => $adjustmentCount,
+            /** Free items given away: stock-only records with ₱0 revenue, never part of the money totals. */
+            'giveaways' => $giveaways->with(self::giveawayRelations())
+                ->latest('created_at')->latest('id')->limit(50)->get()
+                ->map(fn (StoreSessionGiveaway $giveaway): array => $this->giveaway($giveaway))->all(),
+            'giveaway_count' => $giveawayCount,
+        ];
+    }
+
+    /** @return array<int|string, mixed> */
+    public static function giveawayRelations(): array
+    {
+        return [
+            'createdBy:id,name',
+            'reversal.createdBy:id,name',
+            'ingredientMovements' => fn ($query) => $query->where('movement_type', IngredientMovementType::Giveaway->value)
+                ->orderBy('ingredient_id')->with('ingredient:id,name,base_unit'),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function giveaway(StoreSessionGiveaway $giveaway): array
+    {
+        $names = fn (?string $role): array => array_values(array_map(
+            fn (array $selection): string => $selection['option_name'],
+            array_filter($giveaway->selections, fn (array $selection): bool => $selection['semantic_role'] === $role),
+        ));
+
+        return [
+            'id' => $giveaway->id,
+            'product_name' => $giveaway->product_name_snapshot,
+            'size_name' => $giveaway->size_name_snapshot,
+            'add_ons' => $names(null),
+            'instructions' => $names(ModifierSemanticRole::Instruction->value),
+            'quantity' => $giveaway->quantity,
+            'reason_code' => $giveaway->reason_code->value,
+            'reason_label' => $giveaway->reason_code->label(),
+            'note' => $giveaway->note,
+            'stock_mode' => $giveaway->stock_mode->value,
+            /** Exactly what left the shelf: the recorded movements, never today's recipe. */
+            'stock_effects' => match ($giveaway->stock_mode) {
+                GiveawayStockMode::ProductStock => [['name' => $giveaway->product_name_snapshot, 'quantity' => (string) $giveaway->quantity, 'unit' => 'pc']],
+                GiveawayStockMode::Recipe => $giveaway->ingredientMovements->map(fn (IngredientMovement $movement): array => [
+                    'name' => (string) $movement->ingredient?->name,
+                    'quantity' => ExactQuantity::display(-ExactQuantity::parse($movement->quantity_delta)),
+                    'unit' => (string) $movement->ingredient?->base_unit,
+                ])->values()->all(),
+                GiveawayStockMode::None => [],
+            },
+            'created_at' => $giveaway->created_at?->toIso8601String(),
+            'created_by' => ['name' => $giveaway->createdBy->name],
+            'reversal' => $giveaway->reversal === null ? null : [
+                'reason' => $giveaway->reversal->reason,
+                'created_at' => $giveaway->reversal->created_at?->toIso8601String(),
+                'created_by' => ['name' => $giveaway->reversal->createdBy->name],
+            ],
         ];
     }
 

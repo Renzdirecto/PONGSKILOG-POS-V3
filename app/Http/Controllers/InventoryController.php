@@ -7,6 +7,7 @@ use App\Http\Requests\AdjustInventoryRequest;
 use App\Http\Requests\InventoryIndexRequest;
 use App\Models\Branch;
 use App\Models\Category;
+use App\Models\Ingredient;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
@@ -82,10 +83,15 @@ class InventoryController extends Controller
             });
 
         /** Ingredients come from the same canonical Branch balances Operations › Ingredient Stock shows. */
-        $ingredients = $branch === null ? [] : array_values(array_filter(
+        $ingredients = $branch === null || $filters['type'] === 'products' ? [] : array_values(array_filter(
             array_map(fn (array $row): array => $operations->presentIngredient($row), $ingredientStock->rows($branch)),
             fn (array $row): bool => $filters['search'] === '' || str_contains(mb_strtolower($row['name']), mb_strtolower($filters['search'])),
         ));
+        /** The Products tab only needs the Ingredient tab count, not the full stock report. */
+        $ingredientCount = $branch === null ? 0 : ($filters['type'] === 'products'
+            ? Ingredient::query()->whereNull('archived_at')
+                ->when($filters['search'] !== '', fn ($query) => $query->whereLike('name', '%'.$filters['search'].'%'))->count()
+            : count($ingredients));
 
         $historyProduct = $branch === null || $request->validated('history_product') === null
             ? null
@@ -103,8 +109,8 @@ class InventoryController extends Controller
             'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'summary' => $summary,
             'products' => $products,
-            'ingredients' => $filters['type'] === 'products' ? [] : $ingredients,
-            'ingredientCount' => count($ingredients),
+            'ingredients' => $ingredients,
+            'ingredientCount' => $ingredientCount,
             'usesGlobalBranch' => $globalBranch !== null,
             'history' => $history,
         ]);

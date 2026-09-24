@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductModifierEffect;
 use App\Models\Recipe;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -17,7 +18,7 @@ use Illuminate\Validation\ValidationException;
  */
 class SetProductRecipeMode
 {
-    public function __construct(private OperationsAccess $access, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     public function execute(User $actor, Product $product, bool $noRecipeNeeded): Product
     {
@@ -45,6 +46,7 @@ class SetProductRecipeMode
                 before: ['no_recipe_needed' => ! $noRecipeNeeded],
                 after: ['no_recipe_needed' => $noRecipeNeeded],
             );
+            $this->realtime->ingredientsChanged(null, 'recipe_changed');
 
             return $product;
         });

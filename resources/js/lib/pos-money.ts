@@ -1,4 +1,4 @@
-import type { CartLine } from '@/types/pos';
+import type { CartLine, OrderSummary } from '@/types/pos';
 
 export function cents(value: string): bigint {
     const [whole, fraction = ''] = value.split('.');
@@ -53,6 +53,41 @@ export function lineCents(line: CartLine): bigint {
                     : total + cents(option.price_delta),
             cents(line.product.effective_price),
         ) * BigInt(line.quantity)
+    );
+}
+
+/** Local lines that are still editable: a new cart, or items a Cashier adds to a loaded Customer QR order. */
+export function editableLines(
+    saved: Pick<OrderSummary, 'source'> | null,
+    lines: CartLine[],
+): CartLine[] {
+    return saved === null || saved.source === 'customer_qr' ? lines : [];
+}
+
+/** Exact order total: the saved snapshot's server total plus any editable local lines (display and tender only). */
+export function orderTotalCents(
+    saved: Pick<OrderSummary, 'source' | 'total'> | null,
+    lines: CartLine[],
+): bigint {
+    return (
+        (saved ? cents(saved.total) : 0n) +
+        editableLines(saved, lines).reduce(
+            (sum, line) => sum + lineCents(line),
+            0n,
+        )
+    );
+}
+
+export function orderItemCount(
+    saved: Pick<OrderSummary, 'source' | 'items'> | null,
+    lines: CartLine[],
+): number {
+    return (
+        (saved?.items ?? []).reduce((sum, item) => sum + item.quantity, 0) +
+        editableLines(saved, lines).reduce(
+            (sum, line) => sum + line.quantity,
+            0,
+        )
     );
 }
 

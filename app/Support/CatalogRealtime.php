@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Enums\BranchStatus;
 use App\Events\CustomerCatalogChanged;
+use App\Events\IngredientStockChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
 use App\Models\Branch;
@@ -54,6 +56,20 @@ class CatalogRealtime
     {
         foreach ($products as $product) {
             $this->productChanged($product, availabilityChanged: $availabilityChanged);
+        }
+    }
+
+    /**
+     * Branch Ingredient stock or a recipe changed, so Recipe-based availability may have changed: Cashier POS and
+     * Customer QR refetch their authoritative catalog (after commit, invalidation only). A null Branch means every Branch.
+     */
+    public function ingredientsChanged(?Branch $branch, string $reason): void
+    {
+        /** A business-wide change reaches only active Branches: inactive ones have no POS or Customer QR clients. */
+        $branchIds = $branch === null ? Branch::query()->where('status', BranchStatus::Active)->orderBy('id')->pluck('id')->all() : [$branch->id];
+        foreach ($branchIds as $branchId) {
+            IngredientStockChanged::dispatch($branchId, $reason);
+            CustomerCatalogChanged::dispatch($branchId);
         }
     }
 }

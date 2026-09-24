@@ -811,3 +811,34 @@ Migration `2026_09_23_074723_add_store_session_index_to_order_adjustments_table`
 ## Store Session inventory adjustments - 2026-09-23
 
 Migration `2026_09_23_132208_create_store_session_inventory_adjustments_table` adds an append-only `store_session_inventory_adjustments` record (Branch, Store Session, Product, unique `inventory_movement_id`, reason code `complimentary|wastage|damaged|staff_meal|other`, positive quantity, optional note, actor, unique idempotency key, intent hash). The stock change itself is a canonical `manual_adjustment` movement written through `ApplyInventoryMovement`; no Store Expense, Payment, or reconciliation value is created, so Store Close financial totals are unaffected.
+
+## Phase 16E Owner Operations schema - 2026-09-24
+
+Migration `2026_09_24_053738_create_owner_operations_tables` is additive (the only change to an existing table is `products.no_recipe_needed boolean default false`). Rollback drops only the new tables and column.
+
+- `operation_plans` (UUID, name, description, icon, `archived_at`, creator) and `operation_plan_products` (UUID, Plan, **unique `product_id`** — one active Plan per Product). `operation_plan_ingredients` (unique Plan + Ingredient) lets one Ingredient appear in many Plans.
+- `ingredients`: unique name, icon, CHECKed base unit, `target_quantity numeric(18,4) >= 0`, purchase unit name, `purchase_unit_size numeric(18,4) > 0`, `purchase_unit_cost numeric(14,2) >= 0` (null = unknown), `replenishment_rule` (`top_up|reorder|none`), `reorder_point numeric(18,4)`, `archived_at`, creator/updater.
+- `branch_ingredient_stocks`: the one balance per **unique (branch_id, ingredient_id)** — `on_hand numeric(18,4)` (may be negative), `version`. Written only by `ApplyIngredientMovement`, locked in Ingredient-id order.
+- `ingredient_movements` (append-only; model forbids update/delete): Branch, Ingredient, type, `quantity_delta numeric(18,4) <> 0`, `balance_after`, signed `estimated_cost_cents` (null = unknown), Order, Order recipe snapshot, Plan snapshot, pamamalengke purchase, Store Session expense, reason code/text, actor, unique nullable idempotency key. Partial unique indexes `ingredient_movements_sale_once` and `ingredient_movements_void_once` on (snapshot, Ingredient) for `sale_consumption` / `void_restoration`. Indexes: (branch, ingredient, created_at), (branch, created_at), order, purchase.
+- `recipes` (unique Product + `size_key` = size option id or `base`) with `recipe_lines` (unique recipe + Ingredient, `quantity numeric(18,4) > 0`). Recipe edits replace lines; history lives in snapshots.
+- `order_recipe_snapshots` (immutable; unique Order + Product + size key): recipe state (`recipe|missing|not_needed`), product/size name snapshots, Plan snapshot. `order_recipe_snapshot_lines`: per-unit quantity and the purchase-unit cost basis (`cost_basis_cents`, `cost_basis_quantity`) in force at commitment. Keyed by Order + Product/size (not Order Item ids), because committed edits replace Order Items.
+- `pamamalengke_purchases` (immutable): Branch, Store Session, Plan, **unique `store_session_expense_id`** (the canonical expense), estimated total + completeness, note, buyer, unique idempotency key, intent hash. `pamamalengke_purchase_items`: ingredient/manual line, recommended vs actual quantity, estimated vs actual unit cost, line total, purchase-unit size, exact base quantity, unique restock movement.
+- `pamamalengke_list_entries`: the next run's manual items and skip marks per Branch + Plan (working list, cleared on confirm).
+- Verified on SQLite (Pest) and an isolated PostgreSQL schema (`tests/verify-operations-postgres.php`: fresh, rollback, reapply, numeric types, partial indexes). The normal development database only needs a forward `php artisan migrate`.
+
+### Phase 16E follow-up: Add-on / Modifier Ingredient effects (additive)
+
+Migration `2026_09_24_072528_add_product_modifier_effects` adds four tables; no existing column, row, constraint or `semantic_role` value changes. Long constraint names are explicit (PostgreSQL truncates identifiers at 63 bytes).
+
+- `product_modifier_effects` (UUID, Product, Modifier option, updater; **unique Product + option**) and `product_modifier_effect_lines` (unique effect + Ingredient, `quantity numeric(18,4) > 0`). Current configuration only; Business-wide definition, Branch-specific stock.
+- `order_recipe_snapshot_modifiers` (immutable; unique snapshot + option; option/group name snapshots) and `order_recipe_snapshot_modifier_lines` (`quantity_per_selection numeric(18,4) > 0`, cost basis like recipe snapshot lines). A modifier snapshot without lines records "no Ingredient effect". Add-on usage is merged into the Product/size snapshot's per-Ingredient movements, so the existing sale/void partial unique indexes still apply.
+
+### Phase 16E Final QA: Store Session Giveaways (additive)
+
+Migration `2026_09_24_134328_create_store_session_giveaways`:
+
+- `store_session_giveaways`: `branch_id`, `store_session_id`, `product_id` (restrict), `product_name_snapshot`, `size_key`, `size_name_snapshot`, `selections` (JSON: group, role, option snapshots), `quantity` (CHECK > 0), `stock_mode` (`recipe` / `product_stock` / `none`), `stock_basis` (JSON per-serving base recipe + Add-on effects), `inventory_movement_id` (unique, nullable), `reason_code`, `note`, `created_by_user_id`, `idempotency_key` (unique), `intent_hash`, timestamps. Immutable (model guards).
+- `store_session_giveaway_reversals`: `giveaway_id` (**unique** → at most one reversal), `branch_id`, `store_session_id`, `inventory_movement_id` (unique, nullable), `reason`, actor, `idempotency_key` (unique), `intent_hash`. Immutable.
+- `ingredient_movements.store_session_giveaway_id` (indexed; FK on PostgreSQL) and partial unique indexes `ingredient_movements_giveaway_once` / `ingredient_movements_giveaway_reversal_once` on (`store_session_giveaway_id`, `ingredient_id`).
+- `movement_type` CHECK constraints of `ingredient_movements` and `inventory_movements` extended with `giveaway` and `giveaway_reversal` (PostgreSQL constraint swap; SQLite definition-preserving rebuild). Rollback refuses while giveaway history exists.
+- Known PostgreSQL identifier truncation (functional, no collision; guarded against new ones by the harness): `operation_plan_ingredients_…_uniq`, `order_recipe_snapshot_lines_…_ingredient`, `pamamalengke_list_entries_…_entry_typ` and three pre-existing `store_session_inventory_adjustments_*` names.

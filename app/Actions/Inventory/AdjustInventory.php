@@ -32,6 +32,8 @@ class AdjustInventory
         ])->validate();
 
         return DB::transaction(function () use ($user, $branch, $product, $quantityDelta, $reason): InventoryMovement {
+            /** Branch FOR SHARE before the Product rows: POS commits hold it FOR UPDATE, and the movement insert needs a KEY SHARE on it. */
+            $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
             $movement = $this->applyMovement->execute(
                 branch: $branch,
                 product: $product,

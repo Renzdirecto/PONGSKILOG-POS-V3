@@ -3,6 +3,7 @@
 namespace App\Actions\Orders;
 
 use App\Actions\Inventory\ApplyInventoryMovement;
+use App\Actions\Operations\RecordOrderIngredientUsage;
 use App\Enums\InventoryMovementType;
 use App\Models\Branch;
 use App\Models\BranchProduct;
@@ -13,13 +14,21 @@ use App\Models\User;
 use App\Support\BranchCatalog;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * The one committed-sale stock path shared by Pay Now and Pay Later: tracked Product stock is deducted and
+ * recipe-backed Products consume Ingredient stock, once, inside the caller's commit transaction.
+ */
 class ApplyOrderInventory
 {
-    public function __construct(private ApplyInventoryMovement $inventory, private BranchCatalog $catalog) {}
+    public function __construct(
+        private ApplyInventoryMovement $inventory,
+        private BranchCatalog $catalog,
+        private RecordOrderIngredientUsage $ingredients,
+    ) {}
 
     public function execute(Order $order, Branch $branch, User $user, InventoryMovementType $movementType, string $reason): void
     {
-        $order->load('items');
+        $order->load('items.modifiers');
         $quantities = [];
         foreach ($order->items as $item) {
             if ($item->product_id === null) {
@@ -65,5 +74,7 @@ class ApplyOrderInventory
                 );
             }
         }
+
+        $this->ingredients->commit($order, $branch, $user, $products);
     }
 }

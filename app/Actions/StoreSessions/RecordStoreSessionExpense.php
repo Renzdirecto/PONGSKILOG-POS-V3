@@ -55,7 +55,8 @@ class RecordStoreSessionExpense
 
         try {
             return DB::transaction(function () use ($actor, $branch, $data, $amount, $receipt, $receiptHash, &$storedDisk, &$storedPath): StoreSessionExpense {
-                $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
+                /** Branch FOR SHARE first: POS commits hold it FOR UPDATE before the Store Session, and every insert below needs a KEY SHARE on it. */
+                $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
                 $actor = $this->access->authorize($actor, $branch);
                 abort_unless($actor->hasPermission('store_expenses.manage'), 403);
 
@@ -127,56 +128,16 @@ class RecordStoreSessionExpense
                     ];
                 }
 
-                $expense = StoreSessionExpense::query()->create([
+                $expense = $this->persist($branch, $session, $actor, [
                     'id' => $expenseId,
-                    'branch_id' => $branch->id,
-                    'store_session_id' => $session->id,
                     'description' => $data['description'],
                     'amount' => $amount,
                     'payment_source' => $data['payment_source'],
                     'note' => $data['note'],
                     ...$receiptAttributes,
-                    'created_by_user_id' => $actor->id,
                     'idempotency_key' => $data['idempotency_key'],
                     'intent_hash' => $intent,
-                ]);
-
-                if ($product !== null) {
-                    $expense->item()->create(['product_id' => $product->id, 'quantity' => $data['quantity']]);
-                    $this->inventory->execute(
-                        $branch,
-                        $product,
-                        InventoryMovementType::StorePurchaseRestock,
-                        $data['quantity'],
-                        'Store purchase: '.$expense->description,
-                        $actor,
-                        storeSessionExpenseId: $expense->id,
-                    );
-                }
-
-                $this->audit->record(
-                    branch: $branch,
-                    actor: $actor,
-                    module: 'store_sessions',
-                    action: 'store_expense_recorded',
-                    auditableType: StoreSessionExpense::class,
-                    auditableId: $expense->id,
-                    after: [
-                        'store_session_id' => $session->id,
-                        'description' => $expense->description,
-                        'amount' => $expense->amount,
-                        'payment_source' => $expense->payment_source,
-                        'note' => $expense->note,
-                        'inventory_linked' => $product !== null,
-                        'product_id' => $product?->id,
-                        'quantity' => $product === null ? null : $data['quantity'],
-                        'receipt_present' => $receipt instanceof UploadedFile,
-                    ],
-                    metadata: ['request_hash' => $intent],
-                    idempotencyKey: $data['idempotency_key'],
-                );
-
-                StoreExpenseRecorded::dispatch($expense, $product !== null);
+                ], $product, $product === null ? null : $data['quantity'], ['receipt_present' => $receipt instanceof UploadedFile]);
 
                 return $expense->load('createdBy', 'item.product', 'inventoryMovements');
             });
@@ -186,5 +147,63 @@ class RecordStoreSessionExpense
             }
             throw $exception;
         }
+    }
+
+    /**
+     * The canonical Store Session expense write, shared by the Cashier expense form and Confirm Pamamalengke: one
+     * append-only expense row, its optional tracked-Product restock, the audit entry and the after-commit event.
+     * Callers authorize the actor, shared-lock the OPEN Store Session and resolve idempotency inside their transaction.
+     *
+     * @param  array{id?: string, description: string, amount: string, payment_source: string, note: string|null, idempotency_key: string, intent_hash: string, receipt_disk?: string, receipt_image_path?: string, receipt_original_name?: string, receipt_mime_type?: string, receipt_size_bytes?: int|false, receipt_sha256?: string|null}  $attributes
+     * @param  array<string, mixed>  $auditDetails
+     */
+    public function persist(Branch $branch, StoreSession $session, User $actor, array $attributes, ?Product $product = null, ?int $quantity = null, array $auditDetails = []): StoreSessionExpense
+    {
+        $expense = StoreSessionExpense::query()->create([
+            ...$attributes,
+            'branch_id' => $branch->id,
+            'store_session_id' => $session->id,
+            'created_by_user_id' => $actor->id,
+        ]);
+
+        if ($product !== null && $quantity !== null) {
+            $expense->item()->create(['product_id' => $product->id, 'quantity' => $quantity]);
+            $this->inventory->execute(
+                $branch,
+                $product,
+                InventoryMovementType::StorePurchaseRestock,
+                $quantity,
+                'Store purchase: '.$expense->description,
+                $actor,
+                storeSessionExpenseId: $expense->id,
+            );
+        }
+
+        $this->audit->record(
+            branch: $branch,
+            actor: $actor,
+            module: 'store_sessions',
+            action: 'store_expense_recorded',
+            auditableType: StoreSessionExpense::class,
+            auditableId: $expense->id,
+            after: [
+                'store_session_id' => $session->id,
+                'description' => $expense->description,
+                'amount' => $expense->amount,
+                'payment_source' => $expense->payment_source,
+                'note' => $expense->note,
+                'inventory_linked' => $product !== null,
+                'product_id' => $product?->id,
+                'quantity' => $product === null ? null : $quantity,
+                'receipt_present' => false,
+                ...$auditDetails,
+            ],
+            metadata: ['request_hash' => $attributes['intent_hash']],
+            idempotencyKey: $attributes['idempotency_key'],
+        );
+
+        StoreExpenseRecorded::dispatch($expense, $product !== null);
+
+        return $expense;
     }
 }

@@ -10,14 +10,21 @@ use App\Models\ModifierOption;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
 
+/**
+ * The canonical Branch catalog projection shared by Cashier POS, committed-order edits and Customer QR. Existing gates
+ * (Product/Category active, Branch availability, Product stock) come first; a Recipe-backed Product is then available
+ * only while RecipeCapacity finds at least one Size that its Branch Ingredient stock can make.
+ *
+ * @phpstan-import-type CatalogAvailability from RecipeCapacity
+ */
 class BranchCatalog
 {
-    public function __construct(private ProductImages $images, private InventoryState $inventoryState) {}
+    public function __construct(private ProductImages $images, private InventoryState $inventoryState, private RecipeCapacity $recipes) {}
 
     /**
      * @return array{
      *     categories: list<array{id: string, name: string, icon_key: string}>,
-     *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, availability_reason: string|null, stock_status: string, tracks_inventory: bool, on_hand: int|null, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
+     *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, availability_reason: string|null, stock_status: string, tracks_inventory: bool, on_hand: int|null, recipe: CatalogAvailability|null, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
      * }
      */
     public function browse(Branch $branch, bool $customization = false): array
@@ -30,6 +37,7 @@ class BranchCatalog
                 ->when($customization, fn ($query) => $query->with($this->modifierRelations()))
                 ->orderBy('name')->orderBy('id')
                 ->withExists(['modifierGroups as has_modifiers' => fn ($query) => $query->where('is_active', true)])
+                ->withExists('recipes as has_recipe')
                 ->with(['branchProducts' => fn ($query) => $query
                     ->where('branch_id', $branch->getKey())
                     ->select(['id', 'product_id', 'price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold']),
@@ -41,11 +49,21 @@ class BranchCatalog
             ->get(['id', 'name', 'icon_key', 'is_active']);
 
         $products = [];
+        /** Only Products that have a recipe can be Recipe-limited, so a catalog without recipes costs no extra queries. */
+        $recipes = $this->recipes->catalog($branch, $categories->flatMap(fn (Category $category) => $category->products
+            ->filter(fn (Product $product): bool => (bool) $product->getAttribute('has_recipe'))
+            ->map(fn (Product $product): string => $product->id))->values()->all());
 
         foreach ($categories as $category) {
             foreach ($category->products as $product) {
                 $product->setRelation('category', $category);
                 $state = $this->resolveLoaded($product);
+                $recipe = $recipes[$product->id] ?? null;
+                $reason = $state['availability_reason'] ?? match ($recipe['state'] ?? 'available') {
+                    'available' => null,
+                    'out_of_stock' => 'out_of_stock',
+                    default => 'recipe_required',
+                };
                 $products[] = [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -53,11 +71,17 @@ class BranchCatalog
                     'category_id' => $category->id,
                     'category_name' => $category->name,
                     'effective_price' => $state['effective_price'],
-                    'is_available' => $state['is_available'],
-                    'availability_reason' => $state['availability_reason'],
-                    'stock_status' => $state['stock_status'],
+                    'is_available' => $reason === null,
+                    'availability_reason' => $reason,
+                    'stock_status' => match ($recipe['state'] ?? null) {
+                        null => $state['stock_status'],
+                        'available' => 'in_stock',
+                        'out_of_stock' => 'out_of_stock',
+                        default => 'not_tracked',
+                    },
                     'tracks_inventory' => $state['tracked'],
                     'on_hand' => $state['tracked'] ? $state['on_hand'] : null,
+                    'recipe' => $recipe,
                     'image_url' => $this->images->safeCardUrl($product),
                     'has_modifiers' => (bool) $product->getAttribute('has_modifiers'),
                     ...($customization ? ['modifier_groups' => $this->modifiers($product)] : []),
@@ -84,7 +108,7 @@ class BranchCatalog
      */
     public function productsForOrder(Branch $branch, array $ids): Collection
     {
-        return Product::query()->whereKey($ids)->with([
+        return Product::query()->whereKey($ids)->withExists('recipes as has_recipe')->with([
             'category',
             'branchProducts' => fn ($query) => $query->where('branch_id', $branch->id),
             'inventoryBalances' => fn ($query) => $query->where('branch_id', $branch->id),

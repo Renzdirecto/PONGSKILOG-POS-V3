@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { InventoryAdjustmentRow } from '@/components/store-inventory-adjustment-form';
 import { useStoreCloseRealtime } from '@/hooks/use-store-close-realtime';
+import { GiveawayRow } from '@/components/store-giveaway-form';
 import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
@@ -509,21 +510,30 @@ function SessionPurchases({
                     className="border-t border-neutral-200 p-3.5"
                 >
                     {session.expenses.length === 0 &&
-                    (session.inventory_adjustments ?? []).length === 0 ? (
+                    (session.inventory_adjustments ?? []).length === 0 &&
+                    (session.giveaways ?? []).length === 0 ? (
                         <p className="py-3 text-center text-xs text-neutral-500">
-                            No purchases, expenses or stock adjustments recorded
-                            for this Store Session.
+                            No purchases, expenses, stock adjustments or
+                            giveaways recorded for this Store Session.
                         </p>
                     ) : (
                         <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100">
                             {sessionActivity(
                                 session.expenses,
                                 session.inventory_adjustments,
+                                session.giveaways ?? [],
                             ).map((entry) =>
                                 entry.kind === 'adjustment' ? (
                                     <li key={`adjustment-${entry.item.id}`}>
                                         <InventoryAdjustmentRow
                                             adjustment={entry.item}
+                                            compact
+                                        />
+                                    </li>
+                                ) : entry.kind === 'giveaway' ? (
+                                    <li key={`giveaway-${entry.item.id}`}>
+                                        <GiveawayRow
+                                            giveaway={entry.item}
                                             compact
                                         />
                                     </li>

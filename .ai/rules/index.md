@@ -14,6 +14,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/{components/super-admin-shell.tsx,lib/super-admin-navigation.ts,layouts/workspace-layout.tsx} | .ai/rules/jscomponents.md |
 | resources/js/{layouts,components,pages}/**/*.tsx | .ai/rules/layoutscomponentspages.md |
 | {app/Support/PosAccess.php,app/Http/Requests/**,app/Actions/StoreSessions/**,app/Models/User.php,routes/channels.php} | .ai/rules/models.md |
+| {app/Actions/Operations/**,app/Support/{ExactQuantity,IngredientStockReport,OperationsAccess,OperationsSummary,OperationsWorkspace,ProductSizes,ReplenishmentAdvisor}.php,app/Http/Controllers/{OperationsController,OperationPlanController,IngredientController,RecipeController,PamamalengkeController}.php}, {app/Actions/Orders/{ApplyOrderInventory,EditCommittedOrder,VoidOrder}.php,app/Actions/StoreSessions/RecordStoreSessionExpense.php,app/Actions/Catalog/UpsertBranchProduct.php}, {resources/js/pages/operations/**,resources/js/components/operations-*.tsx,resources/js/lib/operations.ts,resources/js/pages/inventory/index.tsx} | .ai/rules/operations.md |
 | app/Actions/Orders/**, app/Actions/Orders/TransitionKitchenOrder.php | .ai/rules/orders.md |
 | {app/Http/Controllers/**,resources/js/components/pos-paid.tsx,resources/js/pages/public-receipt.tsx} | .ai/rules/pages.md |
 | {app/Actions/Orders/VoidOrder.php,app/Http/Controllers/SetVoidAuthorizationPinController.php,app/Http/Requests/SetVoidAuthorizationPinRequest.php,resources/js/pages/**} | .ai/rules/requests-js-pages.md |

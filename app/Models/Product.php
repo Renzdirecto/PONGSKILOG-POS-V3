@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['category_id', 'name', 'description', 'default_price', 'image_path', 'is_active'])]
+#[Fillable(['category_id', 'name', 'description', 'default_price', 'image_path', 'is_active', 'no_recipe_needed'])]
 class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */
@@ -23,6 +23,7 @@ class Product extends Model
         return [
             'default_price' => 'decimal:2',
             'is_active' => 'boolean',
+            'no_recipe_needed' => 'boolean',
         ];
     }
 
@@ -54,5 +55,11 @@ class Product extends Model
     public function modifierGroups(): BelongsToMany
     {
         return $this->belongsToMany(ModifierGroup::class, 'product_modifier_groups');
+    }
+
+    /** @return HasMany<Recipe, $this> */
+    public function recipes(): HasMany
+    {
+        return $this->hasMany(Recipe::class);
     }
 }

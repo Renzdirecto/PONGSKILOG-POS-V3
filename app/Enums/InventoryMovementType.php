@@ -12,6 +12,8 @@ enum InventoryMovementType: string
     case StorePurchaseRestock = 'store_purchase_restock';
     case TransferOut = 'transfer_out';
     case TransferIn = 'transfer_in';
+    case Giveaway = 'giveaway';
+    case GiveawayReversal = 'giveaway_reversal';
 
     public function label(): string
     {
@@ -24,6 +26,8 @@ enum InventoryMovementType: string
             self::StorePurchaseRestock => 'Store Purchase Restock',
             self::TransferOut => 'Transfer Out',
             self::TransferIn => 'Transfer In',
+            self::Giveaway => 'Giveaway',
+            self::GiveawayReversal => 'Giveaway Reversed',
         };
     }
 }

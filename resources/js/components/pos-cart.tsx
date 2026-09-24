@@ -10,7 +10,14 @@ import { Button } from '@/components/ui/button';
 import { PosProductMedia } from '@/components/pos-product-media';
 import { OperationalItemName } from '@/components/operational-item-name';
 import { PosModifierDetails } from '@/components/pos-modifier-details';
-import { lineCents, pesos, selectedOptions } from '@/lib/pos-money';
+import {
+    editableLines,
+    lineCents,
+    orderItemCount,
+    orderTotalCents,
+    pesos,
+    selectedOptions,
+} from '@/lib/pos-money';
 import { cartItemName, savedItemName } from '@/lib/pos-item-name';
 import { orderNumberLabel } from '@/lib/pos-order';
 import type { CartLine, OrderSummary, OrderType } from '@/types/pos';
@@ -40,13 +47,10 @@ export function PosCart({
     onCheckout: (flow: 'information' | 'payment') => void;
     onClear: () => void;
 }) {
-    const total = saved
-        ? pesos(saved.total)
-        : pesos(lines.reduce((sum, line) => sum + lineCents(line), 0n));
-    const count = (saved?.items ?? lines).reduce(
-        (sum, line) => sum + line.quantity,
-        0,
-    );
+    /** A loaded QR order keeps its submitted items read-only; items the Cashier adds stay editable below them. */
+    const extra = editableLines(saved, lines);
+    const total = pesos(orderTotalCents(saved, lines));
+    const count = orderItemCount(saved, lines);
     return (
         <div className="flex h-full min-h-0 min-w-0 flex-col bg-white">
             <div className="flex shrink-0 items-start justify-between gap-2 border-b border-neutral-200 p-3.5">
@@ -98,28 +102,28 @@ export function PosCart({
                     </div>
                 ) : (
                     <ul>
-                        {(saved
-                            ? saved.items.map((item) => ({
-                                  key: item.id,
-                                  itemName: savedItemName(item),
-                                  quantity: item.quantity,
-                                  amount: pesos(item.line_total),
-                                  notes: item.notes,
-                                  modifiers: item.modifiers,
-                                  product: null,
-                                  line: null,
-                              }))
-                            : lines.map((line) => ({
-                                  key: line.key,
-                                  itemName: cartItemName(line),
-                                  quantity: line.quantity,
-                                  amount: pesos(lineCents(line)),
-                                  notes: line.notes,
-                                  modifiers: selectedOptions(line),
-                                  product: line.product,
-                                  line,
-                              }))
-                        ).map((row) => (
+                        {[
+                            ...(saved?.items ?? []).map((item) => ({
+                                key: item.id,
+                                itemName: savedItemName(item),
+                                quantity: item.quantity,
+                                amount: pesos(item.line_total),
+                                notes: item.notes,
+                                modifiers: item.modifiers,
+                                product: null,
+                                line: null,
+                            })),
+                            ...extra.map((line) => ({
+                                key: line.key,
+                                itemName: cartItemName(line),
+                                quantity: line.quantity,
+                                amount: pesos(lineCents(line)),
+                                notes: line.notes,
+                                modifiers: selectedOptions(line),
+                                product: line.product,
+                                line,
+                            })),
+                        ].map((row) => (
                             <li
                                 key={row.key}
                                 className="flex flex-col gap-[9px] border-b border-neutral-100 px-[13px] py-[11px]"
@@ -248,7 +252,10 @@ export function PosCart({
                         {count} {count === 1 ? 'item' : 'items'}
                     </span>
                     <span>
-                        Subtotal {saved ? pesos(saved.subtotal) : total}
+                        Subtotal{' '}
+                        {saved && extra.length === 0
+                            ? pesos(saved.subtotal)
+                            : total}
                     </span>
                 </div>
                 <div className="flex items-baseline justify-between">

@@ -5,6 +5,7 @@ import {
     Camera,
     ChevronRight,
     FileImage,
+    Gift,
     LockKeyhole,
     PackageMinus,
     PackagePlus,
@@ -29,12 +30,23 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { StoreCloseFlow } from '@/components/store-close-flow';
 import {
+    GiveawayDetail,
+    GiveawayRow,
+    StoreGiveawayForm,
+} from '@/components/store-giveaway-form';
+import {
     InventoryAdjustmentRow,
     StoreInventoryAdjustmentForm,
 } from '@/components/store-inventory-adjustment-form';
 import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
 import { createClientUuid } from '@/lib/client-uuid';
+import {
+    isBlank,
+    isPositiveMoneyInput,
+    isWholeQuantity,
+    requiredGroupOutline,
+} from '@/lib/required-field';
 import {
     isExpenseWriteOnline,
     storeExpenseError,
@@ -51,9 +63,17 @@ import type {
     CurrentStoreSession,
     StoreCloseResult,
     StoreSessionExpense,
+    StoreSessionGiveaway,
 } from '@/types';
 
-type View = 'overview' | 'add' | 'adjust' | 'detail' | 'close';
+type View =
+    | 'overview'
+    | 'add'
+    | 'adjust'
+    | 'giveaway'
+    | 'detail'
+    | 'giveaway-detail'
+    | 'close';
 
 const manilaTime = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
@@ -205,6 +225,10 @@ function ExpenseForm({
     const [attempt, setAttempt] = useState(createClientUuid);
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState('');
+    const descriptionMissing = isBlank(description);
+    const amountMissing = !isPositiveMoneyInput(amount);
+    const productMissing = restock && productId === '';
+    const quantityMissing = restock && !isWholeQuantity(quantity);
     const products = useMemo(() => {
         const query = search.trim().toLowerCase();
         return query
@@ -279,9 +303,16 @@ function ExpenseForm({
                         onChange={(event) => setDescription(event.target.value)}
                         maxLength={150}
                         required
+                        aria-invalid={descriptionMissing}
+                        aria-describedby={descriptionMissing ? 'expense-description-required' : undefined}
                         className="min-h-12 rounded-xl"
                         placeholder="e.g. Ice"
                     />
+                    {descriptionMissing && (
+                        <p id="expense-description-required" className="text-xs text-red-700">
+                            Required
+                        </p>
+                    )}
                 </div>
                 <div className="space-y-1.5">
                     <Label htmlFor="expense-amount">Amount</Label>
@@ -295,10 +326,17 @@ function ExpenseForm({
                             onChange={(event) => setAmount(event.target.value)}
                             inputMode="decimal"
                             required
+                            aria-invalid={amountMissing}
+                            aria-describedby={amountMissing ? 'expense-amount-required' : undefined}
                             className="min-h-12 rounded-xl pl-8 text-base font-bold tabular-nums"
                             placeholder="0.00"
                         />
                     </div>
+                    {amountMissing && (
+                        <p id="expense-amount-required" className="text-xs text-red-700">
+                            Required · enter an amount above ₱0.00 with up to two decimals
+                        </p>
+                    )}
                 </div>
                 <fieldset className="space-y-1.5">
                     <legend className="text-sm font-medium">Paid using</legend>
@@ -366,7 +404,13 @@ function ExpenseForm({
                                     aria-label="Search tracked products"
                                 />
                             </div>
-                            <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-neutral-200 p-1">
+                            <div
+                                role="group"
+                                aria-label="Tracked product to restock"
+                                aria-invalid={productMissing || undefined}
+                                aria-describedby={productMissing ? 'expense-product-required' : undefined}
+                                className={`max-h-40 space-y-1 overflow-y-auto rounded-xl border p-1 ${requiredGroupOutline(productMissing)}`}
+                            >
                                 {products.length === 0 ? (
                                     <p className="p-3 text-center text-xs text-neutral-500">
                                         No tracked products found.
@@ -376,6 +420,7 @@ function ExpenseForm({
                                         <button
                                             key={product.id}
                                             type="button"
+                                            aria-pressed={productId === product.id}
                                             onClick={() => setProductId(product.id)}
                                             className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm ${productId === product.id ? 'bg-neutral-950 text-white' : 'hover:bg-neutral-100'}`}
                                         >
@@ -389,6 +434,11 @@ function ExpenseForm({
                                     ))
                                 )}
                             </div>
+                            {productMissing && (
+                                <p id="expense-product-required" className="text-xs text-red-700">
+                                    Required · choose the product this purchase restocks
+                                </p>
+                            )}
                             <div className="space-y-1.5">
                                 <Label htmlFor="expense-quantity">Quantity</Label>
                                 <Input
@@ -401,9 +451,16 @@ function ExpenseForm({
                                     step="1"
                                     type="number"
                                     required={restock}
+                                    aria-invalid={quantityMissing}
+                                    aria-describedby={quantityMissing ? 'expense-quantity-required' : undefined}
                                     className="min-h-12 rounded-xl"
                                     placeholder="0"
                                 />
+                                {quantityMissing && (
+                                    <p id="expense-quantity-required" className="text-xs text-red-700">
+                                        Required · enter a whole quantity of at least 1
+                                    </p>
+                                )}
                             </div>
                         </div>
                     )}
@@ -504,6 +561,13 @@ export function StoreSessionDetailsDialog({
 }) {
     const [view, setView] = useState<View>('overview');
     const [selected, setSelected] = useState<StoreSessionExpense | null>(null);
+    const [selectedGiveawayId, setSelectedGiveawayId] = useState<
+        string | null
+    >(null);
+    /** Re-read from the refreshed session so a reversal made elsewhere shows at once. */
+    const selectedGiveaway: StoreSessionGiveaway | null =
+        session?.giveaways?.find((item) => item.id === selectedGiveawayId) ??
+        null;
     const [closeBusy, setCloseBusy] = useState(false);
     const connectionStatus = useStoreExpenseRealtime(
         branchId,
@@ -519,6 +583,7 @@ export function StoreSessionDetailsDialog({
         if (!next) {
             setView('overview');
             setSelected(null);
+            setSelectedGiveawayId(null);
         }
         onOpenChange(next);
     }
@@ -622,12 +687,15 @@ export function StoreSessionDetailsDialog({
                                             <p className="text-[10px] font-bold tracking-[0.14em] text-neutral-500 uppercase">Purchases & expenses</p>
                                             <p className="mt-0.5 text-xs text-neutral-500">Current Store Session only</p>
                                         </div>
-                                        <div className="grid gap-2 sm:flex sm:shrink-0">
+                                        <div className="grid gap-2 sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
                                             <Button type="button" onClick={() => setView('add')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl bg-neutral-950 px-3 text-white hover:bg-black sm:w-auto">
                                                 <Plus className="size-4" /> Add expense / purchase
                                             </Button>
                                             <Button type="button" variant="outline" onClick={() => setView('adjust')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
                                                 <PackageMinus className="size-4" /> Adjust inventory
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={() => setView('giveaway')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
+                                                <Gift className="size-4" /> Record giveaway
                                             </Button>
                                         </div>
                                     </div>
@@ -647,16 +715,23 @@ export function StoreSessionDetailsDialog({
                                     </div>
                                 </section>
                                 <section className="overflow-hidden rounded-xl border border-neutral-200">
-                                    {session.expenses.length === 0 && (session.inventory_adjustments ?? []).length === 0 ? (
+                                    {session.expenses.length === 0 && (session.inventory_adjustments ?? []).length === 0 && (session.giveaways ?? []).length === 0 ? (
                                         <div className="flex min-h-36 flex-col items-center justify-center gap-2 p-6 text-center text-neutral-500">
                                             <ReceiptText className="size-6" />
-                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses or stock adjustments recorded for this Store Session.</p>
+                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses, stock adjustments or giveaways recorded for this Store Session.</p>
                                         </div>
                                     ) : (
                                         <ul className="divide-y divide-neutral-100">
-                                            {sessionActivity(session.expenses, session.inventory_adjustments).map((entry) => entry.kind === 'adjustment' ? (
+                                            {sessionActivity(session.expenses, session.inventory_adjustments, session.giveaways ?? []).map((entry) => entry.kind === 'adjustment' ? (
                                                 <li key={`adjustment-${entry.item.id}`}>
                                                     <InventoryAdjustmentRow adjustment={entry.item} />
+                                                </li>
+                                            ) : entry.kind === 'giveaway' ? (
+                                                <li key={`giveaway-${entry.item.id}`}>
+                                                    <button type="button" onClick={() => { setSelectedGiveawayId(entry.item.id); setView('giveaway-detail'); }} className="flex w-full items-center hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-950 focus-visible:outline-none">
+                                                        <GiveawayRow giveaway={entry.item} />
+                                                        <ChevronRight className="mr-3 size-4 shrink-0 text-neutral-400" />
+                                                    </button>
                                                 </li>
                                             ) : ((expense) => (
                                                 <li key={expense.id}>
@@ -684,9 +759,9 @@ export function StoreSessionDetailsDialog({
                                             ))(entry.item))}
                                         </ul>
                                     )}
-                                    {(session.expenses_truncated || session.inventory_adjustment_count > 50) && (
+                                    {(session.expenses_truncated || session.inventory_adjustment_count > 50 || (session.giveaway_count ?? 0) > 50) && (
                                         <p className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-500">
-                                            Showing the newest 50 of {session.expense_count} expenses and {session.inventory_adjustment_count} stock adjustments.
+                                            Showing the newest 50 of {session.expense_count} expenses, {session.inventory_adjustment_count} stock adjustments and {session.giveaway_count ?? 0} giveaways.
                                         </p>
                                     )}
                                 </section>
@@ -735,6 +810,25 @@ export function StoreSessionDetailsDialog({
                             await refreshSession();
                             setView('overview');
                         }}
+                    />
+                )}
+                {view === 'giveaway' && session && (
+                    <StoreGiveawayForm
+                        session={session}
+                        onBack={() => setView('overview')}
+                        onSaved={async () => {
+                            await refreshSession();
+                            setView('overview');
+                        }}
+                    />
+                )}
+                {view === 'giveaway-detail' && session && selectedGiveaway && (
+                    <GiveawayDetail
+                        key={`${selectedGiveaway.id}-${selectedGiveaway.reversal ? 'reversed' : 'open'}`}
+                        giveaway={selectedGiveaway}
+                        session={session}
+                        onBack={() => setView('overview')}
+                        onReversed={refreshSession}
                     />
                 )}
                 {view === 'detail' && session && selected && (

@@ -63,6 +63,8 @@ test('authorized cashier retrieves only the current branch open session detail',
             'restock_products' => [],
             'inventory_adjustments' => [],
             'inventory_adjustment_count' => 0,
+            'giveaways' => [],
+            'giveaway_count' => 0,
         ]);
 })->with(['cashier', 'cashier_kitchen']);
 

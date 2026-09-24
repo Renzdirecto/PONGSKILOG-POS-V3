@@ -863,6 +863,53 @@ USER MANUAL QA: **PASSED BY USER** (reported by the user; the agent performed no
 
 ---
 
+## Phase 16E — Owner Operations & Pamamalengke
+
+Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of `origin/dev` at start). Approved design tracked: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Additive migration `2026_09_24_053738_create_owner_operations_tables`; no dependency change. Rules: `02-business-rules.md` §39; schema: `05` Phase 16E; access: `07`; UI: `08`/`09`.
+
+- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** Not Final QA, not merged, no PR. USER MANUAL QA: PENDING (the agent performed no browser/device QA). The complete Laravel suite is reserved for FINAL QA. PWA not implemented.
+- Operations sidebar section (Owner + Super Admin) with seven real routes and URL Plan state; Plans (one active Plan per Product, archive, history-safe moves); business-wide Ingredients with one exact per-Branch balance; recipes per existing Product size with Missing / No recipe needed / Product-stock exclusivity; append-only Ingredient ledger (opening, sale, edit delta, void restoration, purchase, wastage, count correction).
+- Sale consumption integrated into the canonical order lifecycle (Pay Now and Pay Later share `ApplyOrderInventory`); immutable Order recipe snapshots make edits delta-only and voids restore the historical net once; negative Ingredient stock allowed; settlement/Kitchen/payment corrections never move stock.
+- Server-side replenishment engine; Pamamalengke Plan mode and mobile Shopping checklist; Confirm writes one canonical Store Session expense (existing OPEN Store Session rule kept; Cash/Cashless source) plus exact restocks and purchase metadata; Purchases projection; View summary with Cash view (not profit), estimated Profit view (snapshotted costs, uncosted never ₱0, Store-wide expenses only in the business scope) and a display-only Profit divider. Catalog › Inventory gains All / Products / Ingredients.
+- Verification: new Pest suites `OperationsIngredientConsumptionTest` (14), `OperationsManagementTest` (32), `PamamalengkeTest` (13); focused regression across orders, edit, void, payments, inventory, expenses, reports/reconciliation, realtime and RBAC passed (1,089 tests); frontend suite 168 tests (new `operations-ui.test.ts`); Pint, PHPStan (0 errors), frontend lint, TypeScript, production build and `git diff --check`; `tests/verify-operations-postgres.php` passed A–N with real two-process races on an isolated schema that was removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**; it only needs the forward migration.
+- The PostgreSQL harness caught a real deadlock during development (a POS sale holding the Branch row vs a concurrent wastage holding the balance and needing a foreign-key KEY SHARE on the Branch). Fixed by a Branch → balance lock order for every Operations writer, inserting only missing balances and FOR NO KEY UPDATE on Ingredient definitions; the race then passed three consecutive runs. The same inversion appears to exist in the pre-existing Product-stock `AdjustInventory` vs Pay Now path (not changed here; flagged for FINAL QA).
+- Known limitations: Operations "today" uses the Phase 16 business date for sales/COGS and the Manila calendar day for stock movements; a Product/size removed by an edit and re-added later reuses the Order's original snapshot; direct-resale COGS is unavailable (no trusted product cost); Confirm needs an OPEN Store Session at the Branch; checklist progress is per device.
+
+- [x] Operations navigation (Owner + Super Admin)
+- [x] Pamalengke Plans
+- [x] Ingredients + canonical Branch stock
+- [x] Recipes
+- [x] Sale / edit / void Ingredient integration
+- [x] Ingredient Stock (wastage, count correction)
+- [x] Pamamalengke recommendations + checklist + Confirm
+- [x] Purchases
+- [x] View summary (Cash / Profit / divider)
+- [x] Manual QA follow-up: Group semantics, one Size group, Recipe setup states, Add-on effects, Recipe-based availability
+- [ ] USER MANUAL QA (Final QA UI changes)
+- [x] FINAL AUTOMATED QA
+
+### Phase 16E Manual QA follow-up — Recipe configuration, Add-on effects & Recipe availability (2026-09-24)
+
+- Group behaviours shown as **Size / Add-on / Modifier / Instructions** on the existing `semantic_role` (no new group type, no data migration); one active Size group per Product enforced server-side; legacy duplicates reported, never guessed.
+- Recipes page separates **Uses Product stock** (Open Product settings), **No recipe needed** (Use ingredient recipe) and **Recipe not set** (Set up recipe); base recipes only per Size (or Regular); separate Add-on / Modifier effects; Instructions excluded.
+- Additive migration `2026_09_24_072528_add_product_modifier_effects` (Product-specific Add-on effects + immutable Order snapshots of them).
+- `RecipeCapacity` drives per-Size availability in `BranchCatalog`, the POS/QR customization dialogs (server capacity endpoints) and a whole-order pre-check; the authoritative no-oversell check runs under the Ingredient locks. **Rule change: sales and usage-increasing edits can no longer drive Recipe Ingredient stock negative.**
+- Lock order fix found while designing the edit-vs-sale race: Edit and Void now take the Branch FOR SHARE before the Store Session.
+- **Status: READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. Not Final QA, not merged, no PR. Normal local development DB not reset; run `php artisan migrate` (forward only).
+
+### Phase 16E FINAL QA — 2026-09-24
+
+- **Status: IMPLEMENTATION COMPLETE · FINAL AUTOMATED QA COMPLETE.** USER MANUAL QA of the Final QA UI changes: PENDING (no browser/device QA was performed by the agent). Not merged, no PR. Branch was 5 ahead / 0 behind `origin/dev` (`0031fc8`) at start.
+- **Legacy deadlock audit — real, fixed.** Scenario S in `tests/verify-operations-postgres.php` reproduced PostgreSQL deadlocks (40P01) between Pay Now and: Catalog inventory adjustment, Store Purchase restock, Store Session inventory adjustment, plain Store Expense and Pay Later settlement (Void was already safe). Fix: Branch FOR SHARE first in `AdjustInventory`, `RecordStoreSessionExpense`, `RecordStoreSessionInventoryAdjustment`, `SettlePayLaterOrder` and `AllocateOrderAdjustment`; all six races now commit with 0 deadlocks.
+- **Giveaway (Record giveaway)** added to the Store Session dialog with audited, exactly-once reversal; additive migration `2026_09_24_134328_create_store_session_giveaways` (rules `02` §39.2, schema `05`).
+- **Manual QA corrections:** required-field red/gray rule; Recipes "Uses Product stock" names every blocking Branch with per-Branch settings actions; missing Size recipes shown as red "Recipe required".
+- **Other audit fixes:** Customer QR capacity gated by Branch active + QR enabled; recipe/effect/mode broadcasts only on real change and only to active Branches; Pamamalengke skip/manual-item validation; Operations summary uses order subqueries (no growing bind lists); overview movement fetch bounded; Products-tab Ingredient count cheap; new bounded query-count tests.
+- **Verification:** complete Laravel suite 1,810 tests / 12,735 assertions passed; frontend 185 tests passed; Pint, PHPStan (0 errors), frontend lint (173 files), TypeScript, production build and `git diff --check` clean; all 13 PostgreSQL harnesses passed on disposable schemas (none left behind). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- **QR LOAD follow-up (user request):** LOAD now switches to the POS instantly (client-side visit with the LOAD response, background prop refresh), and a loaded QR order accepts Cashier-added items committed atomically with Pay Now / Pay Later (`LoadedQrOrder::appendItems`, replay-checked). Tests: `LoadedQrAdditionalItemsTest`, `qr-order.test.ts`.
+- Known limitations: six Laravel-generated index/key names are truncated by PostgreSQL at 63 bytes (functional, no collision; harness blocks new ones); the Customer QR "fits" yes/no for a chosen quantity is an accepted disclosure equal to what submission reveals; Giveaway reversal is limited to the Giveaway's own open Store Session.
+
+---
+
 ## Phase 17 — Stock Transfers
 
 - [ ] Create transfer

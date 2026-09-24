@@ -14,23 +14,29 @@ use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\CustomerQrOrderController;
+use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\OpenStoreSessionController;
+use App\Http\Controllers\OperationPlanController;
+use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\OrderAdjustmentAllocationController;
 use App\Http\Controllers\OwnerDashboardController;
+use App\Http\Controllers\PamamalengkeController;
 use App\Http\Controllers\PaymentInvoiceProofController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
 use App\Http\Controllers\PosPayLaterController;
 use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
+use App\Http\Controllers\PosRecipeCapacityController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
+use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffController;
@@ -38,6 +44,7 @@ use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
 use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
+use App\Http\Controllers\StoreSessionGiveawayController;
 use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
@@ -56,6 +63,7 @@ Route::get('qr/{branch}', [CustomerQrController::class, 'legacy'])
 
 Route::prefix('qr/{branch}')->whereUuid('branch')->middleware('throttle:120,1')->group(function (): void {
     Route::post('orders', [CustomerQrOrderController::class, 'store'])->middleware('throttle:15,1')->name('qr.orders.store');
+    Route::post('recipe-capacity', [CustomerQrOrderController::class, 'capacity'])->name('qr.recipe-capacity');
     Route::get('orders/{tracking}', [CustomerQrOrderController::class, 'show'])->name('qr.orders.show');
     Route::get('orders/{tracking}/receipt', [CustomerQrOrderController::class, 'receipt'])->name('qr.orders.receipt');
     Route::post('new-order', [CustomerQrOrderController::class, 'reset'])->name('qr.reset');
@@ -132,6 +140,36 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:transactions.view')
         ->name('workspaces.transactions.show');
 
+    /** Owner Operations & Pamamalengke (Phase 16E): Owner/Super Admin business-wide scope, checked again server-side. */
+    Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:inventory.manage')->group(function () {
+        Route::get('/', [OperationsController::class, 'plans'])->name('plans');
+        Route::get('overview', [OperationsController::class, 'overview'])->name('overview');
+        Route::get('ingredients', [OperationsController::class, 'ingredients'])->name('ingredients');
+        Route::get('recipes', [OperationsController::class, 'recipes'])->name('recipes');
+        Route::get('stock', [OperationsController::class, 'stock'])->name('stock');
+        Route::get('pamamalengke', [OperationsController::class, 'pamamalengke'])->name('pamamalengke');
+        Route::get('purchases', [OperationsController::class, 'purchases'])->name('purchases');
+
+        Route::middleware('throttle:60,1')->group(function () {
+            Route::post('plans', [OperationPlanController::class, 'store'])->name('plans.store');
+            Route::put('plans/{plan}', [OperationPlanController::class, 'update'])->whereUuid('plan')->name('plans.update');
+            Route::post('plans/{plan}/archive', [OperationPlanController::class, 'archive'])->whereUuid('plan')->name('plans.archive');
+            Route::post('ingredients', [IngredientController::class, 'store'])->name('ingredients.store');
+            Route::put('ingredients/{ingredient}', [IngredientController::class, 'update'])->whereUuid('ingredient')->name('ingredients.update');
+            Route::post('ingredients/{ingredient}/archive', [IngredientController::class, 'archive'])->whereUuid('ingredient')->name('ingredients.archive');
+            Route::post('ingredients/{ingredient}/restore', [IngredientController::class, 'restore'])->whereUuid('ingredient')->name('ingredients.restore');
+            Route::post('ingredients/{ingredient}/adjustments', [IngredientController::class, 'adjust'])->whereUuid('ingredient')->name('ingredients.adjust');
+            Route::put('recipes/{product}', [RecipeController::class, 'update'])->whereUuid('product')->name('recipes.update');
+            Route::put('recipes/{product}/mode', [RecipeController::class, 'mode'])->whereUuid('product')->name('recipes.mode');
+            Route::put('recipes/{product}/modifier-effects/{option}', [RecipeController::class, 'effect'])->whereUuid(['product', 'option'])->name('recipes.effects.update');
+            Route::post('pamamalengke/{plan}/manual-items', [PamamalengkeController::class, 'storeManual'])->whereUuid('plan')->name('pamamalengke.manual.store');
+            Route::delete('pamamalengke/manual-items/{entry}', [PamamalengkeController::class, 'destroyManual'])->whereUuid('entry')->name('pamamalengke.manual.destroy');
+            Route::put('pamamalengke/{plan}/skips/{ingredient}', [PamamalengkeController::class, 'skip'])->whereUuid(['plan', 'ingredient'])->name('pamamalengke.skip');
+        });
+        Route::post('pamamalengke/{plan}/confirm', [PamamalengkeController::class, 'confirm'])
+            ->whereUuid('plan')->middleware('throttle:20,1')->name('pamamalengke.confirm');
+    });
+
     Route::prefix('workspaces/staff')->name('staff.')->middleware('permission:staff.manage')->group(function () {
         Route::get('/', [StaffController::class, 'index'])->name('index');
         Route::post('/', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('store');
@@ -157,6 +195,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('pos/qr-orders/{order}/load', [StaffQrOrderController::class, 'load'])->whereUuid('order')->name('pos.qr-orders.load');
         Route::delete('pos/qr-orders/{order}', [StaffQrOrderController::class, 'destroy'])->whereUuid('order')->name('pos.qr-orders.destroy');
         Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
+        Route::post('pos/recipe-capacity', PosRecipeCapacityController::class)->middleware('throttle:240,1')->name('pos.recipe-capacity');
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
         Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
         Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');
@@ -199,6 +238,16 @@ Route::middleware(['auth'])->group(function () {
     Route::post('store-sessions/current/inventory-adjustments', StoreSessionInventoryAdjustmentController::class)
         ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:30,1'])
         ->name('store-session-inventory-adjustments.store');
+    Route::get('store-sessions/current/giveaway-catalog', [StoreSessionGiveawayController::class, 'catalog'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch'])
+        ->name('store-session-giveaways.catalog');
+    Route::post('store-sessions/current/giveaways', [StoreSessionGiveawayController::class, 'store'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-giveaways.store');
+    Route::post('store-session-giveaways/{giveaway}/reversal', [StoreSessionGiveawayController::class, 'reverse'])
+        ->whereUuid('giveaway')
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->name('store-session-giveaways.reverse');
     Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
         ->whereUuid('expense')
         ->middleware(['permission:store_expenses.manage', 'branch'])

@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import {
-    showsInvoiceProof,
-} from '../resources/js/lib/pos-payment-proof.ts';
+import { showsInvoiceProof } from '../resources/js/lib/pos-payment-proof.ts';
 import {
     formatStoreSessionMoney,
     formatStoreSessionOpenedAt,
@@ -27,10 +25,7 @@ test('POS displays instruction choices and free-text notes as one description', 
         posItemDescription(modifiers, 'bang'),
         'Scramble, Plain Rice, bang',
     );
-    assert.equal(
-        posItemDescription(modifiers, '   '),
-        'Scramble, Plain Rice',
-    );
+    assert.equal(posItemDescription(modifiers, '   '), 'Scramble, Plain Rice');
 });
 
 test('POS product images cover card media while detail images remain contained', () => {
@@ -42,10 +37,7 @@ test('POS product images cover card media while detail images remain contained',
         'utf8',
     );
 
-    assert.match(
-        productMedia,
-        /detail \? 'object-contain' : 'object-cover'/,
-    );
+    assert.match(productMedia, /detail \? 'object-contain' : 'object-cover'/);
 });
 
 test('Store Session detail rows render persisted opening money and Manila time', () => {
@@ -98,6 +90,7 @@ test('POS subscribes to the compact catalog events and refetches after reconnect
         '.inventory.changed',
         '.product.availability_changed',
         '.product.branch_configuration_changed',
+        '.ingredients.changed',
     ]);
     assert.equal(
         shouldRefetchCatalogAfterConnectionChange(

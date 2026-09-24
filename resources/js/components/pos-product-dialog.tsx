@@ -10,9 +10,19 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useRecipeCapacity } from '@/hooks/use-recipe-capacity';
 import { lineCents, pesos } from '@/lib/pos-money';
 import { createClientUuid } from '@/lib/client-uuid';
 import { stockAvailabilityLabel } from '@/lib/pos-order';
+import {
+    configurationProblem,
+    MAX_LINE_QUANTITY,
+    optionAvailability,
+    quantityCap,
+    recipeProductLabel,
+} from '@/lib/recipe-availability';
+import type { CapacitySelection } from '@/lib/recipe-availability';
+import { requiredGroupOutline } from '@/lib/required-field';
 import type { CartLine, PosProduct } from '@/types/pos';
 
 type PosModifierGroup = NonNullable<PosProduct['modifier_groups']>[number];
@@ -26,22 +36,52 @@ export function PosProductDialog({
     onClose,
     onSave,
     onRemove,
+    capacityUrl = null,
+    otherLines = [],
+    purpose = 'cart',
 }: {
     product: PosProduct;
     initial?: CartLine;
     onClose: () => void;
     onSave: (line: CartLine) => void;
     onRemove: () => void;
+    /** Server capacity endpoint for Recipe-backed products; omitted where only the committed-edit delta applies. */
+    capacityUrl?: string | null;
+    /** The rest of the cart, which shares Branch Ingredient stock with this item. */
+    otherLines?: CapacitySelection[];
+    /** "giveaway" reuses this customization for a free Store Session item: no price, notes or cart. */
+    purpose?: 'cart' | 'giveaway';
 }) {
+    const giveaway = purpose === 'giveaway';
     const [quantity, setQuantity] = useState(String(initial?.quantity ?? 1));
     const [notes, setNotes] = useState(initial?.notes ?? '');
     const [modifiers, setModifiers] = useState(initial?.modifiers ?? []);
+    const { capacity } = useRecipeCapacity(
+        product.recipe ? capacityUrl : null,
+        {
+            lines: otherLines,
+            focus: { product_id: product.id, quantity: 1, modifiers },
+        },
+        JSON.stringify(product.recipe ?? null),
+    );
+    const cap = quantityCap(capacity);
     const validQuantity =
         /^\d+$/.test(quantity) &&
         Number(quantity) >= 1 &&
-        Number(quantity) <= 999;
+        Number(quantity) <= MAX_LINE_QUANTITY;
+    const recipeProblem = configurationProblem(
+        capacity,
+        validQuantity ? Number(quantity) : 1,
+    );
     const groups = product.modifier_groups ?? [];
-    const stockLabel = stockAvailabilityLabel(product);
+    const stockLabel = product.recipe
+        ? recipeProductLabel(product.recipe)
+        : stockAvailabilityLabel(product);
+    const outOfStock =
+        product.on_hand === 0 ||
+        (product.recipe !== null &&
+            product.recipe !== undefined &&
+            product.recipe.state !== 'available');
     const validModifiers = groups.every((group) => {
         const count = modifiers.filter(
             (selection) => selection.group_id === group.id,
@@ -96,11 +136,16 @@ export function PosProductDialog({
                         <ArrowLeft className="size-5" />
                     </button>
                     <DialogTitle className="text-[15px] font-bold">
-                        {initial ? 'Edit item' : 'Customize item'}
+                        {giveaway
+                            ? 'Customize giveaway item'
+                            : initial
+                              ? 'Edit item'
+                              : 'Customize item'}
                     </DialogTitle>
                     <DialogDescription className="sr-only">
-                        Choose options, quantity and special instructions for{' '}
-                        {product.name}.
+                        {giveaway
+                            ? `Choose the size, add-ons, instructions and quantity of ${product.name} that was given away.`
+                            : `Choose options, quantity and special instructions for ${product.name}.`}
                     </DialogDescription>
                 </header>
                 <div className="grid min-h-0 flex-1 content-start overflow-y-auto min-[900px]:grid-cols-[.95fr_1.05fr] min-[900px]:content-stretch">
@@ -113,10 +158,12 @@ export function PosProductDialog({
                         </h2>
                         <div className="flex flex-wrap items-center gap-2.5">
                             <span className="text-xl font-bold text-red-700">
-                                {pesos(product.effective_price)}
+                                {giveaway
+                                    ? 'Free · ₱0 revenue'
+                                    : pesos(product.effective_price)}
                             </span>
                             <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${product.on_hand === 0 ? 'bg-neutral-100 text-neutral-600' : product.stock_status === 'low_stock' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${outOfStock ? 'bg-neutral-100 text-neutral-600' : product.stock_status === 'low_stock' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700'}`}
                             >
                                 {stockLabel}
                             </span>
@@ -153,7 +200,7 @@ export function PosProductDialog({
                                     type="number"
                                     inputMode="numeric"
                                     min={1}
-                                    max={999}
+                                    max={Math.max(1, cap)}
                                     step={1}
                                     value={quantity}
                                     onChange={(event) =>
@@ -167,7 +214,7 @@ export function PosProductDialog({
                                     aria-label="Increase quantity"
                                     disabled={
                                         !validQuantity ||
-                                        Number(quantity) >= 999
+                                        Number(quantity) >= cap
                                     }
                                     onClick={() =>
                                         setQuantity(
@@ -190,11 +237,24 @@ export function PosProductDialog({
                         {groups.map((group) => {
                             const isInstruction =
                                 group.semantic_role === 'instruction';
+                            const isSize = group.semantic_role === 'size';
+                            /** A required group without enough choices is outlined red until completed. */
+                            const missing =
+                                modifiers.filter(
+                                    (selection) =>
+                                        selection.group_id === group.id,
+                                ).length < group.min_select;
 
                             return (
                                 <fieldset
                                     key={group.id}
-                                    className="space-y-2"
+                                    aria-invalid={missing || undefined}
+                                    aria-describedby={
+                                        missing
+                                            ? `group-${group.id}-required`
+                                            : undefined
+                                    }
+                                    className={`space-y-2 ${group.min_select > 0 ? `rounded-xl border p-2.5 ${requiredGroupOutline(missing)}` : ''}`}
                                 >
                                     <legend className="mb-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
                                         {group.name}{' '}
@@ -204,10 +264,19 @@ export function PosProductDialog({
                                             </span>
                                         )}
                                     </legend>
-                                    <p className="text-[10px] text-neutral-500">
-                                        {isInstruction
-                                            ? `Optional · choose up to ${group.max_select}`
-                                            : `Choose ${group.min_select}–${group.max_select}`}
+                                    <p
+                                        id={
+                                            missing
+                                                ? `group-${group.id}-required`
+                                                : undefined
+                                        }
+                                        className={`text-[10px] ${missing ? 'font-semibold text-red-700' : 'text-neutral-500'}`}
+                                    >
+                                        {missing
+                                            ? `Required · choose ${group.min_select === group.max_select ? group.min_select : `${group.min_select}–${group.max_select}`}`
+                                            : isInstruction
+                                              ? `Optional · choose up to ${group.max_select}`
+                                              : `Choose ${group.min_select}–${group.max_select}`}
                                     </p>
                                     <div
                                         className={
@@ -223,23 +292,36 @@ export function PosProductDialog({
                                                     selection.option_id ===
                                                     option.id,
                                             );
+                                            const availability =
+                                                optionAvailability(
+                                                    product,
+                                                    capacity,
+                                                    option.id,
+                                                    isSize,
+                                                    isInstruction,
+                                                );
+                                            const unavailable =
+                                                availability.unavailable;
 
                                             return (
                                                 <label
                                                     key={option.id}
-                                                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${checked ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 bg-white text-neutral-700'} ${group.selection_type === 'multiple' && !isInstruction ? 'w-full' : ''}`}
+                                                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${checked ? 'border-neutral-950 bg-neutral-950 text-white' : unavailable ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400' : 'cursor-pointer border-neutral-200 bg-white text-neutral-700'} ${group.selection_type === 'multiple' && !isInstruction ? 'w-full' : ''}`}
                                                 >
                                                     <input
                                                         type={
                                                             group.selection_type ===
                                                                 'single' &&
-                                                            group.min_select >
-                                                                0
+                                                            group.min_select > 0
                                                                 ? 'radio'
                                                                 : 'checkbox'
                                                         }
                                                         name={`modifier-${group.id}`}
                                                         checked={checked}
+                                                        disabled={
+                                                            unavailable &&
+                                                            !checked
+                                                        }
                                                         onChange={() =>
                                                             setOptionSelected(
                                                                 group,
@@ -253,17 +335,27 @@ export function PosProductDialog({
                                                                 : 'size-4 accent-neutral-950'
                                                         }
                                                     />
-                                                    <span className="min-w-0 flex-1 wrap-anywhere">
+                                                    <span className="flex min-w-0 flex-1 flex-col wrap-anywhere">
                                                         {option.name}
+                                                        {availability.label && (
+                                                            <span
+                                                                className={`text-[10.5px] font-medium ${checked ? 'text-white/70' : unavailable ? 'text-red-700' : 'text-neutral-500'}`}
+                                                            >
+                                                                {
+                                                                    availability.label
+                                                                }
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                    {!isInstruction && (
-                                                        <span className="text-[11px] text-red-700">
-                                                            +
-                                                            {pesos(
-                                                                option.price_delta,
-                                                            )}
-                                                        </span>
-                                                    )}
+                                                    {!isInstruction &&
+                                                        !giveaway && (
+                                                            <span className="text-[11px] text-red-700">
+                                                                +
+                                                                {pesos(
+                                                                    option.price_delta,
+                                                                )}
+                                                            </span>
+                                                        )}
                                                 </label>
                                             );
                                         })}
@@ -276,28 +368,38 @@ export function PosProductDialog({
                                 </fieldset>
                             );
                         })}
-                        <div className="space-y-2">
-                            <Label
-                                htmlFor="pos-notes"
-                                className="text-[10px] tracking-wider text-neutral-500 uppercase"
-                            >
-                                Special instructions
-                            </Label>
-                            <textarea
-                                id="pos-notes"
-                                maxLength={1000}
-                                value={notes}
-                                onChange={(event) =>
-                                    setNotes(event.target.value)
-                                }
-                                placeholder="e.g. Less oil, no onions, extra sauce on the side"
-                                className="min-h-22 w-full rounded-xl border border-neutral-300 p-3 text-base sm:text-[13px]"
-                            />
-                        </div>
+                        {!giveaway && (
+                            <div className="space-y-2">
+                                <Label
+                                    htmlFor="pos-notes"
+                                    className="text-[10px] tracking-wider text-neutral-500 uppercase"
+                                >
+                                    Special instructions
+                                </Label>
+                                <textarea
+                                    id="pos-notes"
+                                    maxLength={1000}
+                                    value={notes}
+                                    onChange={(event) =>
+                                        setNotes(event.target.value)
+                                    }
+                                    placeholder="e.g. Less oil, no onions, extra sauce on the side"
+                                    className="min-h-22 w-full rounded-xl border border-neutral-300 p-3 text-base sm:text-[13px]"
+                                />
+                            </div>
+                        )}
                         {!validModifiers && (
                             <p className="text-xs text-red-700">
                                 Complete the required options within each
                                 selection limit.
+                            </p>
+                        )}
+                        {validModifiers && recipeProblem && (
+                            <p
+                                role="alert"
+                                className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                            >
+                                {recipeProblem}
                             </p>
                         )}
                         {!product.is_available && (
@@ -331,7 +433,8 @@ export function PosProductDialog({
                         disabled={
                             !validQuantity ||
                             !validModifiers ||
-                            !product.is_available
+                            !product.is_available ||
+                            recipeProblem !== null
                         }
                         onClick={() =>
                             onSave({
@@ -340,9 +443,15 @@ export function PosProductDialog({
                             })
                         }
                     >
-                        {initial ? 'Update cart item' : 'Add to cart'}
-                        <span className="text-white/50">|</span>
-                        {pesos(lineCents(line))}
+                        {giveaway ? (
+                            'Use this item'
+                        ) : (
+                            <>
+                                {initial ? 'Update cart item' : 'Add to cart'}
+                                <span className="text-white/50">|</span>
+                                {pesos(lineCents(line))}
+                            </>
+                        )}
                     </Button>
                 </footer>
             </DialogContent>

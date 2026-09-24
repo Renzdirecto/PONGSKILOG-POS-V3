@@ -44,7 +44,8 @@ class RecordStoreSessionInventoryAdjustment
         $quantity = (int) $data['quantity'];
 
         return DB::transaction(function () use ($actor, $branch, $data, $key, $reason, $quantity): StoreSessionInventoryAdjustment {
-            $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
+            /** Branch FOR SHARE first: POS commits hold it FOR UPDATE before the Store Session, and every insert below needs a KEY SHARE on it. */
+            $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
             $actor = $this->access->authorize($actor, $branch);
             abort_unless($actor->hasPermission('store_expenses.manage'), 403);
 

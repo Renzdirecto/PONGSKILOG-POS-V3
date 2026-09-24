@@ -527,3 +527,17 @@ Frozen:
 - DB commit before broadcast
 - No offline-first financial writes
 - Performance-first image handling
+
+## 20. Owner Operations (Phase 16E)
+
+- **Stock primitive:** `App\Actions\Operations\ApplyIngredientMovement` (lock rows in Ingredient-id order, append movement + move balance in one transaction). Nothing else writes Ingredient balances.
+- **Order integration:** `RecordOrderIngredientUsage` — `commit()` from `ApplyOrderInventory` (Pay Now and Pay Later), `edit()` from `EditCommittedOrder`, `void()` from `VoidOrder`, all inside the caller's existing transaction and lock order (Store Session → Order → Product inventory → Ingredient balances). Immutable `order_recipe_snapshots` make edits and voids independent of today's recipe, costs and Plans.
+- **Domain services:** `ReplenishmentAdvisor` (only recommendation authority), `IngredientStockReport` (batched canonical stock + today's movements), `OperationsSummary` (sales/COGS/profit on `StoreSessionSalesReport`), `OperationsWorkspace` (page props), `ExactQuantity` (integer ten-thousandths), `OperationsAccess` (scope + authorization).
+- **Recipe capacity:** `App\Support\RecipeCapacity` is the only availability formula (profiles from `ProductSizes` + recipes + Product-specific Add-on effects; servings = min floor(max(stock, 0) ÷ per-serving)). Consumers: `BranchCatalog::browse()` (only Products with a recipe, flagged by `withExists`, so non-recipe catalogs cost no extra queries), `OrderSnapshots::prepare()` (whole-order pre-check for new orders and Customer QR), `PosRecipeCapacityController` and `CustomerQrOrderController::capacity()`. The authoritative check is in `RecordOrderIngredientUsage::apply()` under the locked balances. Lock order for every Ingredient writer: Branch → Store Session → Order → Product inventory → Ingredient balances (Edit and Void take the Branch FOR SHARE first).
+- **Money:** Confirm Pamamalengke writes the canonical Store Session expense through `RecordStoreSessionExpense::persist()`; Purchases is a projection. React only formats server values; its recipe-cost and checklist totals are display previews with the same integer rounding.
+
+### 20.1 Final QA additions (2026-09-24)
+
+- **Giveaway:** `RecordStoreSessionGiveaway` / `ReverseStoreSessionGiveaway` (`StoreSessionGiveawayController`, routes `store-session-giveaways.*`). Customization and availability come from `OrderSnapshots::prepare()` for one line (no second engine); the stock effect is `ApplyInventoryMovement` (Product stock) or `ApplyIngredientMovement` (Recipe) with `RecipeCapacity::lineRequirement()`; the reversal replays the recorded movements negated. `CurrentStoreSessionExpenses` projects Giveaways into the Store Session history; `OperationsSummary` reports them separately.
+- **Canonical lock order:** Branch → Store Session → Order → catalog rows (Category/Product share, BranchProduct update) → Product inventory → Ingredient balances. Writers that do not hold the Branch FOR UPDATE take it FOR SHARE first (Operations writers, Edit, Void, Settle, correction allocation, Store Expense, Store Session and Catalog inventory adjustments, Giveaway and its reversal).
+- **Branch switch with a return path:** `ActiveBranchController::update` accepts an optional same-application `redirect` path (validated; anything else lands on the workspace) so Operations can open a specific Branch's Product settings through the existing Branch context.

@@ -42,7 +42,8 @@ import { qrError, qrRequest } from '@/lib/qr-http';
 import { terms, privacy } from '@/lib/qr-copy';
 import { pesos } from '@/lib/pos-money';
 import { createClientUuid } from '@/lib/client-uuid';
-import { reset } from '@/routes/qr';
+import { otherCartLines } from '@/lib/recipe-availability';
+import { recipeCapacity, reset } from '@/routes/qr';
 import { store as submitQr } from '@/routes/qr/orders';
 import type { BranchSummary } from '@/types';
 import type { OrderType } from '@/types/pos';
@@ -1226,6 +1227,8 @@ export default function CustomerQr({
                     }
                     initial={editing.line}
                     locked={!!order}
+                    capacityUrl={recipeCapacity.url(branch.id)}
+                    otherLines={otherCartLines(cart, editing.line?.key)}
                     onClose={() => setEditing(null)}
                     onTrack={() => go('track')}
                     onSave={(line) => {

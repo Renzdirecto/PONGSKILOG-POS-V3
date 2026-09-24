@@ -514,7 +514,8 @@ test('payment product and order item reads remain bounded as the cart grows', fu
     $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'));
     DB::disableQueryLog();
 
-    expect($reads->count())->toBeLessThanOrEqual(36)
+    /** Phase 16E adds three constant reads (size modifiers, Plan membership, recipes) for the Ingredient snapshot. */
+    expect($reads->count())->toBeLessThanOrEqual(39)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "products"'))->count())->toBeLessThanOrEqual(4)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "order_items"'))->count())->toBeLessThanOrEqual(2);
 })->with([1, 30, 100]);

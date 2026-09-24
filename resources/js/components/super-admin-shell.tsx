@@ -7,7 +7,11 @@ import {
     ChevronDown,
     ClipboardList,
     Gauge,
+    Layers,
     LayoutDashboard,
+    LayoutGrid,
+    Leaf,
+    ListChecks,
     Menu,
     MonitorUp,
     PackageSearch,
@@ -16,6 +20,8 @@ import {
     Settings,
     ShieldBan,
     ShieldCheck,
+    ShoppingBasket,
+    ShoppingCart,
     Store,
     UserRound,
     Users,
@@ -55,6 +61,7 @@ import {
 import { logout } from '@/routes';
 import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
+import operationsRoutes from '@/routes/operations';
 import { index as productsIndex } from '@/routes/products';
 import { edit as editProfile } from '@/routes/profile';
 import { accessControl, notifications } from '@/routes/super-admin';
@@ -106,6 +113,16 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
         reports: { icon: BarChart3, href: reports() },
         products: { icon: Boxes, href: productsIndex() },
         inventory: { icon: PackageSearch, href: inventoryIndex() },
+        'ops-plans': { icon: ShoppingBasket, href: operationsRoutes.plans() },
+        'ops-overview': { icon: LayoutGrid, href: operationsRoutes.overview() },
+        'ops-ingredients': { icon: Leaf, href: operationsRoutes.ingredients() },
+        'ops-recipes': { icon: ListChecks, href: operationsRoutes.recipes() },
+        'ops-stock': { icon: Layers, href: operationsRoutes.stock() },
+        'ops-pamamalengke': {
+            icon: ShoppingCart,
+            href: operationsRoutes.pamamalengke(),
+        },
+        'ops-purchases': { icon: ReceiptText, href: operationsRoutes.purchases() },
         'audit-trail': { icon: ClipboardList, href: auditTrail() },
         'void-orders': { icon: ShieldBan, href: voidOrders() },
         staff: { icon: Users, href: staffIndex() },

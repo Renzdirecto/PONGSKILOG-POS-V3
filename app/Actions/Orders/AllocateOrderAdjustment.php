@@ -38,6 +38,8 @@ class AllocateOrderAdjustment
         $data = Validator::make($input, AllocateOrderAdjustmentRequest::allocationRules())->validate();
 
         return DB::transaction(function () use ($actor, $branch, $requested, $data): OrderAdjustment {
+            /** Branch FOR SHARE first: POS commits hold it FOR UPDATE before the Store Session, and every insert below needs a KEY SHARE on it. */
+            $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
             $actor = $this->access->authorize($actor, $branch);
             $session = StoreSession::query()
                 ->where('branch_id', $branch->id)

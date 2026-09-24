@@ -759,3 +759,89 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 
 - Owner and Super Admin use the **same** Transaction History page (`workspaces/transaction-history`, `surface = business`) at `GET workspaces/transactions` inside their management shell, across All Branches or the selected Branch, with the same server search, filters, metrics, pagination (10 per page), cards, details and receipt. All Branches cards carry the Branch code; details carry Branch identity. Voided Orders stay excluded.
 - Edit, Settle and Void are offered only when the viewer also holds POS access to the selected Branch (Super Admin) and the Order belongs to that Branch's OPEN Store Session. The Owner is always read-only: Take payment, Void and Edit are not rendered for a view-only viewer (only Details and Receipt/Print), invoice proofs show that they exist but open only from the Branch POS, and Show QR receipt sharing is hidden. Every write endpoint keeps its POS authorization, so hidden buttons are never the control.
+
+## 39. Phase 16E Owner Operations & Pamamalengke - 2026-09-24
+
+**Status: IMPLEMENTATION COMPLETE · FINAL AUTOMATED QA COMPLETE (§39.2).** USER MANUAL QA of the Final QA UI changes is pending. Not merged. Approved product/UX reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html` (decoded `__bundler/template`); its mock data is never used in production.
+
+### Structure
+
+- **Operations** is a section of the existing Owner sidebar (and a Super Admin *Operations* section): Pamalengke Plans, Overview, Ingredients, Recipes, Ingredient Stock, Pamamalengke, Purchases. Transactions and Reports now sit under **Sales**. Each page is a real route; the active Plan is in the URL (`?plan=`).
+- A **Pamalengke Plan** groups existing Catalog Products, their recipes, Ingredients, replenishment and reporting. **A Plan never owns stock.** Plans are archived, never deleted.
+- A sellable Product belongs to **at most one active Plan** (database unique). Choosing it in another Plan moves it for **future sales only**; every committed sale keeps the Plan recorded when it was first committed. Products outside every Plan sell normally and are excluded from Plan metrics (business totals still include them, as uncosted where no recipe applies).
+
+### Ingredients and stock
+
+- Ingredient **definitions** are business-wide, like Catalog Products; **stock is per Branch**: exactly one canonical balance per **Branch + Ingredient**, shared by every Plan that shows the Ingredient. Catalog › Inventory (type filter All / Products / Ingredients) and Operations › Ingredient Stock read the same balance.
+- Quantities are exact `numeric(18,4)` values in the Ingredient's base unit (`pc`, `pack`, `bottle`, `ml`, `L`, `g`, `kg`), entered with at most four decimals and computed server-side as integer ten-thousandths — never floats, never silently rounded (29.5 stays 29.5). Purchase quantities convert exactly: actual purchase units × purchase-unit size.
+- Every stock change is an **append-only movement** written together with the balance by one primitive: opening balance, sale consumption, order-edit adjustment, void restoration, purchase restock, wastage, count correction. Opening stock is recorded once, at creation, as an opening-balance movement for the selected Branch; afterwards there is no direct balance edit. Wastage cannot exceed current stock; a count appends *counted − system stock* (a zero difference records nothing).
+- The **base unit locks** once movements, a recipe or a recipe snapshot use it. Changing target, purchase unit, cost or rule never rewrites movements or snapshotted costs. An Ingredient used by a current recipe cannot be archived.
+
+### Recipes and committed sales
+
+- Recipes attach to existing Products and their existing **Size** options (a Product without a Size group has one base recipe). States: **Recipe set**, **Some sizes missing**, **Missing recipe**, **No recipe needed** (direct resale).
+- **One sale never consumes both Product stock and Ingredient stock:** a recipe cannot be saved for a Product that tracks Product stock at any Branch, tracking cannot be enabled while the Product has recipes, and at sale time a Product that tracks Product stock at the Branch uses Product stock only.
+- On first commitment — **Pay Now and Pay Later through the same `ApplyOrderInventory` path** — each Order Product/size is snapshotted (recipe state, recipe lines per unit, purchase-unit cost basis, Plan) and recipe-backed lines append one sale-consumption movement per Ingredient (database-unique per snapshot line). A Product that has never had a recipe sells as before, moves nothing and is reported as not costed. ~~Negative Ingredient stock is allowed for sales~~ — **superseded by §39.1**: sales can no longer oversell Recipe stock. Negative balances from older sales or manual corrections are still shown as "Negative · count needed" and simply give zero sellable servings.
+- Pay Later settlement, payment corrections and allocations, Kitchen transitions, Store Close, report refreshes and broadcasts never move Ingredient stock.
+- **Edit** appends only the compensating delta between recorded net consumption and the consumption now required, computed from the Order's own snapshot (a Product/size added by the edit snapshots the current recipe). **Void** restores the current net recorded consumption (post-edit) exactly once, from the recorded movements — never today's recipe — protected by the existing Void idempotency and a database-unique restoration per snapshot line.
+
+### Cost, recommendations and purchases
+
+- **Estimated COGS**: each consumption movement snapshots its signed estimated cost = quantity × purchase-unit cost ÷ purchase-unit size (half-up to the centavo); edits and voids net against the recorded cost, so history never changes when costs, recipes or Plans change. An unknown cost is stored as unknown and reported as an incomplete estimate — never ₱0. Direct-resale products have no trusted product cost and are reported as uncosted.
+- **Replenishment** (`ReplenishmentAdvisor`, the only authority): *Top up to target* suggests whole purchase units for any shortfall below target; *Reorder at a threshold* waits until current ≤ reorder point and then buys back to target (at least one unit); *No automatic suggestion* never suggests. No purchase unit = Needs setup. Only purchase-unit counts round up; negative stock widens the gap.
+- **Pamamalengke**: Plan mode (auto suggestions with *Skip this run*, needs-setup, manual items, no-purchase-needed) and a mobile Shopping checklist (bought, actual quantity, actual unit cost, not available, note). Manual items and skips are saved per Branch + Plan; checklist progress is kept on the device until confirmed. Recommended and actual quantities may differ.
+- **Confirm Pamamalengke** requires one concrete active Branch and that Branch's **OPEN Store Session (existing Store Purchase rule kept)**, plus Cash or Cashless as the paid-from source (added to the approved design because a canonical Store Purchase needs a source). One transaction writes **one** canonical Store Session expense through `RecordStoreSessionExpense::persist()` (same row, audit and event as a Cashier Store Purchase; it reduces that channel's expected closing balance), the exact Ingredient restocks, the purchase metadata (recommended vs actual, estimated vs actual cost), the latest purchase-unit cost for future estimates, clears the confirmed list and audits the run. Manual items share the expense but never restock. A retry with the same key replays; a changed payload is rejected. **Operations › Purchases** is a view over those expenses plus metadata; Pamamalengke keeps no ledger or total of its own.
+
+### Summary
+
+- **Cash view** = Sales today − Pamamalengke today − other Store expenses (All plans only) = **Cash after purchases**, labelled as not profit because bought stock may remain on the shelf.
+- **Profit view (estimated)** = Net sales − Estimated ingredient COGS = Estimated gross profit; minus non-stock pamamalengke items (Plan) or non-stock items and other Store expenses (All plans) = Estimated operating profit. Store-wide expenses are never allocated to a Plan and are counted once. Business Net Sales are the Phase 16 Net Sales of the same business-date Store Sessions; Plan sales are the Order line totals attributed by the snapshotted Plan.
+- **Divide estimated profit** (1, 2, 3, Custom up to 20 shares) is a display-only calculator; it writes nothing and reports centavos that cannot be split equally.
+- **All Branches** shows read-only analytics only; Ingredient stock, Pamamalengke suggestions, opening stock, adjustments and confirmations require one selected Branch.
+
+### 39.1 Manual QA follow-up — Recipe configuration, Add-on effects and Recipe-based availability (2026-09-24)
+
+**Mental model**
+
+- **Product → one optional Size group → one base recipe per Size.** Only the active `size` Group defines base recipe variants (Small / Medium / Large). A Product without a Size group has one **Regular** recipe. A Product may have **at most one active Size group**; assigning a second, or turning an assigned Group into an active Size group, is rejected on the server. Legacy data with two is a configuration error ("Size groups need fixing"), never resolved by guessing.
+- **Add-on / Modifier** (the existing `semantic_role = null`, previously labelled "Standard options") may add price and an optional **Product-specific Ingredient effect** (for example *Extra Yakult on Lemon Yakult → Yakult +1 pc*). Effects are per Product + option, because Groups are reusable across Products. "No ingredient effect" is valid.
+- **Instructions** (No ice, Less sugar) stay optional, multiple, price-neutral and structured; they never create Ingredient usage and never affect availability.
+- Sale usage = item quantity × base recipe + Σ (item quantity × modifier quantity × Add-on effect). Exact decimal math only.
+
+**Recipes page states**
+
+- **Uses Product stock** (Product stock tracking on at any Branch): names **every Branch that still tracks it** ("…tracks direct Product stock in: QAVE (Quezon Ave)") and gives one **Open {CODE} product settings** action per Branch, which switches to that Branch through the existing Branch context and opens the Product's Branch configuration (superseded wording: a single "Open Product settings" that used whatever Branch was selected). Nothing is changed or zeroed automatically.
+- **No recipe needed** (explicit direct resale): **Use ingredient recipe** switches back.
+- **Recipe required** (was "Recipe not set"): **Set up recipe** (Regular, or per-Size tabs), plus Copy from another size; the missing Size is outlined red (§39.2).
+- **Add-on / Modifier effects** is a separate section; Sizes and Instructions never appear there.
+
+**Recipe-based availability** (`RecipeCapacity`, server only)
+
+- A Product is **Recipe-backed** once it has at least one recipe and does not use Product stock or No recipe needed. Products that never had a recipe keep their existing availability, so the existing catalog is not made unavailable.
+- Available servings of a configuration = **minimum over required Ingredients of floor(max(Branch stock, 0) ÷ quantity per serving)**; a missing balance counts as 0, a negative balance gives 0 servings.
+- Availability is **per Size**. The Product tile is sellable while at least one Size can be made; the POS dialog shows each Size ("15 available", "Out of stock", "Recipe required"). A Size without a recipe on a Recipe-backed Product is **Recipe required** and cannot be sold. Existing gates (Product/Category active, Branch availability, Product stock) keep precedence.
+- The **selected configuration** (Size + selected Add-ons) and the rest of the cart set the quantity cap; an Add-on that cannot be fulfilled is shown unavailable while the base drink stays sellable. Customer QR sees whether a choice can be made, never Branch serving counts.
+
+**Enforcement (rule change)**
+
+- **Sale-driven Ingredient consumption may no longer oversell Recipe stock.** New sales (Pay Now, Pay Later, Customer QR submission pre-check) and **usage-increasing edits** are validated across the whole order (shared Ingredients, Sizes, Add-ons, quantities) and rejected cleanly when any required Ingredient would go below zero. The authoritative check runs under the locked Ingredient balances, so of two concurrent sales for the last stock exactly one wins, with no partial Payment, Order, Kitchen ticket or movement.
+- Edits validate only the additional net usage; reductions, Voids and restorations are always allowed. Voids restore the historical (snapshotted) base and Add-on usage exactly once.
+- Recipe capacity refreshes in POS and Customer QR after sales, edits, voids, wastage, count corrections, opening balances, Pamamalengke restocks and recipe/effect changes (invalidation events only; no polling).
+
+### 39.2 Final QA corrections (2026-09-24)
+
+**Recipe mode is global; price, stock and availability are per Branch.** A Product's recipes and Add-on effects are shared by every Branch. Once a Product has an Ingredient recipe or effect, **no Branch may track direct Product stock for it** (recipe save, effect save and Branch configuration all enforce this), so one sale never deducts both stocks. Each Branch keeps its own effective selling price (e.g. MAIN ₱45, QAVE ₱50), availability, Ingredient stock and therefore Recipe capacity.
+
+**Recipe completeness.** Once Recipe-backed, a selected active Size without a recipe is "Recipe required" and cannot be sold through POS drafts, Pay Now, Pay Later, Customer QR submission or a committed edit, whatever a stale client sends.
+
+**Required-field visual rule (manual QA).** Anything REQUIRED that is still empty, invalid or unconfigured has a **red outline plus readable text** ("Required …", "Recipe required") and `aria-invalid`; once valid it returns to the **neutral gray** outline. Optional configuration (Add-on with "No ingredient effect", Instructions, notes, receipts, No recipe needed / direct Product stock) is never red. Applied to Open Store balances, Add expense / purchase (description, amount, restock product and quantity), Adjust inventory (reason, product, quantity, note when Other), Record giveaway (product, required Size group, quantity, reason, note when Other, reversal reason), the POS/giveaway customization dialog's required Groups, and Recipes (missing Size recipe, recipe configuration error).
+
+**Giveaway (Record giveaway).** A real Product given away free during the current OPEN Store Session: physical stock leaves the store, revenue is **₱0**.
+- It is **not** a sale, Order, Payment, Store Expense, Store Purchase or generic inventory adjustment. It creates no Payment leg, no Expense row and never changes Net Sales, order counts, Cash/Cashless, Store Close reconciliation, COGS or Pamamalengke.
+- It is its own Store Session action next to Add expense / purchase and Adjust inventory, and uses the canonical customization engine (Product → Size → Add-ons → Instructions → quantity), then a required reason (Complimentary / on the house, Service recovery, Promo / sampling, Staff meal, Other + note), Review and Confirm.
+- Stock: a Recipe-backed Product deducts (base recipe of the Size + each selected Add-on's Product-specific effect) × quantity from the Branch Ingredient balances; a direct-resale Product deducts its Product stock; never both; Instructions move nothing; a Product with neither is recorded for history only. Normal availability rules apply and a Giveaway can never drive stock below zero.
+- History: immutable record of Branch, Store Session, Product and name, Size, Add-ons, Instructions, quantity, reason/note, actor, time, the per-serving recipe basis and the exact movements, with an idempotency key (a changed payload under a used key is a conflict).
+- Reversal: while the Giveaway's own Store Session is OPEN, an authorized operator may reverse it once with a reason; it restores exactly the recorded movements (never today's recipe or effects), is append-only and idempotent, and the Giveaway stays in the history marked Reversed.
+- Reporting: Operations › View summary (All plans) shows **Giveaways today** separately — items, count and **Estimated giveaway cost** from the cost recorded on its movements (incomplete, never ₱0, when direct-stock or unknown); it is never subtracted from sales profit. Ingredient Stock shows a separate **Giveaway** column.
+
+**Lock order for every Store Session writer.** Store Expenses/Purchases, Store Session inventory adjustments, Catalog inventory adjustments, Pay Later settlement, payment-correction allocation and Giveaways take the **Branch FOR SHARE first**, then the OPEN Store Session (share), then their rows. POS commits hold the Branch FOR UPDATE before the Store Session and every insert needs a KEY SHARE on the Branch, so the previous Session-first order deadlocked (reproduced on PostgreSQL, see `11-testing-qa.md`).

@@ -14,6 +14,14 @@ import {
 } from '@/components/catalog-ui';
 import { InventoryAdjustmentDialog } from '@/components/inventory-adjustment-dialog';
 import {
+    Chip,
+    IngredientIcon,
+    Segmented,
+    StatusChip,
+    formatQuantityOrDash,
+    operationsHref,
+} from '@/components/operations-ui';
+import {
     InventoryPagination,
     StockStatusBadge,
     stockStatusLabels,
@@ -34,6 +42,7 @@ import {
 import { index } from '@/routes/inventory';
 import { index as productsIndex } from '@/routes/products';
 import type { Auth, BranchContext, BranchSummary } from '@/types';
+import type { OperationsIngredient } from '@/types/operations';
 import type {
     InventoryFilters,
     InventoryPagination as Paginated,
@@ -51,6 +60,8 @@ type Props = {
     categories: Category[];
     summary: InventorySummary;
     products: Paginated<InventoryProduct>;
+    ingredients: OperationsIngredient[];
+    ingredientCount: number;
     usesGlobalBranch: boolean;
     history: {
         branch: BranchSummary;
@@ -108,6 +119,7 @@ export default function Inventory(props: Props) {
             index.url(),
             {
                 branch_id: selectedBranch?.id,
+                type: filters.type,
                 search: filters.search,
                 category: filters.category,
                 stock_status: filters.stock_status,
@@ -148,101 +160,145 @@ export default function Inventory(props: Props) {
                                 </OwnerStatusBadge>
                             )}
                         </div>
-                        <section
-                            aria-label="Inventory summary"
-                            className="grid grid-cols-2 gap-2 lg:grid-cols-4"
-                        >
-                            {summaryCards.map((card) => {
-                                const active =
-                                    filters.stock_status === card.status;
-                                return (
-                                    <button
-                                        key={card.status}
-                                        type="button"
-                                        aria-pressed={active}
-                                        onClick={() =>
-                                            visit({
-                                                stock_status: active
-                                                    ? 'all'
-                                                    : card.status,
-                                                page: 1,
-                                            })
-                                        }
-                                        className={`${ownerPanelClass} min-h-[92px] p-3 text-left transition hover:border-[#bdbdbd] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${active ? 'border-[#111] ring-1 ring-[#111]' : ''}`}
-                                    >
-                                        <OwnerStatusBadge tone={card.tone}>
-                                            {card.label}
-                                        </OwnerStatusBadge>
-                                        <p className="mt-2 text-[24px] leading-none font-bold tabular-nums">
-                                            {summary[
-                                                card.status
-                                            ].toLocaleString()}
-                                        </p>
-                                    </button>
-                                );
-                            })}
-                        </section>
-                        <InventoryFiltersForm {...props} />
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-[#767676]">
-                            <p role="status">
-                                {products.total} products ·{' '}
-                                {selectedBranch.name} ({selectedBranch.code})
-                            </p>
-                            <p>
-                                Thresholds are configured in Product management.
-                            </p>
+                        <div className="max-w-[560px]">
+                            <Segmented
+                                label="Inventory type"
+                                value={filters.type ?? 'all'}
+                                onChange={(type) =>
+                                    visit({
+                                        type,
+                                        page: 1,
+                                        stock_status: 'all',
+                                    })
+                                }
+                                options={[
+                                    {
+                                        value: 'all',
+                                        label: `All · ${products.total + props.ingredientCount}`,
+                                    },
+                                    {
+                                        value: 'products',
+                                        label: 'Products',
+                                    },
+                                    {
+                                        value: 'ingredients',
+                                        label: `Ingredients · ${props.ingredientCount}`,
+                                    },
+                                ]}
+                            />
                         </div>
-                        {products.data.length === 0 ? (
-                            <div
-                                className={`${ownerPanelClass} px-5 py-14 text-center`}
-                            >
-                                <PackageSearch className="mx-auto size-7 text-[#aaa]" />
-                                <h2 className="mt-3 text-sm font-semibold">
-                                    No products found
-                                </h2>
-                                <p className="mt-1 text-[12.5px] text-[#767676]">
-                                    Change the search or filters to view other
-                                    stock.
-                                </p>
-                            </div>
-                        ) : (
-                            <div
-                                className={`${ownerPanelClass} overflow-hidden`}
-                            >
-                                <div className="hidden grid-cols-[minmax(240px,1.6fr)_120px_100px_155px_210px] items-center gap-3 border-b border-[#e8e8e8] bg-[#fafafa] px-4 py-2.5 text-[10px] font-semibold tracking-[0.06em] text-[#767676] uppercase min-[980px]:grid">
-                                    <span>Product</span>
-                                    <span>Status</span>
-                                    <span>On hand</span>
-                                    <span>Last updated</span>
-                                    <span className="text-right">Actions</span>
+                        {filters.type !== 'ingredients' && (
+                            <>
+                                <section
+                                    aria-label="Inventory summary"
+                                    className="grid grid-cols-2 gap-2 lg:grid-cols-4"
+                                >
+                                    {summaryCards.map((card) => {
+                                        const active =
+                                            filters.stock_status ===
+                                            card.status;
+                                        return (
+                                            <button
+                                                key={card.status}
+                                                type="button"
+                                                aria-pressed={active}
+                                                onClick={() =>
+                                                    visit({
+                                                        stock_status: active
+                                                            ? 'all'
+                                                            : card.status,
+                                                        page: 1,
+                                                    })
+                                                }
+                                                className={`${ownerPanelClass} min-h-[92px] p-3 text-left transition hover:border-[#bdbdbd] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none ${active ? 'border-[#111] ring-1 ring-[#111]' : ''}`}
+                                            >
+                                                <OwnerStatusBadge
+                                                    tone={card.tone}
+                                                >
+                                                    {card.label}
+                                                </OwnerStatusBadge>
+                                                <p className="mt-2 text-[24px] leading-none font-bold tabular-nums">
+                                                    {summary[
+                                                        card.status
+                                                    ].toLocaleString()}
+                                                </p>
+                                            </button>
+                                        );
+                                    })}
+                                </section>
+                                <InventoryFiltersForm {...props} />
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-[#767676]">
+                                    <p role="status">
+                                        {products.total} products ·{' '}
+                                        {selectedBranch.name} (
+                                        {selectedBranch.code})
+                                    </p>
+                                    <p>
+                                        Thresholds are configured in Product
+                                        management.
+                                    </p>
                                 </div>
-                                <ul className="divide-y divide-[#eeeeee]">
-                                    {products.data.map((product) => (
-                                        <InventoryRow
-                                            key={product.id}
-                                            product={product}
-                                            onAdjust={() =>
-                                                setAdjustingProductId(
-                                                    product.id,
-                                                )
-                                            }
-                                            onHistory={() =>
-                                                visit({
-                                                    history_product: product.id,
-                                                    history_page: 1,
-                                                })
-                                            }
-                                        />
-                                    ))}
-                                </ul>
-                            </div>
+                                {products.data.length === 0 ? (
+                                    <div
+                                        className={`${ownerPanelClass} px-5 py-14 text-center`}
+                                    >
+                                        <PackageSearch className="mx-auto size-7 text-[#aaa]" />
+                                        <h2 className="mt-3 text-sm font-semibold">
+                                            No products found
+                                        </h2>
+                                        <p className="mt-1 text-[12.5px] text-[#767676]">
+                                            Change the search or filters to view
+                                            other stock.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div
+                                        className={`${ownerPanelClass} overflow-hidden`}
+                                    >
+                                        <div className="hidden grid-cols-[minmax(240px,1.6fr)_120px_100px_155px_210px] items-center gap-3 border-b border-[#e8e8e8] bg-[#fafafa] px-4 py-2.5 text-[10px] font-semibold tracking-[0.06em] text-[#767676] uppercase min-[980px]:grid">
+                                            <span>Product</span>
+                                            <span>Status</span>
+                                            <span>On hand</span>
+                                            <span>Last updated</span>
+                                            <span className="text-right">
+                                                Actions
+                                            </span>
+                                        </div>
+                                        <ul className="divide-y divide-[#eeeeee]">
+                                            {products.data.map((product) => (
+                                                <InventoryRow
+                                                    key={product.id}
+                                                    product={product}
+                                                    onAdjust={() =>
+                                                        setAdjustingProductId(
+                                                            product.id,
+                                                        )
+                                                    }
+                                                    onHistory={() =>
+                                                        visit({
+                                                            history_product:
+                                                                product.id,
+                                                            history_page: 1,
+                                                        })
+                                                    }
+                                                />
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                <InventoryPagination
+                                    currentPage={products.current_page}
+                                    lastPage={products.last_page}
+                                    label="Inventory pagination"
+                                    onPageChange={(page) => visit({ page })}
+                                />
+                            </>
                         )}
-                        <InventoryPagination
-                            currentPage={products.current_page}
-                            lastPage={products.last_page}
-                            label="Inventory pagination"
-                            onPageChange={(page) => visit({ page })}
-                        />
+                        {filters.type !== 'products' && (
+                            <IngredientInventory
+                                ingredients={props.ingredients}
+                            />
+                        )}
                     </>
                 ) : (
                     <>
@@ -288,6 +344,90 @@ export default function Inventory(props: Props) {
                 )}
             </OwnerPage>
         </>
+    );
+}
+
+/**
+ * Ingredient rows read the same canonical Branch balance as Operations › Ingredient Stock. Changes are recorded there
+ * (wastage, count correction, pamamalengke), never edited here.
+ */
+function IngredientInventory({
+    ingredients,
+}: {
+    ingredients: OperationsIngredient[];
+}) {
+    return (
+        <section
+            aria-labelledby="inventory-ingredients"
+            className={`${ownerPanelClass} overflow-hidden`}
+        >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e8] bg-[#fafafa] px-4 py-2.5">
+                <h2
+                    id="inventory-ingredients"
+                    className="text-[13px] font-semibold"
+                >
+                    Ingredients · {ingredients.length}
+                </h2>
+                <Link
+                    href={operationsHref('stock')}
+                    className="text-[12px] font-semibold underline"
+                >
+                    Adjust in Operations › Ingredient Stock
+                </Link>
+            </div>
+            {ingredients.length === 0 ? (
+                <p className="px-4 py-8 text-center text-[12.5px] text-[#767676]">
+                    No ingredients match. Ingredients are managed in Operations.
+                </p>
+            ) : (
+                <ul className="divide-y divide-[#eeeeee]">
+                    {ingredients.map((ingredient) => (
+                        <li
+                            key={ingredient.id}
+                            className="grid min-w-0 gap-2 px-3.5 py-3 min-[980px]:grid-cols-[minmax(240px,1.6fr)_140px_150px_150px] min-[980px]:items-center min-[980px]:px-4"
+                        >
+                            <div className="flex min-w-0 items-center gap-3">
+                                <IngredientIcon icon={ingredient.icon} />
+                                <div className="min-w-0">
+                                    <p className="truncate text-[13px] font-semibold">
+                                        {ingredient.name}
+                                    </p>
+                                    <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-[#767676]">
+                                        <Chip tone="outline">Ingredient</Chip>
+                                        Base unit {ingredient.base_unit}
+                                    </p>
+                                </div>
+                            </div>
+                            <div>
+                                <StatusChip ingredient={ingredient} />
+                            </div>
+                            <div className="flex items-baseline justify-between min-[980px]:block">
+                                <span className="text-[11px] text-[#767676] min-[980px]:hidden">
+                                    On hand
+                                </span>
+                                <span className="text-sm font-bold tabular-nums">
+                                    {formatQuantityOrDash(
+                                        ingredient.stock?.current,
+                                        ingredient.base_unit,
+                                    )}
+                                </span>
+                            </div>
+                            <div className="flex items-baseline justify-between min-[980px]:block">
+                                <span className="text-[11px] text-[#767676] min-[980px]:hidden">
+                                    Target
+                                </span>
+                                <span className="text-[12.5px] text-[#555] tabular-nums">
+                                    {formatQuantityOrDash(
+                                        ingredient.target,
+                                        ingredient.base_unit,
+                                    )}
+                                </span>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
     );
 }
 

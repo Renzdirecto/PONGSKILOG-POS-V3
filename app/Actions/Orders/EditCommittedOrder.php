@@ -4,6 +4,7 @@ namespace App\Actions\Orders;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Actions\Inventory\ApplyInventoryMovement;
+use App\Actions\Operations\RecordOrderIngredientUsage;
 use App\Enums\CommercialStatus;
 use App\Enums\InventoryMovementType;
 use App\Enums\PaymentStatus;
@@ -41,6 +42,7 @@ class EditCommittedOrder
         private OrderMoney $money,
         private AuditRecorder $audit,
         private PaymentCorrectionAllocation $allocation,
+        private RecordOrderIngredientUsage $ingredients,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -64,6 +66,12 @@ class EditCommittedOrder
                 return Order::query()->where('branch_id', $branch->id)->findOrFail($requestedOrder->id);
             }
 
+            /**
+             * Branch FOR SHARE first, like every Ingredient writer: POS commits hold the Branch FOR UPDATE and then the
+             * Session, and this edit's movement inserts need a KEY SHARE on the Branch, so taking the Session first
+             * could deadlock with a racing sale.
+             */
+            Branch::query()->whereKey($branch->id)->sharedLock()->firstOrFail();
             $session = StoreSession::query()->where('branch_id', $branch->id)->where('status', StoreSessionStatus::Open)->sharedLock()->first();
             if ($session === null) {
                 throw ValidationException::withMessages(['store' => 'Store is closed. Historical transactions are read-only.']);
@@ -152,6 +160,8 @@ class EditCommittedOrder
             foreach ($deltas as $productId => $delta) {
                 $this->inventory->execute($branch, $products[$productId], InventoryMovementType::OrderEditDelta, $delta, 'Committed order edit '.$order->order_number, $actor, $order->id);
             }
+            /** Only the difference between recorded and newly required Ingredient usage is appended. */
+            $ingredientDeltas = $this->ingredients->edit($order, $branch, $actor);
 
             $order->load('items.modifiers', 'payments', 'adjustments');
             $this->audit->record(
@@ -163,7 +173,7 @@ class EditCommittedOrder
                 auditableId: $order->id,
                 before: $before,
                 after: $this->auditSnapshot($order),
-                metadata: ['request_hash' => $hash, 'reason' => $data['reason'] ?? null, 'inventory_deltas' => $deltas],
+                metadata: ['request_hash' => $hash, 'reason' => $data['reason'] ?? null, 'inventory_deltas' => $deltas, 'ingredient_deltas' => $ingredientDeltas],
                 idempotencyKey: $key,
             );
             OrderUpdated::dispatch($order, ['items', 'total', 'payment_status']);

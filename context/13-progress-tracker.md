@@ -863,6 +863,32 @@ USER MANUAL QA: **PASSED BY USER** (reported by the user; the agent performed no
 
 ---
 
+## Phase 16E — Owner Operations & Pamamalengke
+
+Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of `origin/dev` at start). Approved design tracked: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Additive migration `2026_09_24_053738_create_owner_operations_tables`; no dependency change. Rules: `02-business-rules.md` §39; schema: `05` Phase 16E; access: `07`; UI: `08`/`09`.
+
+- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** Not Final QA, not merged, no PR. USER MANUAL QA: PENDING (the agent performed no browser/device QA). The complete Laravel suite is reserved for FINAL QA. PWA not implemented.
+- Operations sidebar section (Owner + Super Admin) with seven real routes and URL Plan state; Plans (one active Plan per Product, archive, history-safe moves); business-wide Ingredients with one exact per-Branch balance; recipes per existing Product size with Missing / No recipe needed / Product-stock exclusivity; append-only Ingredient ledger (opening, sale, edit delta, void restoration, purchase, wastage, count correction).
+- Sale consumption integrated into the canonical order lifecycle (Pay Now and Pay Later share `ApplyOrderInventory`); immutable Order recipe snapshots make edits delta-only and voids restore the historical net once; negative Ingredient stock allowed; settlement/Kitchen/payment corrections never move stock.
+- Server-side replenishment engine; Pamamalengke Plan mode and mobile Shopping checklist; Confirm writes one canonical Store Session expense (existing OPEN Store Session rule kept; Cash/Cashless source) plus exact restocks and purchase metadata; Purchases projection; View summary with Cash view (not profit), estimated Profit view (snapshotted costs, uncosted never ₱0, Store-wide expenses only in the business scope) and a display-only Profit divider. Catalog › Inventory gains All / Products / Ingredients.
+- Verification: new Pest suites `OperationsIngredientConsumptionTest` (14), `OperationsManagementTest` (32), `PamamalengkeTest` (13); focused regression across orders, edit, void, payments, inventory, expenses, reports/reconciliation, realtime and RBAC passed (1,089 tests); frontend suite 168 tests (new `operations-ui.test.ts`); Pint, PHPStan (0 errors), frontend lint, TypeScript, production build and `git diff --check`; `tests/verify-operations-postgres.php` passed A–N with real two-process races on an isolated schema that was removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**; it only needs the forward migration.
+- The PostgreSQL harness caught a real deadlock during development (a POS sale holding the Branch row vs a concurrent wastage holding the balance and needing a foreign-key KEY SHARE on the Branch). Fixed by a Branch → balance lock order for every Operations writer, inserting only missing balances and FOR NO KEY UPDATE on Ingredient definitions; the race then passed three consecutive runs. The same inversion appears to exist in the pre-existing Product-stock `AdjustInventory` vs Pay Now path (not changed here; flagged for FINAL QA).
+- Known limitations: Operations "today" uses the Phase 16 business date for sales/COGS and the Manila calendar day for stock movements; a Product/size removed by an edit and re-added later reuses the Order's original snapshot; direct-resale COGS is unavailable (no trusted product cost); Confirm needs an OPEN Store Session at the Branch; checklist progress is per device.
+
+- [x] Operations navigation (Owner + Super Admin)
+- [x] Pamalengke Plans
+- [x] Ingredients + canonical Branch stock
+- [x] Recipes
+- [x] Sale / edit / void Ingredient integration
+- [x] Ingredient Stock (wastage, count correction)
+- [x] Pamamalengke recommendations + checklist + Confirm
+- [x] Purchases
+- [x] View summary (Cash / Profit / divider)
+- [ ] USER MANUAL QA
+- [ ] FINAL QA
+
+---
+
 ## Phase 17 — Stock Transfers
 
 - [ ] Create transfer

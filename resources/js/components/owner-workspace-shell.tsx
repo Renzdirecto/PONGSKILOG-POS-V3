@@ -3,11 +3,17 @@ import {
     BarChart3,
     Bell,
     Boxes,
+    Layers,
     LayoutDashboard,
+    LayoutGrid,
+    Leaf,
+    ListChecks,
     Menu,
     PackageSearch,
     ReceiptText,
     Settings,
+    ShoppingBasket,
+    ShoppingCart,
     UserRound,
     Users,
 } from 'lucide-react';
@@ -35,6 +41,7 @@ import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
 import { index as staffIndex } from '@/routes/staff';
+import operationsRoutes from '@/routes/operations';
 import { owner, reports, transactions } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
@@ -52,6 +59,10 @@ type NavigationItem = {
     href?: ReturnType<typeof owner>;
     active: boolean;
     unavailableReason?: string;
+};
+
+type OperationsPageProps = {
+    operations?: { active_plan_id: string | null };
 };
 
 function initials(name?: string): string {
@@ -119,7 +130,7 @@ export function OwnerWorkspaceShell({
 }: {
     children: React.ReactNode;
 }) {
-    const page = usePage<SharedProps>();
+    const page = usePage<SharedProps & OperationsPageProps>();
     const { auth, branchContext } = page.props;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell is Owner-only. */
@@ -134,6 +145,13 @@ export function OwnerWorkspaceShell({
         page.component === 'workspaces/transaction-history' &&
         page.props.surface === 'business';
     const isStaff = page.component === 'super-admin/staff';
+    const operationsPage = page.component.startsWith('operations/')
+        ? page.component.slice('operations/'.length)
+        : null;
+    /** Operations links keep the URL-addressable active Plan while moving between Operations pages. */
+    const planQuery = page.props.operations?.active_plan_id
+        ? { query: { plan: page.props.operations.active_plan_id } }
+        : undefined;
     const canProducts = auth.permissions.includes('products.manage');
     const canInventory = auth.permissions.includes('inventory.manage');
     const canTransactions = auth.permissions.includes('transactions.view');
@@ -155,7 +173,7 @@ export function OwnerWorkspaceShell({
             ],
         },
         {
-            label: 'Operations',
+            label: 'Sales',
             items: [
                 {
                     label: 'Transactions',
@@ -196,6 +214,27 @@ export function OwnerWorkspaceShell({
             ],
         },
         {
+            label: 'Operations',
+            items: (
+                [
+                    ['plans', 'Pamalengke Plans', 'Plans', ShoppingBasket],
+                    ['overview', 'Overview', 'Overview', LayoutGrid],
+                    ['ingredients', 'Ingredients', 'Ingredients', Leaf],
+                    ['recipes', 'Recipes', 'Recipes', ListChecks],
+                    ['stock', 'Ingredient Stock', 'Stock', Layers],
+                    ['pamamalengke', 'Pamamalengke', 'Market', ShoppingCart],
+                    ['purchases', 'Purchases', 'Purchases', ReceiptText],
+                ] as const
+            ).map(([key, label, shortLabel, icon]) => ({
+                label,
+                shortLabel,
+                icon,
+                href: canInventory ? operationsRoutes[key](planQuery) : undefined,
+                active: operationsPage === key,
+                unavailableReason: 'Operations management is unavailable.',
+            })),
+        },
+        {
             label: 'Administration',
             items: [
                 {
@@ -223,7 +262,9 @@ export function OwnerWorkspaceShell({
         navigationItems.find((item) => item.label === 'Products')!,
         navigationItems.find((item) => item.label === 'Inventory')!,
     ];
-    const pageTitle = isCatalog
+    const pageTitle = operationsPage
+        ? (navigationItems.find((item) => item.active)?.label ?? 'Operations')
+        : isCatalog
         ? 'Products'
         : isInventory
           ? 'Inventory'
@@ -468,7 +509,7 @@ export function OwnerWorkspaceShell({
                     aria-haspopup="dialog"
                     aria-expanded={mobileMenuOpen}
                     onClick={() => setMobileMenuOpen(true)}
-                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches || isReports || isTransactions || isStaff ? 'bg-white text-[#111111]' : 'text-white/70'}`}
+                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches || isReports || isTransactions || isStaff || operationsPage ? 'bg-white text-[#111111]' : 'text-white/70'}`}
                 >
                     <Menu className="size-[18px]" />
                     More

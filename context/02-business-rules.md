@@ -759,3 +759,42 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 
 - Owner and Super Admin use the **same** Transaction History page (`workspaces/transaction-history`, `surface = business`) at `GET workspaces/transactions` inside their management shell, across All Branches or the selected Branch, with the same server search, filters, metrics, pagination (10 per page), cards, details and receipt. All Branches cards carry the Branch code; details carry Branch identity. Voided Orders stay excluded.
 - Edit, Settle and Void are offered only when the viewer also holds POS access to the selected Branch (Super Admin) and the Order belongs to that Branch's OPEN Store Session. The Owner is always read-only: Take payment, Void and Edit are not rendered for a view-only viewer (only Details and Receipt/Print), invoice proofs show that they exist but open only from the Branch POS, and Show QR receipt sharing is hidden. Every write endpoint keeps its POS authorization, so hidden buttons are never the control.
+
+## 39. Phase 16E Owner Operations & Pamamalengke - 2026-09-24
+
+**Status: IMPLEMENTED — READY FOR USER MANUAL QA.** Not Final QA, not merged. Approved product/UX reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html` (decoded `__bundler/template`); its mock data is never used in production.
+
+### Structure
+
+- **Operations** is a section of the existing Owner sidebar (and a Super Admin *Operations* section): Pamalengke Plans, Overview, Ingredients, Recipes, Ingredient Stock, Pamamalengke, Purchases. Transactions and Reports now sit under **Sales**. Each page is a real route; the active Plan is in the URL (`?plan=`).
+- A **Pamalengke Plan** groups existing Catalog Products, their recipes, Ingredients, replenishment and reporting. **A Plan never owns stock.** Plans are archived, never deleted.
+- A sellable Product belongs to **at most one active Plan** (database unique). Choosing it in another Plan moves it for **future sales only**; every committed sale keeps the Plan recorded when it was first committed. Products outside every Plan sell normally and are excluded from Plan metrics (business totals still include them, as uncosted where no recipe applies).
+
+### Ingredients and stock
+
+- Ingredient **definitions** are business-wide, like Catalog Products; **stock is per Branch**: exactly one canonical balance per **Branch + Ingredient**, shared by every Plan that shows the Ingredient. Catalog › Inventory (type filter All / Products / Ingredients) and Operations › Ingredient Stock read the same balance.
+- Quantities are exact `numeric(18,4)` values in the Ingredient's base unit (`pc`, `pack`, `bottle`, `ml`, `L`, `g`, `kg`), entered with at most four decimals and computed server-side as integer ten-thousandths — never floats, never silently rounded (29.5 stays 29.5). Purchase quantities convert exactly: actual purchase units × purchase-unit size.
+- Every stock change is an **append-only movement** written together with the balance by one primitive: opening balance, sale consumption, order-edit adjustment, void restoration, purchase restock, wastage, count correction. Opening stock is recorded once, at creation, as an opening-balance movement for the selected Branch; afterwards there is no direct balance edit. Wastage cannot exceed current stock; a count appends *counted − system stock* (a zero difference records nothing).
+- The **base unit locks** once movements, a recipe or a recipe snapshot use it. Changing target, purchase unit, cost or rule never rewrites movements or snapshotted costs. An Ingredient used by a current recipe cannot be archived.
+
+### Recipes and committed sales
+
+- Recipes attach to existing Products and their existing **Size** options (a Product without a Size group has one base recipe). States: **Recipe set**, **Some sizes missing**, **Missing recipe**, **No recipe needed** (direct resale).
+- **One sale never consumes both Product stock and Ingredient stock:** a recipe cannot be saved for a Product that tracks Product stock at any Branch, tracking cannot be enabled while the Product has recipes, and at sale time a Product that tracks Product stock at the Branch uses Product stock only.
+- On first commitment — **Pay Now and Pay Later through the same `ApplyOrderInventory` path** — each Order Product/size is snapshotted (recipe state, recipe lines per unit, purchase-unit cost basis, Plan) and recipe-backed lines append one sale-consumption movement per Ingredient (database-unique per snapshot line). A **missing recipe** sale succeeds and moves nothing; it is reported as not costed. **Negative Ingredient stock is allowed for sales** and flagged "Negative · count needed"; Products are never auto-hidden because of it.
+- Pay Later settlement, payment corrections and allocations, Kitchen transitions, Store Close, report refreshes and broadcasts never move Ingredient stock.
+- **Edit** appends only the compensating delta between recorded net consumption and the consumption now required, computed from the Order's own snapshot (a Product/size added by the edit snapshots the current recipe). **Void** restores the current net recorded consumption (post-edit) exactly once, from the recorded movements — never today's recipe — protected by the existing Void idempotency and a database-unique restoration per snapshot line.
+
+### Cost, recommendations and purchases
+
+- **Estimated COGS**: each consumption movement snapshots its signed estimated cost = quantity × purchase-unit cost ÷ purchase-unit size (half-up to the centavo); edits and voids net against the recorded cost, so history never changes when costs, recipes or Plans change. An unknown cost is stored as unknown and reported as an incomplete estimate — never ₱0. Direct-resale products have no trusted product cost and are reported as uncosted.
+- **Replenishment** (`ReplenishmentAdvisor`, the only authority): *Top up to target* suggests whole purchase units for any shortfall below target; *Reorder at a threshold* waits until current ≤ reorder point and then buys back to target (at least one unit); *No automatic suggestion* never suggests. No purchase unit = Needs setup. Only purchase-unit counts round up; negative stock widens the gap.
+- **Pamamalengke**: Plan mode (auto suggestions with *Skip this run*, needs-setup, manual items, no-purchase-needed) and a mobile Shopping checklist (bought, actual quantity, actual unit cost, not available, note). Manual items and skips are saved per Branch + Plan; checklist progress is kept on the device until confirmed. Recommended and actual quantities may differ.
+- **Confirm Pamamalengke** requires one concrete active Branch and that Branch's **OPEN Store Session (existing Store Purchase rule kept)**, plus Cash or Cashless as the paid-from source (added to the approved design because a canonical Store Purchase needs a source). One transaction writes **one** canonical Store Session expense through `RecordStoreSessionExpense::persist()` (same row, audit and event as a Cashier Store Purchase; it reduces that channel's expected closing balance), the exact Ingredient restocks, the purchase metadata (recommended vs actual, estimated vs actual cost), the latest purchase-unit cost for future estimates, clears the confirmed list and audits the run. Manual items share the expense but never restock. A retry with the same key replays; a changed payload is rejected. **Operations › Purchases** is a view over those expenses plus metadata; Pamamalengke keeps no ledger or total of its own.
+
+### Summary
+
+- **Cash view** = Sales today − Pamamalengke today − other Store expenses (All plans only) = **Cash after purchases**, labelled as not profit because bought stock may remain on the shelf.
+- **Profit view (estimated)** = Net sales − Estimated ingredient COGS = Estimated gross profit; minus non-stock pamamalengke items (Plan) or non-stock items and other Store expenses (All plans) = Estimated operating profit. Store-wide expenses are never allocated to a Plan and are counted once. Business Net Sales are the Phase 16 Net Sales of the same business-date Store Sessions; Plan sales are the Order line totals attributed by the snapshotted Plan.
+- **Divide estimated profit** (1, 2, 3, Custom up to 20 shares) is a display-only calculator; it writes nothing and reports centavos that cannot be split equally.
+- **All Branches** shows read-only analytics only; Ingredient stock, Pamamalengke suggestions, opening stock, adjustments and confirmations require one selected Branch.

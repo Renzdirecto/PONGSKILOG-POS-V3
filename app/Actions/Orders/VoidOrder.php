@@ -4,6 +4,7 @@ namespace App\Actions\Orders;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Actions\Inventory\ApplyInventoryMovement;
+use App\Actions\Operations\RecordOrderIngredientUsage;
 use App\Enums\CommercialStatus;
 use App\Enums\InventoryMovementType;
 use App\Enums\StoreSessionStatus;
@@ -42,6 +43,7 @@ class VoidOrder
         private PosAccess $access,
         private ApplyInventoryMovement $inventory,
         private AuditRecorder $audit,
+        private RecordOrderIngredientUsage $ingredients,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -104,6 +106,8 @@ class VoidOrder
 
             $before = $this->snapshot($order);
             $restorations = $this->restoreInventory($branch, $order, $initiator);
+            /** Restores the current net recorded Ingredient usage (post-edit), once, from the historical snapshot. */
+            $ingredientRestorations = $this->ingredients->void($order, $branch, $initiator);
             $void = OrderVoid::query()->create([
                 'branch_id' => $branch->id,
                 'store_session_id' => $session->id,
@@ -142,6 +146,7 @@ class VoidOrder
                     'reason_label' => $void->reason_label,
                     'reason_text' => $void->reason_text,
                     'inventory_restorations' => $restorations,
+                    'ingredient_restorations' => $ingredientRestorations,
                     'store_session_id' => $session->id,
                 ],
                 idempotencyKey: $data['idempotency_key'],

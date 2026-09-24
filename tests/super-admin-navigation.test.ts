@@ -36,7 +36,7 @@ const superAdminPermissions = [
     'access_control.manage',
 ];
 
-test('super admin navigation exposes the four required sections in order', () => {
+test('super admin navigation exposes the required sections in order', () => {
     const navigation = superAdminNavigation(superAdminPermissions);
 
     assert.deepEqual(
@@ -65,6 +65,18 @@ test('super admin navigation exposes the four required sections in order', () =>
                     'Reports',
                     'Products',
                     'Inventory',
+                ],
+            ],
+            [
+                'Operations',
+                [
+                    'Pamalengke Plans',
+                    'Overview',
+                    'Ingredients',
+                    'Recipes',
+                    'Ingredient Stock',
+                    'Pamamalengke',
+                    'Purchases',
                 ],
             ],
             [
@@ -103,6 +115,13 @@ test('existing destinations point at real routes and only unbuilt pages are plan
         reports: ['workspaces.reports', 'live'],
         products: ['products.index', 'live'],
         inventory: ['inventory.index', 'live'],
+        'ops-plans': ['operations.plans', 'live'],
+        'ops-overview': ['operations.overview', 'live'],
+        'ops-ingredients': ['operations.ingredients', 'live'],
+        'ops-recipes': ['operations.recipes', 'live'],
+        'ops-stock': ['operations.stock', 'live'],
+        'ops-pamamalengke': ['operations.pamamalengke', 'live'],
+        'ops-purchases': ['operations.purchases', 'live'],
         'audit-trail': ['workspaces.audit-trail', 'live'],
         'void-orders': ['workspaces.void-orders', 'live'],
         staff: ['super-admin.staff.index', 'live'],
@@ -233,7 +252,10 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
 test('planned pages and the staff form never fake controls or echo credentials', () => {
     assert.match(placeholderPage, /Planned/);
     assert.doesNotMatch(placeholderPage, /type="checkbox"|role="switch"/);
-    assert.match(staffPage, /form\.reset\('password', 'password_confirmation'\)/);
+    assert.match(
+        staffPage,
+        /form\.reset\('password', 'password_confirmation'\)/,
+    );
     assert.match(staffPage, /All branches \/ business-wide/);
     assert.doesNotMatch(staffPage, /must change|first login|invite/i);
 });

@@ -542,3 +542,7 @@ Network returns → Reverb/Echo reconnects → the client performs an authoritat
 | Phone top bar / auth identity | Round emblem `public/images/branding/pongskilog-emblem.png` | `public/images/branding/source/pongskilog-round-emblem.jpg` |
 
 The 192/512 and maskable icons are ready for a future manifest but are not yet referenced by one.
+
+### Phase 16E note (2026-09-24)
+
+Owner Operations pages (Overview, Ingredient Stock, Purchases) are possible future **read-only** PWA snapshot candidates under the rules above; Pamamalengke confirmation, adjustments and every other Operations write stay online-only. Nothing PWA-related was implemented in Phase 16E. Deploying 16E needs only the additive migration `2026_09_24_053738_create_owner_operations_tables` (`php artisan migrate --force`); no seeder, queue or environment change.

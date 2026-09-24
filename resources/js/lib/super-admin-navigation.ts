@@ -2,6 +2,7 @@ export type SuperAdminSectionId =
     | 'overview'
     | 'operations'
     | 'owner'
+    | 'owner-operations'
     | 'control';
 
 export type SuperAdminDestinationId =
@@ -18,6 +19,13 @@ export type SuperAdminDestinationId =
     | 'reports'
     | 'products'
     | 'inventory'
+    | 'ops-plans'
+    | 'ops-overview'
+    | 'ops-ingredients'
+    | 'ops-recipes'
+    | 'ops-stock'
+    | 'ops-pamamalengke'
+    | 'ops-purchases'
     | 'audit-trail'
     | 'void-orders'
     | 'staff'
@@ -56,6 +64,7 @@ export const superAdminSections: readonly SuperAdminSection[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'operations', label: 'Cashier + Kitchen' },
     { id: 'owner', label: 'Owner' },
+    { id: 'owner-operations', label: 'Operations' },
     { id: 'control', label: 'Control' },
 ];
 
@@ -190,6 +199,36 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         availability: 'live',
         requiresBranch: false,
     },
+    ...(
+        [
+            ['ops-plans', 'Pamalengke Plans', 'Plans', 'operations.plans'],
+            ['ops-overview', 'Overview', 'Overview', 'operations.overview'],
+            [
+                'ops-ingredients',
+                'Ingredients',
+                'Ingredients',
+                'operations.ingredients',
+            ],
+            ['ops-recipes', 'Recipes', 'Recipes', 'operations.recipes'],
+            ['ops-stock', 'Ingredient Stock', 'Stock', 'operations.stock'],
+            [
+                'ops-pamamalengke',
+                'Pamamalengke',
+                'Market',
+                'operations.pamamalengke',
+            ],
+            ['ops-purchases', 'Purchases', 'Purchases', 'operations.purchases'],
+        ] as const
+    ).map(([id, label, shortLabel, routeName]): SuperAdminDestination => ({
+        id,
+        label,
+        shortLabel,
+        section: 'owner-operations',
+        routeName,
+        permission: 'inventory.manage',
+        availability: 'live',
+        requiresBranch: false,
+    })),
     {
         id: 'audit-trail',
         label: 'Audit Trail',
@@ -296,6 +335,13 @@ export function activeSuperAdminDestination(
     }
     if (component.startsWith('inventory/')) {
         return 'inventory';
+    }
+    if (component.startsWith('operations/')) {
+        const destination = `ops-${component.slice('operations/'.length)}`;
+
+        return superAdminDestinations.some((item) => item.id === destination)
+            ? (destination as SuperAdminDestinationId)
+            : null;
     }
     if (component === 'branches/index') {
         return 'settings';

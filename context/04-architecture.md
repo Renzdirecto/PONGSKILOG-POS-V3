@@ -527,3 +527,10 @@ Frozen:
 - DB commit before broadcast
 - No offline-first financial writes
 - Performance-first image handling
+
+## 20. Owner Operations (Phase 16E)
+
+- **Stock primitive:** `App\Actions\Operations\ApplyIngredientMovement` (lock rows in Ingredient-id order, append movement + move balance in one transaction). Nothing else writes Ingredient balances.
+- **Order integration:** `RecordOrderIngredientUsage` — `commit()` from `ApplyOrderInventory` (Pay Now and Pay Later), `edit()` from `EditCommittedOrder`, `void()` from `VoidOrder`, all inside the caller's existing transaction and lock order (Store Session → Order → Product inventory → Ingredient balances). Immutable `order_recipe_snapshots` make edits and voids independent of today's recipe, costs and Plans.
+- **Domain services:** `ReplenishmentAdvisor` (only recommendation authority), `IngredientStockReport` (batched canonical stock + today's movements), `OperationsSummary` (sales/COGS/profit on `StoreSessionSalesReport`), `OperationsWorkspace` (page props), `ExactQuantity` (integer ten-thousandths), `OperationsAccess` (scope + authorization).
+- **Money:** Confirm Pamamalengke writes the canonical Store Session expense through `RecordStoreSessionExpense::persist()`; Purchases is a projection. React only formats server values; its recipe-cost and checklist totals are display previews with the same integer rounding.

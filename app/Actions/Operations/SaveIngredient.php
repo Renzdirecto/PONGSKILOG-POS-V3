@@ -13,6 +13,7 @@ use App\Models\OperationPlan;
 use App\Models\OperationPlanIngredient;
 use App\Models\RecipeLine;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\ExactMoney;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
@@ -33,6 +34,7 @@ class SaveIngredient
         private OperationsAccess $access,
         private ApplyIngredientMovement $movements,
         private AuditRecorder $audit,
+        private CatalogRealtime $realtime,
     ) {}
 
     /** @return array<string, mixed> */
@@ -117,6 +119,7 @@ class SaveIngredient
                     'created_by_user_id' => $actor->id,
                 ]);
                 ReportsChanged::dispatch($branch->id, 'ingredients.opening_balance');
+                $this->realtime->ingredientsChanged($branch, 'opening_balance');
             }
 
             $this->audit->record(

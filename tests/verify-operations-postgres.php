@@ -9,17 +9,24 @@
 
 use App\Actions\Operations\AdjustIngredientStock;
 use App\Actions\Operations\ConfirmPamamalengke;
+use App\Actions\Orders\CommitPayLaterOrder;
+use App\Actions\Orders\CreatePosDraftOrder;
+use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\PayNowOrder;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
 use App\Models\Ingredient;
 use App\Models\IngredientMovement;
+use App\Models\KitchenTicket;
 use App\Models\OperationPlan;
+use App\Models\Order;
 use App\Models\OrderRecipeSnapshot;
 use App\Models\PamamalengkePurchase;
+use App\Models\Payment;
 use App\Models\StoreSessionExpense;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\BranchCatalog;
 use App\Support\ExactQuantity;
 use App\Support\OperationsSummary;
 use App\Support\OperationsWorkspace;
@@ -119,7 +126,13 @@ if ($worker) {
             'sale' => app(PayNowOrder::class)->execute($user, $branch, [
                 'order_type' => 'take_out', 'customer_label' => 'Race', 'payment_method' => 'cash', 'cash_received' => '500.00',
                 'cashless_amount' => null, 'idempotency_key' => $key,
-                'items' => [['product_id' => $argv[8], 'quantity' => 1, 'notes' => null, 'modifiers' => [['group_id' => $argv[9], 'option_id' => $argv[10]]]]],
+                'items' => [['product_id' => $argv[8], 'quantity' => 1, 'notes' => null, 'modifiers' => json_decode($argv[9], true, flags: JSON_THROW_ON_ERROR)]],
+            ])->id,
+            'commit_later' => app(CommitPayLaterOrder::class)->execute($user, $branch, Order::query()->findOrFail($argv[8]), ['idempotency_key' => $key])->id,
+            'edit' => app(EditCommittedOrder::class)->execute($user, $branch, Order::query()->findOrFail($argv[8]), [
+                'idempotency_key' => $key, 'expected_version' => (int) $argv[10], 'order_type' => 'take_out', 'customer_label' => 'Race',
+                'branch_table_id' => null, 'reason' => 'Race edit', 'refund_cash_amount' => null,
+                'items' => json_decode($argv[9], true, flags: JSON_THROW_ON_ERROR),
             ])->id,
             'wastage' => app(AdjustIngredientStock::class)->execute($user, Ingredient::query()->findOrFail($argv[8]), [
                 'mode' => 'wastage', 'quantity' => '0.5', 'reason' => 'Spoiled', 'idempotency_key' => $key,
@@ -150,7 +163,7 @@ try {
         'SELECT data_type, numeric_precision, numeric_scale FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ?',
         [$schema, $table, $column],
     );
-    foreach ([['branch_ingredient_stocks', 'on_hand'], ['ingredient_movements', 'quantity_delta'], ['ingredient_movements', 'balance_after'], ['recipe_lines', 'quantity'], ['order_recipe_snapshot_lines', 'quantity_per_unit']] as [$table, $column]) {
+    foreach ([['branch_ingredient_stocks', 'on_hand'], ['ingredient_movements', 'quantity_delta'], ['ingredient_movements', 'balance_after'], ['recipe_lines', 'quantity'], ['order_recipe_snapshot_lines', 'quantity_per_unit'], ['product_modifier_effect_lines', 'quantity'], ['order_recipe_snapshot_modifier_lines', 'quantity_per_selection']] as [$table, $column]) {
         $type = $numeric($table, $column);
         verifyPhase16E($type?->data_type === 'numeric' && (int) $type->numeric_precision === 18 && (int) $type->numeric_scale === 4, "{$table}.{$column} must be numeric(18,4).");
     }
@@ -160,15 +173,17 @@ try {
         $definition = $indexes['ingredient_movements_'.$name]->indexdef ?? '';
         verifyPhase16E(str_starts_with($definition, 'CREATE UNIQUE INDEX') && preg_match("/WHERE .*movement_type.*'{$type}'/", $definition) === 1, "Partial unique index {$name} is missing.");
     }
-    foreach (['branch_ingredient_stocks_branch_id_ingredient_id_unique', 'operation_plan_products_product_id_unique', 'ingredient_movements_branch_id_ingredient_id_created_at_index', 'pamamalengke_purchases_store_session_expense_id_unique', 'pamamalengke_purchases_idempotency_key_unique', 'order_recipe_snapshots_order_id_product_id_size_key_unique'] as $index) {
+    foreach (['branch_ingredient_stocks_branch_id_ingredient_id_unique', 'operation_plan_products_product_id_unique', 'ingredient_movements_branch_id_ingredient_id_created_at_index', 'pamamalengke_purchases_store_session_expense_id_unique', 'pamamalengke_purchases_idempotency_key_unique', 'order_recipe_snapshots_order_id_product_id_size_key_unique', 'product_modifier_effects_product_id_modifier_option_id_unique', 'product_modifier_effect_lines_unique', 'order_recipe_snapshot_modifiers_unique', 'order_recipe_snapshot_modifier_lines_unique'] as $index) {
         verifyPhase16E($indexes->has($index), "Index {$index} is missing.");
     }
+    verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Add-on effects rollback failed.');
+    verifyPhase16E(! DB::getSchemaBuilder()->hasTable('product_modifier_effects') && ! DB::getSchemaBuilder()->hasTable('order_recipe_snapshot_modifier_lines') && DB::getSchemaBuilder()->hasTable('ingredient_movements'), 'Add-on effects rollback was not isolated.');
     verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 16E rollback failed.');
     verifyPhase16E(! DB::getSchemaBuilder()->hasTable('ingredient_movements') && ! DB::getSchemaBuilder()->hasColumn('products', 'no_recipe_needed'), 'Phase 16E rollback left tables behind.');
     verifyPhase16E(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 16E reapply failed.');
-    echo 'MIGRATION PASS: numeric(18,4) quantities, partial unique indexes, rollback and reapply.'.PHP_EOL;
+    echo 'MIGRATION PASS: numeric(18,4) quantities, partial unique indexes, short PostgreSQL constraint names, rollback and reapply.'.PHP_EOL;
 
-    $ops = OperationsScenario::create();
+    $ops = OperationsScenario::create()->withAddOns();
     $lemonId = $ops->ingredients['lemon']->id;
 
     /** A. Exact fractional stock. */
@@ -212,10 +227,15 @@ try {
     }
     echo 'E/F PASS: void restores the historical recipe once; the database rejects a second restoration.'.PHP_EOL;
 
-    /** G. Negative balance is allowed for sales. */
-    $ops->payNow([$ops->line($ops->lemonYakult, 30, 'l')]);
-    verifyPhase16E(str_starts_with($ops->stock('lemon'), '-'), 'Negative ingredient balance was blocked.');
-    echo 'G PASS: shortage never blocks a sale; balance is '.$ops->stock('lemon').'.'.PHP_EOL;
+    /** G. A sale can never drive a recipe Ingredient below zero (supersedes the earlier negative-stock sales). */
+    $lemonBefore = $ops->stock('lemon');
+    try {
+        $ops->payNow([$ops->line($ops->lemonYakult, 30, 'l')]);
+        verifyPhase16E(false, 'An oversized sale was accepted.');
+    } catch (ValidationException) {
+        verifyPhase16E($ops->stock('lemon') === $lemonBefore && ! str_starts_with($lemonBefore, '-'), 'A rejected sale moved stock.');
+    }
+    echo 'G PASS: a sale beyond Recipe stock is rejected; lemon stays '.$ops->stock('lemon').'.'.PHP_EOL;
 
     /** H / I / K / M. Purchase conversion, shared stock, one expense and stable cost snapshots. */
     $cogsBefore = app(OperationsSummary::class)->today($ops->branch)['business']['cogs_cents'];
@@ -280,7 +300,7 @@ try {
     ]);
     $afterConfirm = ExactQuantity::parse(BranchIngredientStock::query()->where('ingredient_id', $lemonId)->value('on_hand'));
     $results = $start('mixed', [
-        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $ops->sizeGroup->id, $ops->sizes['m']->id],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, json_encode($ops->line($ops->lemonYakult, 1, 'm')['modifiers'], JSON_THROW_ON_ERROR)],
         ['wastage', (string) $ops->owner->id, $ops->branch->id, (string) Str::uuid(), $lemonId],
     ], 'SELECT id FROM branch_ingredient_stocks WHERE branch_id = ? AND ingredient_id = ? FOR UPDATE', [$ops->branch->id, $lemonId]);
     $afterMixed = ExactQuantity::parse(BranchIngredientStock::query()->where('ingredient_id', $lemonId)->value('on_hand'));
@@ -289,6 +309,104 @@ try {
     verifyPhase16E($ledger === $afterMixed, 'Ledger sum and balance disagree.');
     verifyPhase16E(OrderRecipeSnapshot::query()->count() > 0, 'No recipe snapshots were written.');
     echo 'L PASS: duplicate confirmation replays once; concurrent sale and wastage keep the balance equal to the ledger.'.PHP_EOL;
+
+    /**
+     * R. Recipe availability under real concurrency. Each race holds the contested Ingredient balance row while both
+     * workers queue, then releases it: exactly one wins, the loser gets a clean 422 with no Payment, committed Order,
+     * Kitchen ticket or Ingredient movement, stock never goes below zero and the ledger still equals the balance.
+     */
+    $deadlocks = function (): int {
+        DB::connection('phase16e_admin')->select('SELECT pg_stat_clear_snapshot()');
+
+        return (int) DB::connection('phase16e_admin')->selectOne('SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()')->deadlocks;
+    };
+    $deadlocksBefore = $deadlocks();
+    /** E changed Medium to lemon 1 + yakult 2; the races use the standard Medium recipe again (future sales only). */
+    $ops->recipe($ops->lemonYakult, 'm', ['lemon' => '0.5', 'yakult' => '1', 'syrup' => '30', 'water' => '250']);
+    $effects = fn (): array => [
+        'payments' => Payment::query()->count(),
+        'committed' => Order::query()->whereNotNull('committed_at')->count(),
+        'tickets' => KitchenTicket::query()->count(),
+    ];
+    $stockRow = 'SELECT id FROM branch_ingredient_stocks WHERE branch_id = ? AND ingredient_id = ? FOR UPDATE';
+    $modifiers = fn (?string $size, array $options = []): string => json_encode($ops->line($ops->lemonYakult, 1, $size, $options)['modifiers'], JSON_THROW_ON_ERROR);
+    $oneWinner = function (array $results, string $scenario) {
+        $statuses = array_column($results, 'status');
+        sort($statuses);
+        verifyPhase16E($statuses === [200, 422], "{$scenario}: expected exactly one winner, got ".json_encode($results));
+    };
+    $ledgerMatches = function (string $ingredient) use ($ops): void {
+        $id = $ops->ingredients[$ingredient]->id;
+        $ledger = ExactQuantity::parse((string) DB::selectOne('SELECT SUM(quantity_delta) AS total FROM ingredient_movements WHERE branch_id = ? AND ingredient_id = ?', [$ops->branch->id, $id])->total);
+        verifyPhase16E($ledger === ExactQuantity::parse(BranchIngredientStock::query()->where('branch_id', $ops->branch->id)->where('ingredient_id', $id)->value('on_hand')), "{$ingredient} ledger and balance disagree.");
+    };
+
+    /** R-A. Only enough Yakult for one Medium; two simultaneous Pay Now commits. */
+    $ops->setStock('yakult', '1');
+    $before = $effects();
+    $results = $start('ra', [
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+    ], $stockRow, [$ops->branch->id, $ops->ingredients['yakult']->id]);
+    $oneWinner($results, 'R-A');
+    verifyPhase16E($ops->stock('yakult') === '0', 'R-A: Yakult is not exactly 0.');
+    verifyPhase16E($effects() === ['payments' => $before['payments'] + 1, 'committed' => $before['committed'] + 1, 'tickets' => $before['tickets'] + 1], 'R-A: the losing sale left partial effects.');
+    $ledgerMatches('yakult');
+    echo 'R-A PASS: two Pay Now commits for the last Medium: one wins, one gets 422, Yakult ends at 0.'.PHP_EOL;
+
+    /** R-B. Lemon Yakult (250 ml) and Tapsilog (100 ml) share Water; 300 ml cannot make both. */
+    $ops->setStock('yakult', '10');
+    $ops->setStock('water', '300');
+    $before = $effects();
+    $results = $start('rb', [
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->tapsilog->id, '[]'],
+    ], $stockRow, [$ops->branch->id, $ops->ingredients['water']->id]);
+    $oneWinner($results, 'R-B');
+    verifyPhase16E(in_array($ops->stock('water'), ['50', '200'], true), 'R-B: shared Water oversold: '.$ops->stock('water'));
+    verifyPhase16E($effects()['payments'] === $before['payments'] + 1, 'R-B: the losing sale left a Payment.');
+    $ledgerMatches('water');
+    echo 'R-B PASS: two different Products racing for shared Water never oversell (Water '.$ops->stock('water').' ml).'.PHP_EOL;
+
+    /** R-C. Medium + Extra Yakult needs the final 2 Yakult; two saved drafts race through the locked Pay Later commit. */
+    $ops->setStock('water', '8000');
+    $ops->setStock('yakult', '2');
+    $drafts = array_map(fn (): Order => app(CreatePosDraftOrder::class)->execute($ops->cashier, $ops->branch, [
+        'order_type' => 'take_out', 'customer_label' => 'Race draft', 'items' => [$ops->line($ops->lemonYakult, 1, 'm', ['extra_yakult'])],
+    ]), [1, 2]);
+    $before = $effects();
+    $results = $start('rc', array_map(fn (Order $draft): array => ['commit_later', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $draft->id], $drafts),
+        $stockRow, [$ops->branch->id, $ops->ingredients['yakult']->id]);
+    $oneWinner($results, 'R-C');
+    verifyPhase16E($ops->stock('yakult') === '0', 'R-C: Yakult is not exactly 0.');
+    verifyPhase16E($effects()['committed'] === $before['committed'] + 1 && $effects()['tickets'] === $before['tickets'] + 1, 'R-C: the losing commit left partial effects.');
+    verifyPhase16E(Order::query()->whereKey(array_map(fn (Order $draft): string => $draft->id, $drafts))->whereNull('committed_at')->count() === 1, 'R-C: the losing draft did not stay a draft.');
+    $ledgerMatches('yakult');
+    echo 'R-C PASS: Size + Add-on drafts racing for the final 2 Yakult: the locked commit lets exactly one through.'.PHP_EOL;
+
+    /** R-D. An edit that needs one more Yakult races a new sale for the last Yakult. */
+    $ops->setStock('yakult', '2');
+    $edited = $ops->payLater([$ops->line($ops->lemonYakult, 1, 'm')]);
+    verifyPhase16E($ops->stock('yakult') === '1', 'R-D setup failed.');
+    $version = $edited->fresh()->version;
+    $before = $effects();
+    $results = $start('rd', [
+        ['edit', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $edited->id, json_encode([$ops->line($ops->lemonYakult, 2, 'm')], JSON_THROW_ON_ERROR), (string) $version],
+        ['sale', (string) $ops->cashier->id, $ops->branch->id, (string) Str::uuid(), $ops->lemonYakult->id, $modifiers('m')],
+    ], $stockRow, [$ops->branch->id, $ops->ingredients['yakult']->id]);
+    $oneWinner($results, 'R-D');
+    verifyPhase16E($ops->stock('yakult') === '0', 'R-D: Yakult is not exactly 0: '.$ops->stock('yakult'));
+    $editWon = $results[0]['status'] === 200;
+    verifyPhase16E($edited->fresh()->version === ($editWon ? $version + 1 : $version), 'R-D: the edit left a partial version change.');
+    verifyPhase16E($effects()['payments'] === $before['payments'] + ($editWon ? 0 : 1), 'R-D: the losing sale left a Payment.');
+    $ledgerMatches('yakult');
+    echo 'R-D PASS: a usage-increasing edit racing a sale for the last Yakult: '.($editWon ? 'edit' : 'sale').' won, no negative stock or partial state.'.PHP_EOL;
+
+    /** R-E. None of these races deadlocked (Branch → Session → Order → Product stock → Ingredient balances). */
+    usleep(300_000);
+    verifyPhase16E($deadlocks() === $deadlocksBefore, 'R-E: PostgreSQL recorded a deadlock during the Recipe races.');
+    echo 'R-E PASS: no deadlocks during the Recipe availability races.'.PHP_EOL;
+
     /** P. Every Operations page projection runs on PostgreSQL, for one Branch and for All Branches. */
     $workspace = app(OperationsWorkspace::class);
     foreach ([$ops->branch, null] as $scope) {
@@ -298,6 +416,7 @@ try {
         $workspace->overviewPage($scope, $ops->drinks);
         $workspace->ingredientsPage($scope);
         $workspace->recipesPage($scope, $ops->drinks);
+        app(BranchCatalog::class)->browse($ops->branch, true);
         $workspace->pamamalengkePage($scope, $ops->drinks);
         $workspace->purchasesPage($scope, $ops->drinks, 1);
         $workspace->purchasesPage($scope, null, 1);

@@ -2,7 +2,10 @@
 
 namespace Tests;
 
+use App\Actions\Operations\AdjustIngredientStock;
+use App\Actions\Operations\ApplyIngredientMovement;
 use App\Actions\Operations\SaveIngredient;
+use App\Actions\Operations\SaveModifierEffect;
 use App\Actions\Operations\SaveOperationPlan;
 use App\Actions\Operations\SaveRecipe;
 use App\Actions\Orders\CommitPayLaterOrder;
@@ -11,6 +14,7 @@ use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\PayNowOrder;
 use App\Actions\Orders\SettlePayLaterOrder;
 use App\Actions\Orders\VoidOrder;
+use App\Enums\IngredientMovementType;
 use App\Enums\ModifierSelectionType;
 use App\Enums\ModifierSemanticRole;
 use App\Models\Branch;
@@ -30,6 +34,7 @@ use App\Models\VoidAuthorizationSetting;
 use App\Support\ActiveBranchContext;
 use App\Support\ExactQuantity;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -59,6 +64,13 @@ final class OperationsScenario
     public array $sizes = [];
 
     public ModifierGroup $sizeGroup;
+
+    public ModifierGroup $addOnGroup;
+
+    public ModifierGroup $instructionGroup;
+
+    /** @var array<string, ModifierOption> Add-on / Modifier and Instruction options by key */
+    public array $options = [];
 
     /** @var array<string, Ingredient> */
     public array $ingredients = [];
@@ -122,6 +134,81 @@ final class OperationsScenario
         return $scenario;
     }
 
+    /**
+     * Lemon Yakult also gets an Add-on / Modifier group (Nata → Nata 30 g, Extra Yakult → Yakult 1 pc, Pearl with no
+     * Ingredient effect) and an Instructions group (No ice, Less sugar), plus a Nata Ingredient with 300 g in stock.
+     */
+    public function withAddOns(): self
+    {
+        $this->addOnGroup = ModifierGroup::factory()->create([
+            'name' => 'Add-ons', 'semantic_role' => null, 'selection_type' => ModifierSelectionType::Multiple,
+            'min_select' => 0, 'max_select' => 3,
+        ]);
+        foreach (['nata' => ['Nata', '15.00', 0], 'extra_yakult' => ['Extra Yakult', '10.00', 1], 'pearl' => ['Pearl', '10.00', 2]] as $key => [$name, $delta, $order]) {
+            $this->options[$key] = ModifierOption::factory()->create([
+                'modifier_group_id' => $this->addOnGroup->id, 'name' => $name, 'price_delta' => $delta, 'sort_order' => $order,
+            ]);
+        }
+        $this->instructionGroup = ModifierGroup::factory()->create([
+            'name' => 'Instructions', 'semantic_role' => ModifierSemanticRole::Instruction, 'selection_type' => ModifierSelectionType::Multiple,
+            'min_select' => 0, 'max_select' => 3,
+        ]);
+        foreach (['no_ice' => ['No ice', 0], 'less_sugar' => ['Less sugar', 1]] as $key => [$name, $order]) {
+            $this->options[$key] = ModifierOption::factory()->create([
+                'modifier_group_id' => $this->instructionGroup->id, 'name' => $name, 'price_delta' => '0.00', 'sort_order' => $order,
+            ]);
+        }
+        $this->lemonYakult->modifierGroups()->attach([$this->addOnGroup->id, $this->instructionGroup->id]);
+        $this->ingredients['nata'] = $this->ingredient('Nata', 'g', '1000', 'kg', '1000', '200.00', 'top_up', null, [$this->drinks], '300');
+        $this->effect($this->lemonYakult, 'nata', ['nata' => '30']);
+        $this->effect($this->lemonYakult, 'extra_yakult', ['yakult' => '1']);
+
+        return $this;
+    }
+
+    /** @param array<string, string> $lines */
+    public function effect(Product $product, string $option, array $lines): void
+    {
+        app(SaveModifierEffect::class)->execute($this->owner, $product, $this->options[$option], [
+            'lines' => array_map(fn (string $key, string $quantity): array => ['ingredient_id' => $this->ingredients[$key]->id, 'quantity' => $quantity], array_keys($lines), $lines),
+        ]);
+    }
+
+    /**
+     * Sets the Branch balance of an Ingredient exactly: a counted quantity goes through the audited count correction; a
+     * negative balance (legacy data or an old oversell) is appended directly as a count-correction movement.
+     */
+    public function setStock(string $ingredient, string $quantity): void
+    {
+        if ($this->stock($ingredient) === $quantity) {
+            return;
+        }
+        if (! str_starts_with($quantity, '-')) {
+            app(AdjustIngredientStock::class)->execute($this->owner, $this->ingredients[$ingredient], [
+                'mode' => 'count', 'quantity' => $quantity, 'reason' => 'End-of-day count', 'note' => 'QA',
+                'idempotency_key' => (string) Str::uuid(),
+            ]);
+
+            return;
+        }
+        $delta = -ExactQuantity::fromInput(ltrim($quantity, '-')) - ExactQuantity::parse(
+            BranchIngredientStock::query()->where('branch_id', $this->branch->id)->where('ingredient_id', $this->ingredients[$ingredient]->id)->value('on_hand')
+        );
+        DB::transaction(fn () => app(ApplyIngredientMovement::class)->execute($this->branch, $this->ingredients[$ingredient]->id, IngredientMovementType::CountCorrection, $delta, ['reason' => 'Legacy negative balance']));
+    }
+
+    /** A Drinks-plan Product that has never had a recipe: it keeps the pre-recipe behaviour (sellable, not costed). */
+    public function legacyDrink(): Product
+    {
+        $product = Product::factory()->create(['name' => 'House Iced Tea', 'default_price' => '40.00']);
+        BranchProduct::factory()->for($this->branch)->for($product)->create(['tracks_inventory' => false]);
+        $this->drinks = app(SaveOperationPlan::class)->execute($this->owner, $this->drinks, [
+            'name' => 'Drinks', 'icon' => 'glass', 'product_ids' => [$this->lemonYakult->id, $this->coke->id, $product->id],
+        ]);
+
+        return $product;
+    }
+
     public function user(string $role, ?Branch $branch = null): User
     {
         $user = User::factory()->create();
@@ -159,14 +246,20 @@ final class OperationsScenario
         ]);
     }
 
-    /** @return array{product_id: string, quantity: int, notes: null, modifiers: list<array{group_id: string, option_id: string}>} */
-    public function line(Product $product, int $quantity, ?string $size = null): array
+    /**
+     * @param  list<string>  $options  Add-on / Instruction option keys, see withAddOns()
+     * @return array{product_id: string, quantity: int, notes: null, modifiers: list<array{group_id: string, option_id: string}>}
+     */
+    public function line(Product $product, int $quantity, ?string $size = null, array $options = []): array
     {
         return [
             'product_id' => $product->id,
             'quantity' => $quantity,
             'notes' => null,
-            'modifiers' => $size === null ? [] : [['group_id' => $this->sizeGroup->id, 'option_id' => $this->sizes[$size]->id]],
+            'modifiers' => [
+                ...($size === null ? [] : [['group_id' => $this->sizeGroup->id, 'option_id' => $this->sizes[$size]->id]]),
+                ...array_map(fn (string $key): array => ['group_id' => $this->options[$key]->modifier_group_id, 'option_id' => $this->options[$key]->id], $options),
+            ],
         ];
     }
 

@@ -55,6 +55,7 @@ test('authorized cashier roles receive the lean real catalog with default prices
                     'stock_status' => 'not_tracked',
                     'tracks_inventory' => false,
                     'on_hand' => null,
+                    'recipe' => null,
                     'image_url' => null,
                     'has_modifiers' => false,
                     'modifier_groups' => [],

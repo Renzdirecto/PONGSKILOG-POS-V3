@@ -15,6 +15,7 @@ use App\Models\PamamalengkePurchase;
 use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\ExactMoney;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
@@ -45,6 +46,7 @@ class ConfirmPamamalengke
         private ApplyIngredientMovement $movements,
         private ReplenishmentAdvisor $advisor,
         private AuditRecorder $audit,
+        private CatalogRealtime $realtime,
     ) {}
 
     /** @return array<string, mixed> */
@@ -208,6 +210,10 @@ class ConfirmPamamalengke
                 ],
                 metadata: ['restocks' => $restocks, 'cost_updates' => $costUpdates],
             );
+
+            if ($restocks !== []) {
+                $this->realtime->ingredientsChanged($branch, 'purchase_restock');
+            }
 
             return $purchase->load('items');
         }, attempts: 3);

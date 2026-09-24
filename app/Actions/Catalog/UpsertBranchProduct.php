@@ -5,6 +5,7 @@ namespace App\Actions\Catalog;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Product;
+use App\Models\ProductModifierEffect;
 use App\Models\Recipe;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
@@ -35,10 +36,11 @@ class UpsertBranchProduct
         $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
         $product = Product::query()->whereKey($product->getKey())->firstOrFail();
         /** A recipe-backed Product consumes Ingredient stock; it must never also deduct Product stock for one sale. */
-        if ($validated['tracks_inventory'] && Recipe::query()->where('product_id', $product->id)->exists()
+        if ($validated['tracks_inventory']
+            && (Recipe::query()->where('product_id', $product->id)->exists() || ProductModifierEffect::query()->where('product_id', $product->id)->exists())
             && ! BranchProduct::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->where('tracks_inventory', true)->exists()) {
             throw ValidationException::withMessages([
-                'tracks_inventory' => $product->name.' has an ingredient recipe in Operations. Remove its recipes before tracking Product stock.',
+                'tracks_inventory' => $product->name.' has an ingredient recipe or add-on ingredient effects in Operations. Remove them before tracking Product stock.',
             ]);
         }
 

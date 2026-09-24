@@ -32,6 +32,7 @@ use App\Http\Controllers\PosOrderReservationController;
 use App\Http\Controllers\PosPayLaterController;
 use App\Http\Controllers\PosPayLaterSettlementController;
 use App\Http\Controllers\PosPaymentController;
+use App\Http\Controllers\PosRecipeCapacityController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
 use App\Http\Controllers\ReceiptShareController;
@@ -61,6 +62,7 @@ Route::get('qr/{branch}', [CustomerQrController::class, 'legacy'])
 
 Route::prefix('qr/{branch}')->whereUuid('branch')->middleware('throttle:120,1')->group(function (): void {
     Route::post('orders', [CustomerQrOrderController::class, 'store'])->middleware('throttle:15,1')->name('qr.orders.store');
+    Route::post('recipe-capacity', [CustomerQrOrderController::class, 'capacity'])->name('qr.recipe-capacity');
     Route::get('orders/{tracking}', [CustomerQrOrderController::class, 'show'])->name('qr.orders.show');
     Route::get('orders/{tracking}/receipt', [CustomerQrOrderController::class, 'receipt'])->name('qr.orders.receipt');
     Route::post('new-order', [CustomerQrOrderController::class, 'reset'])->name('qr.reset');
@@ -158,6 +160,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('ingredients/{ingredient}/adjustments', [IngredientController::class, 'adjust'])->whereUuid('ingredient')->name('ingredients.adjust');
             Route::put('recipes/{product}', [RecipeController::class, 'update'])->whereUuid('product')->name('recipes.update');
             Route::put('recipes/{product}/mode', [RecipeController::class, 'mode'])->whereUuid('product')->name('recipes.mode');
+            Route::put('recipes/{product}/modifier-effects/{option}', [RecipeController::class, 'effect'])->whereUuid(['product', 'option'])->name('recipes.effects.update');
             Route::post('pamamalengke/{plan}/manual-items', [PamamalengkeController::class, 'storeManual'])->whereUuid('plan')->name('pamamalengke.manual.store');
             Route::delete('pamamalengke/manual-items/{entry}', [PamamalengkeController::class, 'destroyManual'])->whereUuid('entry')->name('pamamalengke.manual.destroy');
             Route::put('pamamalengke/{plan}/skips/{ingredient}', [PamamalengkeController::class, 'skip'])->whereUuid(['plan', 'ingredient'])->name('pamamalengke.skip');
@@ -191,6 +194,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('pos/qr-orders/{order}/load', [StaffQrOrderController::class, 'load'])->whereUuid('order')->name('pos.qr-orders.load');
         Route::delete('pos/qr-orders/{order}', [StaffQrOrderController::class, 'destroy'])->whereUuid('order')->name('pos.qr-orders.destroy');
         Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
+        Route::post('pos/recipe-capacity', PosRecipeCapacityController::class)->middleware('throttle:240,1')->name('pos.recipe-capacity');
         Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
         Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
         Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');

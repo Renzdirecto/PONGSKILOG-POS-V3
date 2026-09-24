@@ -781,7 +781,7 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 
 - Recipes attach to existing Products and their existing **Size** options (a Product without a Size group has one base recipe). States: **Recipe set**, **Some sizes missing**, **Missing recipe**, **No recipe needed** (direct resale).
 - **One sale never consumes both Product stock and Ingredient stock:** a recipe cannot be saved for a Product that tracks Product stock at any Branch, tracking cannot be enabled while the Product has recipes, and at sale time a Product that tracks Product stock at the Branch uses Product stock only.
-- On first commitment — **Pay Now and Pay Later through the same `ApplyOrderInventory` path** — each Order Product/size is snapshotted (recipe state, recipe lines per unit, purchase-unit cost basis, Plan) and recipe-backed lines append one sale-consumption movement per Ingredient (database-unique per snapshot line). A **missing recipe** sale succeeds and moves nothing; it is reported as not costed. **Negative Ingredient stock is allowed for sales** and flagged "Negative · count needed"; Products are never auto-hidden because of it.
+- On first commitment — **Pay Now and Pay Later through the same `ApplyOrderInventory` path** — each Order Product/size is snapshotted (recipe state, recipe lines per unit, purchase-unit cost basis, Plan) and recipe-backed lines append one sale-consumption movement per Ingredient (database-unique per snapshot line). A Product that has never had a recipe sells as before, moves nothing and is reported as not costed. ~~Negative Ingredient stock is allowed for sales~~ — **superseded by §39.1**: sales can no longer oversell Recipe stock. Negative balances from older sales or manual corrections are still shown as "Negative · count needed" and simply give zero sellable servings.
 - Pay Later settlement, payment corrections and allocations, Kitchen transitions, Store Close, report refreshes and broadcasts never move Ingredient stock.
 - **Edit** appends only the compensating delta between recorded net consumption and the consumption now required, computed from the Order's own snapshot (a Product/size added by the edit snapshots the current recipe). **Void** restores the current net recorded consumption (post-edit) exactly once, from the recorded movements — never today's recipe — protected by the existing Void idempotency and a database-unique restoration per snapshot line.
 
@@ -798,3 +798,32 @@ Tracked inventory changes are aggregated to one net `order_edit_delta` movement 
 - **Profit view (estimated)** = Net sales − Estimated ingredient COGS = Estimated gross profit; minus non-stock pamamalengke items (Plan) or non-stock items and other Store expenses (All plans) = Estimated operating profit. Store-wide expenses are never allocated to a Plan and are counted once. Business Net Sales are the Phase 16 Net Sales of the same business-date Store Sessions; Plan sales are the Order line totals attributed by the snapshotted Plan.
 - **Divide estimated profit** (1, 2, 3, Custom up to 20 shares) is a display-only calculator; it writes nothing and reports centavos that cannot be split equally.
 - **All Branches** shows read-only analytics only; Ingredient stock, Pamamalengke suggestions, opening stock, adjustments and confirmations require one selected Branch.
+
+### 39.1 Manual QA follow-up — Recipe configuration, Add-on effects and Recipe-based availability (2026-09-24)
+
+**Mental model**
+
+- **Product → one optional Size group → one base recipe per Size.** Only the active `size` Group defines base recipe variants (Small / Medium / Large). A Product without a Size group has one **Regular** recipe. A Product may have **at most one active Size group**; assigning a second, or turning an assigned Group into an active Size group, is rejected on the server. Legacy data with two is a configuration error ("Size groups need fixing"), never resolved by guessing.
+- **Add-on / Modifier** (the existing `semantic_role = null`, previously labelled "Standard options") may add price and an optional **Product-specific Ingredient effect** (for example *Extra Yakult on Lemon Yakult → Yakult +1 pc*). Effects are per Product + option, because Groups are reusable across Products. "No ingredient effect" is valid.
+- **Instructions** (No ice, Less sugar) stay optional, multiple, price-neutral and structured; they never create Ingredient usage and never affect availability.
+- Sale usage = item quantity × base recipe + Σ (item quantity × modifier quantity × Add-on effect). Exact decimal math only.
+
+**Recipes page states**
+
+- **Uses Product stock** (Product stock tracking on at any Branch): explains that tracking must be turned off before an Ingredient recipe to prevent double deduction, with **Open Product settings** (opens the Product's Branch configuration). Nothing is changed or zeroed automatically.
+- **No recipe needed** (explicit direct resale): **Use ingredient recipe** switches back.
+- **Recipe not set**: **Set up recipe** (Regular, or per-Size tabs), plus Copy from another size.
+- **Add-on / Modifier effects** is a separate section; Sizes and Instructions never appear there.
+
+**Recipe-based availability** (`RecipeCapacity`, server only)
+
+- A Product is **Recipe-backed** once it has at least one recipe and does not use Product stock or No recipe needed. Products that never had a recipe keep their existing availability, so the existing catalog is not made unavailable.
+- Available servings of a configuration = **minimum over required Ingredients of floor(max(Branch stock, 0) ÷ quantity per serving)**; a missing balance counts as 0, a negative balance gives 0 servings.
+- Availability is **per Size**. The Product tile is sellable while at least one Size can be made; the POS dialog shows each Size ("15 available", "Out of stock", "Recipe required"). A Size without a recipe on a Recipe-backed Product is **Recipe required** and cannot be sold. Existing gates (Product/Category active, Branch availability, Product stock) keep precedence.
+- The **selected configuration** (Size + selected Add-ons) and the rest of the cart set the quantity cap; an Add-on that cannot be fulfilled is shown unavailable while the base drink stays sellable. Customer QR sees whether a choice can be made, never Branch serving counts.
+
+**Enforcement (rule change)**
+
+- **Sale-driven Ingredient consumption may no longer oversell Recipe stock.** New sales (Pay Now, Pay Later, Customer QR submission pre-check) and **usage-increasing edits** are validated across the whole order (shared Ingredients, Sizes, Add-ons, quantities) and rejected cleanly when any required Ingredient would go below zero. The authoritative check runs under the locked Ingredient balances, so of two concurrent sales for the last stock exactly one wins, with no partial Payment, Order, Kitchen ticket or movement.
+- Edits validate only the additional net usage; reductions, Voids and restorations are always allowed. Voids restore the historical (snapshotted) base and Add-on usage exactly once.
+- Recipe capacity refreshes in POS and Customer QR after sales, edits, voids, wastage, count corrections, opening balances, Pamamalengke restocks and recipe/effect changes (invalidation events only; no polling).

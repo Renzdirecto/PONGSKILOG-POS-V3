@@ -53,4 +53,10 @@ class OrderRecipeSnapshot extends Model
     {
         return $this->hasMany(OrderRecipeSnapshotLine::class);
     }
+
+    /** @return HasMany<OrderRecipeSnapshotModifier, $this> */
+    public function modifiers(): HasMany
+    {
+        return $this->hasMany(OrderRecipeSnapshotModifier::class);
+    }
 }

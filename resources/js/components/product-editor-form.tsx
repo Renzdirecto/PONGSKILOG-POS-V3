@@ -12,6 +12,13 @@ import {
     TextField,
 } from '@/components/catalog-ui';
 import { Button } from '@/components/ui/button';
+import {
+    MODIFIER_ROLE_OPTIONS,
+    activeSizeGroupNames,
+    modifierRoleFromValue,
+    modifierRoleHelp,
+    modifierRoleLabel,
+} from '@/lib/modifier-roles';
 import { store, update } from '@/routes/products';
 import { destroy as removeImage } from '@/routes/products/image';
 import type {
@@ -74,6 +81,7 @@ export function ProductEditorForm({
     branches,
     onSaved,
     onCancel,
+    initialSection = 'product',
 }: {
     product: CatalogProduct | null;
     categories: CatalogChoice[];
@@ -81,6 +89,7 @@ export function ProductEditorForm({
     branches: BranchConfiguration[];
     onSaved: () => void;
     onCancel: () => void;
+    initialSection?: 'product' | 'branch';
 }) {
     const form = useForm<{
         name: string;
@@ -118,7 +127,7 @@ export function ProductEditorForm({
     const removal = useForm({});
     const submitting = useRef(false);
     const [activeSection, setActiveSection] = useState<'product' | 'branch'>(
-        'product',
+        initialSection,
     );
     const [assigningGroups, setAssigningGroups] = useState(false);
     const [groupAssignment, setGroupAssignment] = useState<string[]>([]);
@@ -384,7 +393,8 @@ export function ProductEditorForm({
                                                 ])
                                             }
                                         >
-                                            <Plus className="size-4" /> Add group
+                                            <Plus className="size-4" /> Add
+                                            group
                                         </Button>
                                     </div>
                                 </div>
@@ -398,15 +408,22 @@ export function ProductEditorForm({
                                             setAssigningGroups(false)
                                         }
                                         onAssign={() => {
-                                            form.setData(
-                                                'modifier_group_ids',
-                                                [...new Set(groupAssignment)],
-                                            );
+                                            form.setData('modifier_group_ids', [
+                                                ...new Set(groupAssignment),
+                                            ]);
                                             setAssigningGroups(false);
                                         }}
                                     />
                                 )}
 
+                                {form.errors.modifier_group_ids && (
+                                    <p
+                                        role="alert"
+                                        className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                                    >
+                                        {form.errors.modifier_group_ids}
+                                    </p>
+                                )}
                                 {attachedGroups.map((group) => (
                                     <AttachedGroupCard
                                         key={group.id}
@@ -727,6 +744,8 @@ function AssignGroupPicker({
     onCancel: () => void;
     onAssign: () => void;
 }) {
+    const sizeConflict = activeSizeGroupNames(groups, selectedIds);
+
     return (
         <section className="space-y-3 rounded-xl border border-neutral-300 bg-neutral-50 p-3">
             <div>
@@ -765,6 +784,7 @@ function AssignGroupPicker({
                                     {group.name}
                                 </span>
                                 <span className="block text-[11px] text-neutral-500">
+                                    {modifierRoleLabel(group.semantic_role)} ·{' '}
                                     {group.options.length} option
                                     {group.options.length === 1 ? '' : 's'}
                                     {!group.is_active ? ' · Inactive' : ''}
@@ -774,6 +794,15 @@ function AssignGroupPicker({
                     );
                 })}
             </div>
+            {sizeConflict.length > 1 && (
+                <p
+                    role="alert"
+                    className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                >
+                    Choose one Size group. {sizeConflict.join(' and ')} both
+                    define base recipe sizes.
+                </p>
+            )}
             <div className="grid gap-2 sm:grid-cols-2">
                 <Button
                     type="button"
@@ -786,6 +815,7 @@ function AssignGroupPicker({
                 <Button
                     type="button"
                     className="min-h-11 rounded-xl bg-neutral-950 font-bold text-white hover:bg-neutral-800"
+                    disabled={sizeConflict.length > 1}
                     onClick={onAssign}
                 >
                     <Check className="size-4" /> Assign selected
@@ -816,13 +846,10 @@ function AttachedGroupCard({
                     )}
                 </div>
                 <div
-                    className={`${controlClass} flex w-28 items-center text-xs font-semibold`}
+                    className={`${controlClass} flex w-36 items-center text-xs font-semibold`}
+                    title={modifierRoleHelp(group.semantic_role)}
                 >
-                    {group.semantic_role === 'instruction'
-                        ? 'Instructions'
-                        : group.semantic_role === 'size'
-                          ? 'Size'
-                          : 'Standard'}
+                    {modifierRoleLabel(group.semantic_role)}
                 </div>
                 <button
                     type="button"
@@ -888,7 +915,7 @@ function InlineGroupEditor({
 
     return (
         <section className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-3">
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_150px_44px]">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_170px_150px_44px]">
                 <input
                     aria-label="Group title"
                     value={group.name}
@@ -903,12 +930,7 @@ function InlineGroupEditor({
                     value={group.semantic_role ?? ''}
                     className={controlClass}
                     onChange={(event) => {
-                        const role =
-                            event.target.value === 'size'
-                                ? 'size'
-                                : event.target.value === 'instruction'
-                                  ? 'instruction'
-                                  : null;
+                        const role = modifierRoleFromValue(event.target.value);
                         onChange({
                             ...group,
                             semantic_role: role,
@@ -916,10 +938,7 @@ function InlineGroupEditor({
                                 ? {
                                       selection_type: 'multiple' as const,
                                       min_select: 0,
-                                      max_select: Math.max(
-                                          3,
-                                          group.max_select,
-                                      ),
+                                      max_select: Math.max(3, group.max_select),
                                       options: group.options.map((option) => ({
                                           ...option,
                                           price_delta: '0.00',
@@ -929,9 +948,11 @@ function InlineGroupEditor({
                         });
                     }}
                 >
-                    <option value="">Standard options</option>
-                    <option value="size">Size</option>
-                    <option value="instruction">Instructions</option>
+                    {MODIFIER_ROLE_OPTIONS.map((option) => (
+                        <option key={option.label} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
                 </select>
                 <select
                     aria-label="Group selection type"
@@ -961,6 +982,12 @@ function InlineGroupEditor({
                 </select>
                 <DeleteButton label="Remove unsaved Group" onClick={onRemove} />
             </div>
+            <p className="text-xs leading-5 text-neutral-600">
+                <span className="font-semibold text-neutral-950">
+                    {modifierRoleLabel(group.semantic_role)}:
+                </span>{' '}
+                {modifierRoleHelp(group.semantic_role)}
+            </p>
             {group.semantic_role === 'instruction' && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                     Instructions are optional, allow multiple selections, and

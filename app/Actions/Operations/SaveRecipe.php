@@ -59,6 +59,10 @@ class SaveRecipe
 
         return DB::transaction(function () use ($actor, $product, $sizeOptionId, $lines): ?Recipe {
             $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+            $conflict = $this->sizes->conflicts([$product->id])[$product->id] ?? null;
+            if ($conflict !== null) {
+                throw ValidationException::withMessages(['size_option_id' => ProductSizes::conflictMessage($product->name, $conflict)]);
+            }
             $sizes = $this->sizes->forProduct($product);
             $size = collect($sizes)->firstWhere('option_id', $sizeOptionId);
             if ($size === null) {

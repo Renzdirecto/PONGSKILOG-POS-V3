@@ -12,6 +12,7 @@ use App\Support\ExactQuantity;
 use App\Support\OperationsSummary;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\OperationsScenario;
 
 beforeEach(function () {
@@ -62,25 +63,33 @@ test('pay later consumes once and settlement never consumes again', function () 
         ->and($this->ops->stock('lemon'))->toBe('28.5');
 });
 
-test('ingredient shortage never blocks a committed sale and leaves an exact negative balance', function () {
-    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 59, 'm')]);
+test('a sale can use the last recipe ingredient stock exactly but never drive it below zero', function () {
+    /** Yakult 10 pcs limits Medium (1 pc each) to 10 servings; the rule supersedes the earlier negative-stock sales. */
+    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 10, 'm')]);
+    expect($this->ops->stock('yakult'))->toBe('0')->and($this->ops->stock('lemon'))->toBe('24.5');
 
-    expect($this->ops->stock('lemon'))->toBe('0')
-        ->and($this->ops->stock('yakult'))->toBe('-49');
-    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
-    expect($this->ops->stock('lemon'))->toBe('-0.5');
+    expect(fn () => $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 'm')]))
+        ->toThrow(ValidationException::class, 'Not enough ingredient stock for Lemon Yakult');
+    expect($this->ops->stock('yakult'))->toBe('0')->and($this->ops->stock('lemon'))->toBe('24.5');
 });
 
-test('a missing recipe sale succeeds without inventing ingredient usage and is not costed', function () {
-    $order = $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 's')]);
+test('a product that never had a recipe still sells without inventing ingredient usage and is not costed', function () {
+    $tea = $this->ops->legacyDrink();
+    $order = $this->ops->payNow([$this->ops->line($tea, 1)]);
 
     expect($order->payment_status->value)->toBe('paid')
         ->and(IngredientMovement::query()->where('order_id', $order->id)->exists())->toBeFalse()
         ->and(OrderRecipeSnapshot::query()->where('order_id', $order->id)->sole()->recipe_state->value)->toBe('missing');
 
     $summary = app(OperationsSummary::class)->today($this->ops->branch);
-    expect($summary['plans'][$this->ops->drinks->id]['uncosted_sales_cents'])->toBe(6000)
+    expect($summary['plans'][$this->ops->drinks->id]['uncosted_sales_cents'])->toBe(4000)
         ->and($summary['plans'][$this->ops->drinks->id]['incomplete'])->toBeTrue();
+});
+
+test('a recipe-backed product cannot sell a size that has no recipe yet', function () {
+    expect(fn () => $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 's')]))
+        ->toThrow(ValidationException::class, 'Small Lemon Yakult needs a recipe before it can be sold');
+    expect(Order::query()->whereNotNull('committed_at')->count())->toBe(0);
 });
 
 test('direct resale uses product stock only and recipe products never decrement product stock', function () {
@@ -118,12 +127,21 @@ test('an edit appends only the compensating delta for decreases, increases, repl
         ->and($this->ops->stock('water'))->toBe('7900');
 });
 
-test('recipe-backed to missing recipe and back only moves the recipe-backed part', function () {
+test('recipe-backed to a product without a recipe and back only moves the recipe-backed part', function () {
+    $tea = $this->ops->legacyDrink();
     $order = $this->ops->payLater([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
-    $order = $this->ops->edit($order, [$this->ops->line($this->ops->lemonYakult, 1, 's')]);
+    $order = $this->ops->edit($order, [$this->ops->line($tea, 1)]);
     expect(orderIngredientNet($order))->toBe([]);
 
-    $order = $this->ops->edit($order, [$this->ops->line($this->ops->lemonYakult, 1, 's'), $this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    $order = $this->ops->edit($order, [$this->ops->line($tea, 1), $this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    expect(orderIngredientNet($order))->toBe(['Lemon' => '-0.5', 'Purified Water' => '-250', 'Syrup' => '-30', 'Yakult' => '-1']);
+});
+
+test('an edit cannot add a size of a recipe-backed product that has no recipe', function () {
+    $order = $this->ops->payLater([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+
+    expect(fn () => $this->ops->edit($order, [$this->ops->line($this->ops->lemonYakult, 1, 's')]))
+        ->toThrow(ValidationException::class, 'needs a recipe');
     expect(orderIngredientNet($order))->toBe(['Lemon' => '-0.5', 'Purified Water' => '-250', 'Syrup' => '-30', 'Yakult' => '-1']);
 });
 

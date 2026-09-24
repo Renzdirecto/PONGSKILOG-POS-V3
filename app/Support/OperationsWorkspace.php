@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\ModifierSemanticRole;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\BranchProduct;
@@ -13,6 +14,8 @@ use App\Models\PamamalengkeListEntry;
 use App\Models\PamamalengkePurchase;
 use App\Models\PamamalengkePurchaseItem;
 use App\Models\Product;
+use App\Models\ProductModifierEffect;
+use App\Models\ProductModifierEffectLine;
 use App\Models\Recipe;
 use App\Models\RecipeLine;
 use App\Models\StoreSession;
@@ -34,6 +37,7 @@ class OperationsWorkspace
         private OperationsSummary $summary,
         private ProductSizes $sizes,
         private ProductImages $images,
+        private RecipeCapacity $capacity,
     ) {}
 
     /** @return EloquentCollection<int, OperationPlan> */
@@ -182,24 +186,41 @@ class OperationsWorkspace
         return ['ingredients' => array_map(fn (array $row): array => $this->presentIngredient($row), $this->stock->rows($branch))];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Base recipes per Size (the one Size group only), Product-specific Add-on / Modifier Ingredient effects, the
+     * Product's inventory mode (Product stock, No recipe needed or Ingredient recipe) and, for a concrete Branch, the
+     * servings each Size can make now (RecipeCapacity). Instructions are listed only to explain that they never use
+     * ingredients.
+     *
+     * @return array<string, mixed>
+     */
     public function recipesPage(?Branch $branch, OperationPlan $plan): array
     {
         $products = Product::query()->whereIn('id', OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->select('product_id'))
-            ->with('category:id,name')->orderBy('name')->orderBy('id')->get();
-        $sizes = $this->sizes->forCollection($products);
+            ->with(['category:id,name', 'modifierGroups' => fn ($query) => $query->where('is_active', true)->orderBy('name')
+                ->with(['options' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('name')])])
+            ->orderBy('name')->orderBy('id')->get();
+        $resolved = $this->sizes->resolve($products->modelKeys());
         $recipes = Recipe::query()->whereIn('product_id', $products->modelKeys())->with('lines')->get()
             ->keyBy(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key);
+        $effects = ProductModifierEffect::query()->whereIn('product_id', $products->modelKeys())->with('lines')->get()
+            ->keyBy(fn (ProductModifierEffect $effect): string => $effect->product_id.'|'.$effect->modifier_option_id);
         $tracked = BranchProduct::query()->whereIn('product_id', $products->modelKeys())->where('tracks_inventory', true)
             ->join('branches', 'branches.id', '=', 'branch_products.branch_id')
             ->get(['branch_products.product_id', 'branches.code'])->groupBy('product_id');
         $prices = $branch === null ? collect() : BranchProduct::query()->where('branch_id', $branch->id)
             ->whereIn('product_id', $products->modelKeys())->whereNotNull('price_override')->pluck('price_override', 'product_id');
+        $availability = $branch === null ? [] : $this->capacity->catalog($branch, $products->map(fn (Product $product): string => $product->id)->values()->all());
+        $present = fn (iterable $lines): array => collect($lines)->sortBy('ingredient_id')->map(fn (RecipeLine|ProductModifierEffectLine $line): array => [
+            'ingredient_id' => $line->ingredient_id,
+            'quantity' => ExactQuantity::display(ExactQuantity::parse($line->quantity)),
+        ])->values()->all();
 
         return [
-            'products' => $products->map(function (Product $product) use ($sizes, $recipes, $tracked, $prices): array {
+            'products' => $products->map(function (Product $product) use ($resolved, $recipes, $effects, $tracked, $prices, $availability, $present): array {
                 $base = ExactMoney::cents((string) ($prices[$product->id] ?? $product->default_price));
-                $productSizes = array_map(function (array $size) use ($product, $recipes, $base): array {
+                $servings = collect($availability[$product->id]['sizes'] ?? [])->pluck('capacity', 'key');
+                $productSizes = array_map(function (array $size) use ($product, $recipes, $base, $servings, $present): array {
                     $recipe = $recipes->get($product->id.'|'.$size['key']);
 
                     return [
@@ -207,13 +228,25 @@ class OperationsWorkspace
                         'option_id' => $size['option_id'],
                         'name' => $size['name'],
                         'price_cents' => $base + $size['price_delta_cents'],
-                        'lines' => $recipe === null ? null : $recipe->lines->sortBy('ingredient_id')->map(fn (RecipeLine $line): array => [
-                            'ingredient_id' => $line->ingredient_id,
-                            'quantity' => ExactQuantity::display(ExactQuantity::parse($line->quantity)),
-                        ])->values()->all(),
+                        'lines' => $recipe === null ? null : $present($recipe->lines),
+                        'servings' => $servings->get($size['key']),
                     ];
-                }, $sizes[$product->id]);
+                }, $resolved['sizes'][$product->id]);
                 $trackedAt = $tracked->get($product->id)?->pluck('code')->all() ?? [];
+                $conflict = $resolved['conflicts'][$product->id] ?? null;
+                $addOns = [];
+                foreach ($product->modifierGroups->whereNull('semantic_role') as $group) {
+                    foreach ($group->options as $option) {
+                        $effect = $effects->get($product->id.'|'.$option->id);
+                        $addOns[] = [
+                            'option_id' => $option->id,
+                            'name' => $option->name,
+                            'group_name' => $group->name,
+                            'price_delta_cents' => ExactMoney::signedCents((string) $option->price_delta),
+                            'lines' => $effect === null || $effect->lines->isEmpty() ? null : $present($effect->lines),
+                        ];
+                    }
+                }
 
                 return [
                     'id' => $product->id,
@@ -223,8 +256,19 @@ class OperationsWorkspace
                     'image_url' => $this->images->safeCardUrl($product),
                     'no_recipe_needed' => $product->no_recipe_needed,
                     'tracked_at' => $trackedAt,
-                    'state' => $this->recipeState($product->no_recipe_needed || $trackedAt !== [], $productSizes),
+                    'inventory_mode' => match (true) {
+                        $trackedAt !== [] => 'product_stock',
+                        $product->no_recipe_needed => 'no_recipe_needed',
+                        default => 'recipe',
+                    },
+                    'size_conflict' => $conflict,
+                    'state' => $conflict !== null && $trackedAt === [] && ! $product->no_recipe_needed
+                        ? 'configuration_error'
+                        : $this->recipeState($trackedAt !== [], $product->no_recipe_needed, $productSizes),
                     'sizes' => $productSizes,
+                    'add_ons' => $addOns,
+                    'instruction_groups' => $product->modifierGroups->where('semantic_role', ModifierSemanticRole::Instruction)->pluck('name')->values()->all(),
+                    'settings_url' => route('products.index', ['search' => $product->name, 'edit' => $product->id], false),
                 ];
             })->values()->all(),
             'ingredients' => array_map(fn (array $row): array => $this->presentIngredient($row), $this->stock->rows($branch)),
@@ -547,7 +591,8 @@ class OperationsWorkspace
     }
 
     /**
-     * Recipe coverage of a Plan's Products: set, some sizes missing, missing, or No recipe needed / Product stock.
+     * Recipe coverage of a Plan's Products: set, some sizes missing, missing, No recipe needed, uses Product stock, or a
+     * Size group configuration error.
      *
      * @return array<int, array{id: string, name: string, state: string}>
      */
@@ -555,24 +600,29 @@ class OperationsWorkspace
     {
         $products = Product::query()->whereIn('id', OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->select('product_id'))
             ->orderBy('name')->get(['id', 'name', 'no_recipe_needed']);
-        $sizes = $this->sizes->forCollection($products);
+        $resolved = $this->sizes->resolve($products->modelKeys());
         $recipes = Recipe::query()->whereIn('product_id', $products->modelKeys())->whereHas('lines')->get(['product_id', 'size_key'])
             ->map(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key)->flip();
-        $direct = $this->directResaleProducts($products->map(fn (Product $product): string => $product->id)->values()->all());
+        $tracked = BranchProduct::query()->whereIn('product_id', $products->modelKeys())->where('tracks_inventory', true)->pluck('product_id')->flip();
 
         return $products->map(fn (Product $product): array => [
             'id' => $product->id,
             'name' => $product->name,
-            'state' => $this->recipeState($direct->has($product->id), array_map(fn (array $size): array => [
-                'lines' => $recipes->has($product->id.'|'.$size['key']) ? [true] : null,
-            ], $sizes[$product->id])),
+            'state' => isset($resolved['conflicts'][$product->id]) && ! $tracked->has($product->id) && ! $product->no_recipe_needed
+                ? 'configuration_error'
+                : $this->recipeState($tracked->has($product->id), $product->no_recipe_needed, array_map(fn (array $size): array => [
+                    'lines' => $recipes->has($product->id.'|'.$size['key']) ? [true] : null,
+                ], $resolved['sizes'][$product->id])),
         ])->values()->all();
     }
 
     /** @param array<int, array{lines: array<mixed>|null}> $sizes */
-    private function recipeState(bool $direct, array $sizes): string
+    private function recipeState(bool $productStock, bool $noRecipeNeeded, array $sizes): string
     {
-        if ($direct) {
+        if ($productStock) {
+            return 'product_stock';
+        }
+        if ($noRecipeNeeded) {
             return 'not_needed';
         }
         $set = count(array_filter($sizes, fn (array $size): bool => ! empty($size['lines'])));

@@ -884,8 +884,18 @@ Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of
 - [x] Pamamalengke recommendations + checklist + Confirm
 - [x] Purchases
 - [x] View summary (Cash / Profit / divider)
+- [x] Manual QA follow-up: Group semantics, one Size group, Recipe setup states, Add-on effects, Recipe-based availability
 - [ ] USER MANUAL QA
 - [ ] FINAL QA
+
+### Phase 16E Manual QA follow-up — Recipe configuration, Add-on effects & Recipe availability (2026-09-24)
+
+- Group behaviours shown as **Size / Add-on / Modifier / Instructions** on the existing `semantic_role` (no new group type, no data migration); one active Size group per Product enforced server-side; legacy duplicates reported, never guessed.
+- Recipes page separates **Uses Product stock** (Open Product settings), **No recipe needed** (Use ingredient recipe) and **Recipe not set** (Set up recipe); base recipes only per Size (or Regular); separate Add-on / Modifier effects; Instructions excluded.
+- Additive migration `2026_09_24_072528_add_product_modifier_effects` (Product-specific Add-on effects + immutable Order snapshots of them).
+- `RecipeCapacity` drives per-Size availability in `BranchCatalog`, the POS/QR customization dialogs (server capacity endpoints) and a whole-order pre-check; the authoritative no-oversell check runs under the Ingredient locks. **Rule change: sales and usage-increasing edits can no longer drive Recipe Ingredient stock negative.**
+- Lock order fix found while designing the edit-vs-sale race: Edit and Void now take the Branch FOR SHARE before the Store Session.
+- **Status: READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. Not Final QA, not merged, no PR. Normal local development DB not reset; run `php artisan migrate` (forward only).
 
 ---
 

@@ -57,8 +57,14 @@ export default function Products({
     const page = usePage<{ branchContext: BranchContext }>();
     const { branchContext } = page.props;
     const createRequested = page.url.includes('create=product');
+    /** Operations › Recipes links here with ?edit=<product id> to open that Product's settings directly. */
+    const requested = new URLSearchParams(page.url.split('?')[1] ?? '');
+    const editRequested = requested.get('edit');
     const [editing, setEditing] = useState<CatalogProduct | null | undefined>(
-        createRequested ? null : undefined,
+        createRequested
+            ? null
+            : (products.data.find((product) => product.id === editRequested) ??
+                  undefined),
     );
     const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
 
@@ -233,6 +239,12 @@ export default function Products({
                         categories={categories}
                         groups={modifierGroups}
                         branches={branchConfigurations}
+                        initialSection={
+                            editing?.id === editRequested &&
+                            requested.get('section') === 'branch'
+                                ? 'branch'
+                                : 'product'
+                        }
                         onSaved={() => setEditing(undefined)}
                         onCancel={() => setEditing(undefined)}
                     />
@@ -297,9 +309,7 @@ function ProductCard({
                         Select branch for stock
                     </OwnerStatusBadge>
                 )}
-                <OwnerStatusBadge
-                    tone={product.is_active ? 'green' : 'red'}
-                >
+                <OwnerStatusBadge tone={product.is_active ? 'green' : 'red'}>
                     {product.is_active ? 'Active' : 'Disabled'}
                 </OwnerStatusBadge>
                 {product.modifier_group_count > 0 && (

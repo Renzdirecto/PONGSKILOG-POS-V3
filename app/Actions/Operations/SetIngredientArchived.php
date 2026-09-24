@@ -5,6 +5,7 @@ namespace App\Actions\Operations;
 use App\Actions\Audit\AuditRecorder;
 use App\Models\Ingredient;
 use App\Models\PamamalengkeListEntry;
+use App\Models\ProductModifierEffectLine;
 use App\Models\RecipeLine;
 use App\Models\User;
 use App\Support\OperationsAccess;
@@ -31,6 +32,9 @@ class SetIngredientArchived
             }
             if ($archived && RecipeLine::query()->where('ingredient_id', $ingredient->id)->exists()) {
                 throw ValidationException::withMessages(['ingredient' => $ingredient->name.' is still used in a recipe. Remove it from those recipes first.']);
+            }
+            if ($archived && ProductModifierEffectLine::query()->where('ingredient_id', $ingredient->id)->exists()) {
+                throw ValidationException::withMessages(['ingredient' => $ingredient->name.' is still used by an add-on ingredient effect. Remove it from those effects first.']);
             }
             if ($archived) {
                 PamamalengkeListEntry::query()->where('ingredient_id', $ingredient->id)->delete();

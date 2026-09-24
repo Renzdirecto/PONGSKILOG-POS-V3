@@ -4,6 +4,7 @@ namespace App\Actions\Operations;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Models\Product;
+use App\Models\ProductModifierEffect;
 use App\Models\Recipe;
 use App\Models\User;
 use App\Support\OperationsAccess;
@@ -29,6 +30,9 @@ class SetProductRecipeMode
             }
             if ($noRecipeNeeded && Recipe::query()->where('product_id', $product->id)->exists()) {
                 throw ValidationException::withMessages(['product' => $product->name.' still has a recipe. Remove its recipes before marking it No recipe needed.']);
+            }
+            if ($noRecipeNeeded && ProductModifierEffect::query()->where('product_id', $product->id)->exists()) {
+                throw ValidationException::withMessages(['product' => $product->name.' still has add-on ingredient effects. Remove them before marking it No recipe needed.']);
             }
             $product->update(['no_recipe_needed' => $noRecipeNeeded]);
             $this->audit->record(

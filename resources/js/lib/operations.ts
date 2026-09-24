@@ -297,3 +297,69 @@ export function defaultLine(item: ChecklistItem): ChecklistLine {
         open: false,
     };
 }
+
+/** What the Recipes page shows for a Product (and its selected Size): the inventory mode decides before recipes do. */
+export type RecipeSetupState =
+    | 'product_stock'
+    | 'no_recipe_needed'
+    | 'configuration_error'
+    | 'recipe_missing'
+    | 'recipe_set';
+
+export function recipeSetupState(
+    product: {
+        inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
+        size_conflict: string[] | null;
+    },
+    size: { lines: unknown[] | null } | undefined,
+): RecipeSetupState {
+    if (product.inventory_mode === 'product_stock') return 'product_stock';
+    if (product.inventory_mode === 'no_recipe_needed')
+        return 'no_recipe_needed';
+    if (product.size_conflict !== null) return 'configuration_error';
+
+    return size?.lines?.length ? 'recipe_set' : 'recipe_missing';
+}
+
+/** Product list note on the Recipes page, e.g. "2 of 3 sizes set" or "Uses Product stock". */
+export function recipeNavNote(product: {
+    state:
+        | 'set'
+        | 'partial'
+        | 'missing'
+        | 'not_needed'
+        | 'product_stock'
+        | 'configuration_error';
+    sizes: { lines: unknown[] | null }[];
+}): string {
+    switch (product.state) {
+        case 'product_stock':
+            return 'Uses Product stock';
+        case 'not_needed':
+            return 'No recipe needed';
+        case 'configuration_error':
+            return 'Size groups need fixing';
+        case 'missing':
+            return 'Recipe not set';
+        default:
+            return product.sizes.length === 1
+                ? 'Recipe set'
+                : `${product.sizes.filter((size) => size.lines?.length).length} of ${product.sizes.length} sizes set`;
+    }
+}
+
+/** "Yakult 1 pc, Nata 30 g" for an Add-on effect, or "No ingredient effect". */
+export function effectSummary(
+    lines: { ingredient_id: string; quantity: string }[] | null,
+    ingredients: Map<string, { name: string; base_unit: string }>,
+): string {
+    if (!lines?.length) return 'No ingredient effect';
+
+    return lines
+        .map((line) => {
+            const ingredient = ingredients.get(line.ingredient_id);
+
+            return `${ingredient?.name ?? 'Ingredient'} +${formatQuantity(line.quantity, ingredient?.base_unit ?? '')}`;
+        })
+        .join(', ');
+}

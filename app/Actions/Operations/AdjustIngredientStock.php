@@ -8,6 +8,7 @@ use App\Events\ReportsChanged;
 use App\Models\Ingredient;
 use App\Models\IngredientMovement;
 use App\Models\User;
+use App\Support\CatalogRealtime;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ class AdjustIngredientStock
         private OperationsAccess $access,
         private ApplyIngredientMovement $movements,
         private AuditRecorder $audit,
+        private CatalogRealtime $realtime,
     ) {}
 
     /** @return array<string, mixed> */
@@ -119,6 +121,7 @@ class AdjustIngredientStock
                 ],
             );
             ReportsChanged::dispatch($branch->id, $type === IngredientMovementType::Wastage ? 'ingredients.wastage' : 'ingredients.count_corrected');
+            $this->realtime->ingredientsChanged($branch, $type === IngredientMovementType::Wastage ? 'wastage' : 'count_correction');
 
             return $movement;
         });

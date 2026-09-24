@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Events\CustomerCatalogChanged;
+use App\Events\IngredientStockChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
 use App\Models\Branch;
@@ -54,6 +55,19 @@ class CatalogRealtime
     {
         foreach ($products as $product) {
             $this->productChanged($product, availabilityChanged: $availabilityChanged);
+        }
+    }
+
+    /**
+     * Branch Ingredient stock or a recipe changed, so Recipe-based availability may have changed: Cashier POS and
+     * Customer QR refetch their authoritative catalog (after commit, invalidation only). A null Branch means every Branch.
+     */
+    public function ingredientsChanged(?Branch $branch, string $reason): void
+    {
+        $branchIds = $branch === null ? Branch::query()->orderBy('id')->pluck('id')->all() : [$branch->id];
+        foreach ($branchIds as $branchId) {
+            IngredientStockChanged::dispatch($branchId, $reason);
+            CustomerCatalogChanged::dispatch($branchId);
         }
     }
 }

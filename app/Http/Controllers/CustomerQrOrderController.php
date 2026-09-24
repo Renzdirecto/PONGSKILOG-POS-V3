@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Actions\Orders\SubmitCustomerQrOrder;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
+use App\Http\Requests\RecipeCapacityRequest;
 use App\Http\Requests\SubmitCustomerQrOrderRequest;
 use App\Models\Branch;
 use App\Models\CustomerQrSession;
 use App\Support\CustomerQrAccess;
 use App\Support\CustomerQrProjection;
+use App\Support\RecipeCapacity;
 use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,6 +27,24 @@ class CustomerQrOrderController extends Controller
         $order = $submit->execute($branch, $this->access->requireSession($request, $branch), $request->validated());
 
         return response()->json(['order' => $this->projection->order($order)])->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Whether the customer's configured item fits current Recipe Ingredient stock after the rest of their cart, and
+     * which Sizes / Add-ons can still be made. Customers never see Branch serving counts.
+     */
+    public function capacity(RecipeCapacityRequest $request, Branch $branch, RecipeCapacity $capacity): JsonResponse
+    {
+        $this->access->requireSession($request, $branch);
+        $result = $capacity->configuration($branch, $request->lines(), $request->focus());
+        $quantity = (int) $request->validated('focus.quantity', 1);
+
+        return response()->json([
+            'limited' => $result['limited'],
+            'state' => $result['state'],
+            'fits' => ! $result['limited'] || ($result['capacity'] ?? 0) >= $quantity,
+            'options' => array_map(fn (int $servings): bool => $servings > 0, $result['options']),
+        ])->header('Cache-Control', 'no-store');
     }
 
     public function show(Request $request, Branch $branch, string $tracking): JsonResponse

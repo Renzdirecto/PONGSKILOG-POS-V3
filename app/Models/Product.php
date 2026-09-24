@@ -56,4 +56,10 @@ class Product extends Model
     {
         return $this->belongsToMany(ModifierGroup::class, 'product_modifier_groups');
     }
+
+    /** @return HasMany<Recipe, $this> */
+    public function recipes(): HasMany
+    {
+        return $this->hasMany(Recipe::class);
+    }
 }

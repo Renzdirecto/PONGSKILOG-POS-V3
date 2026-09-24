@@ -19,7 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class OrderSnapshots
 {
-    public function __construct(private BranchCatalog $catalog) {}
+    public function __construct(private BranchCatalog $catalog, private RecipeCapacity $recipes) {}
 
     /** @param array{order_type: string, branch_table_id?: string|null, customer_label?: string|null, items: list<array{existing_order_item_id?: string|null, product_id: string, quantity: int, notes?: string|null, modifiers: list<array{group_id: string, option_id: string}>}>} $data
      * @param  Collection<int, OrderItem>|null  $existingItems
@@ -131,6 +131,16 @@ class OrderSnapshots
                 'quantity' => $line['quantity'], 'line_total' => ExactMoney::decimal($lineTotal),
                 'notes' => $line['notes'] ?? null, 'created_at' => now(), 'updated_at' => now(),
             ];
+        }
+        /**
+         * New orders (POS drafts and sales, Customer QR submissions) must fit current Recipe Ingredient stock across the
+         * whole order. Committed-order edits are checked on their net delta when the edit is applied.
+         */
+        $recipeLines = array_values(array_filter($data['items'], fn (array $line): bool => (bool) $products->get($line['product_id'])?->getAttribute('has_recipe')));
+        if ($existingItems === null && $recipeLines !== []) {
+            $this->recipes->assertOrderFits($branch, array_map(fn (array $line): array => [
+                'product_id' => $line['product_id'], 'quantity' => $line['quantity'], 'modifiers' => $line['modifiers'],
+            ], $recipeLines));
         }
 
         return ['attributes' => [

@@ -1,9 +1,11 @@
 <?php
 
 use App\Actions\Catalog\UpsertBranchProduct;
+use App\Actions\Operations\SaveOperationPlan;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
+use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Ingredient;
 use App\Models\IngredientMovement;
@@ -245,6 +247,47 @@ test('no recipe needed and product stock tracking never combine with a recipe', 
     expect($water->fresh()->no_recipe_needed)->toBeTrue()
         ->and(OrderRecipeSnapshot::query()->where('order_id', $order->id)->sole()->recipe_state->value)->toBe('not_needed')
         ->and(IngredientMovement::query()->where('order_id', $order->id)->exists())->toBeFalse();
+});
+
+test('the recipes page separates product stock, no recipe needed and missing recipes, with a direct fix for each', function () {
+    $water = Product::factory()->create(['name' => 'Bottled Water']);
+    BranchProduct::factory()->for($this->ops->branch)->for($water)->create(['tracks_inventory' => false]);
+    $water->update(['no_recipe_needed' => true]);
+    $this->ops->recipe($this->ops->lemonYakult, 'm', []);
+    $this->ops->recipe($this->ops->lemonYakult, 'l', []);
+    app(SaveOperationPlan::class)->execute($this->ops->owner, $this->ops->drinks, [
+        'name' => 'Drinks', 'icon' => 'glass', 'product_ids' => [$this->ops->lemonYakult->id, $this->ops->coke->id, $water->id],
+    ]);
+    $page = fn () => opsAs($this, $this->ops->owner, $this->ops->branch)->get(route('operations.recipes', ['plan' => $this->ops->drinks->id]));
+
+    /** Products sort by name: Bottled Water, Coke Mismo, Lemon Yakult. */
+    $page()->assertInertia(fn (Assert $page) => $page
+        ->where('products.0.inventory_mode', 'no_recipe_needed')->where('products.0.state', 'not_needed')
+        ->where('products.1.inventory_mode', 'product_stock')->where('products.1.state', 'product_stock')
+        ->where('products.1.tracked_at', ['MAIN'])
+        ->where('products.1.settings_url', route('products.index', ['search' => 'Coke Mismo', 'edit' => $this->ops->coke->id], false))
+        ->where('products.2.inventory_mode', 'recipe')->where('products.2.state', 'missing')
+        ->where('products.2.sizes.1.lines', null));
+
+    /** Turning Product stock off (never automatically) lets the Owner set up a recipe; the old Product stock stays. */
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('products.branches.update', [$this->ops->coke, $this->ops->branch]), [
+        'price_override' => null, 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null,
+    ])->assertSessionHasNoErrors();
+    $this->ops->recipe($this->ops->coke, null, ['water' => '10']);
+    expect(BranchInventory::query()->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(20);
+
+    /** No recipe needed → Use ingredient recipe switches back to recipe mode. */
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.recipes.mode', $water), ['no_recipe_needed' => false])->assertRedirect();
+
+    $page()->assertInertia(fn (Assert $page) => $page
+        ->where('products.0.inventory_mode', 'recipe')->where('products.0.state', 'missing')
+        ->where('products.0.sizes.0.name', 'Regular')
+        ->where('products.1.inventory_mode', 'recipe')->where('products.1.state', 'set')
+        ->where('products.1.sizes.0.servings', 800)
+        ->where('products.2.sizes.0.name', 'Small'));
+
+    opsAs($this, $this->ops->owner, null)->get(route('operations.recipes', ['plan' => $this->ops->drinks->id]))
+        ->assertInertia(fn (Assert $page) => $page->where('products.1.sizes.0.servings', null));
 });
 
 test('wastage and count correction append exact audited movements and never rewrite the balance', function () {

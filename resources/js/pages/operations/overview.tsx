@@ -28,6 +28,7 @@ import type {
     OperationsFigures,
     OperationsIngredient,
     OperationsSummaryProps,
+    RecipeState,
 } from '@/types/operations';
 
 type Props = {
@@ -39,7 +40,7 @@ type Props = {
     recipes: {
         id: string;
         name: string;
-        state: 'set' | 'partial' | 'missing' | 'not_needed';
+        state: RecipeState;
     }[];
     consumption: (OperationsIngredient & { used: string })[];
     movements: IngredientMovementGroup[];
@@ -55,6 +56,8 @@ const RECIPE_STATE: Record<
     partial: ['Some sizes missing', 'bg-[#b45309]'],
     missing: ['No recipe · not costed', 'bg-[#b45309]'],
     not_needed: ['No recipe needed', 'bg-[#8a8a8a]'],
+    product_stock: ['Uses Product stock', 'bg-[#8a8a8a]'],
+    configuration_error: ['Size groups need fixing', 'bg-[#b91c1c]'],
 };
 
 export default function OperationsOverview(props: Props) {

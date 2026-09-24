@@ -314,10 +314,10 @@ test('plans, recipes and ingredients tell the truth about missing data', () => {
     assert.match(plans, /A plan does not hold stock of its own\./);
     assert.match(plans, /No plans yet/);
     assert.match(plans, /moves it for future sales only/);
-    assert.match(recipes, /has no recipe yet\./);
+    assert.match(recipes, /Recipe not set for \$\{sizeLabel\}/);
     assert.match(recipes, /No recipe needed/);
     assert.match(recipes, /Only existing Catalog products appear here\./);
-    assert.match(recipes, /Some sizes missing/);
+    assert.match(recipes, /recipeNavNote\(item\)/);
     assert.match(recipes, /Needs every ingredient cost/);
     assert.match(ingredients, /shared with another plan, so/);
     assert.match(stock, /Wastage can't exceed current stock/);

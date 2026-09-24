@@ -825,3 +825,10 @@ Migration `2026_09_24_053738_create_owner_operations_tables` is additive (the on
 - `pamamalengke_purchases` (immutable): Branch, Store Session, Plan, **unique `store_session_expense_id`** (the canonical expense), estimated total + completeness, note, buyer, unique idempotency key, intent hash. `pamamalengke_purchase_items`: ingredient/manual line, recommended vs actual quantity, estimated vs actual unit cost, line total, purchase-unit size, exact base quantity, unique restock movement.
 - `pamamalengke_list_entries`: the next run's manual items and skip marks per Branch + Plan (working list, cleared on confirm).
 - Verified on SQLite (Pest) and an isolated PostgreSQL schema (`tests/verify-operations-postgres.php`: fresh, rollback, reapply, numeric types, partial indexes). The normal development database only needs a forward `php artisan migrate`.
+
+### Phase 16E follow-up: Add-on / Modifier Ingredient effects (additive)
+
+Migration `2026_09_24_072528_add_product_modifier_effects` adds four tables; no existing column, row, constraint or `semantic_role` value changes. Long constraint names are explicit (PostgreSQL truncates identifiers at 63 bytes).
+
+- `product_modifier_effects` (UUID, Product, Modifier option, updater; **unique Product + option**) and `product_modifier_effect_lines` (unique effect + Ingredient, `quantity numeric(18,4) > 0`). Current configuration only; Business-wide definition, Branch-specific stock.
+- `order_recipe_snapshot_modifiers` (immutable; unique snapshot + option; option/group name snapshots) and `order_recipe_snapshot_modifier_lines` (`quantity_per_selection numeric(18,4) > 0`, cost basis like recipe snapshot lines). A modifier snapshot without lines records "no Ingredient effect". Add-on usage is merged into the Product/size snapshot's per-Ingredient movements, so the existing sale/void partial unique indexes still apply.

@@ -46,6 +46,8 @@ import { lineCents, pesos } from '@/lib/pos-money';
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { savedItemName } from '@/lib/pos-item-name';
+import { otherCartLines } from '@/lib/recipe-availability';
+import { recipeCapacity } from '@/routes/pos';
 import {
     confirmedPayLaterState,
     payLaterAttemptForOrder,
@@ -176,7 +178,11 @@ export function CashierPos({
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
-    const form = useForm(`${rememberKey}:details`, {...freshOrderDetails(), customer_label: initialDraft?.customer_label ?? '', branch_table_id: loadedQr?.branch_table_id ?? ''});
+    const form = useForm(`${rememberKey}:details`, {
+        ...freshOrderDetails(),
+        customer_label: initialDraft?.customer_label ?? '',
+        branch_table_id: loadedQr?.branch_table_id ?? '',
+    });
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
     const orderNumber =
         saved?.order_number ??
@@ -643,6 +649,8 @@ export function CashierPos({
                     key={editing.line?.key ?? editing.product.id}
                     product={editingProduct}
                     initial={editing.line}
+                    capacityUrl={recipeCapacity.url()}
+                    otherLines={otherCartLines(lines, editing.line?.key)}
                     onClose={() => setEditing(null)}
                     onRemove={() => {
                         setLines((current) =>

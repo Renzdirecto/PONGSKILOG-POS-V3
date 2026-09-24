@@ -20,6 +20,11 @@ class CustomerQrProjection
         $catalog = $this->catalog->browse($branch, customization: true);
         $catalog['products'] = array_map(function (array $product): array {
             unset($product['on_hand'], $product['tracks_inventory']);
+            /** Customers see whether each Size can be made, never Branch serving counts. */
+            if ($product['recipe'] !== null) {
+                $product['recipe']['capacity'] = null;
+                $product['recipe']['sizes'] = array_map(fn (array $size): array => [...$size, 'capacity' => null], $product['recipe']['sizes']);
+            }
             $product['stock_status'] = $product['availability_reason'] === 'out_of_stock' ? 'out_of_stock' : ($product['is_available'] ? 'available' : 'unavailable');
             $product['availability_reason'] = $product['is_available'] ? null : $product['stock_status'];
 

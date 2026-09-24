@@ -164,13 +164,34 @@ export type IngredientMovementGroup = {
     }[];
 };
 
+export type RecipeLine = { ingredient_id: string; quantity: string };
+
 export type RecipeProductSize = {
     key: string;
     option_id: string | null;
     name: string;
     price_cents: number;
-    lines: { ingredient_id: string; quantity: string }[] | null;
+    lines: RecipeLine[] | null;
+    /** Servings the selected Branch's ingredient stock can make now; null for All Branches or without a recipe. */
+    servings: number | null;
 };
+
+/** An Add-on / Modifier option of the Product and its Product-specific ingredient effect (null = no effect). */
+export type RecipeAddOn = {
+    option_id: string;
+    name: string;
+    group_name: string;
+    price_delta_cents: number;
+    lines: RecipeLine[] | null;
+};
+
+export type RecipeState =
+    | 'set'
+    | 'partial'
+    | 'missing'
+    | 'not_needed'
+    | 'product_stock'
+    | 'configuration_error';
 
 export type RecipeProduct = {
     id: string;
@@ -180,8 +201,13 @@ export type RecipeProduct = {
     image_url: string | null;
     no_recipe_needed: boolean;
     tracked_at: string[];
-    state: 'set' | 'partial' | 'missing' | 'not_needed';
+    inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
+    size_conflict: string[] | null;
+    state: RecipeState;
     sizes: RecipeProductSize[];
+    add_ons: RecipeAddOn[];
+    instruction_groups: string[];
+    settings_url: string;
 };
 
 export type PurchaseRun = {

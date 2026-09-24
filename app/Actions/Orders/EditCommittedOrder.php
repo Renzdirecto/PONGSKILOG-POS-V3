@@ -66,6 +66,12 @@ class EditCommittedOrder
                 return Order::query()->where('branch_id', $branch->id)->findOrFail($requestedOrder->id);
             }
 
+            /**
+             * Branch FOR SHARE first, like every Ingredient writer: POS commits hold the Branch FOR UPDATE and then the
+             * Session, and this edit's movement inserts need a KEY SHARE on the Branch, so taking the Session first
+             * could deadlock with a racing sale.
+             */
+            Branch::query()->whereKey($branch->id)->sharedLock()->firstOrFail();
             $session = StoreSession::query()->where('branch_id', $branch->id)->where('status', StoreSessionStatus::Open)->sharedLock()->first();
             if ($session === null) {
                 throw ValidationException::withMessages(['store' => 'Store is closed. Historical transactions are read-only.']);

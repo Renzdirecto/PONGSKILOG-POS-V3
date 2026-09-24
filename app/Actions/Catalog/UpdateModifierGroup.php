@@ -5,11 +5,13 @@ namespace App\Actions\Catalog;
 use App\Enums\ModifierSelectionType;
 use App\Enums\ModifierSemanticRole;
 use App\Models\ModifierGroup;
+use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UpdateModifierGroup
 {
@@ -35,6 +37,9 @@ class UpdateModifierGroup
 
         return DB::transaction(function () use ($modifierGroup, $validated): ModifierGroup {
             $modifierGroup = ModifierGroup::query()->whereKey($modifierGroup->getKey())->lockForUpdate()->firstOrFail();
+            if (($validated['semantic_role'] ?? null) === ModifierSemanticRole::Size->value && (bool) $validated['is_active']) {
+                $this->guardSingleSizeGroup($modifierGroup);
+            }
             $modifierGroup->update($validated);
 
             if ($modifierGroup->semantic_role === ModifierSemanticRole::Instruction) {
@@ -43,5 +48,20 @@ class UpdateModifierGroup
 
             return $modifierGroup;
         });
+    }
+
+    /** A Product may have one active Size group; making this group an active Size group must not give any a second. */
+    private function guardSingleSizeGroup(ModifierGroup $modifierGroup): void
+    {
+        $products = Product::query()
+            ->whereHas('modifierGroups', fn ($query) => $query->whereKey($modifierGroup->id))
+            ->whereHas('modifierGroups', fn ($query) => $query->whereKeyNot($modifierGroup->id)
+                ->where('semantic_role', ModifierSemanticRole::Size->value)->where('is_active', true))
+            ->orderBy('name')->limit(3)->pluck('name');
+        if ($products->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'semantic_role' => $products->implode(', ').' already '.($products->count() === 1 ? 'has' : 'have').' an active Size group. A product can have only one Size group, so unassign one first.',
+            ]);
+        }
     }
 }

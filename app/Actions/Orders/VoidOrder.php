@@ -60,7 +60,8 @@ class VoidOrder
                 DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [$data['idempotency_key']]);
             }
 
-            $branch = Branch::query()->whereKey($branch->id)->firstOrFail();
+            /** Branch FOR SHARE before the Session, matching POS commits (Branch → Session) and every Ingredient writer. */
+            $branch = Branch::query()->whereKey($branch->id)->sharedLock()->firstOrFail();
             $initiator = $this->access->authorize($initiator, $branch);
             $authorizer = $this->authorizer($data, $initiator, lock: false);
             $requestHash = $this->requestHash($requestedOrder, $initiator, $authorizer, $data);

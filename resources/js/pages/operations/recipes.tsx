@@ -1,6 +1,16 @@
 import { Link, router } from '@inertiajs/react';
-import { Box, Check, CircleAlert, CupSoda, Plus, Trash2 } from 'lucide-react';
+import {
+    Box,
+    Check,
+    CircleAlert,
+    CupSoda,
+    PackageCheck,
+    Plus,
+    Settings2,
+    Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
     EmptyState,
     IngredientIcon,
@@ -13,16 +23,22 @@ import {
     operationsHref,
 } from '@/components/operations-ui';
 import {
+    effectSummary,
     estimateLineCents,
     formatPeso,
     formatQuantity,
     parseQuantity,
+    recipeNavNote,
+    recipeSetupState,
 } from '@/lib/operations';
 import operationsRoutes from '@/routes/operations';
 import type {
     OperationsContext,
     OperationsIngredient,
+    RecipeAddOn,
+    RecipeLine,
     RecipeProduct,
+    RecipeState,
 } from '@/types/operations';
 
 type Props = {
@@ -32,13 +48,13 @@ type Props = {
     ingredients: OperationsIngredient[];
 };
 
-type DraftRow = { ingredient_id: string; quantity: string };
-
-const STATE_NOTE: Record<RecipeProduct['state'], [string, string]> = {
-    set: ['Recipe set', 'text-[#15803d]'],
-    partial: ['Some sizes missing', 'font-semibold text-[#b45309]'],
-    missing: ['Missing recipe', 'font-semibold text-[#b45309]'],
-    not_needed: ['No recipe needed', 'text-[#8a8a8a]'],
+const STATE_TONE: Record<RecipeState, string> = {
+    set: 'text-[#15803d]',
+    partial: 'font-semibold text-[#b45309]',
+    missing: 'font-semibold text-[#b45309]',
+    not_needed: 'text-[#8a8a8a]',
+    product_stock: 'text-[#8a8a8a]',
+    configuration_error: 'font-semibold text-[#b91c1c]',
 };
 
 export default function OperationsRecipes({
@@ -59,9 +75,8 @@ export default function OperationsRecipes({
     const [sizeKey, setSizeKey] = useState<string | null>(null);
     const [draft, setDraft] = useState<{
         key: string;
-        rows: DraftRow[];
+        rows: RecipeLine[];
     } | null>(null);
-    const [adding, setAdding] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
     const byId = new Map(
@@ -73,7 +88,6 @@ export default function OperationsRecipes({
         setSizeKey(null);
         setDraft(null);
         setErrors({});
-        setAdding('');
     };
 
     if (!product) {
@@ -102,18 +116,14 @@ export default function OperationsRecipes({
     const size =
         product.sizes.find((item) => item.key === sizeKey) ??
         product.sizes[Math.min(1, product.sizes.length - 1)];
-    const draftKey = `${product.id}:${size.key}`;
-    const saved: DraftRow[] = size.lines ?? [];
+    const setup = recipeSetupState(product, size);
+    const draftKey = `${product.id}:${size?.key ?? 'none'}`;
+    const saved: RecipeLine[] = size?.lines ?? [];
     const rows = draft?.key === draftKey ? draft.rows : saved;
     const editing = draft?.key === draftKey || saved.length > 0;
     const dirty =
         draft?.key === draftKey &&
         JSON.stringify(draft.rows) !== JSON.stringify(saved);
-    const directReason = product.tracked_at.length
-        ? `${product.name} deducts Product stock at ${product.tracked_at.join(', ')} (Catalog › Inventory), so its sales never consume ingredients.`
-        : product.no_recipe_needed
-          ? `${product.name} is resold as a whole item, so no ingredient stock moves.`
-          : null;
     const costs = rows.map((row) =>
         estimateLineCents(
             row.quantity,
@@ -123,26 +133,18 @@ export default function OperationsRecipes({
     const unknown = costs.some((cost) => cost === null);
     const total = costs.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
     const sizeLabel =
-        product.sizes.length > 1
+        size && product.sizes.length > 1
             ? `${size.name} ${product.name}`
             : product.name;
-    const setRows = (next: DraftRow[]) => {
+    const setRows = (next: RecipeLine[]) => {
         setDraft({ key: draftKey, rows: next });
         setErrors({});
     };
-    const available = ingredients
-        .filter(
-            (ingredient) =>
-                !rows.some((row) => row.ingredient_id === ingredient.id),
-        )
-        .sort(
-            (left, right) =>
-                Number(right.plan_ids.includes(plan.id)) -
-                Number(left.plan_ids.includes(plan.id)),
-        );
     const other = product.sizes.find(
-        (item) => item.key !== size.key && item.lines?.length,
+        (item) => item.key !== size?.key && item.lines?.length,
     );
+    const anyRecipe = product.sizes.some((item) => item.lines?.length);
+    const trackedAt = product.tracked_at.join(', ');
 
     const save = () => {
         const bad = rows.find((row) => !(parseQuantity(row.quantity) ?? 0));
@@ -196,23 +198,28 @@ export default function OperationsRecipes({
                         '2',
                         'Recipe',
                         'The bridge',
-                        directReason
-                            ? 'None needed. Sold as a whole item.'
-                            : saved.length
-                              ? `${sizeLabel}: ${saved
-                                    .slice(0, 3)
-                                    .map(
-                                        (row) =>
-                                            `${byId.get(row.ingredient_id)?.name ?? 'Ingredient'} ${formatQuantity(row.quantity, byId.get(row.ingredient_id)?.base_unit ?? '')}`,
-                                    )
-                                    .join(', ')}${saved.length > 3 ? '…' : ''}`
-                              : `Not set for ${sizeLabel} yet.`,
+                        setup === 'product_stock'
+                            ? 'Not used while the product deducts Product stock.'
+                            : setup === 'no_recipe_needed'
+                              ? 'None needed. Sold as a whole item.'
+                              : saved.length
+                                ? `${sizeLabel}: ${saved
+                                      .slice(0, 3)
+                                      .map(
+                                          (row) =>
+                                              `${byId.get(row.ingredient_id)?.name ?? 'Ingredient'} ${formatQuantity(row.quantity, byId.get(row.ingredient_id)?.base_unit ?? '')}`,
+                                      )
+                                      .join(
+                                          ', ',
+                                      )}${saved.length > 3 ? '…' : ''}`
+                                : `Not set for ${sizeLabel} yet.`,
                     ],
                     [
                         '3',
                         'Ingredient',
                         'What the sale consumes',
-                        directReason
+                        setup === 'product_stock' ||
+                        setup === 'no_recipe_needed'
                             ? 'Product stock in Catalog › Inventory instead.'
                             : 'One branch stock record each, shared across plans.',
                     ],
@@ -249,36 +256,29 @@ export default function OperationsRecipes({
                     <span className={`${opsLabelClass} px-2 pt-1 pb-1.5`}>
                         Products in this plan
                     </span>
-                    {products.map((item) => {
-                        const [note, tone] = STATE_NOTE[item.state];
-
-                        return (
-                            <button
-                                key={item.id}
-                                type="button"
-                                aria-current={
-                                    item.id === product.id ? 'true' : undefined
-                                }
-                                onClick={() => pick(item.id)}
-                                className={`flex min-h-12 items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left ${item.id === product.id ? 'border border-[#111] bg-[#f2f2f2]' : 'border border-transparent hover:bg-[#fafafa]'}`}
-                            >
-                                <ProductThumb product={item} />
-                                <span className="flex min-w-0 flex-1 flex-col">
-                                    <span className="truncate text-[13.5px] font-semibold">
-                                        {item.name}
-                                    </span>
-                                    <span className={`text-[11px] ${tone}`}>
-                                        {item.state === 'set' ||
-                                        item.state === 'partial'
-                                            ? item.sizes.length === 1
-                                                ? 'Recipe set'
-                                                : `${item.sizes.filter((entry) => entry.lines?.length).length} of ${item.sizes.length} sizes set`
-                                            : note}
-                                    </span>
+                    {products.map((item) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            aria-current={
+                                item.id === product.id ? 'true' : undefined
+                            }
+                            onClick={() => pick(item.id)}
+                            className={`flex min-h-12 items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left ${item.id === product.id ? 'border border-[#111] bg-[#f2f2f2]' : 'border border-transparent hover:bg-[#fafafa]'}`}
+                        >
+                            <ProductThumb product={item} />
+                            <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="truncate text-[13.5px] font-semibold">
+                                    {item.name}
                                 </span>
-                            </button>
-                        );
-                    })}
+                                <span
+                                    className={`text-[11px] ${STATE_TONE[item.state]}`}
+                                >
+                                    {recipeNavNote(item)}
+                                </span>
+                            </span>
+                        </button>
+                    ))}
                     <span className="px-2 pt-1.5 text-[11px] leading-4 text-[#8a8a8a]">
                         Only existing Catalog products appear here. Operations
                         does not keep a second product list.
@@ -295,7 +295,7 @@ export default function OperationsRecipes({
                             type="button"
                             aria-pressed={item.id === product.id}
                             onClick={() => pick(item.id)}
-                            className={`inline-flex h-10 shrink-0 items-center rounded-[10px] border px-3 text-[12.5px] font-semibold whitespace-nowrap ${item.id === product.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#d8d8d8] bg-white'}`}
+                            className={`inline-flex h-11 shrink-0 items-center rounded-[10px] border px-3 text-[12.5px] font-semibold whitespace-nowrap ${item.id === product.id ? 'border-[#111] bg-[#111] text-white' : 'border-[#d8d8d8] bg-white'}`}
                         >
                             {item.name}
                         </button>
@@ -340,53 +340,84 @@ export default function OperationsRecipes({
                         </div>
                     </div>
 
-                    {directReason ? (
-                        <div className="flex flex-col items-center gap-2 rounded-xl bg-[#f7f7f7] px-4 py-8 text-center">
-                            <Box className="size-6" aria-hidden="true" />
-                            <span className="text-[15px] font-semibold">
-                                No recipe needed
-                            </span>
-                            <span className="max-w-[48ch] text-[12.5px] leading-5 text-[#666]">
-                                {directReason} Direct-resale sales are reported
-                                as not costed, because there is no trusted
-                                product cost.
-                            </span>
-                            {product.no_recipe_needed &&
-                                !product.tracked_at.length && (
-                                    <button
-                                        type="button"
-                                        className={opsButtonClass}
-                                        disabled={busy}
-                                        onClick={() => setMode(false)}
-                                    >
-                                        Add a recipe instead
-                                    </button>
-                                )}
-                        </div>
+                    {setup === 'product_stock' ? (
+                        <StatePanel
+                            icon={<Box className="size-6" aria-hidden="true" />}
+                            title="Uses Product stock"
+                            body={`This Product currently deducts Product stock from Catalog › Inventory${trackedAt ? ` at ${trackedAt}` : ''}. Product stock tracking must be turned off before using an Ingredient recipe to prevent double inventory deduction.`}
+                            note="Nothing changes automatically: existing Product stock is kept until you decide."
+                        >
+                            <Link
+                                href={`${product.settings_url}&section=branch`}
+                                className={opsPrimaryClass}
+                            >
+                                <Settings2 className="size-4" /> Open Product
+                                settings
+                            </Link>
+                        </StatePanel>
+                    ) : setup === 'no_recipe_needed' ? (
+                        <StatePanel
+                            icon={
+                                <PackageCheck
+                                    className="size-6"
+                                    aria-hidden="true"
+                                />
+                            }
+                            title="No recipe needed"
+                            body={`${product.name} is resold as a whole item, so no ingredient stock moves. Direct-resale sales are reported as not costed, because there is no trusted product cost.`}
+                            error={Object.values(errors)[0]}
+                        >
+                            <button
+                                type="button"
+                                className={opsPrimaryClass}
+                                disabled={busy}
+                                onClick={() => setMode(false)}
+                            >
+                                <Plus className="size-4" /> Use ingredient
+                                recipe
+                            </button>
+                        </StatePanel>
+                    ) : setup === 'configuration_error' ? (
+                        <StatePanel
+                            tone="error"
+                            icon={
+                                <CircleAlert
+                                    className="size-6 text-[#b91c1c]"
+                                    aria-hidden="true"
+                                />
+                            }
+                            title="Choose one Size group"
+                            body={`${product.name} has more than one active Size group (${product.size_conflict?.join(', ')}). Only one Size group can define base recipes, so sales that need a recipe are blocked until you keep one.`}
+                        >
+                            <Link
+                                href={product.settings_url}
+                                className={opsPrimaryClass}
+                            >
+                                <Settings2 className="size-4" /> Open Product
+                                settings
+                            </Link>
+                        </StatePanel>
                     ) : (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-1.5">
-                                <span className={opsLabelClass}>
-                                    One recipe per size
-                                </span>
-                                <div
-                                    className="grid gap-2"
-                                    style={{
-                                        gridTemplateColumns: `repeat(${product.sizes.length}, minmax(0, 1fr))`,
-                                    }}
-                                >
-                                    {product.sizes.map((item) => {
-                                        const itemCosts = (
-                                            item.lines ?? []
-                                        ).map((row) =>
-                                            estimateLineCents(
-                                                row.quantity,
-                                                byId.get(row.ingredient_id)
-                                                    ?.purchase_unit ?? null,
-                                            ),
-                                        );
-
-                                        return (
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                    <span className={opsLabelClass}>
+                                        Base recipe
+                                    </span>
+                                    <span className="text-xs leading-5 text-[#666]">
+                                        {product.sizes.length > 1
+                                            ? 'One base recipe per size from the product’s Size group.'
+                                            : 'No Size group, so one Regular recipe.'}
+                                    </span>
+                                    <div
+                                        className="grid gap-2"
+                                        role="group"
+                                        aria-label="Base recipe sizes"
+                                        style={{
+                                            gridTemplateColumns: `repeat(${Math.min(product.sizes.length, 4)}, minmax(0, 1fr))`,
+                                        }}
+                                    >
+                                        {product.sizes.map((item) => (
                                             <button
                                                 key={item.key}
                                                 type="button"
@@ -396,16 +427,15 @@ export default function OperationsRecipes({
                                                 onClick={() => {
                                                     setSizeKey(item.key);
                                                     setErrors({});
-                                                    setAdding('');
                                                 }}
                                                 className={`flex min-h-14 min-w-0 flex-col items-start gap-0.5 rounded-xl bg-white px-2.5 py-2 text-left ${item.key === size.key ? 'border-[1.5px] border-[#111]' : 'border border-[#e5e5e5]'}`}
                                             >
                                                 <span className="flex w-full items-center justify-between gap-2">
-                                                    <span className="text-[13.5px] font-bold">
+                                                    <span className="truncate text-[13.5px] font-bold">
                                                         {item.name}
                                                     </span>
                                                     <span
-                                                        className={`size-2 rounded-full ${item.lines?.length ? 'bg-[#15803d]' : 'bg-[#b45309]'}`}
+                                                        className={`size-2 shrink-0 rounded-full ${item.lines?.length ? 'bg-[#15803d]' : 'bg-[#b45309]'}`}
                                                         aria-hidden="true"
                                                     />
                                                 </span>
@@ -413,308 +443,141 @@ export default function OperationsRecipes({
                                                     className={`text-[11px] ${item.lines?.length ? 'text-[#666]' : 'font-semibold text-[#b45309]'}`}
                                                 >
                                                     {item.lines?.length
-                                                        ? `${itemCosts.some((cost) => cost === null) ? 'Cost incomplete' : formatPeso(itemCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0))} · ${item.lines.length} ingredients`
-                                                        : 'No recipe'}
+                                                        ? item.servings === null
+                                                            ? `${item.lines.length} ingredients`
+                                                            : `${item.servings} can be made`
+                                                        : 'Recipe not set'}
                                                 </span>
                                             </button>
-                                        );
-                                    })}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            {editing ? (
-                                <div className="flex flex-col gap-3">
-                                    <div className="overflow-hidden rounded-xl border border-[#e5e5e5]">
-                                        {rows.map((row, index) => {
-                                            const ingredient = byId.get(
-                                                row.ingredient_id,
-                                            );
-
-                                            return (
-                                                <div
-                                                    key={row.ingredient_id}
-                                                    className="grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-x-2.5 gap-y-2 border-b border-[#f2f2f2] px-3 py-2.5 min-[820px]:grid-cols-[minmax(0,1.4fr)_170px_96px_44px]"
-                                                >
-                                                    <span className="col-span-2 flex min-w-0 items-center gap-2.5 min-[820px]:col-span-1">
-                                                        <IngredientIcon
-                                                            icon={
-                                                                ingredient?.icon ??
-                                                                'box'
-                                                            }
-                                                            size={34}
-                                                        />
-                                                        <span className="flex min-w-0 flex-col">
-                                                            <span
-                                                                className="truncate text-[13.5px] font-semibold"
-                                                                title={
-                                                                    ingredient?.name
-                                                                }
-                                                            >
-                                                                {ingredient?.name ??
-                                                                    'Archived ingredient'}
-                                                            </span>
-                                                            <span className="text-[11px] text-[#767676]">
-                                                                {ingredient?.stock
-                                                                    ? `In stock: ${formatQuantity(ingredient.stock.current, ingredient.base_unit)}`
-                                                                    : ingredient?.base_unit}
-                                                                {ingredient &&
-                                                                ingredient
-                                                                    .plan_ids
-                                                                    .length > 1
-                                                                    ? ' · shared'
-                                                                    : ''}
-                                                            </span>
-                                                        </span>
-                                                    </span>
-                                                    <label className="flex items-center gap-2">
-                                                        <span className="sr-only">
-                                                            Quantity per sale of{' '}
-                                                            {ingredient?.name}
-                                                        </span>
-                                                        <input
-                                                            className={`${opsInputClass} w-24 text-right tabular-nums`}
-                                                            inputMode="decimal"
-                                                            value={row.quantity}
-                                                            onChange={(event) =>
-                                                                setRows(
-                                                                    rows.map(
-                                                                        (
-                                                                            item,
-                                                                            position,
-                                                                        ) =>
-                                                                            position ===
-                                                                            index
-                                                                                ? {
-                                                                                      ...item,
-                                                                                      quantity:
-                                                                                          event
-                                                                                              .target
-                                                                                              .value,
-                                                                                  }
-                                                                                : item,
-                                                                    ),
-                                                                )
-                                                            }
-                                                        />
-                                                        <span className="text-[12.5px] text-[#767676]">
-                                                            {
-                                                                ingredient?.base_unit
-                                                            }
-                                                        </span>
-                                                    </label>
-                                                    <span
-                                                        className={`text-right text-[13px] font-semibold whitespace-nowrap tabular-nums ${costs[index] === null ? 'text-[#b45309]' : ''}`}
-                                                    >
-                                                        {costs[index] === null
-                                                            ? 'Cost unknown'
-                                                            : formatPeso(
-                                                                  costs[index],
-                                                              )}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        aria-label={`Remove ${ingredient?.name ?? 'ingredient'}`}
-                                                        onClick={() =>
-                                                            setRows(
-                                                                rows.filter(
-                                                                    (
-                                                                        _,
-                                                                        position,
-                                                                    ) =>
-                                                                        position !==
-                                                                        index,
-                                                                ),
-                                                            )
-                                                        }
-                                                        className="col-start-3 row-start-1 flex size-11 items-center justify-center rounded-[10px] border border-[#e5e5e5] text-[#767676] min-[820px]:col-start-auto min-[820px]:row-start-auto"
-                                                    >
-                                                        <Trash2 className="size-4" />
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                        {rows.length === 0 && (
-                                            <p className="border-b border-[#f2f2f2] p-3.5 text-[12.5px] text-[#767676]">
-                                                No ingredients yet. Add the
-                                                first one below.
+                                {editing ? (
+                                    <div className="flex flex-col gap-3">
+                                        <IngredientLinesEditor
+                                            rows={rows}
+                                            onChange={setRows}
+                                            ingredients={ingredients}
+                                            planId={plan.id}
+                                            costs={costs}
+                                            quantityLabel="Quantity per sale of"
+                                        />
+                                        <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
+                                            <div className="flex flex-col gap-1 rounded-xl border border-[#111] p-3">
+                                                <span className={opsLabelClass}>
+                                                    Est. ingredient cost
+                                                </span>
+                                                <span className="text-[19px] font-bold tabular-nums">
+                                                    {formatPeso(total)}
+                                                </span>
+                                                <span className="text-[11px] text-[#767676]">
+                                                    {unknown
+                                                        ? 'Some costs unknown · incomplete · '
+                                                        : ''}
+                                                    per {sizeLabel}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
+                                                <span className={opsLabelClass}>
+                                                    Selling price
+                                                </span>
+                                                <span className="text-[19px] font-bold tabular-nums">
+                                                    {formatPeso(
+                                                        size.price_cents,
+                                                    )}
+                                                </span>
+                                                <span className="text-[11px] text-[#767676]">
+                                                    From Catalog › Products
+                                                    {operations.branch
+                                                        ? ` · ${operations.branch.code}`
+                                                        : ''}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
+                                                <span className={opsLabelClass}>
+                                                    Est. gross margin
+                                                </span>
+                                                <span className="text-[19px] font-bold tabular-nums">
+                                                    {unknown
+                                                        ? '—'
+                                                        : formatPeso(
+                                                              size.price_cents -
+                                                                  total,
+                                                          )}
+                                                </span>
+                                                <span className="text-[11px] text-[#767676]">
+                                                    {unknown
+                                                        ? 'Needs every ingredient cost'
+                                                        : size.price_cents > 0
+                                                          ? `${Math.round(((size.price_cents - total) / size.price_cents) * 100)}% of price`
+                                                          : 'No selling price'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs leading-5 text-[#666]">
+                                            Each {sizeLabel} sold subtracts
+                                            exactly these quantities from branch
+                                            ingredient stock, and can only be
+                                            sold while that stock covers it.
+                                            Recipe changes apply to future
+                                            sales; past sales keep the recipe
+                                            and cost they were sold with.
+                                        </p>
+                                        {Object.values(errors).length > 0 && (
+                                            <p
+                                                role="alert"
+                                                className="text-xs font-semibold text-[#b91c1c]"
+                                            >
+                                                {Object.values(errors)[0]}
                                             </p>
                                         )}
-                                        <div className="flex flex-wrap items-center gap-2 bg-[#fafafa] px-3 py-2.5">
-                                            <label className="min-w-0 flex-[1_1_220px]">
-                                                <span className="sr-only">
-                                                    Ingredient to add
+                                        {dirty && (
+                                            <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-[#111] bg-white p-2.5 shadow-lg">
+                                                <span className="mr-auto text-xs font-semibold text-[#b45309]">
+                                                    Unsaved changes
                                                 </span>
-                                                <select
-                                                    className={opsInputClass}
-                                                    value={adding}
-                                                    onChange={(event) =>
-                                                        setAdding(
-                                                            event.target.value,
-                                                        )
+                                                <button
+                                                    type="button"
+                                                    className={opsButtonClass}
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        setDraft(null)
                                                     }
                                                 >
-                                                    <option value="">
-                                                        {available.length
-                                                            ? 'Choose an ingredient to add'
-                                                            : 'Every ingredient is in this recipe'}
-                                                    </option>
-                                                    {available.map(
-                                                        (ingredient) => (
-                                                            <option
-                                                                key={
-                                                                    ingredient.id
-                                                                }
-                                                                value={
-                                                                    ingredient.id
-                                                                }
-                                                            >
-                                                                {
-                                                                    ingredient.name
-                                                                }{' '}
-                                                                (
-                                                                {
-                                                                    ingredient.base_unit
-                                                                }
-                                                                )
-                                                                {ingredient.plan_ids.includes(
-                                                                    plan.id,
-                                                                )
-                                                                    ? ''
-                                                                    : ' · from another plan'}
-                                                            </option>
-                                                        ),
-                                                    )}
-                                                </select>
-                                            </label>
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                disabled={!adding}
-                                                onClick={() => {
-                                                    setRows([
-                                                        ...rows,
-                                                        {
-                                                            ingredient_id:
-                                                                adding,
-                                                            quantity: '1',
-                                                        },
-                                                    ]);
-                                                    setAdding('');
-                                                }}
-                                            >
-                                                <Plus className="size-4" /> Add
-                                                ingredient
-                                            </button>
-                                        </div>
+                                                    Discard
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={opsPrimaryClass}
+                                                    disabled={busy}
+                                                    onClick={save}
+                                                >
+                                                    <Check className="size-4" />{' '}
+                                                    {rows.length
+                                                        ? 'Save recipe'
+                                                        : 'Remove recipe'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
-                                        <div className="flex flex-col gap-1 rounded-xl border border-[#111] p-3">
-                                            <span className={opsLabelClass}>
-                                                Est. ingredient cost
-                                            </span>
-                                            <span className="text-[19px] font-bold tabular-nums">
-                                                {formatPeso(total)}
-                                            </span>
-                                            <span className="text-[11px] text-[#767676]">
-                                                {unknown
-                                                    ? 'Some costs unknown · incomplete · '
-                                                    : ''}
-                                                per {sizeLabel}
-                                            </span>
-                                        </div>
-                                        <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
-                                            <span className={opsLabelClass}>
-                                                Selling price
-                                            </span>
-                                            <span className="text-[19px] font-bold tabular-nums">
-                                                {formatPeso(size.price_cents)}
-                                            </span>
-                                            <span className="text-[11px] text-[#767676]">
-                                                From Catalog › Products
-                                                {operations.branch
-                                                    ? ` · ${operations.branch.code}`
-                                                    : ''}
-                                            </span>
-                                        </div>
-                                        <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
-                                            <span className={opsLabelClass}>
-                                                Est. gross margin
-                                            </span>
-                                            <span className="text-[19px] font-bold tabular-nums">
-                                                {unknown
-                                                    ? '—'
-                                                    : formatPeso(
-                                                          size.price_cents -
-                                                              total,
-                                                      )}
-                                            </span>
-                                            <span className="text-[11px] text-[#767676]">
-                                                {unknown
-                                                    ? 'Needs every ingredient cost'
-                                                    : size.price_cents > 0
-                                                      ? `${Math.round(((size.price_cents - total) / size.price_cents) * 100)}% of price`
-                                                      : 'No selling price'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <p className="text-xs leading-5 text-[#666]">
-                                        Each {sizeLabel} sold subtracts exactly
-                                        these quantities from branch ingredient
-                                        stock. Recipe changes apply to future
-                                        sales; past sales keep the recipe and
-                                        cost they were sold with.
-                                    </p>
-                                    {Object.values(errors).length > 0 && (
-                                        <p
-                                            role="alert"
-                                            className="text-xs font-semibold text-[#b91c1c]"
-                                        >
-                                            {Object.values(errors)[0]}
-                                        </p>
-                                    )}
-                                    {dirty && (
-                                        <div className="sticky bottom-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#111] bg-white p-2.5 shadow-lg">
-                                            <span className="mr-auto text-xs font-semibold text-[#b45309]">
-                                                Unsaved changes
-                                            </span>
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                disabled={busy}
-                                                onClick={() => setDraft(null)}
-                                            >
-                                                Discard
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={opsPrimaryClass}
-                                                disabled={busy}
-                                                onClick={save}
-                                            >
-                                                <Check className="size-4" />{' '}
-                                                {rows.length
-                                                    ? 'Save recipe'
-                                                    : 'Remove recipe'}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center gap-2 rounded-xl bg-[#fbf6e9] px-4 py-8 text-center">
-                                    <CircleAlert
-                                        className="size-6 text-[#b45309]"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="text-[15px] font-semibold">
-                                        {sizeLabel} has no recipe yet.
-                                    </span>
-                                    <span className="max-w-[48ch] text-[12.5px] leading-5 text-[#666]">
-                                        Selling it still works: the sale amount
-                                        is recorded, but no ingredient stock
-                                        moves and its cost is missing from
-                                        estimated COGS.
-                                    </span>
-                                    <div className="mt-1 flex flex-wrap justify-center gap-2">
+                                ) : (
+                                    <StatePanel
+                                        tone="warning"
+                                        icon={
+                                            <CircleAlert
+                                                className="size-6 text-[#b45309]"
+                                                aria-hidden="true"
+                                            />
+                                        }
+                                        title={`Recipe not set for ${sizeLabel}`}
+                                        body={
+                                            anyRecipe
+                                                ? `Other sizes of ${product.name} use ingredient recipes, so ${sizeLabel} shows “Recipe required” and cannot be sold until its recipe is set.`
+                                                : 'Until a recipe is set, sales still work but no ingredient stock moves and the cost is missing from estimated COGS.'
+                                        }
+                                        error={Object.values(errors)[0]}
+                                    >
                                         {other && (
                                             <button
                                                 type="button"
@@ -732,42 +595,448 @@ export default function OperationsRecipes({
                                                 Copy from {other.name}
                                             </button>
                                         )}
-                                        {!product.sizes.some(
-                                            (item) => item.lines?.length,
-                                        ) && (
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                disabled={busy}
-                                                onClick={() => setMode(true)}
-                                            >
-                                                No recipe needed
-                                            </button>
-                                        )}
+                                        {!anyRecipe &&
+                                            !product.add_ons.some(
+                                                (addOn) => addOn.lines,
+                                            ) && (
+                                                <button
+                                                    type="button"
+                                                    className={opsButtonClass}
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        setMode(true)
+                                                    }
+                                                >
+                                                    No recipe needed
+                                                </button>
+                                            )}
                                         <button
                                             type="button"
                                             className={opsPrimaryClass}
                                             onClick={() => setRows([])}
                                         >
-                                            <Plus className="size-4" /> Start
+                                            <Plus className="size-4" /> Set up
                                             recipe
                                         </button>
-                                    </div>
-                                    {Object.values(errors).length > 0 && (
-                                        <p
-                                            role="alert"
-                                            className="text-xs font-semibold text-[#b91c1c]"
-                                        >
-                                            {Object.values(errors)[0]}
-                                        </p>
-                                    )}
-                                </div>
-                            )}
+                                    </StatePanel>
+                                )}
+                            </div>
+
+                            <AddOnEffects
+                                product={product}
+                                ingredients={ingredients}
+                                planId={plan.id}
+                            />
                         </div>
                     )}
                 </section>
             </div>
         </OperationsShell>
+    );
+}
+
+function StatePanel({
+    icon,
+    title,
+    body,
+    note,
+    error,
+    tone = 'neutral',
+    children,
+}: {
+    icon: ReactNode;
+    title: string;
+    body: string;
+    note?: string;
+    error?: string;
+    tone?: 'neutral' | 'warning' | 'error';
+    children: ReactNode;
+}) {
+    const background = {
+        neutral: 'bg-[#f7f7f7]',
+        warning: 'bg-[#fbf6e9]',
+        error: 'bg-[#fdf0f0]',
+    }[tone];
+
+    return (
+        <div
+            className={`flex flex-col items-center gap-2 rounded-xl ${background} px-4 py-8 text-center`}
+        >
+            {icon}
+            <span className="text-[15px] font-semibold">{title}</span>
+            <span className="max-w-[52ch] text-[12.5px] leading-5 text-[#666]">
+                {body}
+            </span>
+            {note && (
+                <span className="max-w-[52ch] text-[11.5px] leading-4 text-[#8a8a8a]">
+                    {note}
+                </span>
+            )}
+            <div className="mt-1 flex flex-wrap justify-center gap-2">
+                {children}
+            </div>
+            {error && (
+                <p
+                    role="alert"
+                    className="text-xs font-semibold text-[#b91c1c]"
+                >
+                    {error}
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Add-on / Modifier effects: extra ingredients an Add-on uses on this product only, on top of the base recipe. Sizes
+ * are base recipes and Instructions never use ingredients, so neither appears here.
+ */
+function AddOnEffects({
+    product,
+    ingredients,
+    planId,
+}: {
+    product: RecipeProduct;
+    ingredients: OperationsIngredient[];
+    planId: string;
+}) {
+    const [open, setOpen] = useState<{
+        key: string;
+        rows: RecipeLine[];
+    } | null>(null);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const byId = new Map(
+        ingredients.map((ingredient) => [ingredient.id, ingredient]),
+    );
+    const keyOf = (addOn: RecipeAddOn) => `${product.id}:${addOn.option_id}`;
+    const save = (addOn: RecipeAddOn, rows: RecipeLine[]) => {
+        const bad = rows.find((row) => !(parseQuantity(row.quantity) ?? 0));
+        if (bad) {
+            setErrors({
+                lines: `Enter a quantity above zero for ${byId.get(bad.ingredient_id)?.name ?? 'each ingredient'}.`,
+            });
+
+            return;
+        }
+        setBusy(true);
+        router.put(
+            operationsRoutes.recipes.effects.update.url({
+                product: product.id,
+                option: addOn.option_id,
+            }),
+            { lines: rows },
+            {
+                preserveScroll: true,
+                onSuccess: () => setOpen(null),
+                onError: (next) => setErrors(next),
+                onFinish: () => setBusy(false),
+            },
+        );
+    };
+
+    return (
+        <section
+            aria-labelledby={`addon-effects-${product.id}`}
+            className="flex flex-col gap-2 border-t border-[#eeeeee] pt-4"
+        >
+            <span id={`addon-effects-${product.id}`} className={opsLabelClass}>
+                Add-on / Modifier effects
+            </span>
+            <span className="text-xs leading-5 text-[#666]">
+                Extra ingredients a selected add-on uses on top of the base
+                recipe, for {product.name} only. An add-on may have no
+                ingredient effect.
+            </span>
+            {product.add_ons.length === 0 ? (
+                <p className="rounded-xl bg-[#f7f7f7] p-3 text-[12.5px] leading-5 text-[#666]">
+                    No Add-on / Modifier groups are assigned to {product.name}.{' '}
+                    <Link
+                        href={product.settings_url}
+                        className="font-semibold text-[#111] underline underline-offset-2"
+                    >
+                        Assign one in Catalog › Products
+                    </Link>
+                </p>
+            ) : (
+                <ul className="flex flex-col overflow-hidden rounded-xl border border-[#e5e5e5]">
+                    {product.add_ons.map((addOn) => {
+                        const editingThis = open?.key === keyOf(addOn);
+                        const rows = editingThis
+                            ? open.rows
+                            : (addOn.lines ?? []);
+
+                        return (
+                            <li
+                                key={addOn.option_id}
+                                className="flex flex-col gap-2.5 border-b border-[#f2f2f2] p-3 last:border-b-0"
+                            >
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <span className="flex min-w-0 flex-[1_1_180px] flex-col">
+                                        <span className="text-[13.5px] font-semibold wrap-anywhere">
+                                            {addOn.name}
+                                        </span>
+                                        <span className="text-[11px] text-[#767676]">
+                                            {addOn.group_name}
+                                            {addOn.price_delta_cents > 0
+                                                ? ` · +${formatPeso(addOn.price_delta_cents)}`
+                                                : ''}
+                                        </span>
+                                        <span
+                                            className={`text-[11.5px] ${addOn.lines ? 'text-[#444]' : 'text-[#8a8a8a]'}`}
+                                        >
+                                            {effectSummary(addOn.lines, byId)}
+                                        </span>
+                                    </span>
+                                    {!editingThis && (
+                                        <button
+                                            type="button"
+                                            className={opsButtonClass}
+                                            onClick={() => {
+                                                setErrors({});
+                                                setOpen({
+                                                    key: keyOf(addOn),
+                                                    rows: (
+                                                        addOn.lines ?? []
+                                                    ).map((row) => ({
+                                                        ...row,
+                                                    })),
+                                                });
+                                            }}
+                                        >
+                                            {addOn.lines
+                                                ? 'Edit ingredient effect'
+                                                : 'Configure ingredient effect'}
+                                        </button>
+                                    )}
+                                </div>
+                                {editingThis && (
+                                    <div className="flex flex-col gap-2.5">
+                                        <IngredientLinesEditor
+                                            rows={rows}
+                                            onChange={(next) => {
+                                                setErrors({});
+                                                setOpen({
+                                                    key: keyOf(addOn),
+                                                    rows: next,
+                                                });
+                                            }}
+                                            ingredients={ingredients}
+                                            planId={planId}
+                                            quantityLabel={`Extra quantity for ${addOn.name} of`}
+                                            emptyText="No ingredient effect. Add an ingredient if this add-on uses stock."
+                                        />
+                                        {Object.values(errors).length > 0 && (
+                                            <p
+                                                role="alert"
+                                                className="text-xs font-semibold text-[#b91c1c]"
+                                            >
+                                                {Object.values(errors)[0]}
+                                            </p>
+                                        )}
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                className={opsButtonClass}
+                                                disabled={busy}
+                                                onClick={() => setOpen(null)}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={opsPrimaryClass}
+                                                disabled={busy}
+                                                onClick={() =>
+                                                    save(addOn, rows)
+                                                }
+                                            >
+                                                <Check className="size-4" />{' '}
+                                                {rows.length
+                                                    ? 'Save effect'
+                                                    : 'Save as no effect'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+            <p className="text-[11.5px] leading-5 text-[#767676]">
+                {product.instruction_groups.length > 0
+                    ? `Instructions (${product.instruction_groups.join(', ')}) are preparation requests only. They never use ingredients or change the price, so they are not configured here.`
+                    : 'Instructions such as “No ice” are preparation requests only and never use ingredients.'}{' '}
+                Add-on changes apply to future sales; past sales keep the effect
+                they were sold with.
+            </p>
+        </section>
+    );
+}
+
+function IngredientLinesEditor({
+    rows,
+    onChange,
+    ingredients,
+    planId,
+    costs,
+    quantityLabel,
+    emptyText = 'No ingredients yet. Add the first one below.',
+}: {
+    rows: RecipeLine[];
+    onChange: (rows: RecipeLine[]) => void;
+    ingredients: OperationsIngredient[];
+    planId: string;
+    costs?: (number | null)[];
+    quantityLabel: string;
+    emptyText?: string;
+}) {
+    const [adding, setAdding] = useState('');
+    const byId = new Map(
+        ingredients.map((ingredient) => [ingredient.id, ingredient]),
+    );
+    const available = ingredients
+        .filter(
+            (ingredient) =>
+                !rows.some((row) => row.ingredient_id === ingredient.id),
+        )
+        .sort(
+            (left, right) =>
+                Number(right.plan_ids.includes(planId)) -
+                Number(left.plan_ids.includes(planId)),
+        );
+    const withCost = costs !== undefined;
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-[#e5e5e5]">
+            {rows.map((row, index) => {
+                const ingredient = byId.get(row.ingredient_id);
+
+                return (
+                    <div
+                        key={row.ingredient_id}
+                        className={`grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-x-2.5 gap-y-2 border-b border-[#f2f2f2] px-3 py-2.5 ${withCost ? 'min-[820px]:grid-cols-[minmax(0,1.4fr)_170px_96px_44px]' : 'min-[820px]:grid-cols-[minmax(0,1.4fr)_170px_44px]'}`}
+                    >
+                        <span className="col-span-2 flex min-w-0 items-center gap-2.5 min-[820px]:col-span-1">
+                            <IngredientIcon
+                                icon={ingredient?.icon ?? 'box'}
+                                size={34}
+                            />
+                            <span className="flex min-w-0 flex-col">
+                                <span
+                                    className="truncate text-[13.5px] font-semibold"
+                                    title={ingredient?.name}
+                                >
+                                    {ingredient?.name ?? 'Archived ingredient'}
+                                </span>
+                                <span className="text-[11px] text-[#767676]">
+                                    {ingredient?.stock
+                                        ? `In stock: ${formatQuantity(ingredient.stock.current, ingredient.base_unit)}`
+                                        : ingredient?.base_unit}
+                                    {ingredient &&
+                                    ingredient.plan_ids.length > 1
+                                        ? ' · shared'
+                                        : ''}
+                                </span>
+                            </span>
+                        </span>
+                        <label className="flex items-center gap-2">
+                            <span className="sr-only">
+                                {quantityLabel} {ingredient?.name}
+                            </span>
+                            <input
+                                className={`${opsInputClass} w-24 text-right tabular-nums`}
+                                inputMode="decimal"
+                                value={row.quantity}
+                                onChange={(event) =>
+                                    onChange(
+                                        rows.map((item, position) =>
+                                            position === index
+                                                ? {
+                                                      ...item,
+                                                      quantity:
+                                                          event.target.value,
+                                                  }
+                                                : item,
+                                        ),
+                                    )
+                                }
+                            />
+                            <span className="text-[12.5px] text-[#767676]">
+                                {ingredient?.base_unit}
+                            </span>
+                        </label>
+                        {withCost && (
+                            <span
+                                className={`text-right text-[13px] font-semibold whitespace-nowrap tabular-nums ${costs[index] === null ? 'text-[#b45309]' : ''}`}
+                            >
+                                {costs[index] === null
+                                    ? 'Cost unknown'
+                                    : formatPeso(costs[index] ?? 0)}
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            aria-label={`Remove ${ingredient?.name ?? 'ingredient'}`}
+                            onClick={() =>
+                                onChange(
+                                    rows.filter(
+                                        (_, position) => position !== index,
+                                    ),
+                                )
+                            }
+                            className="col-start-3 row-start-1 flex size-11 items-center justify-center rounded-[10px] border border-[#e5e5e5] text-[#767676] min-[820px]:col-start-auto min-[820px]:row-start-auto"
+                        >
+                            <Trash2 className="size-4" />
+                        </button>
+                    </div>
+                );
+            })}
+            {rows.length === 0 && (
+                <p className="border-b border-[#f2f2f2] p-3.5 text-[12.5px] text-[#767676]">
+                    {emptyText}
+                </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 bg-[#fafafa] px-3 py-2.5">
+                <label className="min-w-0 flex-[1_1_220px]">
+                    <span className="sr-only">Ingredient to add</span>
+                    <select
+                        className={opsInputClass}
+                        value={adding}
+                        onChange={(event) => setAdding(event.target.value)}
+                    >
+                        <option value="">
+                            {available.length
+                                ? 'Choose an ingredient to add'
+                                : 'Every ingredient is already added'}
+                        </option>
+                        {available.map((ingredient) => (
+                            <option key={ingredient.id} value={ingredient.id}>
+                                {ingredient.name} ({ingredient.base_unit})
+                                {ingredient.plan_ids.includes(planId)
+                                    ? ''
+                                    : ' · from another plan'}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <button
+                    type="button"
+                    className={opsButtonClass}
+                    disabled={!adding}
+                    onClick={() => {
+                        onChange([
+                            ...rows,
+                            { ingredient_id: adding, quantity: '1' },
+                        ]);
+                        setAdding('');
+                    }}
+                >
+                    <Plus className="size-4" /> Add ingredient
+                </button>
+            </div>
+        </div>
     );
 }
 

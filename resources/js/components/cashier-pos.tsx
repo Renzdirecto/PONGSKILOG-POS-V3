@@ -42,7 +42,12 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { lineCents, pesos } from '@/lib/pos-money';
+import {
+    lineCents,
+    orderItemCount,
+    orderTotalCents,
+    pesos,
+} from '@/lib/pos-money';
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { savedItemName } from '@/lib/pos-item-name';
@@ -53,6 +58,7 @@ import {
     payLaterAttemptForOrder,
 } from '@/lib/pos-pay-later';
 import {
+    additionalQrItems,
     customerDisplayLabel,
     customerLabelAfterTableChange,
     freshOrderDetails,
@@ -288,6 +294,7 @@ export function CashierPos({
                                     branch_table_id:
                                         form.data.branch_table_id || null,
                                 },
+                                ...additionalQrItems(lines),
                             }
                           : {}),
                   }
@@ -389,6 +396,7 @@ export function CashierPos({
                               branch_table_id:
                                   form.data.branch_table_id || null,
                           },
+                          ...additionalQrItems(lines),
                       }
                     : {}
                 : {
@@ -555,10 +563,16 @@ export function CashierPos({
                         customer_label: order.customer_label ?? '',
                         branch_table_id: order.branch_table_id ?? '',
                     });
-                    router.visit(cashier(), {
-                        only: ['loadedQr', 'qrWaitingCount'],
+                    /** Show the POS at once with the order LOAD returned; the server props refresh in the background. */
+                    router.replace({
+                        url: cashier().url,
+                        props: (props) => ({ ...props, loadedQr: order }),
                         preserveState: true,
                         preserveScroll: true,
+                        onFinish: () =>
+                            router.reload({
+                                only: ['loadedQr', 'qrWaitingCount'],
+                            }),
                     });
                 }}
             />
@@ -616,7 +630,7 @@ export function CashierPos({
                     workspace
                     lines={lines}
                     onSelect={
-                        orderType && !saved
+                        orderType && (!saved || saved.source === 'customer_qr')
                             ? (product) => setEditing({ product })
                             : undefined
                     }
@@ -635,13 +649,9 @@ export function CashierPos({
                 >
                     <span className="flex items-center gap-2">
                         <ShoppingBag className="size-5" />
-                        View cart ·{' '}
-                        {(saved?.items ?? lines).reduce(
-                            (sum, line) => sum + line.quantity,
-                            0,
-                        )}
+                        View cart · {orderItemCount(saved, lines)}
                     </span>
-                    <span>{saved ? pesos(saved.total) : pesos(total)}</span>
+                    <span>{pesos(orderTotalCents(saved, lines))}</span>
                 </Button>
             </div>
             {editing && editingProduct && (
@@ -1274,7 +1284,7 @@ export function CashierPos({
                                             <div className="space-y-1.5 rounded-xl bg-neutral-50 p-3 text-xs">
                                                 <p className="font-semibold">
                                                     {saved
-                                                        ? `${saved.items.reduce((sum, item) => sum + item.quantity, 0)} items · ${pesos(saved.total)}`
+                                                        ? `${orderItemCount(saved, lines)} items · ${pesos(orderTotalCents(saved, lines))}`
                                                         : `${lines.reduce((sum, line) => sum + line.quantity, 0)} items · ${pesos(total)} preview`}
                                                 </p>
                                                 <p className="leading-5 text-neutral-500">

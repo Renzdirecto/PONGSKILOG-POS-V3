@@ -29,3 +29,6 @@ Committed-order mutations (and Pay Later settlement and correction allocation) r
 
 ## Loaded QR claims block Store Close
 Store Close archives only submitted, unclaimed, uncommitted Customer QR orders with `archive_reason = store_closed`. A QR order still loaded by a Cashier is a pre-close blocker (complete payment or Cancel LOAD); Close never clears `loaded_by_user_id` or archives an in-progress claim.
+
+## A loaded QR order accepts Cashier additions
+After LOAD, the Cashier may add items (never edit or remove the customer's submitted items). Pay Now and Pay Later send them as `qr_additional_items`; `LoadedQrOrder::appendItems()` validates them through `OrderSnapshots::prepare()` and appends them to the locked order inside the same commit transaction (current prices; submitted prices unchanged), then the normal stock, Kitchen and payment effects cover the whole order. A replay must already contain every additional item it sends (else 409). The POS switches to the loaded order instantly with a client-side visit (`router.replace` with the LOAD response) and refreshes `loadedQr` / `qrWaitingCount` after it.

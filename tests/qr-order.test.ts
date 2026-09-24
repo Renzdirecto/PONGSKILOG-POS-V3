@@ -191,3 +191,46 @@ test('Store close replaces uncommitted QR tracking and refetches when the phone 
     );
     assert.match(realtime, /window\.addEventListener\('pageshow', online\)/);
 });
+
+test('a loaded QR order switches to the POS at once and accepts additional Cashier items', async () => {
+    const { additionalQrItems } =
+        await import('../resources/js/lib/pos-order.ts');
+    const { editableLines, orderItemCount, orderTotalCents } =
+        await import('../resources/js/lib/pos-money.ts');
+    const pos = readFileSync(
+        new URL('../resources/js/components/cashier-pos.tsx', import.meta.url),
+        'utf8',
+    );
+    const line = {
+        key: 'l1',
+        quantity: 2,
+        notes: '',
+        modifiers: [],
+        product: { id: 'p1', effective_price: '40.00', modifier_groups: [] },
+    } as never;
+    const qr = {
+        source: 'customer_qr',
+        total: '95.00',
+        items: [{ quantity: 1 }],
+    } as never;
+    const draft = {
+        source: 'pos',
+        total: '95.00',
+        items: [{ quantity: 1 }],
+    } as never;
+
+    assert.equal(orderTotalCents(qr, [line]), 17500n);
+    assert.equal(orderItemCount(qr, [line]), 3);
+    assert.deepEqual(editableLines(draft, [line]), []);
+    assert.equal(orderTotalCents(draft, [line]), 9500n);
+    assert.deepEqual(additionalQrItems([]), {});
+    assert.deepEqual(additionalQrItems([line]).qr_additional_items, [
+        { product_id: 'p1', quantity: 2, notes: '', modifiers: [] },
+    ]);
+    assert.match(pos, /\(!saved \|\| saved\.source === 'customer_qr'\)/);
+    assert.match(
+        pos,
+        /router\.replace\(\{\s*url: cashier\(\)\.url,\s*props: \(props\) => \(\{ \.\.\.props, loadedQr: order \}\)/,
+    );
+    assert.match(pos, /\.\.\.additionalQrItems\(lines\)/);
+});

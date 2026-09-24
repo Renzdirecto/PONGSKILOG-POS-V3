@@ -57,10 +57,17 @@ export type PayLaterOrder = OrderSummary & {
     cashier: string;
 };
 
+export type AdditionalQrItem = {
+    product_id: string;
+    quantity: number;
+    notes: string;
+    modifiers: CartLine['modifiers'];
+};
 export type PayLaterAttempt = {
     order_id: string;
     idempotency_key: string;
     qr_metadata?: { customer_label: string; branch_table_id: string | null };
+    qr_additional_items?: AdditionalQrItem[];
     order_type?: OrderType;
     customer_label?: string;
     branch_table_id?: string | null;
@@ -82,6 +89,7 @@ export type PaymentInput = {
 export type PaymentAttempt = PaymentInput & {
     idempotency_key: string;
     qr_metadata?: { customer_label: string; branch_table_id: string | null };
+    qr_additional_items?: AdditionalQrItem[];
     draft_order_id?: string;
     reserved_order_id?: string;
     order_type?: OrderType;

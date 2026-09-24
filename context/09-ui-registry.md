@@ -951,3 +951,8 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 - **POS customization dialog**: a required Group without enough choices is outlined red with "Required · choose …".
 - **Recipes**: Size tiles missing a recipe are outlined red with "Recipe required"; the missing-recipe panel is a red "Recipe required for …" state; Uses Product stock names the blocking Branches with one "Open {CODE} product settings" action each.
 - **Ingredient Stock**: separate Giveaway column / "Given" cell. **View summary › All plans**: "Giveaways today" section.
+
+### QR LOAD follow-up (2026-09-24)
+
+- LOAD switches to the POS immediately using the order LOAD returned (no second full page round trip before the switch); the waiting count refreshes in the background.
+- A loaded QR order shows the customer's submitted items read-only, and the Cashier can add more items below them (editable: quantity, edit, remove). Totals, Pay Now and Pay Later include them; Cancel LOAD discards them.

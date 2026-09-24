@@ -87,6 +87,7 @@ class PayNowOrder
                 if ($order->source === OrderSource::CustomerQr) {
                     abort_unless($order->store_session_id === $session->id, 409, 'This QR order belongs to an earlier store session.');
                     $this->loadedQr->applyMetadata($order, $branch, $data);
+                    $this->loadedQr->appendItems($order, $branch, $data);
                 }
                 if ($order->source === OrderSource::CustomerQr && $order->order_number === null) {
                     $order->forceFill(app(OrderNumber::class)->allocate($branch, now()));

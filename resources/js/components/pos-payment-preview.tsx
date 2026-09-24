@@ -14,8 +14,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     cents,
+    editableLines,
     exactCash,
     lineCents,
+    orderTotalCents,
     paymentTotals,
     pesos,
     selectedOptions,
@@ -67,9 +69,7 @@ export function PosPaymentPreview({
     const [cash, setCash] = useState(attempt?.cash_received ?? '');
     const [cashless, setCashless] = useState(attempt?.cashless_amount ?? '');
     const [activeInput, setActiveInput] = useState<'cash' | 'cashless'>('cash');
-    const total = saved
-        ? cents(saved.total)
-        : lines.reduce((sum, line) => sum + lineCents(line), 0n);
+    const total = orderTotalCents(saved, lines);
     const cashAmount = method === 'cashless' ? 0n : cents(cash || '0');
     const cashlessAmount =
         method === 'cashless'
@@ -82,20 +82,21 @@ export function PosPaymentPreview({
         cashAmount,
         cashlessAmount,
     );
-    const rows =
-        saved?.items.map((item) => ({
+    const rows = [
+        ...(saved?.items ?? []).map((item) => ({
             ...item,
             itemName: savedItemName(item),
             amount: pesos(item.line_total),
-        })) ??
-        lines.map((line) => ({
+        })),
+        ...editableLines(saved, lines).map((line) => ({
             id: line.key,
             itemName: cartItemName(line),
             quantity: line.quantity,
             notes: line.notes,
             modifiers: selectedOptions(line),
             amount: pesos(lineCents(line)),
-        }));
+        })),
+    ];
 
     const locked = processing || attempt !== null;
     const valid = validPayment(total, method, cash, cashless);
@@ -116,7 +117,9 @@ export function PosPaymentPreview({
                         Order number
                     </p>
                     <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
-                        {orderNumber.startsWith('QR-') ? orderNumber : `#${orderNumber}`}
+                        {orderNumber.startsWith('QR-')
+                            ? orderNumber
+                            : `#${orderNumber}`}
                     </p>
                 </div>
                 <div
@@ -182,9 +185,7 @@ export function PosPaymentPreview({
                             </span>
                             <div className="min-w-0 flex-1 space-y-0.5">
                                 <p className="text-[12.5px] leading-[1.35] font-semibold wrap-anywhere text-neutral-950">
-                                    <OperationalItemName
-                                        value={row.itemName}
-                                    />
+                                    <OperationalItemName value={row.itemName} />
                                 </p>
                                 <PosModifierDetails
                                     modifiers={row.modifiers}
@@ -301,7 +302,9 @@ export function PosPaymentPreview({
                 {method === 'split' && (
                     <div className="flex items-center justify-between rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-[11px] text-neutral-500">
                         <span>Cashless invoice</span>
-                        <span className="font-semibold text-neutral-700">—</span>
+                        <span className="font-semibold text-neutral-700">
+                            —
+                        </span>
                     </div>
                 )}
                 {method !== 'cashless' && (

@@ -37,7 +37,11 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuditRealtimeRefresh } from '@/hooks/use-audit-realtime-refresh';
-import { auditActionLabel, titleCase } from '@/lib/audit-actions';
+import {
+    auditActionLabel,
+    auditActorName,
+    titleCase,
+} from '@/lib/audit-actions';
 import { auditTrail } from '@/routes/workspaces';
 
 type Option = {
@@ -52,7 +56,12 @@ type AuditLog = {
     id: string;
     created_at: string;
     branch: { id: string; name: string; code: string } | null;
-    actor: { id: number; name: string; email: string } | null;
+    actor: {
+        id: number;
+        name: string;
+        email: string;
+        position?: string | null;
+    } | null;
     module: string;
     action: string;
     auditable_type: string;
@@ -529,7 +538,7 @@ function AuditRow({
                 </span>
                 <span className="min-w-0">
                     <span className="block truncate text-xs font-semibold">
-                        {log.actor?.name ?? 'System process'}
+                        {auditActorName(log.actor)}
                     </span>
                     <span className="block truncate text-[11px] text-neutral-500">
                         {log.actor?.email ?? 'Automated activity'}
@@ -602,7 +611,7 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
                         <DetailStat
                             icon={CircleUserRound}
                             label="Actor"
-                            value={log.actor?.name ?? 'System process'}
+                            value={auditActorName(log.actor)}
                         />
                         <DetailStat
                             icon={Store}

@@ -296,6 +296,9 @@ export default function Inventory(props: Props) {
                         )}
                         {filters.type !== 'products' && (
                             <IngredientInventory
+                                canOpenOperations={auth.permissions.includes(
+                                    'operations.manage',
+                                )}
                                 ingredients={props.ingredients}
                             />
                         )}
@@ -349,12 +352,14 @@ export default function Inventory(props: Props) {
 
 /**
  * Ingredient rows read the same canonical Branch balance as Operations › Ingredient Stock. Changes are recorded there
- * (wastage, count correction, pamamalengke), never edited here.
+ * (wastage, count correction, pamamalengke), never edited here. The Operations link shows only with Operations access.
  */
 function IngredientInventory({
     ingredients,
+    canOpenOperations,
 }: {
     ingredients: OperationsIngredient[];
+    canOpenOperations: boolean;
 }) {
     return (
         <section
@@ -368,12 +373,14 @@ function IngredientInventory({
                 >
                     Ingredients · {ingredients.length}
                 </h2>
-                <Link
-                    href={operationsHref('stock')}
-                    className="text-[12px] font-semibold underline"
-                >
-                    Adjust in Operations › Ingredient Stock
-                </Link>
+                {canOpenOperations && (
+                    <Link
+                        href={operationsHref('stock')}
+                        className="text-[12px] font-semibold underline"
+                    >
+                        Adjust in Operations › Ingredient Stock
+                    </Link>
+                )}
             </div>
             {ingredients.length === 0 ? (
                 <p className="px-4 py-8 text-center text-[12.5px] text-[#767676]">

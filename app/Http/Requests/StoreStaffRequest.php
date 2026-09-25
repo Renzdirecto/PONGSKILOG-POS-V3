@@ -42,6 +42,7 @@ class StoreStaffRequest extends FormRequest
             'name' => is_string($this->input('name')) ? trim($this->input('name')) : $this->input('name'),
             'employee_id' => is_string($this->input('employee_id')) ? trim($this->input('employee_id')) : $this->input('employee_id'),
             'email' => is_string($this->input('email')) ? mb_strtolower(trim($this->input('email'))) : $this->input('email'),
+            ...($this->exists('position') ? ['position' => StaffRoles::normalizePosition($this->input('position'))] : []),
         ]);
     }
 
@@ -76,6 +77,8 @@ class StoreStaffRequest extends FormRequest
                 },
             ],
             'password' => $this->passwordRules(),
+            /** Business/job title for display only; access always comes from the Role. */
+            'position' => StaffRoles::positionRules(),
             'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')->whereNull('archived_at')],
             'branch_ids' => $requiresBranch
                 ? ['required', 'array', 'min:1']
@@ -99,6 +102,7 @@ class StoreStaffRequest extends FormRequest
         $role = $this->input('role');
 
         return [
+            ...StaffRoles::positionMessages(),
             'employee_id.regex' => 'Use MMDDYY followed by a two-digit number, for example 09242601.',
             'employee_id.unique' => 'This Employee ID is already used by another account.',
             'branch_ids.required' => 'Choose at least one active Branch for this role.',

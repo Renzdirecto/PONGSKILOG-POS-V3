@@ -42,6 +42,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { restoredOwnerViewMode } from '@/lib/owner-view-preference';
 import type { OwnerViewMode } from '@/lib/owner-view-preference';
+import { STAFF_POSITION_HINT, staffPositionLabel } from '@/lib/staff-admin';
 import {
     index as ownerStaffIndex,
     store as ownerStaffStore,
@@ -61,6 +62,8 @@ type StaffMember = {
     avatar_url: string | null;
     name: string;
     email: string;
+    /** Business/job title for display only; access comes from the Role. */
+    position: string | null;
     is_active: boolean;
     roles: { name: string; label: string }[];
     business_wide: boolean;
@@ -177,13 +180,23 @@ function StaffAvatar({
     );
 }
 
-/** Name first, with the Employee ID directly underneath it. */
+/** Name first, then the Position (when it adds more than the Role label) and the Employee ID. */
 function StaffIdentity({ member }: { member: StaffMember }) {
+    const position = staffPositionLabel(
+        member.position,
+        member.roles.map((role) => role.label),
+    );
+
     return (
         <span className="flex min-w-0 flex-1 flex-col">
             <span className="text-[13.5px] font-semibold wrap-break-word">
                 {member.name}
             </span>
+            {position !== null && (
+                <span className="text-[12px] font-medium wrap-break-word text-[#444]">
+                    {position}
+                </span>
+            )}
             <span className="font-mono text-[11.5px] text-[#767676]">
                 {member.employee_id ?? 'No Employee ID'}
             </span>
@@ -279,7 +292,7 @@ export default function Staff({
                 >
                     <label className="relative block">
                         <span className="sr-only">
-                            Search by name, email, or Employee ID
+                            Search by name, email, Position, or Employee ID
                         </span>
                         <Search
                             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#999]"
@@ -291,7 +304,7 @@ export default function Staff({
                             onChange={(event) =>
                                 changeSearch(event.target.value)
                             }
-                            placeholder="Search name, email, or ID"
+                            placeholder="Search name, email, position, or ID"
                             maxLength={150}
                             className={`${ownerControlClass} w-full pl-9`}
                         />
@@ -796,6 +809,7 @@ function AddStaffForm({
         employee_id: '',
         name: '',
         email: '',
+        position: '',
         password: '',
         password_confirmation: '',
         role: '',
@@ -1011,6 +1025,33 @@ function AddStaffForm({
                     <FieldError
                         id="staff-email-error"
                         message={form.errors.email}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="staff-position">Position</Label>
+                    <Input
+                        id="staff-position"
+                        name="position"
+                        autoComplete="off"
+                        placeholder="Area Manager"
+                        value={form.data.position}
+                        onChange={(event) =>
+                            form.setData('position', event.target.value)
+                        }
+                        maxLength={100}
+                        aria-invalid={!!form.errors.position}
+                        aria-describedby="staff-position-hint staff-position-error"
+                        className={`${ownerControlClass} w-full`}
+                    />
+                    <p
+                        id="staff-position-hint"
+                        className="text-xs text-neutral-500"
+                    >
+                        {STAFF_POSITION_HINT}
+                    </p>
+                    <FieldError
+                        id="staff-position-error"
+                        message={form.errors.position}
                     />
                 </div>
             </fieldset>

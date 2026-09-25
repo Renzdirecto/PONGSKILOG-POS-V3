@@ -543,7 +543,7 @@ Preview and close require an active user with `pos.access` and `store.open_close
 
 ### Phase 16E Owner Operations authorization - 2026-09-24
 
-- All `operations.*` routes require `permission:inventory.manage`; `OperationsAccess` re-checks on every page and action: an **active, business-wide** user (Owner or Super Admin) with `inventory.manage`. Cashier, Kitchen Staff, Cashier + Kitchen, guests and inactive users are denied (403 / redirect). Hidden navigation is never the control.
+- All `operations.*` routes require `permission:inventory.manage`; `OperationsAccess` re-checks on every page and action: an **active, business-wide** user (Owner or Super Admin) with `inventory.manage`. Cashier, Kitchen Staff, Cashier + Kitchen, guests and inactive users are denied (403 / redirect). Hidden navigation is never the control. *Superseded by Phase 18 Manual QA refinement #1: Operations now requires its own `operations.manage` (see below); `inventory.manage` is Product stock only.*
 - Cashier-originated POS sales still consume Ingredients inside the existing Pay Now / Pay Later / Edit / Void transactions as domain behavior; that grants no Operations access.
 - The Branch is always the server-side global Branch context (`ActiveBranchContext`), never a browser `branch_id`. Opening stock, wastage, count correction, manual list items, skips and Confirm Pamamalengke require one concrete **active** Branch; All Branches is read-only. List entries of another Branch are 404. Plans, Ingredients, Products and manual entries are resolved and validated on the server (existing Products only, active Plans/Ingredients only, the Product's own sizes only).
 - Confirm Pamamalengke is the only path by which an Owner records a Store Purchase. It uses the canonical `RecordStoreSessionExpense::persist()` under the same OPEN Store Session shared lock and idempotency rules as the Cashier form (no alternate expense path) and is audited as the Owner. Close Store still takes the Store Session exclusively.
@@ -635,8 +635,8 @@ QR Orders has no route of its own (it is enforced through POS) and always follow
 
 | Scope | May hold (baseline or user ALLOW) | Locked |
 | --- | --- | --- |
-| Branch | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display, Reports (own Branch) | Products, Inventory, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control |
-| Business-wide | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display (each at one selected active Branch), Reports (All Branches or selected Branch), Products, Inventory, Staff (operational Staff only, like the Owner), Settings | Audit Trail, Void Orders, Access Control (Super Admin only) |
+| Branch | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display, Reports (own Branch) | Products, Inventory, Operations, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control |
+| Business-wide | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display (each at one selected active Branch), Reports (All Branches or selected Branch), Products, Inventory, Operations, Staff (operational Staff only, like the Owner), Settings | Audit Trail, Void Orders, Access Control (Super Admin only) |
 
 Every business permission's backend was checked: business Transactions, Owner Dashboard, Operations, Branch settings and Staff management already require business-wide scope; Inventory/Products are gated by permission and stay business-wide. A per-user ALLOW is limited by the same envelope (`PermissionCatalog::lockReason(Role, …)`), so it can never escape the role's scope or reach Control.
 
@@ -661,3 +661,32 @@ Maintains only System roles (canonical label/is_system/scope, Super Admin comple
 ### Super Admin Executive Dashboard
 
 `workspaces.super-admin` (`SuperAdminDashboardController`, `access_control.manage`) is read-only. Money comes only from `SalesAnalytics` (the Owner Dashboard's own call); live state from `BusinessSnapshot`; Staff counts, the viewer's unread count and a payload-free Audit summary (action, actor, Branch, time) from `ExecutiveSnapshot`. No before/after audit payloads, credentials or other users' notifications are exposed.
+
+## Phase 18 Manual QA refinement #1 — 2026-09-25
+
+### Inventory vs Operations permission split
+
+- `inventory.manage` (label **Inventory**) = Product stock levels, stock adjustments and movement history (`inventory.*` routes, `AdjustInventory`).
+- `operations.manage` (label **Operations**) = the Owner Operations workspace: Pamalengke Plans, Overview, Ingredients, Recipes, Ingredient Stock, Pamamalengke and Purchases. All `operations.*` routes require `permission:operations.manage`; `OperationsAccess` re-checks on every page and action (active + `operations.manage` + business-wide scope). Operations never mutates Product stock (Recipe / Add-on effect saves only *read* `tracks_inventory` as a guard), so it needs no `inventory.manage`. Confirm Pamamalengke still writes its Store Purchase only through `RecordStoreSessionExpense::persist()` under the OPEN Store Session.
+- Both are business-wide management permissions: grantable to Owner and to business-wide Custom Roles independently (Inventory without Operations and vice versa), never to Branch roles.
+- Defaults: Owner has both; Super Admin is always complete. Migration `2026_09_25_082319_split_operations_from_inventory_permission` (forward, additive, idempotent) creates `operations.manage` on an existing install and copies **every** Role baseline and per-user ALLOW/DENY that holds `inventory.manage` today, so nobody gains or loses Operations by the split. A fresh install gets it from `RbacSeeder` defaults; the seeder still never resets live Access Control configuration.
+
+### Staff Position (display only)
+
+- `users.position` (nullable, ≤ 100 characters, whitespace collapsed, blank → null, same plain-character rule as Custom Role names) is a business/job title shown to people (e.g. "Area Manager"). It is set in Add Staff / Manage Staff (Super Admin and Owner surfaces), audited in `staff.created` and `staff.updated`, and searchable in Staff.
+- **Position never grants access.** No permission, scope, landing page or workspace is derived from it; access always comes from the Role (System or Custom) plus user overrides.
+- Display: Staff cards show it under the name (hidden when it only repeats the Role label); the management sidebar footer shows Name + Position (fallback: Role label); the Audit Trail actor reads "Name · Position" using the actor's **current** Position (not a historical snapshot).
+
+### Navigation shows only permitted pages
+
+- The management shell (Owner and business-wide Custom Roles) and the operational POS shell render only pages the account can open; there are no disabled "No access" / "Coming later" rows. Sections: Overview, Store Operations (POS, QR Orders, Kitchen, Display), Sales, Catalog, Operations, Administration; an empty section disappears. Hidden navigation is never the control: every route keeps its permission middleware and server checks.
+- QR Orders follows `pos.access` (no separate toggle). Store Operations links open at the selected Branch or go through the Branch picker first.
+
+### Custom Role Store Operations
+
+- A Custom Role with `pos.access` at a selected active Branch uses the same operational shell as the Cashier: the real `storeContext` STORE OPEN / STORE CLOSED status, the existing `PosReadyNotifications` ready-order list and "Mark as done" (`orders.kitchen-status.update`, authorized by `pos.access` for Ready → Done, never by role name) and the `branch.{branch}.pos` channel (`pos.access` + Branch access). No second notification service.
+
+### Business Transactions: mutable only while the Store is OPEN
+
+- `workspaces.transactions` offers Edit / Settle / Void (and the operational detail) only when the viewer passes `PosAccess` for the selected Branch **and** that Branch has an OPEN Store Session; otherwise it is view-only historical reading like the Owner (`transactions.view` alone never grants a mutation).
+- Every write endpoint still re-authorizes (`permission:pos.access`, Branch, Order, the Order's current OPEN Store Session and the existing action rules); after close they reject with `store` errors.

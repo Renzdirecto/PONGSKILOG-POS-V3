@@ -225,7 +225,7 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         shortLabel,
         section: 'owner-operations',
         routeName,
-        permission: 'inventory.manage',
+        permission: 'operations.manage',
         availability: 'live',
         requiresBranch: false,
     })),

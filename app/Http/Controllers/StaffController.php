@@ -37,7 +37,7 @@ class StaffController extends Controller
         $fullAccess = StaffRoles::managesEveryAccount($actor);
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
-            ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'avatar_path', 'created_at'])
+            ->select(['id', 'employee_id', 'name', 'email', 'position', 'is_active', 'avatar_path', 'created_at'])
             ->with([
                 'roles:id,name,label,is_system,scope,archived_at',
                 'branches' => fn ($query) => $query
@@ -52,6 +52,7 @@ class StaffController extends Controller
                 $query->where(fn (Builder $query) => $query
                     ->whereRaw('LOWER(name) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(email) LIKE ?', [$term])
+                    ->orWhereRaw('LOWER(position) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(employee_id) LIKE ?', [$term]));
             })
             ->when($filters['role'] ?? null, fn (Builder $query, string $role) => $query
@@ -68,6 +69,7 @@ class StaffController extends Controller
                     'employee_id' => $user->employee_id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'position' => $user->position,
                     'avatar_url' => $user->avatar_path === null
                         ? null
                         : route($surface === 'owner' ? 'staff.avatar' : 'super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
@@ -106,8 +108,8 @@ class StaffController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
 
-        /** @var array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool} $data */
-        $data = $request->safe()->only(['employee_id', 'name', 'email', 'password', 'role', 'branch_ids', 'is_active']);
+        /** @var array{employee_id: string, name: string, email: string, position?: string|null, password: string, role: string, branch_ids?: list<string>, is_active?: bool} $data */
+        $data = $request->safe()->only(['employee_id', 'name', 'email', 'position', 'password', 'role', 'branch_ids', 'is_active']);
         $createStaffAccount->execute($actor, [...$data, 'avatar' => $request->file('avatar')]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
@@ -123,8 +125,8 @@ class StaffController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
 
-        /** @var array{name: string, email: string, role: string, branch_ids?: list<string>, is_active: bool, remove_avatar?: bool} $data */
-        $data = $request->safe()->only(['name', 'email', 'role', 'branch_ids', 'is_active', 'remove_avatar']);
+        /** @var array{name: string, email: string, position?: string|null, role: string, branch_ids?: list<string>, is_active: bool, remove_avatar?: bool} $data */
+        $data = $request->safe()->only(['name', 'email', 'position', 'role', 'branch_ids', 'is_active', 'remove_avatar']);
         $actions = $updateStaffAccount->execute($actor, $user, [
             ...$data,
             'is_active' => $request->boolean('is_active'),

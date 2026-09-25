@@ -39,6 +39,7 @@ Use DB constraints/indexes in addition to application validation.
 - `email`
 - `password`
 - `is_active`
+- `position` (nullable `varchar(100)`, Phase 18 Manual QA refinement #1): business/job title for display only; never a source of access
 - timestamps
 
 ### `roles`

@@ -10,7 +10,8 @@ use Illuminate\Validation\Rule;
 class OperationsPageRequest extends FormRequest
 {
     /**
-     * Operations pages belong to active business-wide users with inventory management: Owner and Super Admin.
+     * Operations pages belong to active business-wide users holding operations.manage (Owner, Super Admin, business-wide
+     * Custom Roles). Product inventory (inventory.manage) is a separate permission.
      */
     public function authorize(OperationsAccess $access): bool
     {

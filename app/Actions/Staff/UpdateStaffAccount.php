@@ -29,7 +29,7 @@ class UpdateStaffAccount
     public function __construct(private AuditRecorder $audit) {}
 
     /**
-     * Save one existing account: name, email, its single Role, Branch access, active status and profile picture, in
+     * Save one existing account: name, email, Position (display title only), its single Role, Branch access, active status and profile picture, in
      * one transaction. The Employee ID is a stable identity and is never changed here.
      *
      * Safety rules, all enforced server-side under row locks:
@@ -41,7 +41,7 @@ class UpdateStaffAccount
      *   and resets the account's custom access to INHERIT;
      * - deactivation rotates the remember token and ends stored sessions.
      *
-     * @param  array{name: string, email: string, role: string, branch_ids?: list<string>, is_active: bool, avatar?: UploadedFile|null, remove_avatar?: bool}  $data
+     * @param  array{name: string, email: string, position?: string|null, role: string, branch_ids?: list<string>, is_active: bool, avatar?: UploadedFile|null, remove_avatar?: bool}  $data
      * @return list<string> the audit actions recorded (empty when nothing changed)
      */
     public function execute(User $actor, User $staff, array $data): array
@@ -97,8 +97,8 @@ class UpdateStaffAccount
                 $branches = $this->assignableBranches($staff, $newRole, $data['branch_ids'] ?? []);
                 $branchesChanged = $branchesBefore->pluck('id')->sort()->values()->all() !== $branches->pluck('id')->sort()->values()->all();
 
-                $profileBefore = ['name' => $staff->name, 'email' => $staff->email];
-                $profileAfter = ['name' => $data['name'], 'email' => $data['email']];
+                $profileBefore = ['name' => $staff->name, 'email' => $staff->email, 'position' => $staff->position];
+                $profileAfter = ['name' => $data['name'], 'email' => $data['email'], 'position' => array_key_exists('position', $data) ? $data['position'] : $staff->position];
                 $profileChanged = $profileBefore !== $profileAfter;
 
                 $oldAvatarPath = $staff->avatar_path;

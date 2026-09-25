@@ -20,6 +20,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property int $id
  * @property string|null $employee_id
  * @property string|null $avatar_path
+ * @property string|null $position Business/job title for display only; access always comes from the Role.
  * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at

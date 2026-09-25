@@ -31,6 +31,7 @@ const source = (path: string): string =>
     ).replace(/\s+/g, ' ');
 const ui = source('components/operations-ui.tsx');
 const shell = source('components/owner-workspace-shell.tsx');
+const managementNavigation = source('lib/management-navigation.ts');
 const layout = source('layouts/workspace-layout.tsx');
 const app = source('app.tsx');
 const plans = source('pages/operations/plans.tsx');
@@ -260,8 +261,8 @@ test('only bought, available lines with a quantity reach Confirm; actual cost st
 
 test('operations is a real sidebar section of the existing Owner shell, with Sales kept separate', () => {
     assert.match(
-        shell,
-        /label: 'Sales',[\s\S]*label: 'Transactions'[\s\S]*label: 'Reports'/,
+        managementNavigation,
+        /id: 'transactions',[\s\S]*section: 'sales'[\s\S]*id: 'reports',[\s\S]*section: 'sales'/,
     );
     for (const [key, label] of [
         ['plans', 'Pamalengke Plans'],
@@ -272,10 +273,17 @@ test('operations is a real sidebar section of the existing Owner shell, with Sal
         ['pamamalengke', 'Pamamalengke'],
         ['purchases', 'Purchases'],
     ]) {
-        assert.match(shell, new RegExp(`\\['${key}', '${label}'`));
+        assert.match(
+            managementNavigation,
+            new RegExp(`\\['${key}', '${label}'`),
+        );
     }
-    assert.match(shell, /label: 'Operations',/);
-    assert.match(shell, /operationsRoutes\[key\]\(planQuery\)/);
+    assert.match(
+        managementNavigation,
+        /\{ id: 'operations', label: 'Operations' \}/,
+    );
+    assert.match(managementNavigation, /permission: 'operations\.manage'/);
+    assert.match(shell, /operationsRoutes\[id\]\(planQuery\)/);
     assert.match(layout, /page\.component\.startsWith\('operations\/'\)/);
     assert.match(app, /case name\.startsWith\('operations\/'\):/);
 });

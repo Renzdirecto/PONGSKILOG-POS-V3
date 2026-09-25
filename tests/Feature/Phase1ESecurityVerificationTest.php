@@ -127,6 +127,6 @@ test('the default database seeder creates rbac metadata without development acco
     $this->seed(DatabaseSeeder::class);
 
     $this->assertDatabaseCount('roles', 5);
-    $this->assertDatabaseCount('permissions', 15);
+    $this->assertDatabaseCount('permissions', 16);
     $this->assertDatabaseCount('users', 0);
 });

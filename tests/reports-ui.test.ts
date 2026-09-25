@@ -17,6 +17,7 @@ const page = source('pages/workspaces/reports.tsx');
 const sessions = source('components/report-store-sessions.tsx');
 const components = source('components/owner-analytics.tsx');
 const ownerShell = source('components/owner-workspace-shell.tsx');
+const managementNavigation = source('lib/management-navigation.ts');
 const layout = source('layouts/workspace-layout.tsx');
 
 test('changing the period clears the Store Session and keeps a shareable query', () => {
@@ -248,13 +249,14 @@ test('the payment method card has a default-off Include split checkbox in its he
 });
 
 test('Owner and Super Admin render the report inside their management shells', () => {
+    assert.match(ownerShell, /case 'reports':\s+return reports\(\);/);
     assert.match(
-        ownerShell,
-        /label: 'Reports',[\s\S]{0,120}href: canReports \? reports\(\) : undefined,\s+active: isReports,/,
+        managementNavigation,
+        /id: 'reports',\s+label: 'Reports',\s+shortLabel: 'Reports',\s+section: 'sales',\s+permission: 'reports\.view',/,
     );
     assert.match(
-        ownerShell,
-        /const isReports = page\.component === 'workspaces\/reports';/,
+        managementNavigation,
+        /component === 'workspaces\/reports'\) \{\s+return 'reports';/,
     );
     assert.match(
         layout,

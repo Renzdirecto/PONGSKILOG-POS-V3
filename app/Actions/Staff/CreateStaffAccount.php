@@ -27,7 +27,7 @@ class CreateStaffAccount
      * The temporary password is hashed by the User cast and never leaves this method in any other form. An optional
      * profile picture is stored on the private staff avatar disk and removed again if the transaction fails.
      *
-     * @param  array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool, avatar?: UploadedFile|null}  $data
+     * @param  array{employee_id: string, name: string, email: string, position?: string|null, password: string, role: string, branch_ids?: list<string>, is_active?: bool, avatar?: UploadedFile|null}  $data
      */
     public function execute(User $actor, array $data): User
     {
@@ -59,6 +59,7 @@ class CreateStaffAccount
                     'employee_id' => $data['employee_id'],
                     'name' => $data['name'],
                     'email' => $data['email'],
+                    'position' => $data['position'] ?? null,
                     'password' => $data['password'],
                     'is_active' => $data['is_active'] ?? true,
                 ])->save();
@@ -91,6 +92,7 @@ class CreateStaffAccount
                         'employee_id' => $user->employee_id,
                         'name' => $user->name,
                         'email' => $user->email,
+                        'position' => $user->position,
                         'role' => $role->name,
                         'role_label' => $role->displayLabel(),
                         'branch_access' => $role->isBusinessWide() ? 'business_wide' : 'assigned',

@@ -36,6 +36,7 @@ class UpdateStaffRequest extends FormRequest
         $this->merge([
             'name' => is_string($this->input('name')) ? trim($this->input('name')) : $this->input('name'),
             'email' => is_string($this->input('email')) ? mb_strtolower(trim($this->input('email'))) : $this->input('email'),
+            ...($this->exists('position') ? ['position' => StaffRoles::normalizePosition($this->input('position'))] : []),
         ]);
     }
 
@@ -65,6 +66,8 @@ class UpdateStaffRequest extends FormRequest
                     }
                 },
             ],
+            /** Business/job title for display only; access always comes from the Role. */
+            'position' => StaffRoles::positionRules(),
             'role' => ['required', 'string', Rule::in($actor instanceof User ? StaffRoles::manageableBy($actor) : []), Rule::exists('roles', 'name')->whereNull('archived_at')],
             'branch_ids' => $requiresBranch ? ['required', 'array', 'min:1'] : ['prohibited'],
             'branch_ids.*' => ['required', 'uuid', 'distinct', Rule::exists('branches', 'id')],
@@ -82,6 +85,7 @@ class UpdateStaffRequest extends FormRequest
         $role = $this->input('role');
 
         return [
+            ...StaffRoles::positionMessages(),
             'branch_ids.required' => 'Choose at least one active Branch for this role.',
             'branch_ids.min' => 'Choose at least one active Branch for this role.',
             'branch_ids.prohibited' => StaffRoles::branchesProhibitedMessage($role),

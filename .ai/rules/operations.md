@@ -21,3 +21,6 @@ A Product has at most one active `size` Group (enforced in `SyncProductModifierG
 
 ## Pamamalengke money stays in the canonical Store Purchase
 Confirm Pamamalengke writes exactly one Store Session expense through `RecordStoreSessionExpense::persist()` under the existing OPEN Store Session rule, plus exact restocks and purchase metadata, idempotently. Operations › Purchases is a projection; never add a parallel expense path or stored total. Recommendations come only from `ReplenishmentAdvisor`; COGS uses movement cost snapshots and unknown costs are reported incomplete, never ₱0. Cash after purchases is never labelled profit; Store-wide expenses are never allocated to a Plan. Stock mutations need one concrete active Branch from `ActiveBranchContext` (All Branches is read-only).
+
+## Operations access is `operations.manage`
+Every `operations.*` route and `OperationsAccess` require `operations.manage` (plus active + business-wide scope), not `inventory.manage`. Catalog › Inventory still reads Ingredient balances but links to Operations › Ingredient Stock only when the viewer holds `operations.manage`.

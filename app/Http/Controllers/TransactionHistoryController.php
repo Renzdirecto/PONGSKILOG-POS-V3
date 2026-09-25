@@ -45,7 +45,8 @@ class TransactionHistoryController extends Controller
     /**
      * The same Transaction History page for a business-wide viewer across All Branches or the selected Branch. It is
      * read-only unless the viewer also holds POS access to the selected Branch (Super Admin, a business-wide Custom Role
-     * with POS), in which case the usual POS rules decide each Order's Edit, Settle and Void capability.
+     * with POS) and that Branch's Store is OPEN, in which case the usual POS rules decide each Order's Edit, Settle and
+     * Void capability. A closed Store is historical, view-only reading; the write endpoints re-authorize regardless.
      */
     public function business(BusinessTransactionHistoryRequest $request, ActiveBranchContext $context, PosAccess $access, TransactionHistory $history, BranchCatalog $catalog): Response
     {
@@ -137,12 +138,13 @@ class TransactionHistoryController extends Controller
     }
 
     /**
-     * The selected Branch when the viewer may also operate its POS (Super Admin, business-wide Custom Role with POS); Owner
-     * scope never qualifies.
+     * The selected Branch when the viewer may also operate its POS (Super Admin, business-wide Custom Role with POS) and
+     * its Store Session is OPEN; Owner scope never qualifies.
      */
     private function operationalBranch(User $user, ?Branch $branch, PosAccess $access): ?Branch
     {
-        if ($branch === null || ! $user->hasCashierOperationsRole()) {
+        if ($branch === null || ! $user->hasCashierOperationsRole()
+            || ! $branch->storeSessions()->where('status', StoreSessionStatus::Open)->exists()) {
             return null;
         }
 

@@ -315,8 +315,8 @@ test('operational layout and history rely on permissions, not role names, for cu
 test('business-wide custom roles reach branch operations through permissions and a concrete branch', () => {
     const shell = source('components/owner-workspace-shell.tsx');
     assert.match(
-        shell,
-        /\.filter\(\(\[permission\]\) => auth\.permissions\.includes\(permission\)\)/,
+        source('lib/management-navigation.ts'),
+        /permissions\.includes\(destination\.permission\)/,
     );
     assert.match(
         shell,

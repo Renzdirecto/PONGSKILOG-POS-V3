@@ -7,3 +7,6 @@ paths:
 
 ## Super Admin navigation is registry driven
 Super Admin management pages use SuperAdminShell with collapsible sections from lib/super-admin-navigation.ts (label, section, routeName, permission, availability, requiresBranch). Add destinations to the registry and bind the icon and Wayfinder route in destinationBindings. Planned items link to real protected placeholder routes and never show fake controls (since Phase 18 none remain: Notifications and Access Control are live, and the only unread badge is the real server count). The Dashboard destination is the Executive Overview; shells show `auth.roleLabel` (never a raw role key) and operational chrome keys off permissions, not role names, so Custom Roles render correctly. No Super Admin standalone HTML is authoritative; follow the Owner/POS design language. Operational pages keep the POS shell with a Control Center link back.
+
+## Navigation lists only what the account can open
+The Owner / Custom Role management shell reads `lib/management-navigation.ts` (one registry: section, label, permission) and the operational POS shell filters its items by permission; neither renders disabled "No access" / "Coming later" rows. Add a management destination to the registry and bind its icon and href in `owner-workspace-shell.tsx`. Backend middleware stays the control.

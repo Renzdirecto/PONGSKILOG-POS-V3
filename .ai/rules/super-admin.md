@@ -18,3 +18,6 @@ A UniqueConstraintViolationException message embeds the full INSERT SQL, so it a
 
 ## Staff writers lock the Role before the accounts
 `UpdateStaffAccount` takes the target Role row `FOR SHARE` before `lockAccounts()` (and `CreateStaffAccount` before any insert). Access Control writers hold Role rows and then key-share the actor's user row through the audit insert, so accounts-first ordering deadlocked with Custom Role archiving on PostgreSQL. The shared lock also makes archive-vs-assign serialize (an archived role never keeps an account). Owner Staff management never lists, assigns or edits Custom Role accounts; use `StaffRoles::managesEveryAccount()` for the Super Admin check, never `manageableBy() === names()`.
+
+## Staff Position is optional display metadata
+Add Staff and Manage Staff accept an optional `position` (≤100 chars, collapsed whitespace, blank → null, Custom Role name characters). It is only normalized when the field is submitted, so a client that omits it never clears it. Audited in `staff.created` / `staff.updated`; never used for authorization.

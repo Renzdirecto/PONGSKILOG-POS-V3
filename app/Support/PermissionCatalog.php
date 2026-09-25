@@ -103,7 +103,13 @@ class PermissionCatalog
         ],
         'inventory.manage' => [
             'label' => 'Inventory',
-            'description' => 'Business stock management and Owner Operations (Ingredients, Recipes, Pamamalengke).',
+            'description' => 'Product stock levels, stock adjustments and movement history.',
+            'category' => 'management',
+            'scope' => 'business',
+        ],
+        'operations.manage' => [
+            'label' => 'Operations',
+            'description' => 'Ingredients, Recipes, Ingredient Stock, Pamamalengke and Purchases, with Pamalengke Plans and the Operations overview.',
             'category' => 'management',
             'scope' => 'business',
         ],
@@ -151,6 +157,7 @@ class PermissionCatalog
             'reports.view',
             'products.manage',
             'inventory.manage',
+            'operations.manage',
             'staff.manage',
             'settings.manage',
         ],
@@ -174,7 +181,7 @@ class PermissionCatalog
      * @var array<string, list<string>>
      */
     public const GRANTABLE = [
-        'owner' => ['transactions.view', 'reports.view', 'products.manage', 'inventory.manage', 'staff.manage', 'settings.manage'],
+        'owner' => ['transactions.view', 'reports.view', 'products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage'],
         'cashier' => ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'],
         'kitchen_staff' => ['kitchen.access', 'customer_display.launch', 'reports.view'],
     ];
@@ -198,7 +205,7 @@ class PermissionCatalog
         'branch' => ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'],
         'business' => [
             'pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch',
-            'reports.view', 'products.manage', 'inventory.manage', 'staff.manage', 'settings.manage',
+            'reports.view', 'products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage',
         ],
     ];
 

@@ -972,6 +972,16 @@ Same branch (`feature/access-admin-cleanup`, 0 behind / 2 ahead of `origin/dev` 
 - **Automated gates:** complete Laravel suite **1,981 tests / 13,780 assertions, 0 failures, 0 skipped** (one run); new `CustomRolesTest` (56) and `SuperAdminExecutiveDashboardTest` (13); frontend **203 passed**; Pint, PHPStan (0 errors), `vp check` lint (0 warnings), TypeScript, production build, `git diff --check` clean. PostgreSQL (disposable schemas, all dropped): `verify-access-admin-postgres.php` cases A–M (incl. pre-Phase-18 rows forward + backfill, rollback/reapply, name/scope constraints, racing same-name create, concurrent Custom Role saves = one complete baseline, archive vs assign, seeder rerun) run 3×, plus close-store, inventory, kitchen, operations, owner-reports, pay-later, pay-now, POS, QR, store-expenses, store-session, transaction-history and void-audit harnesses — all passed. Isolated SQLite migrate → rollback → reapply verified. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
 - **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL QA: PENDING. READY FOR FINAL MANUAL SPOT-CHECK / PR.** Not merged; no PR opened.
 
+### Phase 18 — Manual QA refinement pass #1 — 2026-09-25
+
+Same branch, on top of `5f35c3d` (0 behind `origin/dev`). No dependency change. Two additive migrations: `2026_09_25_082318_add_position_to_users_table`, `2026_09_25_082319_split_operations_from_inventory_permission`. Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #1"; schema `05`; UI `09`; `.ai/rules` access-control, operations, layoutscomponentspages, jscomponents, js-pages, super-admin.
+
+- Management sidebar: permission-filtered registry (`lib/management-navigation.ts`), sections Overview / Store Operations / Sales / Catalog / Operations / Administration, inaccessible pages hidden (also in the POS shell), collapsible desktop rail with a remembered per-device preference, stronger section headings.
+- Staff Position (display only, never access) in Staff create/edit/list, sidebar footer and Audit Trail actor.
+- `operations.manage` split from `inventory.manage` (Owner keeps both; existing grants and overrides copied forward).
+- Business Transactions are view-only while the selected Store is closed; Custom Roles with POS get the existing Store status and ready-order flow.
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
 - [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
 - [x] Audit Trail (real register, filters, detail, realtime)
 - [x] Void Orders (protected history, detail, global Void approval PIN)

@@ -33,3 +33,18 @@ export function auditActionLabel(action: string): string {
         titleCase(action.replaceAll('.', ' ').replaceAll('_', ' '))
     );
 }
+
+/**
+ * The actor heading of an Audit Trail entry: "Name · Position", or just the name when no Position is set. The Position
+ * is the actor's current Staff title (display only, not a historical snapshot).
+ */
+export function auditActorName(
+    actor: { name: string; position?: string | null } | null,
+): string {
+    if (actor === null) {
+        return 'System process';
+    }
+    const position = actor.position?.trim();
+
+    return position ? `${actor.name} · ${position}` : actor.name;
+}

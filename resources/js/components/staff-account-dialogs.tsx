@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import {
     groupStaffRoles,
+    STAFF_POSITION_HINT,
     staffChangeWarnings,
     type StaffRoleOption,
 } from '@/lib/staff-admin';
@@ -29,6 +30,7 @@ export type ManagedStaffMember = {
     avatar_url: string | null;
     name: string;
     email: string;
+    position: string | null;
     is_active: boolean;
     roles: { name: string; label: string }[];
     business_wide: boolean;
@@ -71,6 +73,7 @@ export function EditStaffForm({
     const form = useForm({
         name: member.name,
         email: member.email,
+        position: member.position ?? '',
         role: currentRole,
         branch_ids: member.business_wide
             ? ([] as string[])
@@ -382,6 +385,33 @@ export function EditStaffForm({
                     <FieldError
                         id="edit-staff-email-error"
                         message={form.errors.email}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="edit-staff-position">Position</Label>
+                    <Input
+                        id="edit-staff-position"
+                        name="position"
+                        autoComplete="off"
+                        placeholder="Area Manager"
+                        value={form.data.position}
+                        onChange={(event) =>
+                            form.setData('position', event.target.value)
+                        }
+                        maxLength={100}
+                        aria-invalid={!!form.errors.position}
+                        aria-describedby="edit-staff-position-hint edit-staff-position-error"
+                        className={`${ownerControlClass} w-full`}
+                    />
+                    <p
+                        id="edit-staff-position-hint"
+                        className="text-xs text-neutral-500"
+                    >
+                        {STAFF_POSITION_HINT}
+                    </p>
+                    <FieldError
+                        id="edit-staff-position-error"
+                        message={form.errors.position}
                     />
                 </div>
             </fieldset>

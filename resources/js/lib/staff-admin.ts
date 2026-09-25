@@ -12,6 +12,30 @@ type StaffState = {
     branch_ids: string[];
 };
 
+/** Helper text shown under every Position field. */
+export const STAFF_POSITION_HINT =
+    'Optional business/job title, for example Area Manager. Access is controlled by Role.';
+
+/**
+ * The Position shown under a Staff name, or null when there is none or it only repeats one of the account's Role
+ * labels (the Role is shown separately). Position is display only and never decides access.
+ */
+export function staffPositionLabel(
+    position: string | null | undefined,
+    roleLabels: readonly string[],
+): string | null {
+    const title = position?.trim() ?? '';
+    if (title === '') {
+        return null;
+    }
+
+    return roleLabels.some(
+        (label) => label.trim().toLowerCase() === title.toLowerCase(),
+    )
+        ? null
+        : title;
+}
+
 /**
  * System and Custom Role options for a Staff form, grouped so Custom Roles never look like built-in roles.
  */

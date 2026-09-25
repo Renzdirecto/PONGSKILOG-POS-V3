@@ -30,6 +30,7 @@ const superAdminPermissions = [
     'reports.view',
     'products.manage',
     'inventory.manage',
+    'operations.manage',
     'staff.manage',
     'settings.manage',
     'audit.view',

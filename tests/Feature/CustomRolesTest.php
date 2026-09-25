@@ -165,11 +165,11 @@ test('a branch custom role cannot hold business-wide management permissions', fu
         ->assertInvalid(['permissions']);
 
     expect(Role::query()->where('label', 'Mixed')->exists())->toBeFalse();
-})->with(['products.manage', 'inventory.manage', 'staff.manage', 'settings.manage']);
+})->with(['products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage']);
 
 test('the branch envelope is branch operations plus reports and the business envelope adds management, never control', function () {
     $operations = ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'];
-    $management = ['products.manage', 'inventory.manage', 'staff.manage', 'settings.manage'];
+    $management = ['products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage'];
 
     $branch = createCustomRole($this->superAdmin, 'Shift Lead', 'branch', $operations);
     $business = createCustomRole($this->superAdmin, 'Regional Lead', 'business', [...$operations, ...$management]);

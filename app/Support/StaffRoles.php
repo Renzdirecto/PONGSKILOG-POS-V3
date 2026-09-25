@@ -35,6 +35,9 @@ class StaffRoles
     /** Business-wide system roles never take Branch assignments; they reach every Branch through role scope. */
     public const BUSINESS_WIDE = ['owner', 'super_admin'];
 
+    /** Longest Staff Position (business/job title). */
+    public const POSITION_MAX = 100;
+
     /** Operational Staff an Owner may manage; Owner, Super Admin and Custom Role accounts stay with Super Admin access control. */
     public const OPERATIONAL = ['cashier', 'kitchen_staff', 'cashier_kitchen'];
 
@@ -169,5 +172,35 @@ class StaffRoles
             'business_wide' => $role->isBusinessWide(),
             'custom' => $role->isCustom(),
         ])->all());
+    }
+
+    /**
+     * A Staff Position is a plain business/job title shown to people (for example "Area Manager"). It is display
+     * metadata only: no permission, scope or workspace is ever derived from it. Whitespace is collapsed and a blank
+     * value is stored as null.
+     */
+    public static function normalizePosition(mixed $position): mixed
+    {
+        if (! is_string($position)) {
+            return $position;
+        }
+        $position = trim((string) preg_replace('/\s+/u', ' ', $position));
+
+        return $position === '' ? null : $position;
+    }
+
+    /** @return list<string> */
+    public static function positionRules(): array
+    {
+        return ['nullable', 'string', 'max:'.self::POSITION_MAX, 'regex:'.CustomRoles::LABEL_PATTERN];
+    }
+
+    /** @return array<string, string> */
+    public static function positionMessages(): array
+    {
+        return [
+            'position.max' => 'Use at most '.self::POSITION_MAX.' characters for the Position.',
+            'position.regex' => "Use letters, numbers, spaces or & + - / ( ) . ' , only.",
+        ];
     }
 }

@@ -9,9 +9,10 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Owner Operations access. Management belongs to active business-wide users (Owner, Super Admin) holding
- * inventory.manage; Cashier and Kitchen roles never manage Ingredients, recipes, Plans or pamamalengke (their POS sales
- * still consume Ingredients as domain behavior). Physical stock mutations always need one concrete Branch from the
+ * Owner Operations access. Management belongs to active business-wide users (Owner, Super Admin, business-wide Custom
+ * Roles) holding operations.manage, which is independent of Product inventory (inventory.manage); Operations never
+ * mutates Product stock. Cashier and Kitchen roles never manage Ingredients, recipes, Plans or pamamalengke (their POS
+ * sales still consume Ingredients as domain behavior). Physical stock mutations always need one concrete Branch from the
  * global Branch context, never an ambiguous All Branches scope or a browser-supplied branch id.
  */
 class OperationsAccess
@@ -23,14 +24,14 @@ class OperationsAccess
         $user = $user?->exists ? User::query()->whereKey($user->getKey())->first() : null;
 
         return $user !== null && $user->is_active
-            && $user->hasPermission('inventory.manage')
+            && $user->hasPermission('operations.manage')
             && $user->hasBusinessWideScope();
     }
 
     public function authorize(?User $user): User
     {
         if (! $this->allows($user)) {
-            throw new AuthorizationException('Only the Owner or Super Admin can manage Operations.');
+            throw new AuthorizationException('Operations access is required to manage Operations.');
         }
 
         return User::query()->whereKey($user?->getKey())->firstOrFail();

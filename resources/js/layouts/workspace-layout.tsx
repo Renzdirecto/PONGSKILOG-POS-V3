@@ -65,6 +65,7 @@ const MANAGEMENT_PERMISSIONS = [
     'transactions.view',
     'products.manage',
     'inventory.manage',
+    'operations.manage',
     'staff.manage',
     'settings.manage',
 ] as const;
@@ -201,6 +202,7 @@ export default function WorkspaceLayout({
             await refreshStoreSession();
         };
 
+        /** Only pages the account can open are listed; the server still authorizes each one. */
         const navigation = [
             {
                 label: 'Dashboard',
@@ -256,7 +258,7 @@ export default function WorkspaceLayout({
                       },
                   ]
                 : []),
-        ];
+        ].filter((item) => item.available);
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
                 <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
@@ -272,42 +274,26 @@ export default function WorkspaceLayout({
                         className="flex flex-1 flex-col gap-1.5 px-2 py-2.5"
                     >
                         {navigation.map(
-                            ({ label, icon: Icon, available, href, active }) =>
-                                available && href ? (
-                                    <Link
-                                        key={label}
-                                        href={href}
-                                        preserveState
-                                        preserveScroll
-                                        aria-current={
-                                            active ? 'page' : undefined
-                                        }
-                                        className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        {label === 'QR Orders' &&
-                                            (page.props.qrWaitingCount ?? 0) >
-                                                0 && (
-                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
-                                                    {page.props.qrWaitingCount}
-                                                </span>
-                                            )}
-                                    </Link>
-                                ) : (
-                                    <button
-                                        key={label}
-                                        disabled
-                                        title={`${label} is not available yet`}
-                                        className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] leading-tight font-semibold text-white/45"
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        <span className="text-[8px] font-normal">
-                                            Coming later
-                                        </span>
-                                    </button>
-                                ),
+                            ({ label, icon: Icon, href, active }) => (
+                                <Link
+                                    key={label}
+                                    href={href}
+                                    preserveState
+                                    preserveScroll
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
+                                >
+                                    <Icon className="size-5" />
+                                    {label}
+                                    {label === 'QR Orders' &&
+                                        (page.props.qrWaitingCount ?? 0) >
+                                            0 && (
+                                            <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                {page.props.qrWaitingCount}
+                                            </span>
+                                        )}
+                                </Link>
+                            ),
                         )}
                     </nav>
                     <span className="border-t border-white/10 p-3 text-center text-[9px] text-white/50">
@@ -459,41 +445,26 @@ export default function WorkspaceLayout({
                         className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
-                            ({ label, icon: Icon, available, href, active }) =>
-                                available && href ? (
-                                    <Link
-                                        key={label}
-                                        href={href}
-                                        preserveState
-                                        preserveScroll
-                                        aria-current={
-                                            active ? 'page' : undefined
-                                        }
-                                        className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        {label === 'QR Orders' &&
-                                            (page.props.qrWaitingCount ?? 0) >
-                                                0 && (
-                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
-                                                    {page.props.qrWaitingCount}
-                                                </span>
-                                            )}
-                                    </Link>
-                                ) : (
-                                    <button
-                                        key={label}
-                                        disabled
-                                        className="flex flex-col items-center justify-center gap-1 text-center text-[9px] leading-tight text-white/45"
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        <span className="text-[8px]">
-                                            Coming later
-                                        </span>
-                                    </button>
-                                ),
+                            ({ label, icon: Icon, href, active }) => (
+                                <Link
+                                    key={label}
+                                    href={href}
+                                    preserveState
+                                    preserveScroll
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
+                                >
+                                    <Icon className="size-5" />
+                                    {label}
+                                    {label === 'QR Orders' &&
+                                        (page.props.qrWaitingCount ?? 0) >
+                                            0 && (
+                                            <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                {page.props.qrWaitingCount}
+                                            </span>
+                                        )}
+                                </Link>
+                            ),
                         )}
                     </nav>
                 </div>

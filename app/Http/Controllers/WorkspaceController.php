@@ -45,6 +45,7 @@ class WorkspaceController extends Controller
                 'transactions.view' => 'workspaces.transactions',
                 'products.manage' => 'products.index',
                 'inventory.manage' => 'inventory.index',
+                'operations.manage' => 'operations.plans',
                 'staff.manage' => 'staff.index',
                 'settings.manage' => 'branches.index',
             ]) ?? $this->businessWideOperationsWorkspace($user, $activeBranchContext),

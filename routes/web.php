@@ -156,8 +156,8 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:transactions.view')
         ->name('workspaces.transactions.show');
 
-    /** Owner Operations & Pamamalengke (Phase 16E): Owner/Super Admin business-wide scope, checked again server-side. */
-    Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:inventory.manage')->group(function () {
+    /** Owner Operations & Pamamalengke (Phase 16E): operations.manage with business-wide scope, checked again server-side. */
+    Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:operations.manage')->group(function () {
         Route::get('/', [OperationsController::class, 'plans'])->name('plans');
         Route::get('overview', [OperationsController::class, 'overview'])->name('overview');
         Route::get('ingredients', [OperationsController::class, 'ingredients'])->name('ingredients');

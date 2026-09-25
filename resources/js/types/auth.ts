@@ -2,6 +2,8 @@ export type User = {
     id: number;
     name: string;
     email: string;
+    /** Business/job title shown to people (display only; access always comes from the Role). */
+    position?: string | null;
     avatar?: string;
 };
 

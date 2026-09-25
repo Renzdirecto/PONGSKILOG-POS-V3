@@ -128,6 +128,7 @@ test('super admin creates operational staff with a hashed temporary password bra
             'employee_id' => '09242601',
             'name' => 'Jamie Cruz',
             'email' => 'jamie@pongskilog.test',
+            'position' => null,
             'role' => $role,
             'role_label' => StaffRoles::LABELS[$role],
             'branch_access' => 'assigned',

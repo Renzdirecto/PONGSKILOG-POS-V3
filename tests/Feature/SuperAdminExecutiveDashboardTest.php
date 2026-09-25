@@ -158,7 +158,7 @@ test('a partial reload computes only the requested executive props', function ()
         ->and($queries)->not->toContain('branch_ingredient_stocks');
 });
 
-test('the dashboard query count does not grow with staff or audit volume', function () {
+test('the dashboard query count does not grow with staff, audit or branch volume', function () {
     $count = function (): int {
         DB::flushQueryLog();
         DB::enableQueryLog();
@@ -172,6 +172,12 @@ test('the dashboard query count does not grow with staff or audit volume', funct
     foreach (range(1, 6) as $index) {
         executiveUser($index % 2 === 0 ? 'cashier' : 'kitchen_staff');
         AuditLog::query()->create(['user_id' => $this->admin->id, 'module' => 'staff', 'action' => 'staff.updated', 'auditable_type' => User::class, 'auditable_id' => (string) $index]);
+    }
+    foreach (range(1, 3) as $index) {
+        $branch = Branch::factory()->create(['code' => 'BR'.$index]);
+        $product = Product::factory()->create();
+        BranchProduct::factory()->for($branch)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
+        BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => $index]);
     }
 
     expect($count())->toBeLessThanOrEqual($baseline);

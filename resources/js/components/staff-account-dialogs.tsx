@@ -41,10 +41,29 @@ export type ManagedStaffMember = {
     other_branch_count?: number;
 };
 
-function FieldError({ id, message }: { id: string; message?: string }) {
-    return message ? (
-        <p id={id} role="alert" className="text-xs text-red-700">
-            {message}
+/** A server error, or readable "Required" text while a required value is still missing (never color alone). */
+function FieldError({
+    id,
+    message,
+    missing = false,
+    requiredText = 'Required',
+}: {
+    id: string;
+    message?: string;
+    missing?: boolean;
+    requiredText?: string;
+}) {
+    if (message) {
+        return (
+            <p id={id} role="alert" className="text-xs text-red-700">
+                {message}
+            </p>
+        );
+    }
+
+    return missing ? (
+        <p id={id} className="text-xs text-red-700">
+            {requiredText}
         </p>
     ) : null;
 }
@@ -126,6 +145,16 @@ export function EditStaffForm({
         Object.entries(form.errors).find(([key]) =>
             key.startsWith('branch_ids.'),
         )?.[1];
+    /** Required values still missing (an account that also works elsewhere may keep no Branch here). */
+    const missing = {
+        name: form.data.name.trim() === '',
+        email: form.data.email.trim() === '',
+        branch_ids:
+            requiresBranch &&
+            !shared &&
+            branchOptions.length > 0 &&
+            form.data.branch_ids.length === 0,
+    };
     const shownAvatar = form.data.remove_avatar
         ? null
         : (avatarPreview ?? member.avatar_url);
@@ -378,13 +407,14 @@ export function EditStaffForm({
                         }
                         required
                         maxLength={255}
-                        aria-invalid={!!form.errors.name}
+                        aria-invalid={!!form.errors.name || missing.name}
                         aria-describedby="edit-staff-name-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="edit-staff-name-error"
                         message={form.errors.name}
+                        missing={missing.name}
                     />
                 </div>
                 <div className="space-y-2">
@@ -398,14 +428,28 @@ export function EditStaffForm({
                             form.setData('email', event.target.value)
                         }
                         required
+                        readOnly={surface === 'owner'}
                         maxLength={255}
-                        aria-invalid={!!form.errors.email}
-                        aria-describedby="edit-staff-email-error"
-                        className={`${ownerControlClass} w-full`}
+                        aria-invalid={!!form.errors.email || missing.email}
+                        aria-describedby={
+                            surface === 'owner'
+                                ? 'edit-staff-email-hint edit-staff-email-error'
+                                : 'edit-staff-email-error'
+                        }
+                        className={`${ownerControlClass} w-full ${surface === 'owner' ? 'bg-neutral-50 text-neutral-600' : ''}`}
                     />
+                    {surface === 'owner' && (
+                        <p
+                            id="edit-staff-email-hint"
+                            className="text-[11.5px] text-neutral-500"
+                        >
+                            Only a Super Admin can change the sign-in email.
+                        </p>
+                    )}
                     <FieldError
                         id="edit-staff-email-error"
                         message={form.errors.email}
+                        missing={missing.email}
                     />
                 </div>
                 <div className="space-y-2">
@@ -527,12 +571,13 @@ export function EditStaffForm({
                             tabIndex={-1}
                             aria-labelledby="edit-staff-branch-label"
                             aria-describedby="edit-staff-branch-error"
+                            aria-invalid={!!branchError || missing.branch_ids}
                             className="grid gap-1.5 outline-none"
                         >
                             {branchOptions.map((branch) => (
                                 <label
                                     key={branch.id}
-                                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border border-[#e5e5e5] px-3 text-[13px] has-checked:border-[#111]"
+                                    className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border px-3 text-[13px] has-checked:border-[#111] ${missing.branch_ids ? 'border-[#b91c1c]' : 'border-[#e5e5e5]'}`}
                                 >
                                     <input
                                         type="checkbox"
@@ -560,6 +605,8 @@ export function EditStaffForm({
                     <FieldError
                         id="edit-staff-branch-error"
                         message={branchError}
+                        missing={missing.branch_ids}
+                        requiredText="Required · choose at least one Branch."
                     />
                 </div>
 
@@ -681,7 +728,9 @@ export function ResetStaffPasswordForm({
                             form.setData('password', event.target.value)
                         }
                         required
-                        aria-invalid={!!form.errors.password}
+                        aria-invalid={
+                            !!form.errors.password || form.data.password === ''
+                        }
                         aria-describedby="reset-staff-password-hint reset-staff-password-error"
                         className={`${ownerControlClass} w-full`}
                     />
@@ -695,6 +744,7 @@ export function ResetStaffPasswordForm({
                     <FieldError
                         id="reset-staff-password-error"
                         message={form.errors.password}
+                        missing={form.data.password === ''}
                     />
                 </div>
                 <div className="space-y-2">
@@ -712,7 +762,13 @@ export function ResetStaffPasswordForm({
                             )
                         }
                         required
+                        aria-invalid={form.data.password_confirmation === ''}
+                        aria-describedby="reset-staff-password_confirmation-error"
                         className={`${ownerControlClass} w-full`}
+                    />
+                    <FieldError
+                        id="reset-staff-password_confirmation-error"
+                        missing={form.data.password_confirmation === ''}
                     />
                 </div>
             </fieldset>

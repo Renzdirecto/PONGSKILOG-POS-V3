@@ -123,7 +123,7 @@ test('operational staff cannot listen to the reports channel', function (string 
     ])->assertForbidden();
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
 
-test('guests, inactive owners and owners without report access cannot listen to the reports channel', function () {
+test('guests, inactive owners and owners without report or operations access cannot listen to the reports channel', function () {
     authorizeReportsChannel();
     $payload = ['socket_id' => '123.456', 'channel_name' => 'private-reports'];
 
@@ -134,6 +134,11 @@ test('guests, inactive owners and owners without report access cannot listen to 
     /** The active-user middleware signs an inactive account out before the channel is even checked. */
     $this->actingAs($inactive)->postJson('/broadcasting/auth', $payload)->assertUnauthorized();
 
-    Role::query()->where('name', 'owner')->sole()->permissions()->detach(Permission::query()->where('name', 'reports.view')->sole());
+    /** Operations pages refresh on the same signal, so Operations access alone still listens. */
+    $owner = Role::query()->where('name', 'owner')->sole();
+    $owner->permissions()->detach(Permission::query()->where('name', 'reports.view')->sole());
+    $this->actingAs(reportsChannelUser('owner'))->postJson('/broadcasting/auth', $payload)->assertOk();
+
+    $owner->permissions()->detach(Permission::query()->where('name', 'operations.manage')->sole());
     $this->actingAs(reportsChannelUser('owner'))->postJson('/broadcasting/auth', $payload)->assertForbidden();
 });

@@ -7,7 +7,9 @@ use App\Enums\BranchStatus;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\AdminAlert;
 use App\Support\AccessRealtime;
+use App\Support\AdminNotifier;
 use App\Support\StaffRoles;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -37,14 +39,18 @@ class CreateStaffAccount
 
         try {
             return DB::transaction(function () use ($actor, $data, $avatarDisk, &$avatarPath): User {
+                /**
+                 * The Role row is locked before the actor's manageable roles are computed (as UpdateStaffAccount does): the
+                 * shared lock serializes with archiving or editing a Custom Role, which lock the same row FOR UPDATE, so a
+                 * Role widened concurrently is never assigned on a check made before the change.
+                 */
+                $role = Role::query()->where('name', $data['role'])->sharedLock()->first();
                 $actor = User::query()->whereKey($actor->getKey())->first();
                 $manageable = $actor === null ? [] : StaffRoles::manageableBy($actor);
                 if ($actor === null || $manageable === []) {
                     throw new AuthorizationException('Only Super Admin access control or Staff management may create staff accounts.');
                 }
 
-                /** The shared lock serializes with archiving a Custom Role, which locks the same row FOR UPDATE. */
-                $role = Role::query()->where('name', $data['role'])->sharedLock()->first();
                 if ($role === null || ! $role->isAssignable()) {
                     throw ValidationException::withMessages(['role' => 'Choose a valid role.']);
                 }
@@ -111,6 +117,14 @@ class CreateStaffAccount
 
                 AccessRealtime::staffChanged(array_values($branches->pluck('id')->map(fn ($id): string => (string) $id)->all()));
                 AccessRealtime::accessControlChanged('staff.created');
+                /** A new account is new access: the other active Super Admins are told, like a Role or Branch change. */
+                AdminNotifier::superAdmins(new AdminAlert(
+                    'staff',
+                    'New staff account: '.$user->name,
+                    $actor->name.' created '.$user->name.' ('.($user->employee_id ?? 'no Employee ID').') as '.$role->displayLabel()
+                        .($branches->isEmpty() ? ', business-wide.' : ' at '.$branches->pluck('code')->sort()->implode(', ').'.'),
+                    route('super-admin.staff.index', ['search' => $user->employee_id ?? $user->email], false),
+                ), except: $actor);
 
                 return $user;
             });

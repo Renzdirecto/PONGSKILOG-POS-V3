@@ -328,7 +328,7 @@ export default function AuditTrail({
                             )}
                         </div>
                     </div>
-                    <div className="grid gap-2 p-3 md:p-4 lg:grid-cols-[minmax(240px,2fr)_minmax(130px,1fr)_minmax(130px,1fr)_minmax(105px,.75fr)_minmax(150px,1.2fr)_135px]">
+                    <div className="grid gap-2 p-3 min-[1320px]:grid-cols-[minmax(240px,2fr)_minmax(130px,1fr)_minmax(130px,1fr)_minmax(105px,.75fr)_minmax(150px,1.2fr)_135px] md:grid-cols-2 md:p-4 lg:grid-cols-3">
                         <label className="relative min-w-0">
                             <span className="sr-only">Search audit trail</span>
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />

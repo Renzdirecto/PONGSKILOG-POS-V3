@@ -24,3 +24,6 @@ Add Staff and Manage Staff accept an optional `position` (≤100 chars, collapse
 
 ## Branch Staff managers never touch hidden assignments
 A Branch-scoped Staff manager lists only other accounts with an active assignment in its own Branches (foreign Branches as `other_branch_count`, never names). `UpdateStaffAccount` merges the submitted in-scope Branch ids with the account's foreign assignments and changes rows only inside the manager's scope (detach/syncWithoutDetaching); if the account works at another Branch, role, status and profile changes are rejected for the Branch manager. Re-check all of this in the action under locks, not only in the request.
+
+## Only a Super Admin changes a staff sign-in email; accounts never delete themselves (Phase 18 Final QA)
+The sign-in email is the password-recovery address and password resets are Super Admin only, so `UpdateStaffAccount` rejects an email change unless `StaffRoles::managesEveryAccount()` (the Owner-surface field is read-only). There is no self-service account deletion route (it bypassed the last-Super-Admin guard and erased audit actors); accounts are deactivated through Staff administration. Profile emails are stored lowercase and unique ignoring case (`ProfileValidationRules::emailRules()`). Creating a staff account notifies the other active Super Admins like a Role or Branch change.

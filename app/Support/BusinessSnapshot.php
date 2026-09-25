@@ -86,17 +86,21 @@ class BusinessSnapshot
     public function inventoryAttention(?Branch $branch): array
     {
         if ($branch === null) {
+            $branches = Branch::query()
+                ->where('status', BranchStatus::Active)
+                ->orderBy('name')
+                ->orderBy('code')
+                ->get(['id', 'name', 'code']);
+            /** One grouped query for every Branch, never two counts per Branch. */
+            $counts = $this->inventory->attentionCountsByBranch(array_values($branches->modelKeys()));
+
             return [
                 'mode' => 'branches',
-                'branches' => array_values(Branch::query()
-                    ->where('status', BranchStatus::Active)
-                    ->orderBy('name')
-                    ->orderBy('code')
-                    ->get(['id', 'name', 'code'])
+                'branches' => array_values($branches
                     ->map(fn (Branch $item): array => [
                         'branch' => ['id' => $item->id, 'name' => $item->name, 'code' => $item->code],
-                        'out_of_stock' => $this->count($item, 'out_of_stock'),
-                        'low_stock' => $this->count($item, 'low_stock'),
+                        'out_of_stock' => $counts[$item->id]['out_of_stock'] ?? 0,
+                        'low_stock' => $counts[$item->id]['low_stock'] ?? 0,
                     ])
                     ->all()),
             ];

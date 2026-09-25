@@ -33,14 +33,17 @@ Broadcast::channel('branch.{branch}.store-session', function (User $user, Branch
         && $user->hasOperationalBranchAccess($branch);
 });
 
-/** Business-wide report invalidation signals for the Owner/Super Admin Dashboard and Reports. */
+/**
+ * Business-wide report invalidation signals (ids/type/time only) for the Dashboards, Reports and the Operations
+ * workspace; Operations is its own permission, so an Operations manager without Reports still gets live pages.
+ */
 Broadcast::channel('reports', function (User $user): bool {
-    return $user->is_active && $user->hasPermission('reports.view') && $user->hasBusinessWideScope();
+    return $user->is_active && ($user->hasPermission('reports.view') || $user->hasPermission('operations.manage')) && $user->hasBusinessWideScope();
 });
 
-/** Branch-scoped report invalidation for accounts with Reports access at that Branch (custom Reports for Branch staff). */
+/** Branch-scoped report invalidation for accounts with Reports or Operations access at that Branch. */
 Broadcast::channel('branch.{branch}.reports', function (User $user, Branch $branch): bool {
-    return $user->is_active && $user->hasPermission('reports.view') && $user->canAccessBranch($branch);
+    return $user->is_active && ($user->hasPermission('reports.view') || $user->hasPermission('operations.manage')) && $user->canAccessBranch($branch);
 });
 
 /** Open Access Control pages: Super Admin access control only. */

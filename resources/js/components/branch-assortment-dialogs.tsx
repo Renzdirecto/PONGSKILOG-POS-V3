@@ -136,6 +136,14 @@ export function AddProductsDialog({
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                     />
+                    {visible.length === 0 && (
+                        <p
+                            role="status"
+                            className="rounded-xl bg-[#f5f5f5] p-4 text-[12.5px] text-[#555]"
+                        >
+                            No products match “{search}”.
+                        </p>
+                    )}
                     <ul className="max-h-[46dvh] space-y-0.5 overflow-y-auto">
                         {visible.map((row) => (
                             <PickRow
@@ -282,7 +290,9 @@ export function CopyFromBranchDialog({
                     Copy from
                 </span>
                 <select
-                    className={controlClass}
+                    className={`${controlClass} aria-invalid:border-[#b91c1c]`}
+                    aria-invalid={sourceId === ''}
+                    aria-describedby="assortment-copy-source-required"
                     value={sourceId}
                     onChange={(event) => load(event.target.value)}
                 >
@@ -293,6 +303,14 @@ export function CopyFromBranchDialog({
                         </option>
                     ))}
                 </select>
+                {sourceId === '' && (
+                    <span
+                        id="assortment-copy-source-required"
+                        className="block text-[11.5px] text-[#b91c1c]"
+                    >
+                        Required · choose the Branch to copy from.
+                    </span>
+                )}
             </label>
             {request.processing && (
                 <p role="status" className="text-[12.5px] text-[#767676]">
@@ -334,6 +352,16 @@ export function CopyFromBranchDialog({
                             Clear
                         </Button>
                     </div>
+                    {visible.length === 0 && (
+                        <p
+                            role="status"
+                            className="rounded-xl bg-[#f5f5f5] p-4 text-[12.5px] text-[#555]"
+                        >
+                            {rows.length === 0
+                                ? `${preview.source.code} sells no products yet, so there is nothing to copy.`
+                                : `No products match “${search}”.`}
+                        </p>
+                    )}
                     <ul className="max-h-[40dvh] space-y-0.5 overflow-y-auto">
                         {visible.map((row) => (
                             <PickRow

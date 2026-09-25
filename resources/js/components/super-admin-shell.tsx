@@ -29,6 +29,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { PersonAvatar } from '@/components/person-avatar';
+import { identitySubtitle } from '@/lib/management-navigation';
 import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
@@ -453,8 +454,11 @@ function SuperAdminShellFrame({
                             <span className="block truncate text-[13px] font-semibold">
                                 {auth.user?.name}
                             </span>
-                            <span className="block text-[11px] text-white/60">
-                                Super Admin
+                            <span className="block truncate text-[11px] text-white/60">
+                                {identitySubtitle(
+                                    auth.user?.position,
+                                    'Super Admin',
+                                )}
                             </span>
                         </span>
                         <Link
@@ -548,7 +552,11 @@ function SuperAdminShellFrame({
                             {auth.user?.name}
                         </p>
                         <p className="truncate text-[11px] text-neutral-500">
-                            Super Admin · {currentScope}
+                            {identitySubtitle(
+                                auth.user?.position,
+                                'Super Admin',
+                            )}{' '}
+                            · {currentScope}
                         </p>
                     </div>
                     <Link
@@ -595,7 +603,11 @@ function SuperAdminShellFrame({
                                     {auth.user?.name}
                                 </span>
                                 <span className="block text-[11px] font-normal text-[#666]">
-                                    Super Admin · {currentScope}
+                                    {identitySubtitle(
+                                        auth.user?.position,
+                                        'Super Admin',
+                                    )}{' '}
+                                    · {currentScope}
                                 </span>
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator />

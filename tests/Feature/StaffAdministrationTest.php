@@ -232,6 +232,26 @@ test('owner edits operational staff but never owner or super admin accounts', fu
         ->and($this->superAdmin->refresh()->is_active)->toBeTrue();
 });
 
+test('only a super admin can change a staff sign-in email', function () {
+    $owner = staffAdminUser('owner');
+
+    $this->actingAs($owner)
+        ->put(route('staff.update', $this->cashier), staffEdit($this->cashier, ['email' => 'owner.inbox@example.test', 'name' => 'Juan Renamed']))
+        ->assertSessionHasErrors('email');
+    expect($this->cashier->refresh()->email)->toBe('juan@pongskilog.test')
+        ->and($this->cashier->name)->not->toBe('Juan Renamed');
+
+    $this->actingAs($owner)
+        ->put(route('staff.update', $this->cashier), staffEdit($this->cashier, ['email' => 'JUAN@pongskilog.test', 'name' => 'Juan Renamed']))
+        ->assertSessionHasNoErrors();
+    expect($this->cashier->refresh()->name)->toBe('Juan Renamed');
+
+    $this->actingAs($this->superAdmin)
+        ->put(route('super-admin.staff.update', $this->cashier), staffEdit($this->cashier, ['email' => 'juan.new@pongskilog.test']))
+        ->assertSessionHasNoErrors();
+    expect($this->cashier->refresh()->email)->toBe('juan.new@pongskilog.test');
+});
+
 test('operational staff cannot edit staff accounts', function (string $role) {
     $actor = staffAdminUser($role, $this->main);
 

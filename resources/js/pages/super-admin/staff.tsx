@@ -42,6 +42,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { InvalidationRefresh } from '@/hooks/use-invalidation-refresh';
 import { restoredOwnerViewMode } from '@/lib/owner-view-preference';
+import { isBlank } from '@/lib/required-field';
 import type { OwnerViewMode } from '@/lib/owner-view-preference';
 import { STAFF_POSITION_HINT, staffPositionLabel } from '@/lib/staff-admin';
 import { staffChannelFor } from '@/lib/user-context';
@@ -104,7 +105,7 @@ const STAFF_ROUTES = {
     super_admin: { index: staffIndex, store },
 } as const;
 
-const selectClass = `${ownerControlClass} w-full`;
+const selectClass = `${ownerControlClass} w-full aria-invalid:border-[#b91c1c]`;
 
 function applyFilters(surface: StaffSurface, filters: Filters): void {
     router.get(
@@ -807,10 +808,29 @@ function StaffActions({
     );
 }
 
-function FieldError({ id, message }: { id: string; message?: string }) {
-    return message ? (
-        <p id={id} role="alert" className="text-xs text-red-700">
-            {message}
+/** A server error, or readable "Required" text while a required value is still missing (never color alone). */
+function FieldError({
+    id,
+    message,
+    missing = false,
+    requiredText = 'Required',
+}: {
+    id: string;
+    message?: string;
+    missing?: boolean;
+    requiredText?: string;
+}) {
+    if (message) {
+        return (
+            <p id={id} role="alert" className="text-xs text-red-700">
+                {message}
+            </p>
+        );
+    }
+
+    return missing ? (
+        <p id={id} className="text-xs text-red-700">
+            {requiredText}
         </p>
     ) : null;
 }
@@ -865,6 +885,19 @@ function AddStaffForm({
         Object.entries(form.errors).find(([key]) =>
             key.startsWith('branch_ids.'),
         )?.[1];
+    /** Required values still missing: red outline plus "Required" until valid (optional fields never turn red). */
+    const missing = {
+        employee_id: isBlank(form.data.employee_id),
+        name: isBlank(form.data.name),
+        email: isBlank(form.data.email),
+        password: form.data.password === '',
+        password_confirmation: form.data.password_confirmation === '',
+        role: form.data.role === '',
+        branch_ids:
+            requiresBranch &&
+            branches.length > 0 &&
+            form.data.branch_ids.length === 0,
+    };
 
     function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -989,7 +1022,9 @@ function AddStaffForm({
                         }
                         required
                         maxLength={8}
-                        aria-invalid={!!form.errors.employee_id}
+                        aria-invalid={
+                            !!form.errors.employee_id || missing.employee_id
+                        }
                         aria-describedby="staff-employee_id-hint staff-employee_id-error"
                         className={`${ownerControlClass} w-full font-mono`}
                     />
@@ -1003,6 +1038,7 @@ function AddStaffForm({
                     <FieldError
                         id="staff-employee_id-error"
                         message={form.errors.employee_id}
+                        missing={missing.employee_id}
                     />
                 </div>
                 <div className="space-y-2">
@@ -1017,13 +1053,14 @@ function AddStaffForm({
                         }
                         required
                         maxLength={255}
-                        aria-invalid={!!form.errors.name}
+                        aria-invalid={!!form.errors.name || missing.name}
                         aria-describedby="staff-name-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-name-error"
                         message={form.errors.name}
+                        missing={missing.name}
                     />
                 </div>
                 <div className="space-y-2">
@@ -1039,13 +1076,14 @@ function AddStaffForm({
                         }
                         required
                         maxLength={255}
-                        aria-invalid={!!form.errors.email}
+                        aria-invalid={!!form.errors.email || missing.email}
                         aria-describedby="staff-email-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-email-error"
                         message={form.errors.email}
+                        missing={missing.email}
                     />
                 </div>
                 <div className="space-y-2">
@@ -1095,7 +1133,9 @@ function AddStaffForm({
                             form.setData('password', event.target.value)
                         }
                         required
-                        aria-invalid={!!form.errors.password}
+                        aria-invalid={
+                            !!form.errors.password || missing.password
+                        }
                         aria-describedby="staff-password-hint staff-password-error"
                         className={`${ownerControlClass} w-full`}
                     />
@@ -1109,6 +1149,7 @@ function AddStaffForm({
                     <FieldError
                         id="staff-password-error"
                         message={form.errors.password}
+                        missing={missing.password}
                     />
                 </div>
                 <div className="space-y-2">
@@ -1127,13 +1168,17 @@ function AddStaffForm({
                             )
                         }
                         required
-                        aria-invalid={!!form.errors.password_confirmation}
+                        aria-invalid={
+                            !!form.errors.password_confirmation ||
+                            missing.password_confirmation
+                        }
                         aria-describedby="staff-password_confirmation-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-password_confirmation-error"
                         message={form.errors.password_confirmation}
+                        missing={missing.password_confirmation}
                     />
                 </div>
             </fieldset>
@@ -1164,7 +1209,7 @@ function AddStaffForm({
                             }));
                         }}
                         required
-                        aria-invalid={!!form.errors.role}
+                        aria-invalid={!!form.errors.role || missing.role}
                         aria-describedby="staff-role-error"
                         className={selectClass}
                     >
@@ -1176,6 +1221,7 @@ function AddStaffForm({
                     <FieldError
                         id="staff-role-error"
                         message={form.errors.role}
+                        missing={missing.role}
                     />
                 </div>
 
@@ -1230,12 +1276,13 @@ function AddStaffForm({
                             tabIndex={-1}
                             aria-labelledby="staff-branch-label"
                             aria-describedby="staff-branch-error"
+                            aria-invalid={!!branchError || missing.branch_ids}
                             className="grid gap-1.5 outline-none"
                         >
                             {branches.map((branch) => (
                                 <label
                                     key={branch.id}
-                                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border border-[#e5e5e5] px-3 text-[13px] has-checked:border-[#111]"
+                                    className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border px-3 text-[13px] has-checked:border-[#111] ${missing.branch_ids ? 'border-[#b91c1c]' : 'border-[#e5e5e5]'}`}
                                 >
                                     <input
                                         type="checkbox"
@@ -1260,7 +1307,12 @@ function AddStaffForm({
                             ))}
                         </div>
                     )}
-                    <FieldError id="staff-branch-error" message={branchError} />
+                    <FieldError
+                        id="staff-branch-error"
+                        message={branchError}
+                        missing={missing.branch_ids}
+                        requiredText="Required · choose at least one Branch."
+                    />
                 </div>
 
                 <div className="space-y-2">

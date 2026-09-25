@@ -189,6 +189,22 @@ test('an ingredient update never rewrites stock and locks the base unit once use
         ->and($this->ops->ingredients['lemon']->fresh()->purchase_unit_cost)->toBe('95.00');
 });
 
+test('an ingredient used only by an add-on effect keeps its base unit', function () {
+    $this->ops->withAddOns();
+    $this->ops->ingredients['pearls'] = $this->ops->ingredient('Pearls', 'g', '500', 'kg', '1000', '120.00', 'top_up', null, [$this->ops->drinks]);
+    $this->ops->effect($this->ops->lemonYakult, 'pearl', ['pearls' => '40']);
+    $input = [
+        'name' => 'Pearls', 'icon' => 'box', 'base_unit' => 'pc', 'target_quantity' => '500', 'purchase_unit_name' => 'kg',
+        'purchase_unit_size' => '1000', 'purchase_unit_cost' => '120.00', 'replenishment_rule' => 'top_up', 'plan_ids' => [$this->ops->drinks->id],
+    ];
+
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.ingredients.update', $this->ops->ingredients['pearls']), $input)
+        ->assertSessionHasErrors('base_unit');
+
+    expect($this->ops->ingredients['pearls']->fresh()->base_unit)->toBe('g')
+        ->and(BranchIngredientStock::query()->where('ingredient_id', $this->ops->ingredients['pearls']->id)->where('version', '>', 0)->exists())->toBeFalse();
+});
+
 test('invalid replenishment settings are rejected on the server', function (array $change, string $field) {
     if (($change['plan_ids'] ?? null) === ['archived']) {
         $change['plan_ids'] = [OperationPlan::factory()->archived()->create()->id];

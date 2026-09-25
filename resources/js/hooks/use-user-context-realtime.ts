@@ -12,6 +12,23 @@ import {
 import { login, workspace } from '@/routes';
 
 /**
+ * A background revalidation that the server refuses never shows the raw error page: a page the account may no longer
+ * open goes to its workspace (the server picks the landing page or Branch picker), an ended session goes to login.
+ */
+export function handleRevalidationException(response: {
+    status: number;
+}): false {
+    const outcome = revalidationOutcome(response.status);
+    if (outcome === 'login') {
+        window.location.assign(login.url());
+    } else if (outcome === 'workspace') {
+        router.visit(workspace.url(), { replace: true });
+    }
+
+    return false;
+}
+
+/**
  * Keeps an open session in step with the account's identity and access. On `user.context_changed` (or after the
  * realtime connection recovers, since signals may have been missed) the current page is revalidated with one
  * debounced reload: the server re-authorizes the URL and returns fresh shared props, so the sidebar, Role label,
@@ -31,16 +48,7 @@ export function useUserContextRealtime(userId: number): void {
                     onCancelToken: (token) => {
                         cancel = token.cancel;
                     },
-                    onHttpException: (response) => {
-                        const outcome = revalidationOutcome(response.status);
-                        if (outcome === 'login') {
-                            window.location.assign(login.url());
-                        } else if (outcome === 'workspace') {
-                            router.visit(workspace.url(), { replace: true });
-                        }
-
-                        return false;
-                    },
+                    onHttpException: handleRevalidationException,
                     onNetworkError: () => false,
                     onFinish,
                 });

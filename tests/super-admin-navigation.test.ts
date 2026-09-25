@@ -269,3 +269,15 @@ test('staff avatars fall back to initials and the remove control is named', () =
     assert.match(staffPage, /url && url !== failedUrl \?/);
     assert.match(staffPage, /aria-label="Remove profile picture"/);
 });
+
+test('the super admin shell shows the account position with the role label as fallback', () => {
+    const shell = source('components/super-admin-shell.tsx');
+
+    assert.equal(
+        shell.match(
+            /identitySubtitle\(\s*auth\.user\?\.position,\s*'Super Admin',\s*\)/g,
+        )?.length,
+        3,
+    );
+    assert.doesNotMatch(shell, />\s*Super Admin · \{currentScope\}/);
+});

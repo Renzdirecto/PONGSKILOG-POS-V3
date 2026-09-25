@@ -58,6 +58,17 @@ type InlineGroup = {
     options: InlineOption[];
 };
 
+/** Errors shown beside their field on the Product tab; the summary box lists only the rest, so none appears twice. */
+export const PRODUCT_INLINE_ERRORS: readonly (string | RegExp)[] = [
+    'image',
+    'name',
+    'category_id',
+    'default_price',
+    'description',
+    'modifier_group_ids',
+    /^inline_groups\.\d+\.name$/,
+];
+
 const newOption = (sortOrder = 0): InlineOption => ({
     client_key: crypto.randomUUID(),
     name: '',
@@ -150,6 +161,8 @@ export function ProductEditorForm({
     );
     const singleBranch = branches.length === 1;
     const busy = form.processing || removal.processing;
+    const removalErrors: Record<string, string> = removal.errors;
+    const imageError = form.errors.image ?? removalErrors.image;
 
     const updateBranchConfig = (index: number, value: BranchConfig) => {
         form.setData(
@@ -206,13 +219,14 @@ export function ProductEditorForm({
                         onSaved();
                     },
                     onError: (errors) => {
-                        if (
-                            Object.keys(errors).some((key) =>
+                        /** Show the tab that owns the error, so an inline field error is never hidden. */
+                        setActiveSection(
+                            Object.keys(errors).every((key) =>
                                 key.startsWith('branch_configs.'),
                             )
-                        ) {
-                            setActiveSection('branch');
-                        }
+                                ? 'branch'
+                                : 'product',
+                        );
                     },
                     onFinish: () => {
                         submitting.current = false;
@@ -272,12 +286,12 @@ export function ProductEditorForm({
                                         );
                                     }}
                                 />
-                                {form.errors.image && (
+                                {imageError && (
                                     <p
                                         role="alert"
                                         className="text-xs text-red-700"
                                     >
-                                        {form.errors.image}
+                                        {imageError}
                                     </p>
                                 )}
 
@@ -525,8 +539,10 @@ export function ProductEditorForm({
                                 {attachedGroups.length === 0 &&
                                     form.data.inline_groups.length === 0 && (
                                         <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-5 text-center text-sm text-neutral-500">
-                                            No Groups attached. Add a new Group
-                                            or attach one from the library.
+                                            No Groups attached. Groups are
+                                            optional: save as is, or add a new
+                                            Group or attach one from the
+                                            library.
                                         </p>
                                     )}
                             </section>
@@ -536,7 +552,10 @@ export function ProductEditorForm({
             </div>
 
             <div className="border-t border-neutral-200 bg-white p-4">
-                <FormErrors errors={{ ...form.errors, ...removal.errors }} />
+                <FormErrors
+                    errors={{ ...form.errors, ...removalErrors }}
+                    inline={PRODUCT_INLINE_ERRORS}
+                />
                 <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                     <Button
                         type="button"
@@ -1112,7 +1131,7 @@ function InlineGroupEditor({
                 />
             </div>
             {errors[`${errorPrefix}.name`] && (
-                <p className="text-xs text-red-700">
+                <p role="alert" className="text-xs text-red-700">
                     {errors[`${errorPrefix}.name`]}
                 </p>
             )}

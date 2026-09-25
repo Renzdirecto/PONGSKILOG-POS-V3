@@ -474,22 +474,27 @@ export function OperationsShell({
     );
 }
 
-/** Props each page partially reloads when a `reports.changed` signal arrives for its Branch scope. */
+/**
+ * Props each page partially reloads when a `reports.changed` signal arrives for its Branch scope: every prop a sale,
+ * purchase, recipe, Add-on effect, recipe mode or assortment change can alter (see OperationsWorkspace).
+ */
 const liveProps: Record<OperationsPageKey, string[]> = {
-    plans: ['cards', 'summary', 'shared'],
+    plans: ['cards', 'summary', 'shared', 'outside', 'products'],
     overview: [
         'figures',
+        'business_date',
         'ingredients',
         'market',
+        'recipes',
         'consumption',
         'movements',
         'summary',
         'earlier',
     ],
     ingredients: ['ingredients'],
-    recipes: ['ingredients'],
+    recipes: ['products', 'ingredients'],
     stock: ['ingredients', 'movements'],
-    pamamalengke: ['ingredients', 'market', 'summary', 'earlier'],
+    pamamalengke: ['ingredients', 'market', 'manual', 'summary', 'earlier'],
     purchases: ['stats', 'purchases'],
 };
 

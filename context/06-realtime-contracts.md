@@ -775,3 +775,11 @@ Supersedes "Custom Roles add no realtime contract" above. Backend authorization 
 
 - `CatalogRealtime::branchConfigurationChanged(Branch, reason)` = `ingredients.changed` + `qr.catalog_changed` on that Branch's channels + `reports.changed` (Operations pages partial-reload) — after commit, ids/reason/time only. Used by recipe mode, Recipes, Add-on effects, Ingredient save/archive, Plan save/archive and setup copies. Assortment add/remove/copy use `branchProductsChanged()` (per-Product availability events, removal reports unavailable) plus `reports.changed`. A QAVE-only change never signals MAIN (`BranchSetupCopyTest`).
 - Reconnect: POS/QR refetch their authoritative catalog and Operations pages refetch through the existing reports refresh hook; no missed event is assumed.
+
+
+## Phase 18 Final QA — realtime corrections — 2026-09-25
+
+- `reports` and `branch.{branch}.reports` authorize `reports.view` **or** `operations.manage` (plus business-wide scope / `canAccessBranch`). The Operations workspace refreshes on `reports.changed`, and Operations is a separate permission.
+- `UpsertBranchProduct` dispatches `ReportsChanged` for its Branch only when a membership is created or `tracks_inventory` changes (it is part of the Branch recipe mode).
+- Operations partial reloads now include every prop those signals can change (Plans: `outside`, `products`; Overview: `recipes`, `business_date`; Recipes: `products`; Pamamalengke: `manual`).
+- `useInvalidationRefresh` and `useReportsRealtimeRefresh` share `handleRevalidationException` with `useUserContextRealtime`: a background reload refused with 403/404 goes to the workspace, 401/419 to login, never a raw error modal.

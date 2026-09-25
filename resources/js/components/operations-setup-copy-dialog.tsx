@@ -21,6 +21,7 @@ import {
     preview as setupCopyPreview,
     store as setupCopyStore,
 } from '@/routes/operations/setup-copy';
+import { requiredOutline } from '@/lib/required-field';
 import type { OperationsContext } from '@/types/operations';
 
 /**
@@ -180,7 +181,9 @@ function OperationsSetupCopyDialog({
                     <label className="block space-y-1.5">
                         <span className={opsLabelClass}>Copy from</span>
                         <select
-                            className={opsInputClass}
+                            className={`${opsInputClass} aria-invalid:border-[#b91c1c]`}
+                            aria-invalid={sourceId === ''}
+                            aria-describedby="setup-copy-source-required"
                             value={sourceId}
                             onChange={(event) =>
                                 setSourceId(event.target.value)
@@ -193,13 +196,25 @@ function OperationsSetupCopyDialog({
                                 </option>
                             ))}
                         </select>
+                        {sourceId === '' && (
+                            <span
+                                id="setup-copy-source-required"
+                                className="block text-[11.5px] text-[#b91c1c]"
+                            >
+                                Required · choose the Branch to copy from.
+                            </span>
+                        )}
                     </label>
-                    <fieldset className="space-y-1.5">
+                    <fieldset
+                        className="space-y-1.5"
+                        aria-invalid={sections.length === 0}
+                        aria-describedby="setup-copy-sections-required"
+                    >
                         <legend className={opsLabelClass}>What to copy</legend>
                         {SETUP_COPY_SECTIONS.map((section) => (
                             <label
                                 key={section.key}
-                                className="flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border border-[#e5e5e5] p-3"
+                                className={`flex min-h-12 cursor-pointer items-start gap-3 rounded-xl p-3 ${requiredOutline(sections.length === 0, sections.includes(section.key))}`}
                             >
                                 <input
                                     type="checkbox"
@@ -217,6 +232,14 @@ function OperationsSetupCopyDialog({
                                 </span>
                             </label>
                         ))}
+                        {sections.length === 0 && (
+                            <p
+                                id="setup-copy-sections-required"
+                                className="text-[11.5px] text-[#b91c1c]"
+                            >
+                                Required · choose at least one part to copy.
+                            </p>
+                        )}
                     </fieldset>
                     <fieldset className="space-y-1.5">
                         <legend className={opsLabelClass}>

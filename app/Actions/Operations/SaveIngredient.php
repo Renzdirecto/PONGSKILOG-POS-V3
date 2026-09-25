@@ -11,6 +11,7 @@ use App\Models\BranchIngredientStock;
 use App\Models\Ingredient;
 use App\Models\OperationPlan;
 use App\Models\OperationPlanIngredient;
+use App\Models\ProductModifierEffectLine;
 use App\Models\RecipeLine;
 use App\Models\User;
 use App\Support\BranchConfiguration;
@@ -197,12 +198,13 @@ class SaveIngredient
         ];
     }
 
-    /** Whether stock history or a recipe already counts in this Ingredient's base unit (it can no longer change). */
+    /** Whether stock history, a recipe or an Add-on effect already counts in this Ingredient's base unit (it can no longer change). */
     public static function unitLocked(Ingredient $ingredient): bool
     {
         /** Every movement bumps its balance version; a snapshot line always comes with a sale movement. */
         return BranchIngredientStock::query()->where('ingredient_id', $ingredient->id)->where('version', '>', 0)->exists()
-            || RecipeLine::query()->where('ingredient_id', $ingredient->id)->exists();
+            || RecipeLine::query()->where('ingredient_id', $ingredient->id)->exists()
+            || ProductModifierEffectLine::query()->where('ingredient_id', $ingredient->id)->exists();
     }
 
     /** @return array<string, mixed> */

@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { summaryErrors } from '@/lib/required-field';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as modifiersIndex } from '@/routes/modifier-groups';
 import { index as productsIndex } from '@/routes/products';
@@ -307,11 +308,20 @@ export function Status({ active }: { active: boolean }) {
     );
 }
 
-export function FormErrors({ errors }: { errors: Record<string, string> }) {
+/** Summary of the errors not already rendered beside their field (`inline`), so each problem is announced once. */
+export function FormErrors({
+    errors: allErrors,
+    inline = [],
+}: {
+    errors: Record<string, string>;
+    inline?: readonly (string | RegExp)[];
+}) {
     const summary = useRef<HTMLDivElement>(null);
+    const errors = summaryErrors(allErrors, inline);
+    const hasSummary = Object.keys(errors).length > 0;
     useEffect(() => {
-        if (Object.keys(errors).length > 0) summary.current?.focus();
-    }, [errors]);
+        if (hasSummary) summary.current?.focus();
+    }, [allErrors, hasSummary]);
     return (
         Object.keys(errors).length > 0 && (
             <div

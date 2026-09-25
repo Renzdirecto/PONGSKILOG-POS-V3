@@ -18,6 +18,8 @@ function component(file, mocks) {
         },
     }).outputText;
     const exports = {};
+    // Deliberate: runs the transpiled hook module with mocked imports; the code is the repository's own source.
+    // oxlint-disable-next-line typescript/no-implied-eval
     new Function('require', 'exports', code)(
         (name) => (name in mocks ? mocks[name] : require(name)),
         exports,

@@ -225,7 +225,8 @@ try {
     $long = array_values(array_diff($long, ['pamamalengke_list_entries_branch_id_operation_plan_id_entry_typ']));
     bopsVerify($long === [], 'A new identifier reached the PostgreSQL length limit: '.json_encode($long));
     foreach (['branch_ingredient_stocks_branch_ingredient_foreign', 'ingredient_movements_branch_ingredient_foreign', 'operation_plan_products_branch_plan_foreign'] as $constraint) {
-        bopsVerify(DB::selectOne('SELECT COUNT(*) AS total FROM pg_constraint WHERE conname = ?', [$constraint])->total === 1, "Constraint {$constraint} is missing.");
+        /** Scoped to the isolated schema: the migrated development schema has the same constraint names. */
+        bopsVerify(DB::selectOne('SELECT COUNT(*) AS total FROM pg_constraint WHERE connamespace = ?::regnamespace AND conname = ?', [$schema, $constraint])->total === 1, "Constraint {$constraint} is missing.");
     }
     try {
         DB::transaction(fn () => DB::table('branch_ingredient_stocks')->insert(['id' => (string) Str::uuid(), 'branch_id' => $cQave->id, 'ingredient_id' => $lemon, 'on_hand' => '1', 'version' => 0, ...$stamps]));

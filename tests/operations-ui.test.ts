@@ -17,7 +17,6 @@ import {
     parseSignedQuantity,
     planQuery,
     readChecklist,
-    stockPercent,
     unitLabel,
     writeChecklist,
 } from '../resources/js/lib/operations.ts';
@@ -376,4 +375,19 @@ test('important actions keep 44px touch targets and never overflow the page', ()
         /top-auto bottom-0 flex max-h-\[92dvh\]/,
         'dialogs open as bottom sheets on phones',
     );
+});
+
+test('a live signal reloads every operations prop that recipes, sales and assortment changes can alter', () => {
+    assert.match(
+        ui,
+        /plans: \['cards', 'summary', 'shared', 'outside', 'products'\]/,
+    );
+    assert.match(ui, /recipes: \['products', 'ingredients'\]/);
+    assert.match(ui, /'market', 'recipes', 'consumption'/);
+    assert.match(ui, /pamamalengke: \['ingredients', 'market', 'manual',/);
+});
+
+test('the owner and custom role shell has no placeholder notification control', () => {
+    assert.doesNotMatch(shell, /coming later/i);
+    assert.doesNotMatch(shell, /aria-label="Notifications"/);
 });

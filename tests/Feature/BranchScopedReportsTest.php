@@ -144,6 +144,17 @@ test('branch report signals reach only accounts with reports access at that bran
 
     $pedro = scopedReportsUser('cashier', [$this->main]);
     $this->actingAs($pedro)->postJson('/broadcasting/auth', $channel('private-branch.'.$this->main->id.'.reports'))->assertForbidden();
+
+    /** Operations pages refresh on the same signal, so an Operations manager without Reports may listen at its Branch. */
+    UserPermissionOverride::query()->create([
+        'user_id' => $pedro->id,
+        'permission_id' => Permission::query()->where('name', 'operations.manage')->value('id'),
+        'effect' => PermissionOverrideEffect::Allow,
+    ]);
+    expect($pedro->hasPermission('reports.view'))->toBeFalse();
+    $this->actingAs($pedro)->postJson('/broadcasting/auth', $channel('private-branch.'.$this->main->id.'.reports'))->assertOk();
+    $this->actingAs($pedro)->postJson('/broadcasting/auth', $channel('private-branch.'.$this->qave->id.'.reports'))->assertForbidden();
+    $this->actingAs($pedro)->postJson('/broadcasting/auth', $channel('private-reports'))->assertForbidden();
 });
 
 test('a cashier whose baseline loses pos lands on the first workspace still allowed', function () {

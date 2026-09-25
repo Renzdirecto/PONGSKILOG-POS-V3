@@ -2,6 +2,7 @@ import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
 import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { createRealtimeRefresh } from '@/lib/realtime-refresh';
 
 type InvalidationRefreshOptions = {
@@ -40,6 +41,8 @@ export function useInvalidationRefresh({
                     onCancelToken: (token) => {
                         cancel = token.cancel;
                     },
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
                     onFinish,
                 });
 

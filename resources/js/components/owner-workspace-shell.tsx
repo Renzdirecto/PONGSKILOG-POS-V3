@@ -1,7 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
-    Bell,
     Boxes,
     ChefHat,
     Layers,
@@ -534,30 +533,6 @@ export function OwnerWorkspaceShell({
                             {workspaceLabel} · {currentScope}
                         </p>
                     </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                type="button"
-                                aria-label="Notifications"
-                                title="Notifications"
-                                className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#e5e5e5] bg-white text-[#555] hover:border-[#bbb] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
-                            >
-                                <Bell className="size-[18px]" />
-                            </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                            align="end"
-                            className="owner-surface w-[min(310px,calc(100vw-24px))] rounded-xl p-2"
-                        >
-                            <DropdownMenuLabel className="text-[13px] font-semibold">
-                                Notifications
-                            </DropdownMenuLabel>
-                            <p className="px-2 pb-2 text-[11.5px] leading-5 text-[#666]">
-                                Notifications are coming later. No notification
-                                count is shown until the real service is ready.
-                            </p>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button

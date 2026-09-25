@@ -1002,6 +1002,15 @@ Same branch on top of `32e2500` (0 behind `origin/dev`). No dependency change. O
 - Removal-vs-sale and recipe-edit-vs-sale serialize on the Branch configuration lock (PostgreSQL verified, no deadlock).
 - Focused automated checks only (not Final QA). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED. **Status: READY FOR USER MANUAL QA.** Phase 18 Final QA is **not** passed.
 
+### Phase 18 — FINAL AUTOMATED QA — 2026-09-25
+
+Same branch (`feature/access-admin-cleanup`) on top of `25a15df`, 0 behind / 7 ahead of `origin/dev` `c60e8e0` at start. No dependency change, **no migration**; the normal local development DB was not reset. Rules: `07-security-rbac.md` / `06-realtime-contracts.md` / `11-testing-qa.md` "Phase 18 Final QA"; `.ai/rules` orders, operations, hooks, super-admin, layoutscomponentspages.
+
+- Fixed: Product with zero Groups (multipart drops the empty list; absent = empty, malformed rejected); each server error shown once in catalog forms; committed edit keeps each Product's committed stock path after a Branch mode change; Confirm Pamamalengke lock order Branch → Plan (real PostgreSQL deadlock reproduced and fixed, harness case G-E); self-service account deletion removed; staff sign-in email changes Super Admin only; case-insensitive profile email; staff creation locks the Role first and notifies Super Admins; Ingredient unit locked by Add-on effects; Operations live refresh for Operations-only accounts, complete partial reloads and tracking-change signal; background refresh never shows a raw 403; Dashboard stock attention one grouped query for All Branches; Super Admin footer Position; Audit filter bar at tablet widths; Owner placeholder bell removed; required-field standard in Staff and copy dialogs; lint warnings cleared.
+- Gates: complete Laravel suite 2066 passed (14800 assertions, 0 failed, 0 skipped); frontend 245/245; 16/16 PostgreSQL harnesses (0 new deadlocks, no leftover schema); Pint, PHPStan 0, lint 0 errors / 0 warnings, TypeScript, production build, `git diff --check`.
+- Deferred to Phase 19: `audit_logs (created_at, id)` index; Product copy with Replace skipping (instead of aborting on) a conflicting destination recipe.
+- **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL SPOT-CHECK: PENDING. READY FOR PR** (not opened, not merged). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED.
+
 - [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
 - [x] Audit Trail (real register, filters, detail, realtime)
 - [x] Void Orders (protected history, detail, global Void approval PIN)

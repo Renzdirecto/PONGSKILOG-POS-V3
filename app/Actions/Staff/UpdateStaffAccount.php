@@ -116,6 +116,14 @@ class UpdateStaffAccount
                 $profileBefore = ['name' => $staff->name, 'email' => $staff->email, 'position' => $staff->position];
                 $profileAfter = ['name' => $data['name'], 'email' => $data['email'], 'position' => array_key_exists('position', $data) ? $data['position'] : $staff->position];
                 $profileChanged = $profileBefore !== $profileAfter;
+                /**
+                 * The sign-in email is the account's password-recovery address and password resets are Super Admin only,
+                 * so only a manager of every account may change it; otherwise a Staff manager could redirect a staff
+                 * member's recovery email to itself and take the account over.
+                 */
+                if (! $fullAccess && mb_strtolower($profileBefore['email']) !== mb_strtolower($profileAfter['email'])) {
+                    throw ValidationException::withMessages(['email' => 'Only a Super Admin can change the sign-in email of a staff account.']);
+                }
 
                 $oldAvatarPath = $staff->avatar_path;
                 $avatar = $data['avatar'] ?? null;

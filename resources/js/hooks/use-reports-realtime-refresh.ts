@@ -1,6 +1,7 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 import {
     createRealtimeRefresh,
@@ -41,6 +42,8 @@ export function useReportsRealtimeRefresh(
                     onCancelToken: (token) => {
                         cancel = token.cancel;
                     },
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
                     onFinish,
                 });
 

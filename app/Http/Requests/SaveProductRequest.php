@@ -12,8 +12,17 @@ use Illuminate\Validation\Validator;
 
 class SaveProductRequest extends FormRequest
 {
+    /**
+     * The editor submits multipart form data (for the optional image), which cannot carry an empty list, so a Product
+     * saved with zero Groups arrives without `modifier_group_ids`. An absent key means "no Groups"; any value that is
+     * sent (a string, null, a map) is still validated and rejected as malformed.
+     */
     protected function prepareForValidation(): void
     {
+        if (! $this->exists('modifier_group_ids')) {
+            $this->merge(['modifier_group_ids' => []]);
+        }
+
         $groups = $this->input('inline_groups');
 
         if (! is_array($groups)) {
@@ -40,7 +49,7 @@ class SaveProductRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'modifier_group_ids' => ['present', 'array', 'list'],
+            'modifier_group_ids' => ['array', 'list'],
             'modifier_group_ids.*' => ['bail', 'required', 'uuid', 'distinct', Rule::exists(ModifierGroup::class, 'id')],
             'inline_groups' => ['sometimes', 'array', 'list', 'max:20'],
             'inline_groups.*.name' => ['required', 'string', 'max:255'],

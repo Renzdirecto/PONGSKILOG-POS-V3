@@ -2,6 +2,7 @@
 
 namespace App\Actions\Catalog;
 
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Product;
@@ -65,10 +66,18 @@ class UpsertBranchProduct
 
         if ($existing !== null) {
             $existing->update($validated);
+            /** Product stock tracking is part of this Branch's recipe mode, so its open Operations pages refetch. */
+            if ($existing->wasChanged('tracks_inventory')) {
+                ReportsChanged::dispatch((string) $branch->id, 'recipe_changed');
+            }
 
             return $existing;
         }
 
-        return BranchProduct::query()->create([...$validated, 'branch_id' => $branch->id, 'product_id' => $product->id]);
+        $created = BranchProduct::query()->create([...$validated, 'branch_id' => $branch->id, 'product_id' => $product->id]);
+        /** A new member joins this Branch's Plan pickers and Recipes, so its open Operations pages refetch. */
+        ReportsChanged::dispatch((string) $branch->id, 'assortment_changed');
+
+        return $created;
     }
 }

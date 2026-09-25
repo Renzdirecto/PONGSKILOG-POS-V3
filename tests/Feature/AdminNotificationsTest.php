@@ -189,6 +189,21 @@ test('a staff deactivation notifies the other active super admins but not the ac
         ->and($cashier->notifications()->count())->toBe(0);
 });
 
+test('a new staff account notifies the other active super admins without credentials', function () {
+    $this->actingAs($this->admin)->post(route('super-admin.staff.store'), [
+        'employee_id' => '09252601', 'name' => 'New Admin', 'email' => 'new.admin@pongskilog.test',
+        'password' => 'Temporary-Pass-42', 'password_confirmation' => 'Temporary-Pass-42',
+        'role' => 'super_admin', 'is_active' => true,
+    ])->assertSessionHasNoErrors();
+
+    $notification = $this->otherAdmin->notifications()->sole();
+    expect($notification->type)->toBe('admin.staff')
+        ->and($notification->data['title'])->toBe('New staff account: New Admin')
+        ->and($notification->data['body'])->toContain('09252601')->toContain('business-wide')
+        ->and(json_encode($notification->data))->not->toContain('Temporary-Pass-42')
+        ->and($this->admin->notifications()->count())->toBe(0);
+});
+
 test('role baseline and custom access changes notify the other super admins without credentials', function () {
     $cashier = notificationUser('cashier', 'Juan', branch: $this->branch);
 

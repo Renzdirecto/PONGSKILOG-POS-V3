@@ -189,6 +189,9 @@ test('product requests reject malformed core and assignment input without writes
     'money' => [['default_price' => '-1.00'], 'default_price'],
     'category' => [['category_id' => 'invalid'], 'category_id'],
     'group list' => [['modifier_group_ids' => 'invalid'], 'modifier_group_ids'],
+    'null group list' => [['modifier_group_ids' => null], 'modifier_group_ids'],
+    'keyed group list' => [['modifier_group_ids' => ['first' => '5f0c7d8e-1b2a-4c3d-9e8f-0a1b2c3d4e5f']], 'modifier_group_ids'],
+    'blank group id' => [['modifier_group_ids' => ['']], 'modifier_group_ids.0'],
     'status' => [['is_active' => 'invalid'], 'is_active'],
 ]);
 
@@ -739,6 +742,46 @@ test('a new global product joins only the branches selected when it is created',
         ->and(BranchProduct::query()->where('product_id', $nowhere->id)->exists())->toBeFalse()
         ->and(BranchProduct::query()->where('branch_id', $qave->id)->exists())->toBeFalse();
 });
+
+test('a product with zero groups saves when the multipart editor omits the empty group list', function () {
+    $user = catalogWebManager();
+    $category = Category::factory()->create();
+    $groups = ModifierGroup::factory()->count(2)->create();
+    $input = catalogProductInput($category, ['name' => 'Plain rice']);
+    unset($input['modifier_group_ids']);
+
+    $this->actingAs($user)->post(route('products.store'), $input)
+        ->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+    $product = Product::query()->where('name', 'Plain rice')->sole();
+    expect($product->modifierGroups()->exists())->toBeFalse();
+
+    $product->modifierGroups()->attach($groups->modelKeys());
+    $this->from(route('products.index'))->put(route('products.update', $product), [...$input, 'name' => 'Garlic rice'])
+        ->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+
+    expect($product->refresh()->name)->toBe('Garlic rice')
+        ->and($product->modifierGroups()->exists())->toBeFalse();
+    $this->assertDatabaseCount('modifier_groups', 2);
+});
+
+test('a new product never joins an unselected branch whatever its groups', function (int $groupCount, bool $selectBranch) {
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    Branch::factory()->create(['code' => 'QAVE']);
+    $category = Category::factory()->create();
+    $groupIds = ModifierGroup::factory()->count($groupCount)->create()->modelKeys();
+
+    $this->actingAs(catalogWebManager())->post(route('products.store'), catalogProductInput($category, [
+        'modifier_group_ids' => $groupIds,
+        'branch_configs' => $selectBranch
+            ? [['branch_id' => $main->id, 'price_override' => null, 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null]]
+            : [],
+    ]))->assertRedirectToRoute('products.index')->assertSessionHasNoErrors();
+
+    $product = Product::query()->sole();
+    expect($product->modifierGroups()->pluck('modifier_groups.id')->all())->toEqualCanonicalizing($groupIds)
+        ->and(BranchProduct::query()->pluck('branch_id')->all())->toBe($selectBranch ? [$main->id] : [])
+        ->and(BranchInventory::query()->exists())->toBeFalse();
+})->with([0, 1, 3])->with([true, false]);
 
 test('missing catalog records return not found without creating branch overrides', function () {
     $this->actingAs(catalogWebManager());

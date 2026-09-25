@@ -10,6 +10,14 @@ class ProfileUpdateRequest extends FormRequest
 {
     use ProfileValidationRules;
 
+    /** Emails are stored lowercase, as the Staff forms store them. */
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('email'))) {
+            $this->merge(['email' => mb_strtolower(trim($this->input('email')))]);
+        }
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *

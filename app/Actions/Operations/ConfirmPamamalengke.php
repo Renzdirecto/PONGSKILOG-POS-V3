@@ -111,10 +111,13 @@ class ConfirmPamamalengke
             if (StoreSessionExpense::query()->where('idempotency_key', $key)->exists()) {
                 abort(409, 'This confirmation key belongs to another Store Purchase.');
             }
+            /**
+             * Branch → Plan → Store Session → balances: Plan writers (save, archive, setup copy) lock the Branch before the
+             * Plan, and POS commits lock the Branch before the Session; Close Store takes the Session exclusively.
+             */
+            $branch = $this->movements->lockBranch($branch);
             $plan = OperationPlan::query()->whereKey($plan->id)->whereNull('archived_at')->sharedLock()->first()
                 ?? throw ValidationException::withMessages(['plan' => 'This Plan is archived.']);
-            /** Branch → Store Session → balances: the same order as POS commits; Close Store takes the session exclusively. */
-            $branch = $this->movements->lockBranch($branch);
             $session = StoreSession::query()->where('branch_id', $branch->id)->where('status', StoreSessionStatus::Open)->sharedLock()->first();
             if ($session === null) {
                 throw ValidationException::withMessages(['store' => 'Open the Store at '.$branch->name.' first. A pamamalengke purchase is saved as a Store Purchase of the open Store Session.']);

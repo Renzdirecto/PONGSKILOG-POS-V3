@@ -55,3 +55,23 @@ test('realtime revalidation never polls and always refetches after a reconnect',
         assert.match(hook, /createRealtimeRefresh/);
     }
 });
+
+test('background refreshes never show a raw error page when access was just revoked', () => {
+    assert.match(
+        source('hooks/use-user-context-realtime.ts'),
+        /export function handleRevalidationException/,
+    );
+    for (const hook of [
+        'hooks/use-user-context-realtime.ts',
+        'hooks/use-invalidation-refresh.ts',
+        'hooks/use-reports-realtime-refresh.ts',
+    ]) {
+        const code = source(hook);
+        assert.match(
+            code,
+            /onHttpException: handleRevalidationException/,
+            hook,
+        );
+        assert.match(code, /onNetworkError: \(\) => false/, hook);
+    }
+});

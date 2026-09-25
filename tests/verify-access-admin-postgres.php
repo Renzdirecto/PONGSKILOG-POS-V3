@@ -209,7 +209,9 @@ try {
         && User::query()->findOrFail($legacyUserId)->hasBusinessWideScope(), 'Custom role metadata backfill failed or lost existing rows.');
     $roleIndex = DB::selectOne("SELECT indexdef FROM pg_indexes WHERE schemaname = ? AND indexname = 'roles_active_label_unique'", [$schema]);
     phase18Verify($roleIndex !== null && str_contains((string) $roleIndex->indexdef, 'lower((label)::text)') && str_contains((string) $roleIndex->indexdef, 'archived_at IS NULL'), 'Active role name index is missing.');
-    phase18Verify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0
+    /** The custom-role migration and every later migration roll back, then reapply over the backfilled rows. */
+    $customRoleSteps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_25_052453'));
+    phase18Verify(Artisan::call('migrate:rollback', ['--step' => $customRoleSteps, '--force' => true, '--no-interaction' => true]) === 0
         && ! DB::getSchemaBuilder()->hasColumn('roles', 'label')
         && Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0
         && DB::table('roles')->where('name', 'owner')->value('scope') === 'business', 'Custom role migration rollback/reapply failed.');

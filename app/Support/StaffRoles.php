@@ -38,7 +38,7 @@ class StaffRoles
     /** Longest Staff Position (business/job title). */
     public const POSITION_MAX = 100;
 
-    /** Operational Staff an Owner may manage; Owner, Super Admin and Custom Role accounts stay with Super Admin access control. */
+    /** Operational Staff an Owner or Branch Staff manager may manage; Owner, Super Admin and business-wide Custom Role accounts stay with Super Admin access control. */
     public const OPERATIONAL = ['cashier', 'kitchen_staff', 'cashier_kitchen'];
 
     /** System roles that run Cashier operations (Branch Custom Roles also do; see Role::scopeCashierOperations()). */
@@ -47,7 +47,10 @@ class StaffRoles
     /**
      * The roles an actor may view and assign on Staff accounts. Super Admin access control (`access_control.manage`)
      * covers every System role and every active Custom Role; business-wide Staff management (`staff.manage`, the Owner
-     * or a business-wide Custom Role) covers the operational System roles only.
+     * or a business-wide Custom Role) covers the operational System roles only. Branch-scoped Staff management (a
+     * Branch Custom Role with `staff.manage`) covers the operational System roles plus the active Branch Custom Roles
+     * whose whole baseline the actor itself holds, so it can never hand out more access than it has; it never reaches
+     * Owner, Super Admin or business-wide Custom Roles.
      *
      * @return list<string>
      */
@@ -59,11 +62,14 @@ class StaffRoles
         if ($actor->hasPermission('access_control.manage')) {
             return [...self::names(), ...self::assignableCustomNames()];
         }
-        if ($actor->hasPermission('staff.manage') && $actor->hasBusinessWideScope()) {
+        if (! $actor->hasPermission('staff.manage')) {
+            return [];
+        }
+        if ($actor->hasBusinessWideScope()) {
             return self::OPERATIONAL;
         }
 
-        return [];
+        return [...self::OPERATIONAL, ...self::branchCustomRolesWithin(EffectivePermissions::names($actor))];
     }
 
     /** Whether the actor administers every Staff account (Super Admin access control), not only operational Staff. */
@@ -73,15 +79,51 @@ class StaffRoles
     }
 
     /**
+     * The active assigned Branch ids of a Branch-scoped Staff manager, or null when the actor's Staff management is not
+     * limited to Branches (Super Admin access control, Owner, business-wide Custom Roles).
+     *
+     * @return list<string>|null
+     */
+    public static function branchScope(User $actor): ?array
+    {
+        if (self::managesEveryAccount($actor) || $actor->hasBusinessWideScope()) {
+            return null;
+        }
+
+        return array_values($actor->branches()->wherePivot('is_active', true)->orderBy('branches.id')
+            ->pluck('branches.id')->map(fn ($id): string => (string) $id)->all());
+    }
+
+    /**
      * Whether an actor may see and manage an existing account: every one of its roles must be manageable, so an
-     * Owner never reaches an Owner, Super Admin or Custom Role account, nor a login without any role.
+     * Owner never reaches an Owner, Super Admin or Custom Role account, nor a login without any role. A Branch-scoped
+     * manager additionally reaches only other accounts with an active assignment at one of its own Branches.
      */
     public static function canManage(User $actor, User $staff): bool
     {
         $allowed = self::manageableBy($actor);
         $roles = $staff->roles()->pluck('name')->all();
+        if ($allowed === [] || $roles === [] || array_diff($roles, $allowed) !== []) {
+            return false;
+        }
+        $scope = self::branchScope($actor);
 
-        return $allowed !== [] && $roles !== [] && array_diff($roles, $allowed) === [];
+        return $scope === null || (! $staff->is($actor) && $staff->branches()->wherePivot('is_active', true)->whereIn('branches.id', $scope)->exists());
+    }
+
+    /**
+     * Active Branch Custom Roles whose complete baseline is inside the given permissions.
+     *
+     * @param  list<string>  $permissions
+     * @return list<string>
+     */
+    private static function branchCustomRolesWithin(array $permissions): array
+    {
+        $baselines = EffectivePermissions::roleBaselines();
+
+        return array_values(Role::query()->assignableCustom()->where('roles.scope', Role::SCOPE_BRANCH)->pluck('name')
+            ->filter(fn (string $role): bool => array_diff($baselines[$role] ?? [], $permissions) === [])
+            ->all());
     }
 
     /**

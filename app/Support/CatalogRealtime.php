@@ -51,6 +51,27 @@ class CatalogRealtime
         }
     }
 
+    /**
+     * Several Products changed their configuration at one Branch (bulk assortment add or copy): one Customer QR catalog
+     * invalidation plus the compact per-Product Branch events, resolved with one catalog load. Never another Branch.
+     *
+     * @param  list<string>  $productIds
+     */
+    public function branchProductsChanged(Branch $branch, array $productIds): void
+    {
+        if ($productIds === []) {
+            return;
+        }
+        $version = (int) now()->format('Uu');
+        CustomerCatalogChanged::dispatch($branch->id);
+
+        foreach ($this->catalog->productsForOrder($branch, $productIds) as $product) {
+            $state = $this->catalog->resolveLoaded($product);
+            ProductBranchConfigurationChanged::dispatch($branch->id, $product->id, $state['is_available'], $state['effective_price'], $version);
+            ProductAvailabilityChanged::dispatch($branch->id, $product->id, $state['is_available'], $state['effective_price'], $version);
+        }
+    }
+
     /** @param iterable<Product> $products */
     public function productsChanged(iterable $products, bool $availabilityChanged = false): void
     {

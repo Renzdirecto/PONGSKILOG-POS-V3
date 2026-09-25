@@ -9,11 +9,17 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Owner Operations access. Management belongs to active business-wide users (Owner, Super Admin, business-wide Custom
- * Roles) holding operations.manage, which is independent of Product inventory (inventory.manage); Operations never
- * mutates Product stock. Cashier and Kitchen roles never manage Ingredients, recipes, Plans or pamamalengke (their POS
- * sales still consume Ingredients as domain behavior). Physical stock mutations always need one concrete Branch from the
- * global Branch context, never an ambiguous All Branches scope or a browser-supplied branch id.
+ * Operations access (`operations.manage`, independent of Product inventory `inventory.manage`; Operations never mutates
+ * Product stock). Cashier and Kitchen roles never manage Ingredients, recipes, Plans or pamamalengke (their POS sales
+ * still consume Ingredients as domain behavior).
+ *
+ * WHAT belongs to whom:
+ * - Shared definitions (Ingredient identity/unit/targets, Recipes, Add-on effects, recipe mode, Pamalengke Plans) are
+ *   one business-wide set used by every Branch, so only a business-wide account changes them (authorizeDefinitions()).
+ * - Branch execution data (Ingredient stock and movements, the Pamamalengke working list, Pamamalengke purchases) is
+ *   physical and per Branch. A business-wide account works on the selected Branch (All Branches is read-only); a
+ *   Branch-scoped account (Branch Custom Role) only on its selected assigned Branch, never All Branches.
+ * Physical stock mutations always need one concrete Branch from the global Branch context, never a browser-supplied id.
  */
 class OperationsAccess
 {
@@ -25,7 +31,7 @@ class OperationsAccess
 
         return $user !== null && $user->is_active
             && $user->hasPermission('operations.manage')
-            && $user->hasBusinessWideScope();
+            && ($user->hasBusinessWideScope() || $user->branches()->wherePivot('is_active', true)->exists());
     }
 
     public function authorize(?User $user): User
@@ -37,10 +43,32 @@ class OperationsAccess
         return User::query()->whereKey($user?->getKey())->firstOrFail();
     }
 
-    /** The selected Branch, or null for All Branches (read-only aggregated analytics). */
-    public function branch(User $user): ?Branch
+    /**
+     * Shared Operations definitions change every Branch at once, so they need business-wide Operations access. A
+     * Branch-scoped Operations role reads and uses them but never edits them.
+     */
+    public function authorizeDefinitions(?User $user): User
     {
-        return $this->context->current($user);
+        $user = $this->authorize($user);
+        if (! $user->hasBusinessWideScope()) {
+            throw new AuthorizationException('Ingredients, Recipes and Plans are shared by every Branch. Only a business-wide Operations role can change them.');
+        }
+
+        return $user;
+    }
+
+    public function canManageDefinitions(User $user): bool
+    {
+        return $this->allows($user) && $user->hasBusinessWideScope();
+    }
+
+    /**
+     * The selected Branch, null for All Branches (business-wide read-only analytics), or false when a Branch-scoped
+     * account has no selected assigned Branch yet (it is sent to choose one, never shown All Branches).
+     */
+    public function branch(User $user): Branch|false|null
+    {
+        return $this->context->managementBranch($user);
     }
 
     /** One concrete, active Branch for a physical stock or purchase mutation. */

@@ -15,10 +15,14 @@ import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
-import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
+import {
+    managementDestinationHref,
+    OwnerWorkspaceShell,
+} from '@/components/owner-workspace-shell';
 import { SuperAdminShell } from '@/components/super-admin-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
+import { UserContextRealtime } from '@/hooks/use-user-context-realtime';
 import { StoreSessionDetailsContext } from '@/hooks/use-store-session-details';
 import {
     cashier,
@@ -29,9 +33,13 @@ import {
     superAdmin,
     transactionHistory,
 } from '@/routes/workspaces';
-import { logout, workspace } from '@/routes';
+import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
+import {
+    hasManagementPages,
+    managementLandingDestination,
+} from '@/lib/management-navigation';
 import {
     discardsStoreSession,
     openStoreSessionDialogState,
@@ -58,17 +66,6 @@ type SharedProps = {
     qrWaitingCount?: number;
     surface?: string;
 };
-
-/** Business-wide pages the WorkspaceController lands on before Branch operations. */
-const MANAGEMENT_PERMISSIONS = [
-    'reports.view',
-    'transactions.view',
-    'products.manage',
-    'inventory.manage',
-    'operations.manage',
-    'staff.manage',
-    'settings.manage',
-] as const;
 
 function StoreClosedListener({
     branchId,
@@ -114,13 +111,22 @@ export default function WorkspaceLayout({
     /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
     const ownClosedSessionId = useRef<string | null>(null);
     const isSuperAdmin = auth.roles.includes('super_admin');
-    /** A business-wide Custom Role running Branch operations can return to its management pages. */
-    const canOpenManagement =
-        !isSuperAdmin &&
-        branchContext.businessWide &&
-        MANAGEMENT_PERMISSIONS.some((permission) =>
-            auth.permissions.includes(permission),
-        );
+    /** A Branch-scoped account with management pages (Products, Inventory, Operations, Staff, Settings) uses the management shell. */
+    const branchManager =
+        !branchContext.businessWide && hasManagementPages(auth.permissions);
+    /**
+     * A Custom Role running Branch operations can return to its management pages: business-wide ones, and Branch ones
+     * holding management pages. The link opens the first management page directly (the workspace would land on POS).
+     */
+    const managementLanding =
+        isSuperAdmin || (!branchContext.businessWide && !branchManager)
+            ? null
+            : managementLandingDestination(auth.permissions, {
+                  businessWide: branchContext.businessWide,
+              });
+    const userContextRealtime = auth.user ? (
+        <UserContextRealtime userId={auth.user.id} />
+    ) : null;
     /** The server renders the POS only for accounts it authorized (Cashier roles, Branch custom roles, Super Admin). */
     const isPos =
         page.component === 'workspaces/order-summary' ||
@@ -139,9 +145,11 @@ export default function WorkspaceLayout({
         page.component === 'workspaces/transaction-history' &&
         !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
-    /** Branch staff with custom Reports access read their own Branch report inside the operational shell. */
+    /** Branch staff with only custom Reports access read their own Branch report inside the operational shell. */
     const isBranchReports =
-        page.component === 'workspaces/reports' && !branchContext.businessWide;
+        page.component === 'workspaces/reports' &&
+        !branchContext.businessWide &&
+        !branchManager;
     const isOperational =
         isPos || isKitchen || isHistory || isDashboard || isBranchReports;
     const isOwnerManagement =
@@ -261,6 +269,7 @@ export default function WorkspaceLayout({
         ].filter((item) => item.available);
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
+                {userContextRealtime}
                 <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
                         <img
@@ -377,9 +386,15 @@ export default function WorkspaceLayout({
                                 </span>
                             </Link>
                         )}
-                        {canOpenManagement && (
+                        {managementLanding && (
                             <Link
-                                href={workspace()}
+                                href={managementDestinationHref(
+                                    managementLanding.id,
+                                    {
+                                        hasBranch:
+                                            branchContext.current !== null,
+                                    },
+                                )}
                                 aria-label="Back to management"
                                 title="Management"
                                 className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-white text-[12px] font-semibold text-neutral-700 hover:border-neutral-400 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none min-[1180px]:w-auto min-[1180px]:px-3"
@@ -473,15 +488,21 @@ export default function WorkspaceLayout({
     }
 
     if (isOwnerManagement) {
-        return isSuperAdmin ? (
-            <SuperAdminShell>{children}</SuperAdminShell>
-        ) : (
-            <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+        return (
+            <>
+                {userContextRealtime}
+                {isSuperAdmin ? (
+                    <SuperAdminShell>{children}</SuperAdminShell>
+                ) : (
+                    <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+                )}
+            </>
         );
     }
 
     return (
         <div className="min-h-svh bg-[#f4f4f3] text-neutral-950">
+            {userContextRealtime}
             <header className="border-b border-neutral-200 bg-white">
                 <div className="mx-auto flex min-h-18 max-w-[96rem] flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
                     <div className="flex min-w-0 items-center gap-3 sm:mr-auto">

@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\CustomRoles;
 use App\Support\PermissionCatalog;
@@ -117,6 +118,11 @@ class UpdateCustomRole
                     $actor->name.' changed the '.$role->displayLabel().' role: '.implode('; ', $changes).'.',
                     route('super-admin.access-control', ['role' => $role->name], false),
                 ), except: $actor);
+                /** Accounts holding the Role revalidate their access; Staff pages show the new Role name. */
+                $members = AccessRealtime::userIdsWithRoles([(int) $role->id]);
+                AccessRealtime::rolesChanged([(int) $role->id]);
+                AccessRealtime::accessControlChanged('custom_role.updated');
+                AccessRealtime::staffChanged(AccessRealtime::branchIdsOf($members));
 
                 return true;
             });

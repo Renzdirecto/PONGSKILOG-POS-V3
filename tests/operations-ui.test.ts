@@ -283,7 +283,10 @@ test('operations is a real sidebar section of the existing Owner shell, with Sal
         /\{ id: 'operations', label: 'Operations' \}/,
     );
     assert.match(managementNavigation, /permission: 'operations\.manage'/);
-    assert.match(shell, /operationsRoutes\[id\]\(planQuery\)/);
+    assert.match(
+        shell,
+        /operationsRoutes\[id\]\(\s*planId \? \{ query: \{ plan: planId \} \} : undefined,?\s*\)/,
+    );
     assert.match(layout, /page\.component\.startsWith\('operations\/'\)/);
     assert.match(app, /case name\.startsWith\('operations\/'\):/);
 });

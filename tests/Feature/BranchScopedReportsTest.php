@@ -105,11 +105,19 @@ test('the csv export follows the same assigned branch scope', function () {
         ->and($response->getContent())->not->toContain('QAVE');
 });
 
-test('custom reports access does not open the business-wide owner dashboard', function () {
+test('custom reports access opens the dashboard for the selected assigned branch only', function () {
     $this->actingAs($this->juan)
         ->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])
         ->get(route('workspaces.owner'))
-        ->assertForbidden();
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('workspaces/owner-dashboard')
+            ->where('report.scope.code', 'MAIN')
+            ->where('analytics.branches', null));
+    $this->actingAs($this->juan)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
+        ->get(route('workspaces.owner'))
+        ->assertInertia(fn (Assert $page) => $page->where('report.scope.code', 'MAIN'));
 });
 
 test('owner and super admin keep business-wide all branches reports', function (string $role) {

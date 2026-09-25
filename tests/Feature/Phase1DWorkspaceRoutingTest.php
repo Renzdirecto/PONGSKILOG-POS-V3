@@ -236,6 +236,7 @@ test('authenticated inertia props expose only minimal identity and branch contex
             'name' => $user->name,
             'email' => $user->email,
             'position' => null,
+            'avatarUrl' => null,
         ])
         ->where('auth.roles', ['cashier'])
         ->where('auth.permissions', [

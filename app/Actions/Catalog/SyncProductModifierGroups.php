@@ -17,7 +17,7 @@ class SyncProductModifierGroups
     /** @param array<array-key, mixed> $modifierGroupIds */
     public function execute(User $user, Product $product, array $modifierGroupIds): void
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         Validator::make(['modifier_group_ids' => $modifierGroupIds], [
             'modifier_group_ids' => ['present', 'array', 'list'],

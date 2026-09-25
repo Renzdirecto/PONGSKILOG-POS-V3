@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { auditActorName } from '../resources/js/lib/audit-actions.ts';
 import {
     activeManagementDestination,
+    hasManagementPages,
     identitySubtitle,
+    managementLandingDestination,
     managementNavigation,
     pinnedManagementDestinations,
     restoredSidebarCollapsed,
@@ -82,9 +84,44 @@ test('inventory and operations follow their own permissions', () => {
     ]);
 });
 
-test('settings needs business-wide scope and an account without access sees no destination', () => {
-    assert.deepEqual(sections(['settings.manage'], false), []);
+test('branch and business-wide roles get the same page structure; an account without access sees none', () => {
+    const branchManager = [
+        'pos.access',
+        'qr_orders.access',
+        'transactions.view',
+        'reports.view',
+        'products.manage',
+        'inventory.manage',
+        'operations.manage',
+        'staff.manage',
+        'settings.manage',
+    ];
+
+    assert.deepEqual(
+        sections(branchManager, false),
+        sections(branchManager, true),
+    );
+    assert.deepEqual(sections(['settings.manage'], false), [
+        ['Administration', ['Settings']],
+    ]);
     assert.deepEqual(sections([]), []);
+});
+
+test('management pages move a branch role into the management shell and its back link skips store operations', () => {
+    assert.equal(hasManagementPages(['pos.access', 'reports.view']), false);
+    assert.equal(hasManagementPages(['pos.access', 'staff.manage']), true);
+    assert.equal(
+        managementLandingDestination(['pos.access', 'products.manage'], {
+            businessWide: false,
+        })?.id,
+        'products',
+    );
+    assert.equal(
+        managementLandingDestination(['pos.access'], { businessWide: false }),
+        null,
+    );
+    assert.match(layout, /<UserContextRealtime userId=\{auth\.user\.id\} \/>/);
+    assert.match(shell, /redirectTo=\{page\.url\}/);
 });
 
 test('pages without access are never rendered as disabled no-access rows', () => {

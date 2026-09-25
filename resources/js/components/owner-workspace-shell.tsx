@@ -28,6 +28,7 @@ import {
 import { useEffect, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
+import { PersonAvatar } from '@/components/person-avatar';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -113,14 +114,46 @@ const destinationIcons: Record<ManagementDestinationId, LucideIcon> = {
 const focusRing =
     'focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none';
 
-function initials(name?: string): string {
-    return (name ?? 'Owner')
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join('')
-        .toUpperCase();
+/**
+ * The href of a management destination. Store Operations always run at one concrete Branch: with a Branch selected the
+ * link opens it, otherwise the Branch picker comes first and then continues to the workspace. Operations links keep
+ * the URL-addressable active Plan.
+ */
+export function managementDestinationHref(
+    id: ManagementDestinationId,
+    { hasBranch, planId }: { hasBranch: boolean; planId?: string | null },
+): RouteTarget {
+    const branchOperation = (route: RouteTarget) =>
+        hasBranch ? route : selectBranch({ query: { redirect: route.url } });
+
+    switch (id) {
+        case 'dashboard':
+            return owner();
+        case 'pos':
+            return branchOperation(cashier());
+        case 'qr-orders':
+            return branchOperation(cashier({ query: { view: 'qr' } }));
+        case 'kitchen':
+            return branchOperation(kitchen());
+        case 'customer-display':
+            return branchOperation(customerDisplay());
+        case 'transactions':
+            return transactions();
+        case 'reports':
+            return reports();
+        case 'products':
+            return productsIndex();
+        case 'inventory':
+            return inventoryIndex();
+        case 'staff':
+            return staffIndex();
+        case 'settings':
+            return branchesIndex();
+        default:
+            return operationsRoutes[id](
+                planId ? { query: { plan: planId } } : undefined,
+            );
+    }
 }
 
 /**
@@ -208,53 +241,23 @@ export function OwnerWorkspaceShell({
         activeId !== null &&
         !pinned.some((destination) => destination.id === activeId);
     /** Operations links keep the URL-addressable active Plan while moving between Operations pages. */
-    const planQuery = page.props.operations?.active_plan_id
-        ? { query: { plan: page.props.operations.active_plan_id } }
-        : undefined;
-    /**
-     * Store Operations always run at one concrete Branch: with a Branch selected the link opens it, otherwise the
-     * Branch picker comes first and then continues to the workspace.
-     */
-    const branchOperation = (route: RouteTarget) =>
-        branchContext.current
-            ? route
-            : selectBranch({ query: { redirect: route.url } });
-    const hrefFor = (id: ManagementDestinationId): RouteTarget => {
-        switch (id) {
-            case 'dashboard':
-                return owner();
-            case 'pos':
-                return branchOperation(cashier());
-            case 'qr-orders':
-                return branchOperation(cashier({ query: { view: 'qr' } }));
-            case 'kitchen':
-                return branchOperation(kitchen());
-            case 'customer-display':
-                return branchOperation(customerDisplay());
-            case 'transactions':
-                return transactions();
-            case 'reports':
-                return reports();
-            case 'products':
-                return productsIndex();
-            case 'inventory':
-                return inventoryIndex();
-            case 'staff':
-                return staffIndex();
-            case 'settings':
-                return branchesIndex();
-            default:
-                return operationsRoutes[id](planQuery);
-        }
-    };
+    const hrefFor = (id: ManagementDestinationId): RouteTarget =>
+        managementDestinationHref(id, {
+            hasBranch: branchContext.current !== null,
+            planId: page.props.operations?.active_plan_id,
+        });
+    const avatarUrl = auth.user?.avatarUrl ?? null;
     const pageTitle =
         managementDestinations.find(
             (destination) => destination.id === activeId,
         )?.label ??
         (page.component.startsWith('operations/') ? 'Operations' : 'Dashboard');
+    /** A Branch-scoped account never has an All Branches scope; its pages always run on a selected assigned Branch. */
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
-        : 'All Branches';
+        : branchContext.businessWide
+          ? 'All Branches'
+          : 'Choose a Branch';
     const canSettings = destinations.some(
         (destination) => destination.id === 'settings',
     );
@@ -404,11 +407,13 @@ export function OwnerWorkspaceShell({
                         <div className="flex flex-col items-center gap-2 text-white">
                             <span
                                 title={`${auth.user?.name ?? ''} · ${identityLabel}`}
-                                className="flex size-[34px] items-center justify-center rounded-full bg-white/12 text-xs font-semibold"
+                                className="flex size-[34px] items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
                             >
-                                <span aria-hidden="true">
-                                    {initials(auth.user?.name)}
-                                </span>
+                                <PersonAvatar
+                                    name={auth.user?.name}
+                                    avatarUrl={avatarUrl}
+                                    className="flex size-full items-center justify-center"
+                                />
                                 <span className="sr-only">
                                     {auth.user?.name}, {identityLabel}
                                 </span>
@@ -426,9 +431,11 @@ export function OwnerWorkspaceShell({
                         </div>
                     ) : (
                         <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
-                            <span className="flex size-[34px] shrink-0 items-center justify-center rounded-full bg-white/12 text-xs font-semibold">
-                                {initials(auth.user?.name)}
-                            </span>
+                            <PersonAvatar
+                                name={auth.user?.name}
+                                avatarUrl={avatarUrl}
+                                className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                            />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[13px] font-semibold">
                                     {auth.user?.name}
@@ -465,7 +472,8 @@ export function OwnerWorkspaceShell({
                     </span>
                 </Link>
                 <p className="px-1.5 pt-2 text-center text-[9px] font-semibold tracking-[0.06em] text-white/40 uppercase">
-                    {branchContext.current?.code ?? 'All branches'}
+                    {branchContext.current?.code ??
+                        (branchContext.businessWide ? 'All branches' : '')}
                 </p>
                 <nav
                     aria-label={`${workspaceLabel} navigation`}
@@ -488,9 +496,13 @@ export function OwnerWorkspaceShell({
                         as="button"
                         aria-label="Log out"
                         title="Log out"
-                        className={`flex size-11 items-center justify-center rounded-full bg-white/12 text-xs font-semibold text-white ${focusRing}`}
+                        className={`flex size-11 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold text-white ${focusRing}`}
                     >
-                        {initials(auth.user?.name)}
+                        <PersonAvatar
+                            name={auth.user?.name}
+                            avatarUrl={avatarUrl}
+                            className="flex size-full items-center justify-center"
+                        />
                     </Link>
                 </div>
             </aside>
@@ -502,10 +514,17 @@ export function OwnerWorkspaceShell({
                         {pageTitle}
                     </p>
                     <div className="hidden min-w-0 flex-1 md:block">
-                        <BranchSwitcher branchContext={branchContext} />
+                        <BranchSwitcher
+                            branchContext={branchContext}
+                            redirectTo={page.url}
+                        />
                     </div>
                     <div className="md:hidden">
-                        <BranchSwitcher branchContext={branchContext} compact />
+                        <BranchSwitcher
+                            branchContext={branchContext}
+                            redirectTo={page.url}
+                            compact
+                        />
                     </div>
                     <div className="hidden min-w-0 flex-1 text-right md:block">
                         <p className="truncate text-[13px] font-semibold">
@@ -545,9 +564,13 @@ export function OwnerWorkspaceShell({
                                 type="button"
                                 aria-label="Open account menu"
                                 title="Account"
-                                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
+                                className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
-                                {initials(auth.user?.name)}
+                                <PersonAvatar
+                                    name={auth.user?.name}
+                                    avatarUrl={avatarUrl}
+                                    className="flex size-full items-center justify-center"
+                                />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent

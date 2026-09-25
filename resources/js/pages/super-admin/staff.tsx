@@ -1,4 +1,4 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     Camera,
     ChevronLeft,
@@ -40,15 +40,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { InvalidationRefresh } from '@/hooks/use-invalidation-refresh';
 import { restoredOwnerViewMode } from '@/lib/owner-view-preference';
 import type { OwnerViewMode } from '@/lib/owner-view-preference';
 import { STAFF_POSITION_HINT, staffPositionLabel } from '@/lib/staff-admin';
+import { staffChannelFor } from '@/lib/user-context';
 import {
     index as ownerStaffIndex,
     store as ownerStaffStore,
 } from '@/routes/staff';
 import { index as staffIndex, store } from '@/routes/super-admin/staff';
-import type { BranchSummary } from '@/types';
+import type { BranchContext, BranchSummary } from '@/types';
 
 type StaffRole = {
     name: string;
@@ -71,6 +73,7 @@ type StaffMember = {
     created_at: string | null;
     is_self: boolean;
     custom_access_count: number;
+    other_branch_count: number;
 };
 type Filters = { search?: string; role?: string; status?: string };
 type Props = {
@@ -90,6 +93,8 @@ type Props = {
      * decides which roles and accounts each surface may reach; this only picks the matching routes.
      */
     surface?: 'owner' | 'super_admin';
+    /** A Branch-scoped Staff manager: only its own Branches' accounts, never other Branches' names. */
+    branchScoped?: boolean;
 };
 
 type StaffSurface = NonNullable<Props['surface']>;
@@ -135,6 +140,8 @@ function BranchAccess({ member }: { member: StaffMember }) {
     return (
         <span className="text-[12px] text-[#444]">
             {member.branches.map((branch) => branch.name).join(', ')}
+            {member.other_branch_count > 0 &&
+                ` · +${member.other_branch_count} other ${member.other_branch_count === 1 ? 'Branch' : 'Branches'}`}
         </span>
     );
 }
@@ -218,8 +225,15 @@ export default function Staff({
     roles,
     branches,
     surface = 'super_admin',
+    branchScoped = false,
 }: Props) {
     const ownerSurface = surface === 'owner';
+    const { branchContext } = usePage<{ branchContext: BranchContext }>().props;
+    /** Another administrator's change refreshes this list (invalidation only; the server re-scopes the reload). */
+    const realtimeChannel = staffChannelFor(
+        branchScoped,
+        branchContext.current?.id ?? null,
+    );
     const [search, setSearch] = useState(filters.search ?? '');
     const [adding, setAdding] = useState(false);
     const [managing, setManaging] = useState<StaffMember | null>(null);
@@ -659,6 +673,13 @@ export default function Staff({
                 )}
             </OwnerPage>
 
+            {realtimeChannel && (
+                <InvalidationRefresh
+                    channel={realtimeChannel}
+                    event=".staff.changed"
+                    only={['staff', 'roles', 'branches']}
+                />
+            )}
             <Dialog open={adding} onOpenChange={setAdding}>
                 <DialogContent className="owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center">
                     <DialogHeader>

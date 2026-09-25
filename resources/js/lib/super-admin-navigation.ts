@@ -62,7 +62,7 @@ export type SuperAdminPageState = {
 
 export const superAdminSections: readonly SuperAdminSection[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'operations', label: 'Cashier + Kitchen' },
+    { id: 'operations', label: 'Store Operations' },
     { id: 'owner', label: 'Owner' },
     { id: 'owner-operations', label: 'Operations' },
     { id: 'control', label: 'Control' },

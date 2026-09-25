@@ -26,7 +26,9 @@ class StaffController extends Controller
 {
     /**
      * List login accounts with their role, Branch access and status. Credentials are never projected. Super Admin sees
-     * every account; the Owner sees operational Staff only (Cashier, Kitchen Staff, Cashier + Kitchen).
+     * every account; the Owner sees operational Staff only (Cashier, Kitchen Staff, Cashier + Kitchen). A Branch-scoped
+     * Staff manager sees only other accounts with an active assignment at one of its own Branches, and never the names
+     * of the other Branches such an account also works at (only their count).
      */
     public function index(StaffIndexRequest $request): Response
     {
@@ -35,6 +37,7 @@ class StaffController extends Controller
         $surface = $this->surface($request);
         $manageable = StaffRoles::manageableBy($actor);
         $fullAccess = StaffRoles::managesEveryAccount($actor);
+        $branchScope = StaffRoles::branchScope($actor);
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
             ->select(['id', 'employee_id', 'name', 'email', 'position', 'is_active', 'avatar_path', 'created_at'])
@@ -47,6 +50,11 @@ class StaffController extends Controller
             ])
             ->withCount('permissionOverrides')
             ->when(! $fullAccess, fn (Builder $query) => $this->scopeToManageable($query, $manageable))
+            ->when($branchScope !== null, fn (Builder $query) => $query
+                ->whereKeyNot($actor->id)
+                ->whereHas('branches', fn (Builder $branches) => $branches
+                    ->whereIn('branches.id', $branchScope)
+                    ->where('user_branch_assignments.is_active', true)))
             ->when($filters['search'] ?? null, function (Builder $query, string $search): void {
                 $term = '%'.mb_strtolower(trim($search)).'%';
                 $query->where(fn (Builder $query) => $query
@@ -63,7 +71,11 @@ class StaffController extends Controller
             ->orderBy('id')
             ->paginate(25)
             ->withQueryString()
-            ->through(function (User $user) use ($surface, $actor): array {
+            ->through(function (User $user) use ($surface, $actor, $branchScope): array {
+                $visibleBranches = $branchScope === null
+                    ? $user->branches
+                    : $user->branches->filter(fn (Branch $branch): bool => in_array((string) $branch->id, $branchScope, true));
+
                 return [
                     'id' => $user->id,
                     'employee_id' => $user->employee_id,
@@ -80,10 +92,12 @@ class StaffController extends Controller
                         'custom' => $role->isCustom(),
                     ])->values()->all(),
                     'business_wide' => $user->roles->contains(fn (Role $role): bool => $role->isBusinessWide()),
-                    'branches' => $user->branches
+                    'branches' => $visibleBranches
                         ->map(fn (Branch $branch): array => $branch->only(['id', 'name', 'code']))
                         ->values()
                         ->all(),
+                    /** Active assignments outside the viewer's Branch scope: counted, never named, never editable here. */
+                    'other_branch_count' => $user->branches->count() - $visibleBranches->count(),
                     'created_at' => $user->created_at?->toIso8601String(),
                     'is_self' => $user->is($actor),
                     'custom_access_count' => $surface === 'owner' ? 0 : (int) $user->permission_overrides_count,
@@ -97,9 +111,11 @@ class StaffController extends Controller
             'roles' => StaffRoles::options($manageable),
             'branches' => Branch::query()
                 ->where('status', BranchStatus::Active)
+                ->when($branchScope !== null, fn (Builder $query) => $query->whereKey($branchScope))
                 ->orderBy('name')
                 ->orderBy('code')
                 ->get(['id', 'name', 'code']),
+            'branchScoped' => $branchScope !== null,
         ]);
     }
 

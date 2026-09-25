@@ -61,7 +61,8 @@ class WorkspaceController extends Controller
     /**
      * Branch staff (System or Branch Custom Role) land on their Role's home workspace, or on the first workspace their
      * effective permissions still allow when Access Control removed it (so a changed baseline never strands an account
-     * on a 403).
+     * on a 403). A Branch Custom Role holding only management pages (for example a Branch Manager without POS) lands on
+     * the first Branch-scoped management page it can open.
      */
     private function branchStaffWorkspace(User $user, bool $kitchenFirst): ?string
     {
@@ -73,6 +74,11 @@ class WorkspaceController extends Controller
             'transactions.view' => 'workspaces.transaction-history',
             'reports.view' => 'workspaces.reports',
             'customer_display.launch' => 'workspaces.customer-display',
+            'products.manage' => 'products.index',
+            'inventory.manage' => 'inventory.index',
+            'operations.manage' => 'operations.plans',
+            'staff.manage' => 'staff.index',
+            'settings.manage' => 'branches.index',
         ]);
     }
 

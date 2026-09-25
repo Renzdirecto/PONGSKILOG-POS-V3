@@ -23,7 +23,7 @@ class SetIngredientArchived
 
     public function execute(User $actor, Ingredient $ingredient, bool $archived): Ingredient
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
 
         return DB::transaction(function () use ($actor, $ingredient, $archived): Ingredient {
             $ingredient = Ingredient::query()->whereKey($ingredient->id)->lock('for no key update')->firstOrFail();

@@ -41,7 +41,7 @@ class SaveModifierEffect
     /** @param array<string, mixed> $input */
     public function execute(User $actor, Product $product, ModifierOption $option, array $input): ?ProductModifierEffect
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
         /** @var array{lines: list<array{ingredient_id: string, quantity: string}>} $data */
         $data = Validator::make($input, self::rules(), [
             'lines.*.quantity.regex' => 'Enter a quantity above zero with no more than four decimal places.',

@@ -6,16 +6,12 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { PersonAvatar } from '@/components/person-avatar';
 import { logout } from '@/routes';
+import { identitySubtitle } from '@/lib/management-navigation';
 import type { Auth } from '@/types';
 
 export function PosProfileControls({ auth }: { auth: Auth }) {
-    const initials = auth.user?.name
-        .split(' ')
-        .filter(Boolean)
-        .map((part) => part[0])
-        .slice(0, 2)
-        .join('');
     const role =
         auth.roleLabel ??
         auth.roles
@@ -27,9 +23,11 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
             )
             .join(' / ');
     const avatar = (
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-bold text-white">
-            {initials}
-        </span>
+        <PersonAvatar
+            name={auth.user?.name}
+            avatarUrl={auth.user?.avatarUrl}
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-950 text-xs font-bold text-white"
+        />
     );
     const popover =
         'pos-surface w-[320px] max-w-[calc(100vw-24px)] rounded-[14px] border-neutral-200 bg-white p-0 text-neutral-950 shadow-xl';
@@ -53,15 +51,17 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
                     className={popover}
                 >
                     <div className="flex items-center gap-3 border-b border-neutral-200 p-4">
-                        <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-[15px] font-bold text-white">
-                            {initials}
-                        </span>
+                        <PersonAvatar
+                            name={auth.user?.name}
+                            avatarUrl={auth.user?.avatarUrl}
+                            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-950 text-[15px] font-bold text-white"
+                        />
                         <div className="min-w-0">
                             <p className="text-[13px] font-semibold wrap-anywhere">
                                 {auth.user?.name}
                             </p>
                             <p className="text-[11px] text-neutral-500">
-                                {role}
+                                {identitySubtitle(auth.user?.position, role)}
                             </p>
                         </div>
                     </div>

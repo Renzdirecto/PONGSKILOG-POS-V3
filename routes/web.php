@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccessControlController;
 use App\Http\Controllers\ActiveBranchController;
 use App\Http\Controllers\AuditTrailController;
+use App\Http\Controllers\BranchAssortmentController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchQrSettingsController;
@@ -86,15 +87,23 @@ Route::middleware(['auth'])->group(function () {
         Route::get('inventory/{branch}/{product}/movements', [InventoryController::class, 'movements'])->name('inventory.movements.index');
         Route::post('inventory/{branch}/{product}/adjustments', [InventoryController::class, 'store'])->name('inventory.adjustments.store');
     });
+    /** Products page and Branch configuration: business-wide or Branch-scoped products.manage (the Branch is checked server-side). */
     Route::middleware('can:products.manage')->group(function () {
-        Route::resource('products', ProductController::class)->only(['index', 'store', 'update']);
+        Route::get('products', [ProductController::class, 'index'])->name('products.index');
+        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
+        Route::post('products/branch-assortment', [BranchAssortmentController::class, 'store'])->middleware('throttle:30,1')->name('products.branch-assortment.store');
+        Route::get('products/branch-assortment/copy', [BranchAssortmentController::class, 'preview'])->name('products.branch-assortment.copy.preview');
+        Route::post('products/branch-assortment/copy', [BranchAssortmentController::class, 'copy'])->middleware('throttle:20,1')->name('products.branch-assortment.copy');
+    });
+    /** Shared Product definitions (identity, image, Categories, Modifier Groups) change every Branch: business-wide only. */
+    Route::middleware('can:catalog.define')->group(function () {
+        Route::resource('products', ProductController::class)->only(['store', 'update']);
         Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);
         Route::put('modifier-groups/{modifierGroup}/products', [ModifierGroupController::class, 'updateProducts'])->name('modifier-groups.products.update');
         Route::resource('modifier-groups', ModifierGroupController::class)->only(['index', 'store', 'update']);
         Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
         Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:20,1')->name('products.image.store');
         Route::delete('products/{product}/image', [ProductImageController::class, 'destroy'])->name('products.image.destroy');
-        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
     });
     Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
         ->name('branch-context.update');

@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\CustomRoles;
 use App\Support\PermissionCatalog;
@@ -69,6 +70,8 @@ class CreateCustomRole
                         .($baseline === [] ? 'no permissions yet.' : implode(', ', $snapshot['permission_labels']).'.'),
                     route('super-admin.access-control', ['role' => $role->name], false),
                 ), except: $actor);
+                AccessRealtime::accessControlChanged('custom_role.created');
+                AccessRealtime::staffChanged();
 
                 return $role;
             });

@@ -97,33 +97,33 @@ class PermissionCatalog
         ],
         'products.manage' => [
             'label' => 'Products',
-            'description' => 'Edit the shared product catalog, categories, modifiers and Branch prices.',
+            'description' => 'Business-wide: the shared product catalog, categories and modifiers. Branch roles: their Branch assortment, prices, availability and tracking only.',
             'category' => 'management',
-            'scope' => 'business',
+            'scope' => 'either',
         ],
         'inventory.manage' => [
             'label' => 'Inventory',
-            'description' => 'Product stock levels, stock adjustments and movement history.',
+            'description' => 'Product stock levels, stock adjustments and movement history. Branch roles see only their assigned Branch.',
             'category' => 'management',
-            'scope' => 'business',
+            'scope' => 'either',
         ],
         'operations.manage' => [
             'label' => 'Operations',
-            'description' => 'Ingredients, Recipes, Ingredient Stock, Pamamalengke and Purchases, with Pamalengke Plans and the Operations overview.',
+            'description' => 'Ingredients, Recipes, Ingredient Stock, Pamamalengke and Purchases, with Pamalengke Plans and the Operations overview. Branch roles run their Branch stock, lists and purchases; shared definitions stay business-wide.',
             'category' => 'management',
-            'scope' => 'business',
+            'scope' => 'either',
         ],
         'staff.manage' => [
             'label' => 'Staff',
-            'description' => 'Create and manage operational Staff accounts (Cashier, Kitchen Staff, Cashier + Kitchen).',
+            'description' => 'Create and manage operational Staff accounts (Cashier, Kitchen Staff, Cashier + Kitchen). Branch roles manage Staff of their own Branches only.',
             'category' => 'management',
-            'scope' => 'business',
+            'scope' => 'either',
         ],
         'settings.manage' => [
             'label' => 'Settings',
-            'description' => 'Business settings: Branches, Customer QR and receipt settings.',
+            'description' => 'Business-wide: Branches, Customer QR and receipt settings. Branch roles: Customer QR, receipt and contact details of their own Branch.',
             'category' => 'management',
-            'scope' => 'business',
+            'scope' => 'either',
         ],
         'audit.view' => [
             'label' => 'Audit Trail',
@@ -193,16 +193,22 @@ class PermissionCatalog
     ];
 
     /**
-     * The grant envelope of a Custom Role, by its scope. A Branch Custom Role runs the same Branch-scoped surfaces as
-     * Cashier staff (the backend keeps each inside the assigned Branches, Reports included). A business-wide Custom Role
-     * may combine every operational and management permission across all Branches: Branch operations still run at one
-     * selected active Branch (see User::hasOperationalBranchAccess()), management and Reports may read All Branches.
-     * Control stays with the Super Admin and QR Orders follows POS, so neither is ever listed.
+     * The grant envelope of a Custom Role, by its scope. Both scopes may hold every normal operational and management
+     * permission; the scope decides WHERE it applies. A Branch Custom Role works only at its selected assigned Branch:
+     * Products = that Branch's assortment/prices (never the shared definitions), Inventory and Operations = that Branch's
+     * physical data (shared Ingredient/Recipe/Plan definitions stay read-only), Staff = accounts of its own Branches,
+     * Settings = its own Branch's QR/receipt/contact details, and never All Branches. A business-wide Custom Role reaches
+     * every Branch: Branch operations still run at one selected active Branch (see User::hasOperationalBranchAccess()),
+     * management and Reports may read All Branches. Control stays with the Super Admin and QR Orders follows POS, so
+     * neither is ever listed.
      *
      * @var array<'branch'|'business', list<string>>
      */
     public const CUSTOM_GRANTABLE = [
-        'branch' => ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'],
+        'branch' => [
+            'pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch',
+            'reports.view', 'products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage',
+        ],
         'business' => [
             'pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch',
             'reports.view', 'products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage',
@@ -271,12 +277,11 @@ class PermissionCatalog
             return null;
         }
 
-        $scope = self::PERMISSIONS[$permission]['scope'];
         $label = self::PERMISSIONS[$permission]['label'];
 
         return match (true) {
             $role === 'owner' => 'Owner is a business-wide management role; POS, Kitchen and Store operations belong to Branch staff.',
-            $scope === 'business' => $label.' is business-wide and cannot be limited to one Branch, so it stays with Owner and Super Admin.',
+            self::PERMISSIONS[$permission]['category'] === 'management' => $label.' stays with Owner, Super Admin and Custom Roles; Cashier and Kitchen Staff roles do not manage it.',
             $role === 'kitchen_staff' => $label.' requires the Cashier or Cashier + Kitchen role.',
             default => 'Not available for this role.',
         };
@@ -303,7 +308,7 @@ class PermissionCatalog
             return null;
         }
 
-        return self::PERMISSIONS[$permission]['label'].' is business-wide and cannot be limited to one Branch. Use a Business-wide role for it.';
+        return self::PERMISSIONS[$permission]['label'].' is not available for this role scope.';
     }
 
     /**

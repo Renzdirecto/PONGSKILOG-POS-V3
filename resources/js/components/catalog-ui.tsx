@@ -38,28 +38,46 @@ export function CatalogPage({
     children,
     action,
     counts,
+    definitions = true,
+    branchLabel,
 }: {
     tab: CatalogTab;
     children: ReactNode;
     action?: ReactNode;
     counts?: Partial<Record<CatalogTab, number>>;
+    /**
+     * Whether the viewer edits the shared definitions (business-wide Product management). A Branch-scoped Product
+     * manager only sees Products and manages its Branch assortment, so Categories, Groups and Add actions are hidden.
+     */
+    definitions?: boolean;
+    branchLabel?: string;
 }) {
     const tabs: {
         label: CatalogTab;
         href: ReturnType<typeof productsIndex>;
-    }[] = [
-        { label: 'Products', href: productsIndex() },
-        { label: 'Categories', href: categoriesIndex() },
-        { label: 'Groups', href: modifiersIndex() },
-    ];
+    }[] = definitions
+        ? [
+              { label: 'Products', href: productsIndex() },
+              { label: 'Categories', href: categoriesIndex() },
+              { label: 'Groups', href: modifiersIndex() },
+          ]
+        : [{ label: 'Products', href: productsIndex() }];
 
     return (
         <>
             <Head title={`${tab} · Product management`} />
             <OwnerPage
-                title="Products"
-                description="Products, categories and the options offered in the POS and customer QR menu."
-                action={<CatalogQuickActions />}
+                title={
+                    definitions
+                        ? 'Products'
+                        : `Products — ${branchLabel ?? 'Branch'}`
+                }
+                description={
+                    definitions
+                        ? 'Products, categories and the options offered in the POS and customer QR menu.'
+                        : 'What this Branch sells, at what price, and whether it tracks stock. Product details, categories and options are shared by every Branch.'
+                }
+                action={definitions ? <CatalogQuickActions /> : undefined}
             >
                 <nav
                     aria-label="Product management"

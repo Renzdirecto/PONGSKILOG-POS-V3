@@ -8,7 +8,7 @@ paths:
 # Super Admin
 
 ## Staff accounts use a Super Admin chosen temporary password
-Staff creation is scoped by `StaffRoles::manageableBy()`: access_control.manage (Super Admin) creates every role; Owner staff.manage creates only cashier, kitchen_staff and cashier_kitchen through the `staff.*` routes and the same page with surface=owner (supersedes "Only access_control.manage creates staff"). The Super Admin types the temporary password; it is hashed by the User cast and never logged, audited, returned, or shown again. No invite email, forced password change, or self-service profile flow. Owner and Super Admin are business-wide with no Branch assignments; operational roles need at least one active Branch. User, role, assignments and the staff.created audit commit in one transaction.
+Staff creation is scoped by `StaffRoles::manageableBy()`: access_control.manage (Super Admin) creates every role; business-wide staff.manage (Owner, business-wide Custom Roles) creates only cashier, kitchen_staff and cashier_kitchen through the `staff.*` routes and the same page with surface=owner (supersedes "Only access_control.manage creates staff"). Branch-scoped staff.manage additionally assigns active Branch Custom Roles whose whole baseline it holds itself, only on Branches in `StaffRoles::branchScope()`. The Super Admin types the temporary password; it is hashed by the User cast and never logged, audited, returned, or shown again. No invite email, forced password change, or self-service profile flow. Owner and Super Admin are business-wide with no Branch assignments; operational roles need at least one active Branch. User, role, assignments and the staff.created audit commit in one transaction.
 
 ## Map unique violations from parsed columns, never the message
 A UniqueConstraintViolationException message embeds the full INSERT SQL, so it always names every inserted column (employee_id, email). Decide which field collided from `$exception->columns` / `$exception->index` (e.g. `users_employee_id_unique`) so a racing duplicate email is not reported as a duplicate Employee ID.
@@ -21,3 +21,6 @@ A UniqueConstraintViolationException message embeds the full INSERT SQL, so it a
 
 ## Staff Position is optional display metadata
 Add Staff and Manage Staff accept an optional `position` (≤100 chars, collapsed whitespace, blank → null, Custom Role name characters). It is only normalized when the field is submitted, so a client that omits it never clears it. Audited in `staff.created` / `staff.updated`; never used for authorization.
+
+## Branch Staff managers never touch hidden assignments
+A Branch-scoped Staff manager lists only other accounts with an active assignment in its own Branches (foreign Branches as `other_branch_count`, never names). `UpdateStaffAccount` merges the submitted in-scope Branch ids with the account's foreign assignments and changes rows only inside the manager's scope (detach/syncWithoutDetaching); if the account works at another Branch, role, status and profile changes are rejected for the Branch manager. Re-check all of this in the action under locks, not only in the request.

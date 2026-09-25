@@ -190,11 +190,13 @@ class OperationsWorkspace
      * Base recipes per Size (the one Size group only), Product-specific Add-on / Modifier Ingredient effects, the
      * Product's inventory mode (Product stock, No recipe needed or Ingredient recipe) and, for a concrete Branch, the
      * servings each Size can make now (RecipeCapacity). Instructions are listed only to explain that they never use
-     * ingredients.
+     * ingredients. The recipe mode is always decided from every Branch, but a Branch-scoped viewer ($visibleBranchIds)
+     * only sees its own Branches by name; other Branches are counted, never named.
      *
+     * @param  list<string>|null  $visibleBranchIds  null = every Branch (business-wide viewer)
      * @return array<string, mixed>
      */
-    public function recipesPage(?Branch $branch, OperationPlan $plan): array
+    public function recipesPage(?Branch $branch, OperationPlan $plan, ?array $visibleBranchIds = null): array
     {
         $products = Product::query()->whereIn('id', OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->select('product_id'))
             ->with(['category:id,name', 'modifierGroups' => fn ($query) => $query->where('is_active', true)->orderBy('name')
@@ -218,7 +220,7 @@ class OperationsWorkspace
         ])->values()->all();
 
         return [
-            'products' => $products->map(function (Product $product) use ($resolved, $recipes, $effects, $tracked, $prices, $availability, $present): array {
+            'products' => $products->map(function (Product $product) use ($resolved, $recipes, $effects, $tracked, $prices, $availability, $present, $visibleBranchIds): array {
                 $base = ExactMoney::cents((string) ($prices[$product->id] ?? $product->default_price));
                 $servings = collect($availability[$product->id]['sizes'] ?? [])->pluck('capacity', 'key');
                 $productSizes = array_map(function (array $size) use ($product, $recipes, $base, $servings, $present): array {
@@ -234,6 +236,9 @@ class OperationsWorkspace
                     ];
                 }, $resolved['sizes'][$product->id]);
                 $trackedAt = $tracked->get($product->id)?->pluck('code')->all() ?? [];
+                $trackedRows = $tracked->get($product->id) ?? collect();
+                $visibleTracked = $visibleBranchIds === null ? $trackedRows
+                    : $trackedRows->filter(fn (BranchProduct $row): bool => in_array((string) $row->getAttribute('branch_id'), $visibleBranchIds, true));
                 $conflict = $resolved['conflicts'][$product->id] ?? null;
                 $addOns = [];
                 foreach ($product->modifierGroups->whereNull('semantic_role') as $group) {
@@ -256,13 +261,15 @@ class OperationsWorkspace
                     'is_active' => $product->is_active,
                     'image_url' => $this->images->safeCardUrl($product),
                     'no_recipe_needed' => $product->no_recipe_needed,
-                    'tracked_at' => $trackedAt,
-                    /** Every Branch whose direct Product stock blocks Ingredient recipe mode, to open its own settings. */
-                    'tracked_branches' => $tracked->get($product->id)?->map(fn (BranchProduct $row): array => [
+                    'tracked_at' => array_values($visibleTracked->map(fn (BranchProduct $row): string => (string) $row->getAttribute('code'))->all()),
+                    /** Every visible Branch whose direct Product stock blocks Ingredient recipe mode, to open its own settings. */
+                    'tracked_branches' => array_values($visibleTracked->map(fn (BranchProduct $row): array => [
                         'id' => (string) $row->getAttribute('branch_id'),
                         'code' => (string) $row->getAttribute('code'),
                         'name' => (string) $row->getAttribute('name'),
-                    ])->values()->all() ?? [],
+                    ])->all()),
+                    /** Blocking Branches outside a Branch-scoped viewer's scope: counted, never named. */
+                    'tracked_elsewhere' => $trackedRows->count() - $visibleTracked->count(),
                     'inventory_mode' => match (true) {
                         $trackedAt !== [] => 'product_stock',
                         $product->no_recipe_needed => 'no_recipe_needed',

@@ -4,11 +4,13 @@ namespace App\Actions\AccessControl;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Enums\PermissionOverrideEffect;
+use App\Events\UserContextChanged;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserPermissionOverride;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\EffectivePermissions;
 use App\Support\PermissionCatalog;
@@ -75,6 +77,7 @@ class UpdateUserPermissionOverrides
             }
 
             $this->record($actor, $target, $role, 'access.user_override_updated', $before, $desired);
+            $this->signal($target);
 
             return true;
         });
@@ -95,9 +98,18 @@ class UpdateUserPermissionOverrides
 
             UserPermissionOverride::query()->where('user_id', $target->id)->delete();
             $this->record($actor, $target, $role, 'access.user_overrides_reset', $before, []);
+            $this->signal($target);
 
             return true;
         });
+    }
+
+    /** After commit: the account revalidates its access; Access Control and Staff pages refresh their counts. */
+    private function signal(User $target): void
+    {
+        AccessRealtime::usersChanged((int) $target->id, UserContextChanged::ACCESS);
+        AccessRealtime::accessControlChanged('user_overrides.updated');
+        AccessRealtime::staffChanged(AccessRealtime::branchIdsOf([(int) $target->id]));
     }
 
     /**

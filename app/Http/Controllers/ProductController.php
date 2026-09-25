@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Catalog\ConfigureBranchAssortment;
 use App\Actions\Catalog\CreateInlineModifierGroups;
 use App\Actions\Catalog\CreateProduct;
 use App\Actions\Catalog\ReplaceProductImage;
@@ -22,13 +23,19 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ProductController extends Controller
 {
-    public function index(Request $request, ProductImages $images, ActiveBranchContext $activeBranchContext, InventoryState $inventoryState): Response
+    /**
+     * The Products page. Business-wide Product management edits the shared catalog for All Branches or the selected
+     * Branch. A Branch-scoped Product manager sees the same canonical Products but manages only its selected assigned
+     * Branch's assortment and configuration (never the shared definitions, never another Branch).
+     */
+    public function index(Request $request, ProductImages $images, ActiveBranchContext $activeBranchContext, InventoryState $inventoryState): Response|RedirectResponse
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
@@ -37,7 +44,11 @@ class ProductController extends Controller
         ]);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $inventoryBranch = $activeBranchContext->current($user);
+        $inventoryBranch = $activeBranchContext->managementBranch($user);
+        if ($inventoryBranch === false) {
+            return to_route('workspace');
+        }
+        $canEditDefinitions = Gate::forUser($user)->allows('catalog.define');
         $branches = ($inventoryBranch === null
             ? Branch::query()
             : Branch::query()->whereKey($inventoryBranch->id))
@@ -100,16 +111,45 @@ class ProductController extends Controller
         return Inertia::render('catalog/products', [
             'products' => $products,
             'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'icon_key', 'is_active']),
-            'modifierGroups' => ModifierGroup::query()
+            'modifierGroups' => $canEditDefinitions ? ModifierGroup::query()
                 ->with(['options' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')])
-                ->orderBy('name')->get(['id', 'name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']),
+                ->orderBy('name')->get(['id', 'name', 'semantic_role', 'selection_type', 'min_select', 'max_select', 'is_active']) : [],
             'branchConfigurations' => $branches->map(fn (Branch $branch): array => [
                 'branch_id' => $branch->id,
                 'code' => $branch->code,
                 'name' => $branch->name,
             ]),
             'filters' => $filters,
+            'scope' => [
+                'mode' => $user->hasBusinessWideScope() ? 'business' : 'branch',
+                'can_edit_definitions' => $canEditDefinitions,
+                'branch' => $inventoryBranch?->only(['id', 'name', 'code']),
+                'copy_sources' => $inventoryBranch === null ? [] : ConfigureBranchAssortment::copySources($user, $inventoryBranch),
+            ],
+            /** Loaded only when "Add products to this Branch" opens: canonical Products this Branch does not sell. */
+            'assortmentCandidates' => Inertia::optional(fn (): array => $inventoryBranch === null ? [] : $this->assortmentCandidates($inventoryBranch)),
         ]);
+    }
+
+    /**
+     * Canonical Products removed from this Branch's assortment (a configuration row with is_available = false).
+     *
+     * @return list<array{id: string, name: string, category_name: string, default_price: string, is_active: bool}>
+     */
+    private function assortmentCandidates(Branch $branch): array
+    {
+        return array_values(Product::query()
+            ->with('category:id,name')
+            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branch->id)->where('is_available', false))
+            ->orderBy('name')->orderBy('id')
+            ->get(['id', 'name', 'category_id', 'default_price', 'is_active'])
+            ->map(fn (Product $product): array => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'category_name' => $product->category->name,
+                'default_price' => (string) $product->default_price,
+                'is_active' => $product->is_active,
+            ])->all());
     }
 
     public function store(

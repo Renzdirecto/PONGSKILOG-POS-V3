@@ -16,6 +16,10 @@ import {
     controlClass,
     money,
 } from '@/components/catalog-ui';
+import {
+    AddProductsDialog,
+    CopyFromBranchDialog,
+} from '@/components/branch-assortment-dialogs';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { ProductEditorForm } from '@/components/product-editor-form';
 import { Button } from '@/components/ui/button';
@@ -23,7 +27,12 @@ import {
     restoredOwnerViewMode,
     type OwnerViewMode,
 } from '@/lib/owner-view-preference';
+import type {
+    AssortmentCandidate,
+    ProductScope,
+} from '@/lib/branch-assortment';
 import { index, update } from '@/routes/products';
+import { update as updateBranchProduct } from '@/routes/products/branches';
 import type { BranchContext } from '@/types';
 import type {
     BranchConfiguration,
@@ -45,6 +54,8 @@ type Props = {
     modifierGroups: ModifierGroup[];
     branchConfigurations: BranchConfiguration[];
     filters: Filters;
+    scope: ProductScope;
+    assortmentCandidates?: AssortmentCandidate[];
 };
 
 export default function Products({
@@ -53,6 +64,8 @@ export default function Products({
     modifierGroups,
     branchConfigurations,
     filters,
+    scope,
+    assortmentCandidates,
 }: Props) {
     const page = usePage<{ branchContext: BranchContext }>();
     const { branchContext } = page.props;
@@ -67,6 +80,11 @@ export default function Products({
                   undefined),
     );
     const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
+    const [assortmentDialog, setAssortmentDialog] = useState<
+        'add' | 'copy' | null
+    >(null);
+    /** Branch-scoped Product management edits only the selected Branch's configuration, never the shared definition. */
+    const branchOnly = !scope.can_edit_definitions;
 
     useEffect(() => {
         setViewMode(
@@ -92,13 +110,44 @@ export default function Products({
     return (
         <CatalogPage
             tab="Products"
+            definitions={scope.can_edit_definitions}
+            branchLabel={scope.branch?.code}
             counts={{
                 Products: products.total,
                 Categories: categories.length,
                 Groups: modifierGroups.length,
             }}
         >
-            {categories.length === 0 && (
+            {scope.branch && (
+                <div className="flex flex-wrap items-center gap-2 rounded-[11px] border border-[#e5e5e5] bg-white p-2.5">
+                    <p className="min-w-0 flex-1 basis-56 px-1 text-[12.5px] leading-5 text-[#555]">
+                        <span className="font-semibold text-[#111]">
+                            {scope.branch.name} assortment.
+                        </span>{' '}
+                        Add shared products or copy settings from another
+                        Branch. Stock is never copied.
+                    </p>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className={actionClass}
+                        onClick={() => setAssortmentDialog('add')}
+                    >
+                        Add products to {scope.branch.code}
+                    </Button>
+                    {scope.copy_sources.length > 0 && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className={actionClass}
+                            onClick={() => setAssortmentDialog('copy')}
+                        >
+                            Copy from another Branch
+                        </Button>
+                    )}
+                </div>
+            )}
+            {scope.can_edit_definitions && categories.length === 0 && (
                 <div className="rounded-[11px] border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900">
                     Create a category before adding a product.
                 </div>
@@ -161,23 +210,34 @@ export default function Products({
                 <ul
                     className={`grid gap-2.5 ${viewMode === 'tile' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}
                 >
-                    {products.data.map((product) => (
-                        <ProductCard
-                            key={JSON.stringify([
-                                product.id,
-                                product.name,
-                                product.description,
-                                product.category_id,
-                                product.default_price,
-                                product.is_active,
-                                product.modifier_group_ids,
-                            ])}
-                            product={product}
-                            hasInventoryScope={branchContext.current !== null}
-                            list={viewMode === 'list'}
-                            onEdit={() => openEditor(product)}
-                        />
-                    ))}
+                    {products.data.map((product) =>
+                        branchOnly ? (
+                            <BranchProductCard
+                                key={product.id}
+                                product={product}
+                                list={viewMode === 'list'}
+                                onEdit={() => openEditor(product)}
+                            />
+                        ) : (
+                            <ProductCard
+                                key={JSON.stringify([
+                                    product.id,
+                                    product.name,
+                                    product.description,
+                                    product.category_id,
+                                    product.default_price,
+                                    product.is_active,
+                                    product.modifier_group_ids,
+                                ])}
+                                product={product}
+                                hasInventoryScope={
+                                    branchContext.current !== null
+                                }
+                                list={viewMode === 'list'}
+                                onEdit={() => openEditor(product)}
+                            />
+                        ),
+                    )}
                 </ul>
             )}
             {products.last_page > 1 && (
@@ -225,20 +285,29 @@ export default function Products({
                 </nav>
             )}
             <CatalogDialog
-                open={editing !== undefined}
+                open={
+                    editing !== undefined && (!branchOnly || editing !== null)
+                }
                 onClose={() => setEditing(undefined)}
                 title={editing ? editing.name : 'Add product'}
-                description={editing ? 'Edit product' : 'Add product'}
+                description={
+                    branchOnly
+                        ? `${scope.branch?.code ?? 'Branch'} settings`
+                        : editing
+                          ? 'Edit product'
+                          : 'Add product'
+                }
                 wide
                 standalone
             >
-                {editing !== undefined && (
+                {editing !== undefined && (!branchOnly || editing !== null) && (
                     <ProductEditorForm
                         key={editing?.id ?? 'new'}
                         product={editing}
                         categories={categories}
                         groups={modifierGroups}
                         branches={branchConfigurations}
+                        branchOnly={branchOnly}
                         initialSection={
                             editing?.id === editRequested &&
                             requested.get('section') === 'branch'
@@ -250,6 +319,22 @@ export default function Products({
                     />
                 )}
             </CatalogDialog>
+            {scope.branch && (
+                <>
+                    <AddProductsDialog
+                        open={assortmentDialog === 'add'}
+                        onClose={() => setAssortmentDialog(null)}
+                        branch={scope.branch}
+                        candidates={assortmentCandidates}
+                    />
+                    <CopyFromBranchDialog
+                        open={assortmentDialog === 'copy'}
+                        onClose={() => setAssortmentDialog(null)}
+                        branch={scope.branch}
+                        sources={scope.copy_sources}
+                    />
+                </>
+            )}
         </CatalogPage>
     );
 }
@@ -357,6 +442,116 @@ function ProductCard({
                         : product.is_active
                           ? 'Disable'
                           : 'Enable'}
+                </Button>
+            </div>
+        </li>
+    );
+}
+
+/**
+ * A Product as a Branch-scoped manager sees it: its price and availability at the selected Branch, with Branch
+ * settings and "sold here" as the only actions. The shared definition (name, image, category, options) is read-only.
+ */
+function BranchProductCard({
+    product,
+    list,
+    onEdit,
+}: {
+    product: CatalogProduct;
+    list: boolean;
+    onEdit: () => void;
+}) {
+    const config = product.branch_prices[0];
+    const [saving, setSaving] = useState(false);
+    const inventory = product.inventory;
+    if (!config) {
+        return null;
+    }
+    const sold = config.is_available;
+
+    return (
+        <li
+            className={`${ownerPanelClass} min-w-0 gap-3 p-3.5 ${list ? 'grid sm:grid-cols-[minmax(240px,1fr)_auto_190px] sm:items-center' : 'flex flex-col'} ${sold ? '' : 'bg-[#fafafa]'}`}
+        >
+            <div className="flex items-start gap-3">
+                <ProductThumbnail product={product} />
+                <div className="min-w-0 flex-1">
+                    <h2 className="text-sm leading-[1.3] font-semibold break-words">
+                        {product.name}
+                    </h2>
+                    <p className="mt-1 text-[11.5px] text-[#767676]">
+                        {product.category_name}
+                    </p>
+                    <p className="mt-1 text-base font-bold tracking-[-0.01em] tabular-nums">
+                        {money(config.effective_price)}
+                    </p>
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <OwnerStatusBadge tone={sold ? 'green' : 'neutral'}>
+                    {sold
+                        ? `Sold at ${config.code}`
+                        : `Not sold at ${config.code}`}
+                </OwnerStatusBadge>
+                {!product.is_active && (
+                    <OwnerStatusBadge tone="red">
+                        Disabled for every Branch
+                    </OwnerStatusBadge>
+                )}
+                {inventory && inventory.status !== 'not_tracked' && (
+                    <InventoryChip status={inventory.status}>
+                        {inventory.status === 'out_of_stock'
+                            ? 'Out of stock'
+                            : `${inventory.on_hand?.toLocaleString()} ${inventory.status === 'low_stock' ? 'left' : 'in stock'}`}
+                    </InventoryChip>
+                )}
+            </div>
+            <div className="mt-auto grid grid-cols-2 gap-1.5">
+                <Button
+                    variant="outline"
+                    className={actionClass}
+                    onClick={onEdit}
+                >
+                    <Pencil className="size-3.5" /> Branch settings
+                </Button>
+                <Button
+                    variant="outline"
+                    disabled={saving}
+                    className={`${actionClass} ${sold ? 'text-red-700 hover:text-red-800' : 'border-[#111111] bg-[#111111] text-white hover:bg-neutral-800 hover:text-white'}`}
+                    onClick={() =>
+                        router.put(
+                            updateBranchProduct.url({
+                                product: product.id,
+                                branch: config.branch_id,
+                            }),
+                            {
+                                price_override: config.price_override,
+                                is_available: !sold,
+                                tracks_inventory: config.tracks_inventory,
+                                low_stock_threshold: config.low_stock_threshold,
+                            },
+                            {
+                                preserveScroll: true,
+                                onStart: () => setSaving(true),
+                                onFinish: () => setSaving(false),
+                                onSuccess: () =>
+                                    toast.success(
+                                        `${product.name} ${sold ? 'removed from' : 'added to'} ${config.code}`,
+                                    ),
+                                onError: (errors) =>
+                                    toast.error(
+                                        Object.values(errors)[0] ??
+                                            `Unable to update ${product.name}`,
+                                    ),
+                            },
+                        )
+                    }
+                >
+                    {saving
+                        ? 'Saving…'
+                        : sold
+                          ? `Remove from ${config.code}`
+                          : `Add to ${config.code}`}
                 </Button>
             </div>
         </li>

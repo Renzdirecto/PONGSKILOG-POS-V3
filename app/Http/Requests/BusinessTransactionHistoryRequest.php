@@ -5,8 +5,9 @@ namespace App\Http\Requests;
 use App\Models\User;
 
 /**
- * The shared Transaction History read by a business-wide user (Owner or Super Admin) across All Branches or the
- * selected Branch. It validates the same filters as the Cashier history; business scope never grants Cashier writes.
+ * The shared Transaction History in the management shell: a business-wide user reads All Branches or the selected
+ * Branch, a Branch-scoped account only its selected assigned Branch (the controller enforces the scope). It validates
+ * the same filters as the Cashier history; this read never grants Cashier writes.
  */
 class BusinessTransactionHistoryRequest extends TransactionHistoryRequest
 {
@@ -16,7 +17,6 @@ class BusinessTransactionHistoryRequest extends TransactionHistoryRequest
 
         return $user instanceof User
             && $user->is_active
-            && $user->hasPermission('transactions.view')
-            && $user->hasBusinessWideScope();
+            && $user->hasPermission('transactions.view');
     }
 }

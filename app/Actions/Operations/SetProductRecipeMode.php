@@ -22,7 +22,7 @@ class SetProductRecipeMode
 
     public function execute(User $actor, Product $product, bool $noRecipeNeeded): Product
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
 
         return DB::transaction(function () use ($actor, $product, $noRecipeNeeded): Product {
             $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();

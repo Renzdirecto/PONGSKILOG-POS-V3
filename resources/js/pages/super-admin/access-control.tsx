@@ -37,6 +37,7 @@ import {
     type CustomRoleBuilderContext,
 } from '@/components/custom-role-dialogs';
 import { Spinner } from '@/components/ui/spinner';
+import { InvalidationRefresh } from '@/hooks/use-invalidation-refresh';
 import {
     EFFECTIVE_STATE_LABELS,
     OVERRIDE_LABELS,
@@ -165,6 +166,18 @@ export default function AccessControl({
     return (
         <>
             <Head title="Access Control" />
+            {/* Another Super Admin's change refreshes this projection (invalidation only, no permission payload). */}
+            <InvalidationRefresh
+                channel="access-control"
+                event=".access_control.changed"
+                only={[
+                    'roles',
+                    'staff',
+                    'selected',
+                    'scopeLocks',
+                    'permissions',
+                ]}
+            />
             <OwnerPage
                 title="Access Control"
                 description="A role sets each account's baseline access: a built-in System role or a Custom Role you create. Custom access adds or removes single permissions for one account."

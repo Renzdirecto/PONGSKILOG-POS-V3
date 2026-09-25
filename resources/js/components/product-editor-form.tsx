@@ -20,6 +20,7 @@ import {
     modifierRoleLabel,
 } from '@/lib/modifier-roles';
 import { store, update } from '@/routes/products';
+import { update as updateBranchProduct } from '@/routes/products/branches';
 import { destroy as removeImage } from '@/routes/products/image';
 import type {
     BranchConfiguration,
@@ -82,6 +83,7 @@ export function ProductEditorForm({
     onSaved,
     onCancel,
     initialSection = 'product',
+    branchOnly = false,
 }: {
     product: CatalogProduct | null;
     categories: CatalogChoice[];
@@ -90,6 +92,11 @@ export function ProductEditorForm({
     onSaved: () => void;
     onCancel: () => void;
     initialSection?: 'product' | 'branch';
+    /**
+     * Branch-scoped Product management: only this Branch's configuration (sold here, price, tracking, threshold) is
+     * editable, saved through the Branch configuration endpoint. The shared definition is never submitted.
+     */
+    branchOnly?: boolean;
 }) {
     const form = useForm<{
         name: string;
@@ -127,7 +134,7 @@ export function ProductEditorForm({
     const removal = useForm({});
     const submitting = useRef(false);
     const [activeSection, setActiveSection] = useState<'product' | 'branch'>(
-        initialSection,
+        branchOnly ? 'branch' : initialSection,
     );
     const [assigningGroups, setAssigningGroups] = useState(false);
     const [groupAssignment, setGroupAssignment] = useState<string[]>([]);
@@ -154,6 +161,29 @@ export function ProductEditorForm({
             onSubmit={(event) => {
                 event.preventDefault();
                 if (submitting.current) return;
+                const branchConfig = form.data.branch_configs[0];
+                if (branchOnly) {
+                    if (!product || !branchConfig) return;
+                    submitting.current = true;
+                    form.transform((data) => ({ ...data.branch_configs[0] }));
+                    form.submit(
+                        updateBranchProduct({
+                            product: product.id,
+                            branch: branchConfig.branch_id,
+                        }),
+                        {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                toast.success('Branch settings saved');
+                                onSaved();
+                            },
+                            onFinish: () => {
+                                submitting.current = false;
+                            },
+                        },
+                    );
+                    return;
+                }
                 submitting.current = true;
                 form.submit(product ? update(product.id) : store(), {
                     preserveScroll: true,
@@ -180,6 +210,7 @@ export function ProductEditorForm({
             <div
                 role="tablist"
                 aria-label="Product editor sections"
+                hidden={branchOnly}
                 className="grid shrink-0 grid-cols-2 gap-[3px] border-b border-neutral-200 bg-white px-4 py-3 sm:px-5"
             >
                 {(
@@ -326,9 +357,11 @@ export function ProductEditorForm({
                                         Branch configuration
                                     </h3>
                                     <p className="text-[11.5px] text-neutral-500">
-                                        {singleBranch
-                                            ? `Showing ${branches[0]?.code}, the selected global branch.`
-                                            : 'All authorized branches are shown in All Branches scope.'}
+                                        {branchOnly
+                                            ? `Settings for ${branches[0]?.code} only. The product name, image, category and options are shared by every Branch and managed business-wide.`
+                                            : singleBranch
+                                              ? `Showing ${branches[0]?.code}, the selected global branch.`
+                                              : 'All authorized branches are shown in All Branches scope.'}
                                     </p>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
@@ -501,9 +534,11 @@ export function ProductEditorForm({
                         <Check className="size-4" />
                         {busy
                             ? 'Saving…'
-                            : product
-                              ? 'Save product'
-                              : 'Add product'}
+                            : branchOnly
+                              ? 'Save Branch settings'
+                              : product
+                                ? 'Save product'
+                                : 'Add product'}
                     </Button>
                 </div>
             </div>

@@ -28,6 +28,7 @@ import {
     UtensilsCrossed,
     type LucideIcon,
 } from 'lucide-react';
+import { PersonAvatar } from '@/components/person-avatar';
 import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
@@ -142,16 +143,6 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
 
 const branchRequiredReason =
     'Choose a Branch from the header to open this workspace.';
-
-function initials(name?: string): string {
-    return (name ?? 'Super Admin')
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join('')
-        .toUpperCase();
-}
 
 function DestinationControl({
     destination,
@@ -452,9 +443,12 @@ function SuperAdminShellFrame({
                 </nav>
                 <div className="border-t border-white/10 p-3">
                     <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
-                        <span className="flex size-[34px] shrink-0 items-center justify-center rounded-full bg-white/12 text-xs font-semibold">
-                            {initials(auth.user?.name)}
-                        </span>
+                        <PersonAvatar
+                            name={auth.user?.name}
+                            avatarUrl={auth.user?.avatarUrl}
+                            fallback="Super Admin"
+                            className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                        />
                         <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-semibold">
                                 {auth.user?.name}
@@ -525,9 +519,14 @@ function SuperAdminShellFrame({
                         as="button"
                         aria-label="Log out"
                         title="Log out"
-                        className="flex size-11 items-center justify-center rounded-full bg-white/12 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                        className="flex size-11 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
                     >
-                        {initials(auth.user?.name)}
+                        <PersonAvatar
+                            name={auth.user?.name}
+                            avatarUrl={auth.user?.avatarUrl}
+                            fallback="Super Admin"
+                            className="flex size-full items-center justify-center"
+                        />
                     </Link>
                 </div>
             </aside>
@@ -577,9 +576,14 @@ function SuperAdminShellFrame({
                                 type="button"
                                 aria-label="Open account menu"
                                 title="Account"
-                                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
+                                className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
-                                {initials(auth.user?.name)}
+                                <PersonAvatar
+                                    name={auth.user?.name}
+                                    avatarUrl={auth.user?.avatarUrl}
+                                    fallback="Super Admin"
+                                    className="flex size-full items-center justify-center"
+                                />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent

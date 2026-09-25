@@ -982,6 +982,16 @@ Same branch, on top of `5f35c3d` (0 behind `origin/dev`). No dependency change. 
 - Business Transactions are view-only while the selected Store is closed; Custom Roles with POS get the existing Store status and ready-order flow.
 - Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
 
+### Phase 18 — Manual QA refinement pass #2 — Branch-scoped management + realtime access — 2026-09-25
+
+Same branch, on top of `058c5b6` (0 behind `origin/dev`). No dependency change. **No migrations** (Branch assortment uses the existing `branch_products` unique `(branch_id, product_id)`). Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #2"; realtime `06`; `.ai/rules` access-control, operations, super-admin, hooks, jscomponents, layoutscomponentspages.
+
+- Branch Custom Roles may hold Products, Inventory, Operations, Staff and Settings (Control never), each with a Branch-safe meaning on the selected assigned Branch only; Dashboard and business Transactions open for Branch roles on their Branch only.
+- Products: Branch assortment/configuration only; "Add products to this Branch" and "Copy from another Branch" (authorized source + destination, skip existing by default, never stock).
+- Operations: Branch stock/list/purchases; shared Ingredients/Recipes/Plans read-only for Branch roles. Staff: own-Branch accounts only, no escalation, hidden assignments preserved. Settings: "Branch Settings — MAIN" (contact, QR, receipt; no create/rename/status).
+- Realtime: `user.context_changed` (identity/access/branches/status) revalidates open sessions (sidebar, Position, picture, Branch selector, safe redirect on revocation); `access_control.changed` and `staff.changed` refresh other admins' pages; reconnect revalidates; no polling. Super Admin sidebar section renamed "Store Operations".
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
 - [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
 - [x] Audit Trail (real register, filters, detail, realtime)
 - [x] Void Orders (protected history, detail, global Void approval PIN)

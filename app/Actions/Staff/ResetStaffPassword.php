@@ -3,8 +3,10 @@
 namespace App\Actions\Staff;
 
 use App\Actions\Audit\AuditRecorder;
+use App\Events\UserContextChanged;
 use App\Models\User;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\UserSessions;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -34,6 +36,8 @@ class ResetStaffPassword
 
             $staff->forceFill(['password' => $password])->save();
             UserSessions::invalidate($staff);
+            /** Its open pages revalidate now and land on the login page instead of waiting for the next click. */
+            AccessRealtime::usersChanged((int) $staff->id, UserContextChanged::STATUS);
 
             $this->audit->record(
                 branch: null,

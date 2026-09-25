@@ -21,7 +21,7 @@ class ArchiveOperationPlan
 
     public function execute(User $actor, OperationPlan $plan): OperationPlan
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
 
         return DB::transaction(function () use ($actor, $plan): OperationPlan {
             $plan = OperationPlan::query()->whereKey($plan->id)->lockForUpdate()->firstOrFail();

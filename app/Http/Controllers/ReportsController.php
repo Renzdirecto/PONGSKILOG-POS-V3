@@ -77,8 +77,6 @@ class ReportsController extends Controller
      */
     private function scope(User $user, ActiveBranchContext $context): Branch|false|null
     {
-        $branch = $context->current($user);
-
-        return $branch === null && ! $user->hasBusinessWideScope() ? false : $branch;
+        return $context->managementBranch($user);
     }
 }

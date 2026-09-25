@@ -86,6 +86,8 @@ export default function OperationsPlans({
     products,
 }: Props) {
     const [editing, setEditing] = useState<OperationsPlan | 'new' | null>(null);
+    /** Plans are shared by every Branch; only business-wide Operations edits them. */
+    const canEdit = operations.can_manage_definitions;
     const planName = (id: string) =>
         operations.plans.find((plan) => plan.id === id)?.name ?? 'Plan';
     const business = summary.business;
@@ -96,13 +98,15 @@ export default function OperationsPlans({
             title="Pamalengke Plans"
             description="Plans group products, recipes, ingredients and market planning. Ingredient stock stays shared per branch."
             action={
-                <button
-                    type="button"
-                    className={opsPrimaryClass}
-                    onClick={() => setEditing('new')}
-                >
-                    <Plus className="size-4" /> Add plan
-                </button>
+                canEdit ? (
+                    <button
+                        type="button"
+                        className={opsPrimaryClass}
+                        onClick={() => setEditing('new')}
+                    >
+                        <Plus className="size-4" /> Add plan
+                    </button>
+                ) : undefined
             }
         >
             <section className={opsCardClass} aria-labelledby="plan-holds">
@@ -139,13 +143,15 @@ export default function OperationsPlans({
                     title="No plans yet"
                     body="Create a plan for a product family, such as Drinks or Silog. Then attach recipes to its existing Catalog products and add the ingredients they use."
                     action={
-                        <button
-                            type="button"
-                            className={opsPrimaryClass}
-                            onClick={() => setEditing('new')}
-                        >
-                            <Plus className="size-4" /> Add the first plan
-                        </button>
+                        canEdit ? (
+                            <button
+                                type="button"
+                                className={opsPrimaryClass}
+                                onClick={() => setEditing('new')}
+                            >
+                                <Plus className="size-4" /> Add the first plan
+                            </button>
+                        ) : undefined
                     }
                 />
             ) : (
@@ -180,14 +186,16 @@ export default function OperationsPlans({
                                                 `Ingredients, recipes and market planning for ${plan.name}.`}
                                         </span>
                                     </span>
-                                    <button
-                                        type="button"
-                                        aria-label={`Edit ${plan.name} plan`}
-                                        className={`${opsButtonClass} w-11 px-0`}
-                                        onClick={() => setEditing(plan)}
-                                    >
-                                        <Pencil className="size-4" />
-                                    </button>
+                                    {canEdit && (
+                                        <button
+                                            type="button"
+                                            aria-label={`Edit ${plan.name} plan`}
+                                            className={`${opsButtonClass} w-11 px-0`}
+                                            onClick={() => setEditing(plan)}
+                                        >
+                                            <Pencil className="size-4" />
+                                        </button>
+                                    )}
                                 </div>
                                 <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#efefef] bg-[#efefef]">
                                     <Stat
@@ -269,6 +277,7 @@ export default function OperationsPlans({
                     })}
                     <button
                         type="button"
+                        hidden={!canEdit}
                         onClick={() => setEditing('new')}
                         className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-2xl border-[1.5px] border-dashed border-[#c9c9c9] bg-[#fafafa] p-4 text-center hover:border-[#111] hover:bg-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
                     >

@@ -690,3 +690,28 @@ Maintains only System roles (canonical label/is_system/scope, Super Admin comple
 
 - `workspaces.transactions` offers Edit / Settle / Void (and the operational detail) only when the viewer passes `PosAccess` for the selected Branch **and** that Branch has an OPEN Store Session; otherwise it is view-only historical reading like the Owner (`transactions.view` alone never grants a mutation).
 - Every write endpoint still re-authorizes (`permission:pos.access`, Branch, Order, the Order's current OPEN Store Session and the existing action rules); after close they reject with `store` errors.
+
+## Phase 18 Manual QA refinement #2 — Branch-scoped management — 2026-09-25
+
+Supersedes "Products, Inventory, Operations, Staff, Settings stay business-wide / never to Branch roles" above. Mental model: **Permission = WHAT, Role scope = WHERE, user override = individual exception.** Control (Audit Trail, Void Orders, Access Control) stays Super Admin-only for every Custom Role, by baseline and by override.
+
+### Grant envelope
+
+`PermissionCatalog::CUSTOM_GRANTABLE` is the same for both scopes: every operational permission plus Reports, Products, Inventory, Operations, Staff and Settings. The scope decides where each applies. System Cashier / Kitchen Staff envelopes are unchanged (no management permissions).
+
+### One scope helper
+
+`ActiveBranchContext::managementBranch()` returns the selected Branch, `null` (All Branches — business-wide accounts only) or `false` (a Branch-scoped account with no selected assigned Branch → redirect to the workspace / Branch picker). Dashboard, business Transactions, Reports, Products, Inventory, Operations and Settings all use it; a Branch-scoped account never receives All Branches data, and a forged session Branch is cleared by `ActiveBranchContext::current()`.
+
+### Branch-scoped meaning per page
+
+- **Dashboard / Transactions / Reports:** selected assigned Branch only (same `SalesAnalytics` / `TransactionHistory`; Transactions stay mutable only with POS access and an OPEN Store).
+- **Products:** one canonical Product definition + optional `branch_products` row per Branch (no row = sold at the default price). Shared definitions (Product create/update, image, Categories, Modifier Groups/Options) need the `catalog.define` gate = `products.manage` + business-wide. Branch-scoped `products.manage` changes only its Branch rows (`UpsertBranchProduct` checks `canAccessBranch`): sold here, price override, availability, tracking, low-stock threshold. **Add products to this Branch** re-enables Products whose Branch row says not sold. **Copy from another Branch** copies those row values only (never stock, movements, sales, Store Sessions, Products, Categories, Groups); the destination is the selected Branch from the session, the source must be another active Branch the account can access (a MAIN-only manager cannot read QAVE); existing destination rows are kept unless overwrite is explicitly confirmed. `ConfigureBranchAssortment` locks the Branch `FOR SHARE`, writes with `INSERT … ON CONFLICT DO NOTHING` on the unique `(branch_id, product_id)` and locks rows in Product-id order, so racing or repeated requests end with one row per Product (PostgreSQL harness `tests/verify-branch-assortment-postgres.php`).
+- **Inventory:** selected assigned Branch only; the `branch_id` query is ignored; movements and adjustments of another Branch → 403 (`AdjustInventory` re-checks).
+- **Operations:** `OperationsAccess::allows()` = `operations.manage` + (business-wide or an active assignment). Branch execution data (Ingredient stock, movements, Pamamalengke list, Confirm/purchases) runs at the selected assigned Branch. Shared definitions (Ingredients, Recipes, Add-on effects, recipe mode, Plans) need `authorizeDefinitions()` = business-wide; Branch roles see them read-only (`operations.can_manage_definitions`). Recipes name only the viewer's own blocking Branches (others are counted). No per-Branch Recipe/Plan copies; nothing Operations-specific is copied between Branches because the schema has no Branch Operations configuration beyond physical balances and the working list.
+- **Staff:** `StaffRoles::branchScope()` = the manager's active assigned Branch ids. It lists other accounts with an active assignment in that set (foreign Branches counted, never named); it assigns Cashier, Kitchen Staff, Cashier + Kitchen and active Branch Custom Roles whose whole baseline it holds itself (no escalation); never Owner, Super Admin or business-wide Custom Roles; Branch ids must be a subset of its own. On an account that also works elsewhere it may change only its own Branch rows (hidden assignments are kept); role, status and profile stay with business-wide Staff managers.
+- **Settings:** `BranchPolicy::update` = `settings.manage` + `canAccessBranch` (contact details, Customer QR, receipt); `create` / `updateIdentity` (code, name, status) = business-wide only. The page shows "Branch Settings — MAIN" with the selected Branch only.
+
+### Business-wide Custom Roles
+
+Unchanged: all normal permissions, All Branches where the page aggregates, one concrete Branch for operations, never Control. Owner is not widened.

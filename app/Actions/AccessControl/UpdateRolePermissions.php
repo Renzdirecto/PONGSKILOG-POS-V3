@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\PermissionCatalog;
 use App\Support\StaffRoles;
@@ -70,6 +71,7 @@ class UpdateRolePermissions
                 throw ValidationException::withMessages(['permissions' => 'A permission in this baseline has not been seeded.']);
             }
             $role->permissions()->sync($permissionIds->values()->all());
+            $changedRoleIds = [(int) $role->id];
 
             $derived = null;
             if (in_array($roleName, PermissionCatalog::DERIVED_FROM, true)) {
@@ -82,6 +84,7 @@ class UpdateRolePermissions
                     ));
                     $derivedRole->permissions()->sync(Permission::query()->whereIn('name', $derivedAfter)->pluck('id')->all());
                     $derived = ['before' => $derivedBefore, 'after' => $derivedAfter];
+                    $changedRoleIds[] = (int) $derivedRole->id;
                 }
             }
 
@@ -112,6 +115,9 @@ class UpdateRolePermissions
                     .($removed === [] ? '' : ' Removed: '.implode(', ', $removed).'.'),
                 route('super-admin.access-control', ['role' => $roleName], false),
             ), except: $actor);
+            /** Everyone inheriting the changed baseline (and the re-derived Cashier + Kitchen) revalidates after commit. */
+            AccessRealtime::rolesChanged($changedRoleIds);
+            AccessRealtime::accessControlChanged('role_baseline.updated');
 
             return true;
         });

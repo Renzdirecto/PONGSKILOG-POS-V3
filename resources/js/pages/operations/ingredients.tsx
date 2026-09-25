@@ -43,6 +43,8 @@ export default function OperationsIngredients({
     const [editing, setEditing] = useState<OperationsIngredient | 'new' | null>(
         null,
     );
+    /** Ingredient definitions are shared by every Branch; only business-wide Operations edits them. */
+    const canEdit = operations.can_manage_definitions;
     const planName = (id: string) =>
         operations.plans.find((item) => item.id === id)?.name ?? 'Plan';
     const inPlan = ingredients.filter(
@@ -63,14 +65,16 @@ export default function OperationsIngredients({
             title="Ingredients"
             description={`Ingredient records${plan ? ` used by the ${plan.name} plan` : ''}. Each is one branch stock record, shared with any other plan that uses it.`}
             action={
-                <button
-                    type="button"
-                    className={opsPrimaryClass}
-                    onClick={() => setEditing('new')}
-                    disabled={operations.plans.length === 0}
-                >
-                    <Plus className="size-4" /> Add ingredient
-                </button>
+                canEdit ? (
+                    <button
+                        type="button"
+                        className={opsPrimaryClass}
+                        onClick={() => setEditing('new')}
+                        disabled={operations.plans.length === 0}
+                    >
+                        <Plus className="size-4" /> Add ingredient
+                    </button>
+                ) : undefined
             }
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -271,15 +275,18 @@ export default function OperationsIngredients({
                                         )}
                                     </td>
                                     <td className="px-3.5 py-3 text-right">
-                                        <button
-                                            type="button"
-                                            className={opsButtonClass}
-                                            onClick={() =>
-                                                setEditing(ingredient)
-                                            }
-                                        >
-                                            <Pencil className="size-4" /> Edit
-                                        </button>
+                                        {canEdit && (
+                                            <button
+                                                type="button"
+                                                className={opsButtonClass}
+                                                onClick={() =>
+                                                    setEditing(ingredient)
+                                                }
+                                            >
+                                                <Pencil className="size-4" />{' '}
+                                                Edit
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -369,13 +376,17 @@ export default function OperationsIngredients({
                                             </Chip>
                                         ))}
                                     </span>
-                                    <button
-                                        type="button"
-                                        className={opsButtonClass}
-                                        onClick={() => setEditing(ingredient)}
-                                    >
-                                        <Pencil className="size-4" /> Edit
-                                    </button>
+                                    {canEdit && (
+                                        <button
+                                            type="button"
+                                            className={opsButtonClass}
+                                            onClick={() =>
+                                                setEditing(ingredient)
+                                            }
+                                        >
+                                            <Pencil className="size-4" /> Edit
+                                        </button>
+                                    )}
                                 </div>
                             </li>
                         ))}

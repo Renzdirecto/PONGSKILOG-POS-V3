@@ -18,7 +18,7 @@ class UpdateModifierGroup
     /** @param array{name?: mixed, semantic_role?: mixed, selection_type?: mixed, min_select?: mixed, max_select?: mixed, is_active?: mixed} $attributes */
     public function execute(User $user, ModifierGroup $modifierGroup, array $attributes): ModifierGroup
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         if (($attributes['semantic_role'] ?? null) === ModifierSemanticRole::Instruction->value) {
             $attributes['selection_type'] = ModifierSelectionType::Multiple->value;

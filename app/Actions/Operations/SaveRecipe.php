@@ -41,7 +41,7 @@ class SaveRecipe
     /** @param array<string, mixed> $input */
     public function execute(User $actor, Product $product, array $input): ?Recipe
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
         /** @var array{size_option_id: string|null, lines: list<array{ingredient_id: string, quantity: string}>} $data */
         $data = Validator::make($input, self::rules(), [
             'lines.*.quantity.regex' => 'Enter a quantity above zero with no more than four decimal places.',

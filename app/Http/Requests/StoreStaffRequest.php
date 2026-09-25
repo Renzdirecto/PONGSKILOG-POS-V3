@@ -88,12 +88,26 @@ class StoreStaffRequest extends FormRequest
                 'uuid',
                 'distinct',
                 Rule::exists('branches', 'id')->where('status', BranchStatus::Active->value),
+                ...$this->branchScopeRules(),
             ],
             'is_active' => ['sometimes', 'boolean'],
             'avatar' => ['nullable', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('2mb')->dimensions(
                 Rule::dimensions()->minWidth(64)->minHeight(64)->maxWidth(8000)->maxHeight(8000),
             )],
         ];
+    }
+
+    /**
+     * A Branch-scoped Staff manager may assign only its own active Branches (re-checked under locks in the action).
+     *
+     * @return list<mixed>
+     */
+    private function branchScopeRules(): array
+    {
+        $user = $this->user();
+        $scope = $user instanceof User ? StaffRoles::branchScope($user) : null;
+
+        return $scope === null ? [] : [Rule::in($scope)];
     }
 
     /** @return array<string, string> */
@@ -110,6 +124,7 @@ class StoreStaffRequest extends FormRequest
             'branch_ids.prohibited' => StaffRoles::branchesProhibitedMessage($role),
             'branch_ids.*.exists' => 'Choose active Branches only.',
             'branch_ids.*.uuid' => 'Choose active Branches only.',
+            'branch_ids.*.in' => 'Choose only Branches you manage.',
             'role.in' => 'Choose a valid role.',
             'role.exists' => 'Choose a valid role.',
         ];

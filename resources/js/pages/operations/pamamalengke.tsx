@@ -585,16 +585,18 @@ export default function OperationsPamamalengke(props: Props) {
                                                     }
                                                 </span>
                                             </span>
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                onClick={() =>
-                                                    setEditing(ingredient)
-                                                }
-                                            >
-                                                <Pencil className="size-4" />{' '}
-                                                Set purchase rule
-                                            </button>
+                                            {operations.can_manage_definitions && (
+                                                <button
+                                                    type="button"
+                                                    className={opsButtonClass}
+                                                    onClick={() =>
+                                                        setEditing(ingredient)
+                                                    }
+                                                >
+                                                    <Pencil className="size-4" />{' '}
+                                                    Set purchase rule
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
                                 </section>

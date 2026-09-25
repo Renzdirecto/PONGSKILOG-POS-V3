@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductModifierEffect;
 use App\Models\Recipe;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,10 @@ class UpsertBranchProduct
     public function execute(User $user, Branch $branch, Product $product, array $attributes): BranchProduct
     {
         Gate::forUser($user)->authorize('products.manage');
+        /** A Branch-scoped Product manager configures only its own assigned Branches; business-wide reaches every Branch. */
+        if (! $user->canAccessBranch($branch)) {
+            throw new AuthorizationException('This account may not configure Products at this Branch.');
+        }
 
         $validated = Validator::make($attributes, [
             'price_override' => [

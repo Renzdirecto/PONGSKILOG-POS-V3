@@ -7,6 +7,7 @@ use App\Enums\BranchStatus;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\AccessRealtime;
 use App\Support\StaffRoles;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -39,7 +40,7 @@ class CreateStaffAccount
                 $actor = User::query()->whereKey($actor->getKey())->first();
                 $manageable = $actor === null ? [] : StaffRoles::manageableBy($actor);
                 if ($actor === null || $manageable === []) {
-                    throw new AuthorizationException('Only Super Admin access control or Owner Staff management may create staff accounts.');
+                    throw new AuthorizationException('Only Super Admin access control or Staff management may create staff accounts.');
                 }
 
                 /** The shared lock serializes with archiving a Custom Role, which locks the same row FOR UPDATE. */
@@ -47,12 +48,17 @@ class CreateStaffAccount
                 if ($role === null || ! $role->isAssignable()) {
                     throw ValidationException::withMessages(['role' => 'Choose a valid role.']);
                 }
-                /** Owner Staff management reaches operational roles only; the role list is re-checked here, not trusted. */
+                /** Owner and Branch Staff management reach their own role lists only; the list is re-checked here, not trusted. */
                 if (! in_array($role->name, $manageable, true)) {
                     throw new AuthorizationException('This account may not create '.$role->displayLabel().' accounts.');
                 }
 
                 $branches = $this->assignableBranches($role, $data['branch_ids'] ?? []);
+                /** A Branch-scoped Staff manager creates accounts only inside its own assigned Branches. */
+                $scope = StaffRoles::branchScope($actor);
+                if ($scope !== null && $branches->contains(fn (Branch $branch): bool => ! in_array((string) $branch->id, $scope, true))) {
+                    throw ValidationException::withMessages(['branch_ids' => 'Choose only Branches you manage.']);
+                }
 
                 $user = new User;
                 $user->forceFill([
@@ -102,6 +108,9 @@ class CreateStaffAccount
                         'has_profile_picture' => $user->avatar_path !== null,
                     ],
                 );
+
+                AccessRealtime::staffChanged(array_values($branches->pluck('id')->map(fn ($id): string => (string) $id)->all()));
+                AccessRealtime::accessControlChanged('staff.created');
 
                 return $user;
             });

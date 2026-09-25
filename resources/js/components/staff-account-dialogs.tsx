@@ -37,6 +37,8 @@ export type ManagedStaffMember = {
     branches: BranchSummary[];
     is_self: boolean;
     custom_access_count: number;
+    /** Active assignments outside a Branch-scoped manager's Branches (counted, never named). */
+    other_branch_count?: number;
 };
 
 function FieldError({ id, message }: { id: string; message?: string }) {
@@ -83,6 +85,11 @@ export function EditStaffForm({
         remove_avatar: false,
     });
     const [confirming, setConfirming] = useState(false);
+    /**
+     * An account that also works at a Branch outside this manager's scope: only its access to the manager's own
+     * Branches may change here. Role, status and profile affect the other Branch too (the server enforces this).
+     */
+    const shared = (member.other_branch_count ?? 0) > 0;
     const submitting = useRef(false);
     const avatarInput = useRef<HTMLInputElement>(null);
     const previewUrl = useRef<string | null>(null);
@@ -242,9 +249,23 @@ export function EditStaffForm({
             aria-busy={form.processing}
             noValidate
         >
+            {shared && (
+                <p
+                    role="note"
+                    className="rounded-[11px] border border-amber-200 bg-amber-50 p-3 text-[12px] leading-5 text-amber-950"
+                >
+                    {member.name} also works at{' '}
+                    {member.other_branch_count === 1
+                        ? 'another Branch'
+                        : `${member.other_branch_count} other Branches`}
+                    . You can change their access to your Branches; their role,
+                    status and profile are managed by a business-wide Staff
+                    manager.
+                </p>
+            )}
             <fieldset
                 className="flex flex-col gap-3"
-                disabled={form.processing}
+                disabled={form.processing || shared}
             >
                 <legend className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-[#888] uppercase">
                     Basic information
@@ -437,7 +458,7 @@ export function EditStaffForm({
                     <select
                         id="edit-staff-role"
                         value={form.data.role}
-                        disabled={member.is_self}
+                        disabled={member.is_self || shared}
                         onChange={(event) => {
                             const role = roles.find(
                                 (item) => item.name === event.target.value,
@@ -560,7 +581,7 @@ export function EditStaffForm({
                         ].map((option) => (
                             <label
                                 key={option.label}
-                                className={`flex min-h-11 items-center justify-center gap-2 rounded-[11px] border border-[#e5e5e5] text-[13px] font-semibold has-checked:border-[#111] has-checked:bg-[#111] has-checked:text-white has-focus-visible:ring-2 has-focus-visible:ring-[#111]/30 ${member.is_self ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                                className={`flex min-h-11 items-center justify-center gap-2 rounded-[11px] border border-[#e5e5e5] text-[13px] font-semibold has-checked:border-[#111] has-checked:bg-[#111] has-checked:text-white has-focus-visible:ring-2 has-focus-visible:ring-[#111]/30 ${member.is_self || shared ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                             >
                                 <input
                                     type="radio"
@@ -568,7 +589,7 @@ export function EditStaffForm({
                                     checked={
                                         form.data.is_active === option.value
                                     }
-                                    disabled={member.is_self}
+                                    disabled={member.is_self || shared}
                                     onChange={() =>
                                         form.setData('is_active', option.value)
                                     }

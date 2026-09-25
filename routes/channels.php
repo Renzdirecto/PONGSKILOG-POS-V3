@@ -43,6 +43,22 @@ Broadcast::channel('branch.{branch}.reports', function (User $user, Branch $bran
     return $user->is_active && $user->hasPermission('reports.view') && $user->canAccessBranch($branch);
 });
 
+/** Open Access Control pages: Super Admin access control only. */
+Broadcast::channel('access-control', function (User $user): bool {
+    return $user->is_active && $user->hasPermission('access_control.manage');
+});
+
+/** Business-wide Staff pages: Super Admin access control, or business-wide Staff management (Owner, business-wide Custom Roles). */
+Broadcast::channel('staff', function (User $user): bool {
+    return $user->is_active
+        && ($user->hasPermission('access_control.manage') || ($user->hasPermission('staff.manage') && $user->hasBusinessWideScope()));
+});
+
+/** Branch-scoped Staff pages: Staff management at an assigned Branch; signals about other Branches never reach it. */
+Broadcast::channel('branch.{branch}.staff', function (User $user, Branch $branch): bool {
+    return $user->is_active && $user->hasPermission('staff.manage') && $user->canAccessBranch($branch);
+});
+
 Broadcast::channel('audit-trail', function (User $user): bool {
     return $user->is_active && $user->hasPermission('audit.view');
 });

@@ -2,6 +2,7 @@
 paths:
   - '{app/Support/{EffectivePermissions,PermissionCatalog,AdminNotifier,StockAlerts,UserSessions,CustomRoles}.php,app/Actions/AccessControl/**,app/Models/{User,UserPermissionOverride,Role}.php,database/seeders/RbacSeeder.php}'
   - '{app/Http/Controllers/{AccessControlController,NotificationController}.php,app/Http/Requests/SaveCustomRoleRequest.php,resources/js/pages/super-admin/{access-control,notifications}.tsx,resources/js/components/custom-role-dialogs.tsx,resources/js/lib/{access-control,notifications}.ts,resources/js/hooks/use-notification-center.ts}'
+  - '{app/Support/{AccessRealtime,ActiveBranchContext}.php,app/Actions/Catalog/ConfigureBranchAssortment.php,app/Http/Controllers/{BranchAssortmentController,BranchController}.php,app/Policies/BranchPolicy.php,app/Events/{UserContextChanged,StaffChanged,AccessControlChanged}.php,resources/js/hooks/{use-user-context-realtime,use-invalidation-refresh}.ts,resources/js/lib/{user-context,branch-assortment}.ts,resources/js/components/branch-assortment-dialogs.tsx}'
 ---
 
 # Access Control
@@ -10,7 +11,7 @@ paths:
 Role = baseline (`role_permissions`); account = optional ALLOW/DENY row in `user_permission_overrides` (no row = INHERIT). Every check goes through `User::hasPermission()` → `EffectivePermissions` (also the shared `auth.permissions`), never a second engine or a frontend-only rule, and nothing is cached across requests. Super Admin is locked full access: overrides are ignored and never written for it, its baseline cannot be edited, and an ALLOW never grants audit.view / void_orders.manage / access_control.manage.
 
 ## Permission is WHAT, Role + Branch is WHERE
-`PermissionCatalog` is the only list of permission labels, categories, defaults and grant envelopes. A permission is grantable to a Role only when the backend keeps it inside that Role's scope (Products, Inventory, Operations, Staff, Settings stay business-wide; Control stays Super Admin). Custom Reports for Branch staff must stay on the selected assigned Branch (never All Branches). QR Orders follows POS. Cashier + Kitchen is always re-derived as Cashier ∪ Kitchen Staff in the same transaction.
+`PermissionCatalog` is the only list of permission labels, categories, defaults and grant envelopes. A permission is grantable to a Role only when the backend keeps it inside that Role's scope; Control stays Super Admin. Both Custom Role scopes may hold every operational and management permission (Pass #2): a Branch Custom Role applies each only at its selected assigned Branch (see "Branch-scoped management" below). System Cashier / Kitchen Staff envelopes never include management permissions. QR Orders follows POS. Cashier + Kitchen is always re-derived as Cashier ∪ Kitchen Staff in the same transaction.
 
 ## RbacSeeder never resets live configuration
 Defaults apply only to Roles/Permissions the seeder creates; existing Role ↔ Permission pairs are never removed or re-added. Super Admin is re-completed and Cashier + Kitchen re-derived on every run.
@@ -26,3 +27,9 @@ System roles are the five canonical names (never edited as custom records, never
 
 ## Position is a display title, never access
 `users.position` is a business/job title (e.g. "Area Manager") for Staff cards, the sidebar footer (fallback: Role label) and the Audit actor ("Name · Position", current value). Never derive a permission, scope, landing page or workspace from it; access comes only from the Role plus user overrides.
+
+## Branch-scoped management (Manual QA pass #2)
+Every management page resolves its Branch through `ActiveBranchContext::managementBranch()`: selected Branch, null = All Branches (business-wide only), false = Branch-scoped account without a selected assigned Branch → `to_route('workspace')`. Never read `current()` and treat null as All Branches for a Branch role. Products: shared definitions need the `catalog.define` gate (products.manage + business-wide); Branch roles only write `branch_products` rows of Branches they can access (`UpsertBranchProduct`, `ConfigureBranchAssortment`). Settings: `BranchPolicy::update` = own Branch local settings, `create`/`updateIdentity` = business-wide. No `if role == custom_x` checks: scope comes from `hasBusinessWideScope()` / `canAccessBranch()`.
+
+## Access and identity changes are signalled after commit
+Writers that change an account's identity, Role, Role baseline, overrides, Branch assignments or status call `AccessRealtime` (`usersChanged`, `rolesChanged`, `staffChanged`, `accessControlChanged`) inside their transaction; the events are `ShouldDispatchAfterCommit` + rescued and carry ids/type/time only. A new writer of those facts must signal too, or open sessions keep stale navigation until the next visit (the backend still denies immediately).

@@ -79,12 +79,16 @@ test('a forged operations write without operations access is refused and changes
     expect(Ingredient::query()->count())->toBe(0);
 });
 
-test('operations cannot be granted to a branch custom role', function () {
+test('operations can be granted to a branch custom role, control never', function () {
     $this->actingAs($this->superAdmin)
         ->post(route('super-admin.access-control.custom-roles.store'), ['label' => 'Shift Lead', 'scope' => 'branch', 'permissions' => ['pos.access', 'operations.manage']])
+        ->assertSessionHasNoErrors();
+    $this->actingAs($this->superAdmin)
+        ->post(route('super-admin.access-control.custom-roles.store'), ['label' => 'Shift Auditor', 'scope' => 'branch', 'permissions' => ['operations.manage', 'audit.view']])
         ->assertInvalid(['permissions']);
 
-    expect(Role::query()->where('label', 'Shift Lead')->exists())->toBeFalse();
+    expect(Role::query()->where('label', 'Shift Lead')->exists())->toBeTrue()
+        ->and(Role::query()->where('label', 'Shift Auditor')->exists())->toBeFalse();
 });
 
 test('the split migration copies every existing inventory grant and override to operations exactly once', function () {

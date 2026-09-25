@@ -4,11 +4,13 @@ namespace App\Actions\Staff;
 
 use App\Actions\Audit\AuditRecorder;
 use App\Enums\BranchStatus;
+use App\Events\UserContextChanged;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\UserPermissionOverride;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\EffectivePermissions;
 use App\Support\StaffRoles;
@@ -85,6 +87,16 @@ class UpdateStaffAccount
                 $roleChanged = $currentRole !== $newRole->name;
                 $isActive = (bool) $data['is_active'];
                 $statusChanged = $staff->is_active !== $isActive;
+                /**
+                 * A Branch-scoped manager changes only the target's assignments inside its own Branches; assignments
+                 * elsewhere are kept untouched. If the account also works at another Branch, its role, status and
+                 * profile belong to a business-wide Staff manager, because changing them would affect that Branch too.
+                 */
+                $scope = StaffRoles::branchScope($actor);
+                $foreignBranchIds = $scope === null ? [] : array_values(array_diff(
+                    $staff->branches()->wherePivot('is_active', true)->pluck('branches.id')->map(fn ($id): string => (string) $id)->all(),
+                    $scope,
+                ));
 
                 if ($staff->is($actor) && ($roleChanged || ! $isActive)) {
                     throw ValidationException::withMessages([
@@ -94,7 +106,11 @@ class UpdateStaffAccount
                 $this->ensureSuperAdminRemains($locked, $staff, in_array('super_admin', $currentRoles, true), $newRole->name, $isActive);
 
                 $branchesBefore = $staff->branches()->wherePivot('is_active', true)->orderBy('branches.code')->get(['branches.id', 'branches.code']);
-                $branches = $this->assignableBranches($staff, $newRole, $data['branch_ids'] ?? []);
+                $submittedBranchIds = array_values(array_unique(array_map('strval', $data['branch_ids'] ?? [])));
+                if ($scope !== null && array_diff($submittedBranchIds, $scope) !== []) {
+                    throw ValidationException::withMessages(['branch_ids' => 'Choose only Branches you manage.']);
+                }
+                $branches = $this->assignableBranches($staff, $newRole, [...$submittedBranchIds, ...$foreignBranchIds]);
                 $branchesChanged = $branchesBefore->pluck('id')->sort()->values()->all() !== $branches->pluck('id')->sort()->values()->all();
 
                 $profileBefore = ['name' => $staff->name, 'email' => $staff->email, 'position' => $staff->position];
@@ -104,6 +120,12 @@ class UpdateStaffAccount
                 $oldAvatarPath = $staff->avatar_path;
                 $avatar = $data['avatar'] ?? null;
                 $removeAvatar = ($data['remove_avatar'] ?? false) && ! $avatar instanceof UploadedFile && $oldAvatarPath !== null;
+
+                if ($foreignBranchIds !== [] && ($roleChanged || $statusChanged || $profileChanged || $avatar instanceof UploadedFile || $removeAvatar)) {
+                    throw ValidationException::withMessages([
+                        'branch_ids' => $staff->name.' also works at another Branch. Only a business-wide Staff manager can change their role, status or profile; you can change their access to your Branches.',
+                    ]);
+                }
 
                 if (! $roleChanged && ! $statusChanged && ! $branchesChanged && ! $profileChanged && ! $avatar instanceof UploadedFile && ! $removeAvatar) {
                     return [];
@@ -128,7 +150,11 @@ class UpdateStaffAccount
                     $staff->roles()->sync([$newRole->id]);
                     UserPermissionOverride::query()->where('user_id', $staff->id)->delete();
                 }
-                if ($branchesChanged) {
+                if ($branchesChanged && $scope !== null) {
+                    /** Only rows inside the manager's Branches change; every other assignment row stays exactly as it was. */
+                    $staff->branches()->detach(array_values(array_diff($scope, $submittedBranchIds)));
+                    $staff->branches()->syncWithoutDetaching(array_fill_keys($submittedBranchIds, ['is_active' => true]));
+                } elseif ($branchesChanged) {
                     $staff->branches()->sync($branches->mapWithKeys(fn (Branch $branch): array => [$branch->id => ['is_active' => true]])->all());
                 }
                 if ($statusChanged && ! $isActive) {
@@ -141,6 +167,13 @@ class UpdateStaffAccount
                     'status' => [$statusChanged, ! $isActive, $isActive],
                     'profile' => [$profileChanged, $profileBefore, $profileAfter],
                     'avatar' => [$avatar instanceof UploadedFile, $removeAvatar, $oldAvatarPath !== null],
+                ]);
+
+                $this->signal($staff, $branchesBefore->pluck('id')->merge($branches->pluck('id'))->values()->all(), [
+                    UserContextChanged::STATUS => $statusChanged,
+                    UserContextChanged::ACCESS => $roleChanged,
+                    UserContextChanged::BRANCHES => $branchesChanged,
+                    UserContextChanged::IDENTITY => $profileChanged || $avatar instanceof UploadedFile || $removeAvatar,
                 ]);
 
                 if ($oldAvatarPath !== null && ($avatar instanceof UploadedFile || $removeAvatar)) {
@@ -159,6 +192,23 @@ class UpdateStaffAccount
 
             throw $exception;
         }
+    }
+
+    /**
+     * After commit: the edited account's open sessions revalidate (the most significant change type wins), open Staff
+     * pages of every Branch it was or is assigned to refresh, and so do open Access Control pages.
+     *
+     * @param  array<int, mixed>  $branchIds
+     * @param  array<string, bool>  $changes  change type => changed, most significant first
+     */
+    private function signal(User $staff, array $branchIds, array $changes): void
+    {
+        $changeType = array_key_first(array_filter($changes));
+        if ($changeType !== null) {
+            AccessRealtime::usersChanged((int) $staff->id, $changeType);
+        }
+        AccessRealtime::staffChanged(array_map(fn (mixed $id): string => (string) $id, $branchIds));
+        AccessRealtime::accessControlChanged('staff.updated');
     }
 
     /**

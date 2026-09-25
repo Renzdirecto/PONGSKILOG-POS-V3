@@ -138,14 +138,25 @@ test('owner scope never grants cashier writes on the shared history', function (
         ->and($order->fresh()->version)->toBe($order->version);
 });
 
-test('operational staff cannot open the business transaction surface', function (string $role) {
+test('branch staff read the business transaction surface only for their selected assigned branch', function (string $role) {
     $scenario = historyScenario('ALPHA');
+    $other = historyScenario('BRAVO');
 
     $this->actingAs($scenario->user($role))
+        ->withSession([ActiveBranchContext::SESSION_KEY => $other->branch->id])
+        ->get(route('workspaces.transactions'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('scope.code', 'ALPHA'));
+})->with(['cashier', 'cashier_kitchen']);
+
+test('kitchen staff without transactions access cannot open the business transaction surface', function () {
+    $scenario = historyScenario('ALPHA');
+
+    $this->actingAs($scenario->user('kitchen_staff'))
         ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
         ->get(route('workspaces.transactions'))
         ->assertForbidden();
-})->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
+});
 
 test('the cashier terminal history keeps its pos surface and open session capabilities', function () {
     $scenario = historyScenario('ALPHA');

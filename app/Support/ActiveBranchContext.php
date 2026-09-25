@@ -54,6 +54,19 @@ class ActiveBranchContext
         return $branch;
     }
 
+    /**
+     * The Branch a management page (Dashboard, Transactions, Reports, Products, Inventory, Operations, Staff, Settings)
+     * works on. Business-wide accounts get the selected Branch or null (All Branches). A Branch-scoped account (Branch
+     * Custom Role or Branch staff) only ever works on its selected assigned Branch; false means it has none selected yet,
+     * so the caller sends it to the workspace (Branch picker) instead of ever showing All Branches.
+     */
+    public function managementBranch(User $user): Branch|false|null
+    {
+        $branch = $this->current($user);
+
+        return $branch === null && ! $user->hasBusinessWideScope() ? false : $branch;
+    }
+
     public function set(User $user, Branch $branch): void
     {
         Gate::forUser($user)->authorize('select', $branch);

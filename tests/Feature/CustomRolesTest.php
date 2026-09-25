@@ -159,24 +159,24 @@ test('control permissions can never be granted to a custom role', function (stri
     expect(Role::query()->where('label', 'Escalator')->exists())->toBeFalse();
 })->with(['branch', 'business'])->with(PermissionCatalog::SUPER_ADMIN_ONLY);
 
-test('a branch custom role cannot hold business-wide management permissions', function (string $permission) {
+test('a branch custom role may hold every normal management permission', function (string $permission) {
     $this->actingAs($this->superAdmin)
         ->post(route('super-admin.access-control.custom-roles.store'), ['label' => 'Mixed', 'scope' => 'branch', 'permissions' => [$permission]])
-        ->assertInvalid(['permissions']);
+        ->assertSessionHasNoErrors();
 
-    expect(Role::query()->where('label', 'Mixed')->exists())->toBeFalse();
+    expect(customRoleBaseline(Role::query()->where('label', 'Mixed')->sole()))->toBe([$permission]);
 })->with(['products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage']);
 
-test('the branch envelope is branch operations plus reports and the business envelope adds management, never control', function () {
+test('both envelopes hold every operational and management permission, never control', function () {
     $operations = ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'];
     $management = ['products.manage', 'inventory.manage', 'operations.manage', 'staff.manage', 'settings.manage'];
 
-    $branch = createCustomRole($this->superAdmin, 'Shift Lead', 'branch', $operations);
+    $branch = createCustomRole($this->superAdmin, 'Shift Lead', 'branch', [...$operations, ...$management]);
     $business = createCustomRole($this->superAdmin, 'Regional Lead', 'business', [...$operations, ...$management]);
 
-    expect(PermissionCatalog::grantableFor($branch))->toBe(PermissionCatalog::ordered($operations))
+    expect(PermissionCatalog::grantableFor($branch))->toBe(PermissionCatalog::ordered([...$operations, ...$management]))
         ->and(PermissionCatalog::grantableFor($business))->toBe(PermissionCatalog::ordered([...$operations, ...$management]))
-        ->and(customRoleBaseline($branch))->toBe(PermissionCatalog::withQrFollowingPos($operations))
+        ->and(customRoleBaseline($branch))->toBe(PermissionCatalog::withQrFollowingPos([...$operations, ...$management]))
         ->and(customRoleBaseline($business))->toBe(PermissionCatalog::withQrFollowingPos([...$operations, ...$management]))
         ->and(array_intersect(customRoleBaseline($business), PermissionCatalog::SUPER_ADMIN_ONLY))->toBe([]);
 });
@@ -245,7 +245,7 @@ test('editing a custom role saves the whole baseline atomically and changes inhe
         ->and(AuditLog::query()->where('action', 'access.custom_role_updated')->exists())->toBeFalse();
 
     $this->actingAs($this->superAdmin)
-        ->put(route('super-admin.access-control.custom-roles.update', $role), ['label' => 'Branch Supervisor', 'scope' => 'branch', 'permissions' => ['pos.access', 'kitchen.access', 'products.manage']])
+        ->put(route('super-admin.access-control.custom-roles.update', $role), ['label' => 'Branch Supervisor', 'scope' => 'branch', 'permissions' => ['pos.access', 'kitchen.access', 'audit.view']])
         ->assertInvalid(['permissions']);
     expect(customRoleBaseline($role))->toBe(['pos.access', 'qr_orders.access', 'kitchen.access']);
 });
@@ -425,7 +425,7 @@ test('custom role baseline plus per-user allow and deny changes only that accoun
         ->and($maria->hasPermission('reports.view'))->toBeFalse()
         ->and($pedro->hasPermission('reports.view'))->toBeTrue();
 
-    foreach (['products.manage', 'inventory.manage', 'access_control.manage', 'audit.view'] as $permission) {
+    foreach (['void_orders.manage', 'access_control.manage', 'audit.view'] as $permission) {
         $this->actingAs($this->superAdmin)
             ->put(route('super-admin.access-control.users.update', $pedro), ['overrides' => [$permission => 'allow']])
             ->assertInvalid(['overrides.'.$permission]);
@@ -466,9 +466,12 @@ test('a branch custom role with reports stays on its assigned branch everywhere'
     expect($export->getContent())->not->toContain('QAVE');
 
     $this->actingAs($juan)->put(route('branch-context.update', $this->qave))->assertForbidden();
-    $this->actingAs($juan)->get(route('workspaces.owner'))->assertForbidden();
+    /** Dashboard and Transactions open only on the selected assigned Branch; Control never opens. */
+    $this->actingAs($juan)->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])->get(route('workspaces.owner'))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->where('report.scope.code', 'MAIN')->where('analytics.branches', null));
     $this->actingAs($juan)->get(route('super-admin.access-control'))->assertForbidden();
-    $this->actingAs($juan)->get(route('workspaces.transactions'))->assertForbidden();
+    $this->actingAs($juan)->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])->get(route('workspaces.transactions'))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->where('scope.code', 'MAIN'));
 
     config(['broadcasting.default' => 'pusher', 'broadcasting.connections.pusher' => [
         'driver' => 'pusher', 'key' => 'test-key', 'secret' => 'test-secret',
@@ -645,7 +648,8 @@ test('access control lists custom roles with their scope, assigned count and mem
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.role', $role->name)
-            ->where('scopeLocks', fn ($locks): bool => str_contains((string) $locks['branch']['products.manage'], 'business-wide')
+            ->where('scopeLocks', fn ($locks): bool => $locks['branch']['products.manage'] === null
+                && $locks['branch']['access_control.manage'] === 'Super Admin only.'
                 && $locks['business']['pos.access'] === null
                 && $locks['business']['products.manage'] === null
                 && $locks['business']['audit.view'] === 'Super Admin only.'

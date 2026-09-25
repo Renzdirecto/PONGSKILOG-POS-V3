@@ -28,8 +28,9 @@ export type ManagementDestinationId =
 
 /**
  * One Owner / Custom Role management destination. `permission` is the backend permission that authorizes the page, so
- * the sidebar lists exactly what the account can open. Store Operations run at one concrete Branch (`requiresBranch`);
- * Settings also needs business-wide scope.
+ * the sidebar lists exactly what the account can open. Store Operations run at one concrete Branch (`requiresBranch`).
+ * The same registry serves Branch and business-wide Custom Roles: the scope changes the data and actions on each page
+ * (a Branch role only ever works on its selected assigned Branch), never which pages exist.
  */
 export type ManagementDestination = {
     id: ManagementDestinationId;
@@ -159,9 +160,38 @@ export const managementDestinations: readonly ManagementDestination[] = [
         shortLabel: 'Settings',
         section: 'administration',
         permission: 'settings.manage',
-        requiresBusinessWide: true,
     },
 ];
+
+/**
+ * Permissions whose pages exist only in the management shell. A Branch-scoped account holding one of them works in
+ * the management shell (its Dashboard and Reports too) instead of the operational POS shell.
+ */
+export const MANAGEMENT_ONLY_PERMISSIONS = [
+    'products.manage',
+    'inventory.manage',
+    'operations.manage',
+    'staff.manage',
+    'settings.manage',
+] as const;
+
+export function hasManagementPages(permissions: readonly string[]): boolean {
+    return MANAGEMENT_ONLY_PERMISSIONS.some((permission) =>
+        permissions.includes(permission),
+    );
+}
+
+/** The first management page (outside Store Operations) the account can open, for a "back to management" link. */
+export function managementLandingDestination(
+    permissions: readonly string[],
+    { businessWide }: { businessWide: boolean },
+): ManagementDestination | null {
+    return (
+        managementNavigation(permissions, { businessWide })
+            .filter((group) => group.section.id !== 'store-operations')
+            .flatMap((group) => group.destinations)[0] ?? null
+    );
+}
 
 /** Destinations pinned to the mobile dock, in preference order; the rest live in the More menu. */
 const preferredPinned: readonly ManagementDestinationId[] = [

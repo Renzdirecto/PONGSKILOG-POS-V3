@@ -26,7 +26,7 @@ class SaveModifierGroupRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user()?->can('products.manage') ?? false;
+        return $this->user()?->can('catalog.define') ?? false;
     }
 
     /** @return array<string, array<mixed>> */

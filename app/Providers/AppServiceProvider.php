@@ -33,6 +33,17 @@ class AppServiceProvider extends ServiceProvider
             return $user !== null && $user->is_active && $user->hasPermission('products.manage');
         });
 
+        /**
+         * The shared Product definitions (Product identity, image, Category and Modifier Groups) affect every Branch, so
+         * only business-wide Product management edits them. A Branch-scoped products.manage manages its Branch
+         * assortment and configuration only (UpsertBranchProduct, ConfigureBranchAssortment).
+         */
+        Gate::define('catalog.define', function (User $user): bool {
+            $user = $user->exists ? User::query()->whereKey($user->getKey())->first() : null;
+
+            return $user !== null && $user->is_active && $user->hasPermission('products.manage') && $user->hasBusinessWideScope();
+        });
+
         Gate::define('inventory.manage', function (User $user): bool {
             $user = $user->exists ? User::query()->whereKey($user->getKey())->first() : null;
 

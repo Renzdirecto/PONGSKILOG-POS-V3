@@ -49,7 +49,7 @@ test('super admin navigation exposes the required sections in order', () => {
         [
             ['Overview', ['Dashboard', 'Notifications']],
             [
-                'Cashier + Kitchen',
+                'Store Operations',
                 [
                     'Cashier Dashboard',
                     'POS / Orders',

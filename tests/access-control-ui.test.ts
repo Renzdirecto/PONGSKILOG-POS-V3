@@ -186,12 +186,12 @@ test('high-impact staff edits require a plain-language confirmation', () => {
     ]);
 });
 
-test('branch staff with custom reports see reports in the operational shell, never the owner shell', () => {
+test('branch staff with only custom reports see reports in the operational shell, branch managers in the management shell', () => {
     const layout = source('layouts/workspace-layout.tsx');
 
     assert.match(
         layout,
-        /page\.component === 'workspaces\/reports' && !branchContext\.businessWide/,
+        /page\.component === 'workspaces\/reports' &&\s*!branchContext\.businessWide &&\s*!branchManager;/,
     );
     assert.match(
         layout,
@@ -320,12 +320,12 @@ test('business-wide custom roles reach branch operations through permissions and
     );
     assert.match(
         shell,
-        /branchContext\.current\s*\? route\s*: selectBranch\(\{ query: \{ redirect: route\.url \} \}\)/,
+        /hasBranch \? route : selectBranch\(\{ query: \{ redirect: route\.url \} \}\)/,
     );
     const layout = source('layouts/workspace-layout.tsx');
     assert.match(
         layout,
-        /!isSuperAdmin &&\s*branchContext\.businessWide &&\s*MANAGEMENT_PERMISSIONS\.some/,
+        /isSuperAdmin \|\| \(!branchContext\.businessWide && !branchManager\)/,
     );
     const builder = source('components/custom-role-dialogs.tsx');
     assert.ok(builder.includes('Access is limited to assigned Branches.'));

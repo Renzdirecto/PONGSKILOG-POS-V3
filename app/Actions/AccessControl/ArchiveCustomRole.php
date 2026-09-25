@@ -6,6 +6,7 @@ use App\Actions\Audit\AuditRecorder;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\AdminAlert;
+use App\Support\AccessRealtime;
 use App\Support\AdminNotifier;
 use App\Support\CustomRoles;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +63,8 @@ class ArchiveCustomRole
                 $actor->name.' archived the '.$role->displayLabel().' role. It can no longer be assigned.',
                 route('super-admin.access-control', ['tab' => 'roles'], false),
             ), except: $actor);
+            AccessRealtime::accessControlChanged('custom_role.archived');
+            AccessRealtime::staffChanged();
 
             return true;
         });

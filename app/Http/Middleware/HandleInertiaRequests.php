@@ -66,7 +66,7 @@ class HandleInertiaRequests extends Middleware
         ];
     }
 
-    /** @return array{user: array{id: int, name: string, email: string, position: string|null}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
+    /** @return array{user: array{id: int, name: string, email: string, position: string|null, avatarUrl: string|null}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
     private function authProps(?User $user): array
     {
         if ($user === null) {
@@ -86,6 +86,8 @@ class HandleInertiaRequests extends Middleware
                 'name' => $user->name,
                 'email' => $user->email,
                 'position' => $user->position,
+                /** Versioned by the stored path, so a new picture shows after a realtime revalidation. */
+                'avatarUrl' => $user->avatar_path === null ? null : route('profile.avatar', [], false).'?v='.substr(md5($user->avatar_path), 0, 12),
             ],
             'roles' => array_values($roles->pluck('name')->all()),
             'roleLabel' => $roles->isEmpty() ? null : $roles->map(fn (Role $role): string => $role->displayLabel())->implode(' / '),

@@ -37,7 +37,7 @@ class SaveOperationPlan
     /** @param array<string, mixed> $input */
     public function execute(User $actor, ?OperationPlan $plan, array $input): OperationPlan
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
         $input['name'] = is_string($input['name'] ?? null) ? trim($input['name']) : ($input['name'] ?? null);
         $input['description'] = is_string($input['description'] ?? null) && trim($input['description']) !== '' ? trim($input['description']) : null;
         /** @var array{name: string, description: string|null, icon: string, product_ids: list<string>} $data */

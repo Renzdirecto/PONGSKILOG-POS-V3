@@ -22,6 +22,11 @@ export type OperationsContext = {
     plans: OperationsPlan[];
     active_plan_id: string | null;
     has_open_store_session: boolean | null;
+    /**
+     * Whether the viewer may change the shared definitions (Ingredients, Recipes, Add-on effects, Plans). False for a
+     * Branch-scoped Operations role: it reads them and runs its own Branch's stock, list and purchases only.
+     */
+    can_manage_definitions: boolean;
 };
 
 export type RecommendationKind = 'setup' | 'manual' | 'buy' | 'hold' | 'ok';
@@ -212,6 +217,8 @@ export type RecipeProduct = {
     no_recipe_needed: boolean;
     tracked_at: string[];
     tracked_branches: { id: string; code: string; name: string }[];
+    /** Blocking Branches outside a Branch-scoped viewer's scope (counted, never named). */
+    tracked_elsewhere: number;
     inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
     size_conflict: string[] | null;
     state: RecipeState;

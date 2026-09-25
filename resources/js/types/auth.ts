@@ -5,6 +5,8 @@ export type User = {
     /** Business/job title shown to people (display only; access always comes from the Role). */
     position?: string | null;
     avatar?: string;
+    /** Same-app URL of the account's own profile picture (versioned), or null. */
+    avatarUrl?: string | null;
 };
 
 export type Auth = {

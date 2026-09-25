@@ -61,7 +61,7 @@ class SaveIngredient
     /** @param array<string, mixed> $input */
     public function execute(User $actor, ?Ingredient $ingredient, array $input): Ingredient
     {
-        $actor = $this->access->authorize($actor);
+        $actor = $this->access->authorizeDefinitions($actor);
         foreach (['name', 'purchase_unit_name'] as $field) {
             $input[$field] = is_string($input[$field] ?? null) && trim($input[$field]) !== '' ? trim($input[$field]) : ($field === 'name' ? ($input[$field] ?? null) : null);
         }

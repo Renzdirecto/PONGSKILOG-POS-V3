@@ -1025,7 +1025,7 @@ Same branch (`feature/access-admin-cleanup`) on top of `25a15df`, 0 behind / 7 a
 
 ## Phase 19 — Reporting & Performance Hardening
 
-**Status: PHASE 19 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR** (branch `feature/reporting-performance-hardening`, 2026-09-26; PR not opened, not merged, not deployed). Phase 17 Stock Transfers remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED.
+**Status: PHASE 19 COMPLETE — MERGED.** Implementation: COMPLETE. USER MANUAL QA: PASSED. FINAL AUTOMATED QA: PASSED. PR #24 (`feature/reporting-performance-hardening`) MERGED to `dev` on 2026-09-26; merge commit / current `dev` baseline `b928b6330220d680869e84ebef823402e074cf53`. Not deployed. Phase 17 Stock Transfers remains DEFERRED; Phase 19.5 PWA Phase 1 is PLANNED / NOT STARTED.
 
 - [x] Query/index review (one additive migration, five indexes backing real query shapes)
 - [x] Pagination (Audit Trail, Void Orders, Transactions, notifications stay paginated newest-first on their indexes)
@@ -1059,51 +1059,76 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 - Regression coverage: Void Orders realtime reload (`voids,pinStatus`) keeps a flat query count as voids grow and runs no Branch/user option query.
 - Measured query counts (SQLite test DB, identical at 40 and 4,340 Orders over 3 Branches / 2 and 10 voids): Reports 34, Owner Dashboard 41 (period switch 24, live reload 34), Executive Dashboard 43, All Branches Transactions 24, Void Orders 32 (realtime 23), Audit Trail 18 (realtime 7), unread count 3. PostgreSQL: SalesAnalytics 19 queries at 90 and 30,000 Orders; newest-first Audit / Transactions / notifications read their index backwards with no Sort.
 - All 17 PostgreSQL harnesses, complete frontend suite, Pint, PHPStan, lint, TypeScript, production build and the complete Laravel suite passed (details in `11-testing-qa.md`). Normal local development DB was not reset.
-- **Status: PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR** (not opened, not merged).
+- **Status (at Final QA): PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR.** Superseded: PR #24 was subsequently opened and MERGED to `dev` (merge commit `b928b63`) — Phase 19 is COMPLETE.
 
 ---
 
-## Phase 19.5 — PWA / Installable Web App
+## Remaining Roadmap Order
 
-**Status: PLANNED / NOT STARTED**
+1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
+2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **PLANNED / NOT STARTED** (branch `feature/pwa-phase-1`)
+3. Phase 20 — Final Production Hardening
+4. Deployment
+5. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5)
+
+Phase 17 Stock Transfers remains **DEFERRED**.
+
+---
+
+## Phase 19.5 — PWA Phase 1 (Installable Web App)
+
+**Status: PLANNED / NOT STARTED** — scope frozen 2026-09-26.
 
 **PWA is NOT implemented yet.** There is no web manifest, service worker, install prompt or offline cache. Detailed plan and branding asset registry: `12-deployment-operations.md` §26.
 
-Direction:
+**Goal:** Make PONGSKILOG POS V3 installable and app-like while remaining **INTERNET-FIRST** for actual critical operations.
 
-- Convert the existing web app into an installable PWA.
-- Internet/WiFi-first architecture.
-- Do NOT design this as a full offline transactional POS.
+> **Phase 1 = real installable app experience, but internet is still required for critical POS/business operations.**
 
-Offline/degraded behavior:
+**Phase 1 does NOT include offline transactional writes.** Offline must NOT allow: Pay Now, Pay Later, settlement, Void, committed Order Edit, Store Open / Close, expenses, purchases, inventory adjustments, Ingredient stock/movements, Pamamalengke confirmation, Giveaway, Kitchen status mutations, Staff / permission / security mutations, or any other financial/stock/security-sensitive write.
 
-- Safe read-only/degraded mode.
-- Show `Last synced` where appropriate.
-- Cached app shell/assets.
-- Selected read-only snapshots may be available offline.
+Installable app experience:
 
-Potential offline-readable areas:
-
-- Catalog/product browsing
-- Selected Owner dashboard/report snapshots
-- Transaction/history snapshots where safe
-- Operations/Pamamalengke reference data where safe
-
-Never allow offline writes for: Pay Now, Pay Later, settlement, Void, Edit Transaction, Store Open / Close, expenses/purchases, inventory adjustments, ingredient movements, giveaway, Kitchen status mutations, and any other financial/stock/security-sensitive writes.
-
-Planned technical scope:
-
+- [ ] Installable on Android, iPhone/iPad, Windows and Mac
+- [ ] Proper PONGSKILOG app name and branding
+- [ ] Launcher/app icons (final assets)
+- [ ] Splash/loading experience
+- [ ] Standalone/fullscreen app mode
 - [ ] Web app manifest
-- [ ] Final launcher/icon assets
+- [ ] Install button / Add to Home Screen guidance
+- [ ] Proper mobile/tablet/desktop PWA behavior
+
+Service worker, caching and connectivity:
+
 - [ ] Service worker
-- [ ] Installability
-- [ ] Cached static/app-shell assets
-- [ ] Safe cache strategy
-- [ ] Offline/degraded UI
-- [ ] Reconnect detection
-- [ ] Authoritative backend refresh/revalidation after reconnect
+- [ ] Cached basic app shell/static assets (safe cache strategy)
+- [ ] Faster startup where safe
+- [ ] Online / Offline / Reconnecting indicator
+- [ ] Safe degraded/read-only offline state where appropriate
+- [ ] Authoritative backend refetch after reconnect
 - [ ] Realtime reconnection
-- [ ] Update/version handling
+- [ ] Realtime continues for POS, KDS, Customer Display and Owner / Manager screens
+
+Notifications:
+
+- [ ] Push notifications for new Kitchen order, Order ready and important alerts
+- [ ] Notification sound/vibration where the device/browser supports it
+
+Updates and recovery:
+
+- [ ] App version/update detection
+- [ ] Safe update prompt — never unexpectedly refresh/destroy an ongoing transaction
+- [ ] Basic current page/session recovery after refresh/reopen where safe
+
+QA:
+
+- [ ] Android
+- [ ] iPhone/iPad
+- [ ] Windows/Mac
+- [ ] Install/uninstall
+- [ ] Offline/reconnect
+- [ ] Notifications
+- [ ] Update flow
 
 ---
 
@@ -1127,6 +1152,20 @@ Planned technical scope:
 - [ ] Production health checks
 - [ ] CI green
 - [ ] Production readiness approved
+
+---
+
+## PWA Phase 2 — Offline-First POS (FUTURE UPDATE ONLY)
+
+**Status: FUTURE — NOT PLANNED FOR IMPLEMENTATION.** Not part of Phase 19.5; revisit after Phase 20 and Deployment.
+
+**Goal:** Basic store operations continue on a trusted registered device when internet is unavailable, then safely sync when connectivity returns.
+
+> **Phase 2 = if internet disappears, POS can continue on the device; when internet returns, transactions safely and automatically sync to the server.**
+
+Future concepts: IndexedDB local device database; cached Products/prices/categories/modifiers/basic Branch settings; offline Order creation; offline CASH payment recording; unique local Order IDs; Pending Sync / Syncing / Synced / Failed states; automatic sync/retry; idempotency / duplicate-Order prevention; safe syncing of Orders/payments/inventory movements/Audit; Sync Center; conflict handling; inventory reconciliation; unfinished cart/Order recovery; limited trusted-device offline login/session; device registration + Branch assignment; network quality awareness; sync priority/throttling; local offline audit trail; stale-data/device-time protection; practical protection/encryption of sensitive local data.
+
+Important limit: fully offline transactions should initially be **CASH only**. Card/e-wallet/online payment methods still require internet unless a provider-specific supported offline workflow exists.
 
 ---
 

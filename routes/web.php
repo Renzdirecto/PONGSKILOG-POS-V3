@@ -48,6 +48,7 @@ use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
 use App\Http\Controllers\StoreSessionGiveawayController;
 use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
+use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
@@ -100,7 +101,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])
         ->name('branch-context.destroy');
 
-    Route::inertia('workspaces/super-admin', 'super-admin/dashboard')
+    Route::get('workspaces/super-admin', SuperAdminDashboardController::class)
         ->middleware('permission:access_control.manage')->name('workspaces.super-admin');
 
     Route::prefix('workspaces/super-admin')->name('super-admin.')->middleware('permission:access_control.manage')->group(function () {
@@ -118,6 +119,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('access-control', [AccessControlController::class, 'index'])->name('access-control');
         Route::middleware('throttle:30,1')->group(function () {
             Route::put('access-control/roles/{role}', [AccessControlController::class, 'updateRole'])->where('role', '[a-z_]+')->name('access-control.roles.update');
+            Route::post('access-control/custom-roles', [AccessControlController::class, 'storeCustomRole'])->name('access-control.custom-roles.store');
+            Route::put('access-control/custom-roles/{role}', [AccessControlController::class, 'updateCustomRole'])->whereNumber('role')->name('access-control.custom-roles.update');
+            Route::post('access-control/custom-roles/{role}/archive', [AccessControlController::class, 'archiveCustomRole'])->whereNumber('role')->name('access-control.custom-roles.archive');
             Route::put('access-control/users/{user}', [AccessControlController::class, 'updateUser'])->whereNumber('user')->name('access-control.users.update');
             Route::delete('access-control/users/{user}', [AccessControlController::class, 'resetUser'])->whereNumber('user')->name('access-control.users.reset');
         });

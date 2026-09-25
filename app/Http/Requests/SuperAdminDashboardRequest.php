@@ -7,10 +7,10 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class AccessControlRequest extends FormRequest
+class SuperAdminDashboardRequest extends FormRequest
 {
     /**
-     * Access Control is Super Admin only (`access_control.manage`, which never leaves the Super Admin role).
+     * The Executive Dashboard is the Super Admin Control Center landing page (`access_control.manage`).
      */
     public function authorize(): bool
     {
@@ -20,15 +20,14 @@ class AccessControlRequest extends FormRequest
     }
 
     /**
+     * The same periods as the Owner Dashboard: Today, 7 days and 30 days.
+     *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
-            'tab' => ['nullable', Rule::in(['roles', 'staff'])],
-            'role' => ['nullable', 'string', 'max:64', 'regex:/\A[a-z0-9_]+\z/'],
-            'user' => ['nullable', 'integer', 'min:1'],
-            'search' => ['nullable', 'string', 'max:150'],
+            'period' => ['nullable', Rule::in(OwnerDashboardRequest::PERIODS)],
         ];
     }
 }

@@ -6,6 +6,9 @@
  * and a random phase18_* schema, then drops it. The normal development schema is never touched.
  */
 
+use App\Actions\AccessControl\ArchiveCustomRole;
+use App\Actions\AccessControl\CreateCustomRole;
+use App\Actions\AccessControl\UpdateCustomRole;
 use App\Actions\AccessControl\UpdateRolePermissions;
 use App\Actions\Inventory\ApplyInventoryMovement;
 use App\Actions\Staff\UpdateStaffAccount;
@@ -88,7 +91,7 @@ phase18Verify(app()->environment(['local', 'testing']), 'Only local/testing envi
 phase18Verify(config('database.default') === 'pgsql' && empty($connection['url']), 'Explicit pgsql settings and DB_URL=null are required.');
 phase18Verify(in_array($connection['host'], ['127.0.0.1', '::1'], true), 'Only loopback PostgreSQL is allowed.');
 $workerMode = $argv[1] ?? null;
-$worker = in_array($workerMode, ['--staff', '--sell', '--role'], true);
+$worker = in_array($workerMode, ['--staff', '--sell', '--role', '--custom-create', '--custom-update', '--custom-archive'], true);
 $schema = $worker ? ($argv[2] ?? '') : 'phase18_'.bin2hex(random_bytes(8));
 phase18Verify(preg_match('/\Aphase18_[a-f0-9]{16}\z/', $schema) === 1, 'Invalid isolated schema name.');
 config([
@@ -115,6 +118,9 @@ if ($worker) {
             '--staff' => app(UpdateStaffAccount::class)->execute(User::query()->findOrFail($argv[3]), User::query()->findOrFail($payload['target']), $payload['data']),
             '--sell' => app(ApplyInventoryMovement::class)->execute(Branch::query()->findOrFail($payload['branch']), Product::query()->findOrFail($argv[3]), InventoryMovementType::ManualAdjustment, -1, 'race'),
             '--role' => app(UpdateRolePermissions::class)->execute(User::query()->findOrFail($argv[3]), $payload['role'], $payload['permissions']),
+            '--custom-create' => app(CreateCustomRole::class)->execute(User::query()->findOrFail($argv[3]), $payload['label'], $payload['scope'], $payload['permissions']),
+            '--custom-update' => app(UpdateCustomRole::class)->execute(User::query()->findOrFail($argv[3]), Role::query()->findOrFail($payload['role']), $payload['label'], $payload['scope'], $payload['permissions']),
+            '--custom-archive' => app(ArchiveCustomRole::class)->execute(User::query()->findOrFail($argv[3]), Role::query()->findOrFail($payload['role'])),
         };
         $output = ['status' => 'success'];
     } catch (ValidationException $exception) {
@@ -187,10 +193,30 @@ try {
     $createdSchema = true;
     phase18Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Fresh migration failed.');
     phase18Verify(Artisan::call('migrate:rollback', ['--step' => count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_24_165603')), '--force' => true, '--no-interaction' => true]) === 0, 'Phase 18 rollback failed.');
-    phase18Verify(! DB::getSchemaBuilder()->hasTable('user_permission_overrides') && ! DB::getSchemaBuilder()->hasTable('notifications'), 'Phase 18 rollback left schema behind.');
+    phase18Verify(! DB::getSchemaBuilder()->hasTable('user_permission_overrides') && ! DB::getSchemaBuilder()->hasTable('notifications')
+        && ! DB::getSchemaBuilder()->hasColumn('roles', 'scope'), 'Phase 18 rollback left schema behind.');
+    /** Pre-Phase-18 rows (name-only roles and an assignment) must survive the forward migration and be backfilled. */
+    foreach (PermissionCatalog::ROLES as $legacyRole) {
+        DB::table('roles')->insert(['name' => $legacyRole, 'created_at' => now(), 'updated_at' => now()]);
+    }
+    $legacyUserId = DB::table('users')->insertGetId(['name' => 'Legacy Owner', 'email' => 'legacy@pongskilog.test', 'password' => 'x', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('user_roles')->insert(['user_id' => $legacyUserId, 'role_id' => DB::table('roles')->where('name', 'owner')->value('id')]);
     phase18Verify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 18 reapply failed.');
+    $backfilled = DB::table('roles')->get(['name', 'label', 'is_system', 'scope', 'archived_at'])->keyBy('name');
+    phase18Verify($backfilled['owner']->label === 'Owner' && $backfilled['owner']->is_system === true && $backfilled['owner']->scope === 'business'
+        && $backfilled['cashier_kitchen']->label === 'Cashier + Kitchen' && $backfilled['cashier_kitchen']->scope === 'branch'
+        && $backfilled->every(fn (object $role): bool => $role->archived_at === null)
+        && User::query()->findOrFail($legacyUserId)->hasBusinessWideScope(), 'Custom role metadata backfill failed or lost existing rows.');
+    $roleIndex = DB::selectOne("SELECT indexdef FROM pg_indexes WHERE schemaname = ? AND indexname = 'roles_active_label_unique'", [$schema]);
+    phase18Verify($roleIndex !== null && str_contains((string) $roleIndex->indexdef, 'lower((label)::text)') && str_contains((string) $roleIndex->indexdef, 'archived_at IS NULL'), 'Active role name index is missing.');
+    phase18Verify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0
+        && ! DB::getSchemaBuilder()->hasColumn('roles', 'label')
+        && Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0
+        && DB::table('roles')->where('name', 'owner')->value('scope') === 'business', 'Custom role migration rollback/reapply failed.');
+    DB::table('user_roles')->delete();
+    DB::table('users')->delete();
     (new RbacSeeder)->run();
-    $longNames = DB::select("SELECT indexname FROM pg_indexes WHERE schemaname = ? AND length(indexname) >= 63 AND tablename IN ('user_permission_overrides', 'notifications')", [$schema]);
+    $longNames = DB::select("SELECT indexname FROM pg_indexes WHERE schemaname = ? AND length(indexname) >= 63 AND tablename IN ('user_permission_overrides', 'notifications', 'roles')", [$schema]);
     phase18Verify($longNames === [], 'A Phase 18 index name reaches the 63-byte PostgreSQL limit.');
     echo 'FRESH/ROLLBACK/REAPPLY PASS '.$schema.PHP_EOL;
 
@@ -294,6 +320,68 @@ try {
         && $balance->fresh()->on_hand === 0
         && DB::table('notifications')->where('type', 'admin.stock')->count() === $recipients, 'H: stock alert was not deduplicated to one per transition.');
     echo 'CASE H PASS: two racing sales produced one out-of-stock alert per active Super Admin.'.PHP_EOL;
+
+    // I: active Custom Role names are unique ignoring case at the database level; archived names may be reused.
+    $admin = phase18User('super_admin');
+    $supervisor = app(CreateCustomRole::class)->execute($admin, 'Branch Supervisor', 'branch', ['pos.access', 'reports.view']);
+    $duplicateRejected = false;
+    try {
+        DB::transaction(fn () => DB::table('roles')->insert(['name' => 'custom_dupe', 'label' => 'BRANCH SUPERVISOR', 'is_system' => false, 'scope' => 'branch', 'created_at' => now(), 'updated_at' => now()]));
+    } catch (QueryException $exception) {
+        $duplicateRejected = $exception->getCode() === '23505';
+    }
+    $badScopeRejected = false;
+    try {
+        DB::transaction(fn () => DB::table('roles')->insert(['name' => 'custom_scope', 'label' => 'Scope Test', 'is_system' => false, 'scope' => 'everywhere', 'created_at' => now(), 'updated_at' => now()]));
+    } catch (QueryException $exception) {
+        $badScopeRejected = $exception->getCode() === '23514';
+    }
+    $archivedReuse = app(CreateCustomRole::class)->execute($admin, 'Old Shift', 'branch', []);
+    app(ArchiveCustomRole::class)->execute($admin, $archivedReuse);
+    $reused = app(CreateCustomRole::class)->execute($admin, 'old shift', 'business', []);
+    phase18Verify($duplicateRejected && $badScopeRejected && $supervisor->name === 'custom_'.$supervisor->id && $reused->id !== $archivedReuse->id, 'I: role name/scope constraints did not hold.');
+    echo 'CASE I PASS: active role names unique ignoring case; archived names reusable; scope limited to branch/business; stable custom_{id} key.'.PHP_EOL;
+
+    // J: two admins create the same Custom Role name at the same moment: exactly one role exists.
+    $secondAdmin = phase18User('super_admin');
+    $results = phase18Race($schema, $connection, $observer, fn () => DB::statement('LOCK TABLE roles IN SHARE ROW EXCLUSIVE MODE'), [
+        ['mode' => '--custom-create', 'actor' => (string) $admin->id, 'payload' => ['label' => 'Night Lead', 'scope' => 'branch', 'permissions' => ['pos.access']]],
+        ['mode' => '--custom-create', 'actor' => (string) $secondAdmin->id, 'payload' => ['label' => 'night lead', 'scope' => 'business', 'permissions' => ['reports.view']]],
+    ]);
+    phase18Verify(collect($results)->where('status', 'success')->count() === 1
+        && collect($results)->where('status', 'rejected')->count() === 1
+        && Role::query()->whereNull('archived_at')->whereRaw('LOWER(label) = ?', ['night lead'])->count() === 1, 'J: racing creates produced a duplicate role name.');
+    echo 'CASE J PASS: two racing creates of one name produced exactly one role.'.PHP_EOL;
+
+    // K: two admins save the same Custom Role baseline at once: the result is one complete submitted baseline.
+    $setA = ['pos.access', 'transactions.view', 'reports.view'];
+    $setB = ['kitchen.access', 'customer_display.launch'];
+    $results = phase18Race($schema, $connection, $observer, fn () => Role::query()->whereKey($supervisor->id)->lockForUpdate()->sole(), [
+        ['mode' => '--custom-update', 'actor' => (string) $admin->id, 'payload' => ['role' => $supervisor->id, 'label' => 'Branch Supervisor', 'scope' => 'branch', 'permissions' => $setA]],
+        ['mode' => '--custom-update', 'actor' => (string) $secondAdmin->id, 'payload' => ['role' => $supervisor->id, 'label' => 'Branch Supervisor', 'scope' => 'branch', 'permissions' => $setB]],
+    ]);
+    $final = PermissionCatalog::ordered($supervisor->permissions()->pluck('permissions.name')->all());
+    phase18Verify(collect($results)->where('status', 'success')->count() === 2
+        && in_array($final, [PermissionCatalog::withQrFollowingPos($setA), PermissionCatalog::withQrFollowingPos($setB)], true), 'K: concurrent custom role saves merged into '.implode(',', $final).'.');
+    echo 'CASE K PASS: concurrent Custom Role saves serialized; the baseline is one complete submission ('.implode(', ', $final).').'.PHP_EOL;
+
+    // L: archiving races assigning a Staff account to the role: never an archived role that still has users.
+    $mover = phase18User('cashier', $branch);
+    $results = phase18Race($schema, $connection, $observer, fn () => Role::query()->whereKey($supervisor->id)->lockForUpdate()->sole(), [
+        ['mode' => '--custom-archive', 'actor' => (string) $admin->id, 'payload' => ['role' => $supervisor->id]],
+        ['mode' => '--staff', 'actor' => (string) $secondAdmin->id, 'payload' => ['target' => $mover->id, 'data' => phase18Edit($mover, ['role' => $supervisor->name, 'branch_ids' => [$branch->id]])]],
+    ]);
+    $supervisor->refresh();
+    $holders = DB::table('user_roles')->where('role_id', $supervisor->id)->count();
+    phase18Verify(collect($results)->where('status', 'success')->count() === 1
+        && (($supervisor->archived_at !== null && $holders === 0) || ($supervisor->archived_at === null && $holders === 1)), 'L: an archived role kept a Staff account.');
+    echo 'CASE L PASS: archive vs assign serialized on the role row ('.($supervisor->archived_at === null ? 'assignment won' : 'archive won').').'.PHP_EOL;
+
+    // M: the RBAC seeder rerun never touches Custom Roles.
+    $customBefore = Role::query()->where('is_system', false)->orderBy('id')->get(['id', 'name', 'label', 'scope', 'archived_at'])->toArray();
+    (new RbacSeeder)->run();
+    phase18Verify(Role::query()->where('is_system', false)->orderBy('id')->get(['id', 'name', 'label', 'scope', 'archived_at'])->toArray() === $customBefore, 'M: RbacSeeder changed a Custom Role.');
+    echo 'CASE M PASS: RbacSeeder rerun left every Custom Role unchanged.'.PHP_EOL;
 
     echo 'PHASE 18 POSTGRESQL VERIFICATION PASSED'.PHP_EOL;
 } finally {

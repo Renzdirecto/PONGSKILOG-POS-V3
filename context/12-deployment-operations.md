@@ -557,3 +557,9 @@ Deploying the Final QA corrections adds one forward migration, `2026_09_24_13432
 - `php artisan db:seed --class=RbacSeeder` (or `DatabaseSeeder`) is **safe to rerun**: it never removes or re-adds existing Role ↔ Permission pairs, so Role baselines configured in Access Control survive deployments. It only seeds defaults for Roles/Permissions it creates, completes Super Admin, and re-derives Cashier + Kitchen.
 - `AuthenticateSession` is now in the web middleware group: after an administrative password reset, other sessions of that account are signed out on their next request with any session driver (database sessions are also deleted immediately).
 - PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 28. Phase 18 final deployment note — Custom Roles and Executive Overview (2026-09-25)
+
+- One additive migration: `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (`php artisan migrate --force`); it backfills the five System roles. Rollback is safe (drops the partial unique index, then the four columns).
+- `RbacSeeder` remains safe to rerun and never touches Custom Roles.
+- No dependency, queue, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).

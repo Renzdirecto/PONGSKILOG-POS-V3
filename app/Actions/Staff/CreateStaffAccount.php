@@ -42,16 +42,17 @@ class CreateStaffAccount
                     throw new AuthorizationException('Only Super Admin access control or Owner Staff management may create staff accounts.');
                 }
 
-                $role = Role::query()->where('name', $data['role'])->first();
-                if ($role === null || ! in_array($role->name, StaffRoles::names(), true)) {
+                /** The shared lock serializes with archiving a Custom Role, which locks the same row FOR UPDATE. */
+                $role = Role::query()->where('name', $data['role'])->sharedLock()->first();
+                if ($role === null || ! $role->isAssignable()) {
                     throw ValidationException::withMessages(['role' => 'Choose a valid role.']);
                 }
                 /** Owner Staff management reaches operational roles only; the role list is re-checked here, not trusted. */
                 if (! in_array($role->name, $manageable, true)) {
-                    throw new AuthorizationException('This account may not create '.StaffRoles::label($role->name).' accounts.');
+                    throw new AuthorizationException('This account may not create '.$role->displayLabel().' accounts.');
                 }
 
-                $branches = $this->assignableBranches($role->name, $data['branch_ids'] ?? []);
+                $branches = $this->assignableBranches($role, $data['branch_ids'] ?? []);
 
                 $user = new User;
                 $user->forceFill([
@@ -91,7 +92,8 @@ class CreateStaffAccount
                         'name' => $user->name,
                         'email' => $user->email,
                         'role' => $role->name,
-                        'branch_access' => StaffRoles::isBusinessWide($role->name) ? 'business_wide' : 'assigned',
+                        'role_label' => $role->displayLabel(),
+                        'branch_access' => $role->isBusinessWide() ? 'business_wide' : 'assigned',
                         'branch_ids' => $branches->pluck('id')->values()->all(),
                         'branch_codes' => $branches->pluck('code')->values()->all(),
                         'is_active' => $user->is_active,
@@ -121,19 +123,19 @@ class CreateStaffAccount
     }
 
     /**
-     * Operational roles need at least one currently active Branch; business-wide roles never receive fabricated ones.
+     * Branch roles need at least one currently active Branch; business-wide roles never receive fabricated ones.
      *
      * @param  array<int, mixed>  $branchIds
      * @return Collection<int, Branch>
      */
-    private function assignableBranches(string $role, array $branchIds): Collection
+    private function assignableBranches(Role $role, array $branchIds): Collection
     {
         $branchIds = array_values(array_unique(array_map('strval', $branchIds)));
 
-        if (StaffRoles::isBusinessWide($role)) {
+        if ($role->isBusinessWide()) {
             if ($branchIds !== []) {
                 throw ValidationException::withMessages([
-                    'branch_ids' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',
+                    'branch_ids' => StaffRoles::branchesProhibitedMessage($role),
                 ]);
             }
 

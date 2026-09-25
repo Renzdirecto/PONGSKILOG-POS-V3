@@ -8,6 +8,8 @@ export type User = {
 export type Auth = {
     user: User | null;
     roles: string[];
+    /** Display name of the account's role(s), System or Custom; never a machine key. */
+    roleLabel?: string | null;
     permissions: string[];
 };
 

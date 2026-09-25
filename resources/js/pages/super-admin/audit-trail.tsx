@@ -37,6 +37,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuditRealtimeRefresh } from '@/hooks/use-audit-realtime-refresh';
+import { auditActionLabel, titleCase } from '@/lib/audit-actions';
 import { auditTrail } from '@/routes/workspaces';
 
 type Option = {
@@ -155,34 +156,27 @@ const actionStyles: Record<
         iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
         badge: 'blue',
     },
+    'access.custom_role_created': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
+    'access.custom_role_updated': {
+        icon: Pencil,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
+    'access.custom_role_permissions_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.custom_role_archived': {
+        icon: ShieldBan,
+        iconClass: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+        badge: 'neutral',
+    },
 };
-
-export function auditActionLabel(action: string): string {
-    const labels: Record<string, string> = {
-        'auth.login': 'User signed in',
-        'order.created': 'Order created',
-        'order.paid': 'Order paid',
-        'order.voided': 'Order voided',
-        'void_pin.configured': 'Void PIN configured',
-        'staff.created': 'Staff account created',
-        'staff.updated': 'Staff details updated',
-        'staff.role_changed': 'Staff role changed',
-        'staff.branch_access_changed': 'Staff Branch access changed',
-        'staff.deactivated': 'Staff account deactivated',
-        'staff.reactivated': 'Staff account reactivated',
-        'staff.avatar_updated': 'Staff photo updated',
-        'staff.avatar_removed': 'Staff photo removed',
-        'staff.password_reset': 'Staff password reset',
-        'access.role_permissions_updated': 'Role permissions changed',
-        'access.user_override_updated': 'User custom access changed',
-        'access.user_overrides_reset': 'User custom access reset',
-    };
-
-    return (
-        labels[action] ??
-        titleCase(action.replaceAll('.', ' ').replaceAll('_', ' '))
-    );
-}
 
 export function auditChangeRows(
     before: AuditValues,
@@ -863,10 +857,6 @@ function shortId(value: string): string {
     return value.length > 16
         ? `${value.slice(0, 8)}…${value.slice(-4)}`
         : value;
-}
-
-function titleCase(value: string): string {
-    return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function displayValue(value: unknown): string {

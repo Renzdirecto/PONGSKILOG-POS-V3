@@ -102,16 +102,12 @@ export default function WorkspaceLayout({
     /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
     const ownClosedSessionId = useRef<string | null>(null);
     const isSuperAdmin = auth.roles.includes('super_admin');
+    /** The server renders the POS only for accounts it authorized (Cashier roles, Branch custom roles, Super Admin). */
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
             page.props.workspace === 'Cashier / POS' &&
-            auth.roles.some(
-                (role) =>
-                    role === 'cashier' ||
-                    role === 'cashier_kitchen' ||
-                    role === 'super_admin',
-            ));
+            auth.permissions.includes('pos.access'));
     const isQr =
         isPos &&
         new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
@@ -509,7 +505,7 @@ export default function WorkspaceLayout({
                                     {auth.user.name}
                                 </p>
                                 <p className="text-xs text-neutral-500">
-                                    {roleLabel(auth.roles[0])}
+                                    {auth.roleLabel ?? roleLabel(auth.roles[0])}
                                 </p>
                             </div>
                             <Link

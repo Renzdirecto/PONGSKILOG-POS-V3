@@ -16,14 +16,16 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
         .map((part) => part[0])
         .slice(0, 2)
         .join('');
-    const role = auth.roles
-        .map((value) =>
-            value
-                .split('_')
-                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-                .join(' '),
-        )
-        .join(' / ');
+    const role =
+        auth.roleLabel ??
+        auth.roles
+            .map((value) =>
+                value
+                    .split('_')
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' '),
+            )
+            .join(' / ');
     const avatar = (
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-950 text-xs font-bold text-white">
             {initials}

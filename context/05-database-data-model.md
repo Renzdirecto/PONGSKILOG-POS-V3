@@ -43,13 +43,15 @@ Use DB constraints/indexes in addition to application validation.
 
 ### `roles`
 
-Examples:
+System roles (machine `name` never changes):
 
 - super_admin
 - owner
 - cashier
 - kitchen_staff
 - cashier_kitchen
+
+Since Phase 18 final: `label`, `is_system`, `scope` (`branch` / `business`), `archived_at`; Custom Roles use the stable key `custom_{id}` (see the Phase 18 final section below).
 
 ### `permissions`
 
@@ -854,3 +856,15 @@ Migration `2026_09_24_165604_create_notifications_table` (Laravel's standard dat
 - `notifications`: UUID `id`, `type` (`admin.access`, `admin.staff`, `admin.stock`), morph `notifiable`, JSON-text `data` (`category`, `title`, `body`, `url`), `read_at`, timestamps; index (`notifiable_type`, `notifiable_id`, `read_at`) for the unread badge.
 
 Role baselines keep using `role_permissions`; Cashier + Kitchen rows are always the union of Cashier and Kitchen Staff. Index names stay under PostgreSQL's 63-byte limit (checked by `tests/verify-access-admin-postgres.php`).
+
+## Phase 18 final — Custom Roles (additive) — 2026-09-25
+
+Migration `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (additive; existing rows and assignments are kept):
+
+- `roles.label` `varchar(60)` nullable — display name. System roles are backfilled (`Super Admin`, `Owner`, `Cashier`, `Kitchen Staff`, `Cashier + Kitchen`); any other pre-existing row gets its `name`.
+- `roles.is_system` boolean, default false — backfilled true for the five canonical names. A System role is always identified by its canonical `name`; its stored metadata never widens it.
+- `roles.scope` `varchar(16)` nullable, CHECK (`branch`, `business`) — WHERE a role works. System scope is canonical by name (Owner/Super Admin business, the three operational roles Branch).
+- `roles.archived_at` timestamp nullable — an archived Custom Role keeps its row and baseline for audit meaning and cannot be assigned.
+- Partial unique index `roles_active_label_unique` on `LOWER(label) WHERE archived_at IS NULL` (PostgreSQL and SQLite): active display names are unique ignoring case; an archived name may be reused.
+- `roles.name` stays the unique machine key. A Custom Role is inserted with a temporary key and renamed to `custom_{id}` in the same transaction, so renaming the display name never changes identity. No UUID was added; the Role PK is the identity.
+- Custom Role baselines use the existing `role_permissions`; assignments use the existing `user_roles` and `user_branch_assignments`. Rollback drops the index then the four columns (verified on disposable PostgreSQL and isolated SQLite).

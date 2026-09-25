@@ -11,7 +11,11 @@ import PasswordInput from '@/components/password-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { staffChangeWarnings, type StaffRoleOption } from '@/lib/staff-admin';
+import {
+    groupStaffRoles,
+    staffChangeWarnings,
+    type StaffRoleOption,
+} from '@/lib/staff-admin';
 import { update as ownerStaffUpdate } from '@/routes/staff';
 import {
     password as resetPasswordRoute,
@@ -425,11 +429,7 @@ export function EditStaffForm({
                                 Choose a role
                             </option>
                         )}
-                        {roles.map((role) => (
-                            <option key={role.name} value={role.name}>
-                                {role.label}
-                            </option>
-                        ))}
+                        <StaffRoleSelectOptions roles={roles} />
                     </select>
                     <p
                         id="edit-staff-role-help"
@@ -703,5 +703,34 @@ export function ResetStaffPasswordForm({
                 </button>
             </div>
         </form>
+    );
+}
+
+/** Role <option>s, with Custom Roles in their own group when any exist. */
+export function StaffRoleSelectOptions({
+    roles,
+}: {
+    roles: readonly StaffRoleOption[];
+}) {
+    const { system, custom } = groupStaffRoles(roles);
+    const options = (items: StaffRoleOption[]) =>
+        items.map((role) => (
+            <option key={role.name} value={role.name}>
+                {role.label}
+                {role.custom
+                    ? role.business_wide
+                        ? ' · Business-wide'
+                        : ' · Branch'
+                    : ''}
+            </option>
+        ));
+
+    return custom.length === 0 ? (
+        <>{options(system)}</>
+    ) : (
+        <>
+            <optgroup label="System roles">{options(system)}</optgroup>
+            <optgroup label="Custom roles">{options(custom)}</optgroup>
+        </>
     );
 }

@@ -1,7 +1,7 @@
 ---
 paths:
-  - '{app/Support/{EffectivePermissions,PermissionCatalog,AdminNotifier,StockAlerts,UserSessions}.php,app/Actions/AccessControl/**,app/Models/{User,UserPermissionOverride}.php,database/seeders/RbacSeeder.php}'
-  - '{app/Http/Controllers/{AccessControlController,NotificationController}.php,resources/js/pages/super-admin/{access-control,notifications}.tsx,resources/js/lib/{access-control,notifications}.ts,resources/js/hooks/use-notification-center.ts}'
+  - '{app/Support/{EffectivePermissions,PermissionCatalog,AdminNotifier,StockAlerts,UserSessions,CustomRoles}.php,app/Actions/AccessControl/**,app/Models/{User,UserPermissionOverride,Role}.php,database/seeders/RbacSeeder.php}'
+  - '{app/Http/Controllers/{AccessControlController,NotificationController}.php,app/Http/Requests/SaveCustomRoleRequest.php,resources/js/pages/super-admin/{access-control,notifications}.tsx,resources/js/components/custom-role-dialogs.tsx,resources/js/lib/{access-control,notifications}.ts,resources/js/hooks/use-notification-center.ts}'
 ---
 
 # Access Control
@@ -17,3 +17,6 @@ Defaults apply only to Roles/Permissions the seeder creates; existing Role ↔ P
 
 ## Notifications are post-commit and Super Admin scoped
 `AdminNotifier` delivers database notifications to active Super Admins (except the actor) after commit, rescued, with category/title/body/same-app link only. Stock alerts come only from the canonical stock writers on the locked above-zero → empty transition. The realtime signal is `notifications.changed` (ids/time only) on the recipient's own user channel; the bell refetches the unread-count endpoint, never polls.
+
+## Custom Roles are metadata-scoped permission packages
+System roles are the five canonical names (never edited as custom records, never archived; Super Admin locked, Cashier + Kitchen derived). A Custom Role is `custom_{id}` with an editable `label` (unique ignoring case among active roles, System names included) and an explicit `scope`: Branch (needs ≥1 active Branch, runs Cashier operations like a Cashier, Reports stay on its Branch) or business-wide (no Branch assignments, Owner-style management). Scope decisions live only in `Role::scopeBusinessWide()` / `scopeCashierOperations()` (System roles by name, Custom by metadata) — never add `if role == custom_x` checks. The envelope is `PermissionCatalog::CUSTOM_GRANTABLE`; `lockReason()` needs the Role model for a Custom Role, and user ALLOWs use the same envelope. Control permissions never leave Super Admin. Scope changes only while unassigned; archive only while unassigned; RbacSeeder never touches Custom Roles. Only Super Admin creates, edits, archives or assigns them.

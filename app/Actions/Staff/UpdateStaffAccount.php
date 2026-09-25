@@ -51,6 +51,13 @@ class UpdateStaffAccount
 
         try {
             return DB::transaction(function () use ($actor, $staff, $data, $avatarDisk, &$newAvatarPath): array {
+                /**
+                 * Lock order is Role → accounts, like every Access Control writer (a role save or archive holds the Role
+                 * row, then its audit insert needs a key-share on the actor's account row). Taking the accounts first
+                 * deadlocked against Custom Role archiving in the PostgreSQL harness. The shared lock also serializes
+                 * with archiving, which takes the same row FOR UPDATE.
+                 */
+                $newRole = Role::query()->where('name', $data['role'])->sharedLock()->first();
                 $locked = $this->lockAccounts($actor, $staff);
                 $actor = $locked->get($actor->getKey());
                 $staff = $locked->get($staff->getKey());
@@ -59,19 +66,20 @@ class UpdateStaffAccount
                 }
 
                 $manageable = $actor->is_active ? StaffRoles::manageableBy($actor) : [];
-                $fullAccess = $manageable === StaffRoles::names();
+                $fullAccess = StaffRoles::managesEveryAccount($actor);
                 if ($manageable === [] || (! $fullAccess && ! StaffRoles::canManage($actor, $staff))) {
                     throw new AuthorizationException('This account may not manage this staff member.');
                 }
 
-                $currentRoles = $staff->roles()->pluck('name')->all();
-                $currentRole = count($currentRoles) === 1 ? $currentRoles[0] : null;
-                $newRole = Role::query()->where('name', $data['role'])->first();
-                if ($newRole === null || ! in_array($newRole->name, StaffRoles::names(), true)) {
+                $currentRoleModels = $staff->roles()->get(['roles.id', 'roles.name', 'roles.label', 'roles.is_system', 'roles.scope', 'roles.archived_at']);
+                $currentRoles = $currentRoleModels->pluck('name')->all();
+                $currentRoleModel = $currentRoleModels->count() === 1 ? $currentRoleModels->first() : null;
+                $currentRole = $currentRoleModel?->name;
+                if ($newRole === null || ! $newRole->isAssignable()) {
                     throw ValidationException::withMessages(['role' => 'Choose a valid role.']);
                 }
                 if (! in_array($newRole->name, $manageable, true)) {
-                    throw new AuthorizationException('This account may not assign the '.StaffRoles::label($newRole->name).' role.');
+                    throw new AuthorizationException('This account may not assign the '.$newRole->displayLabel().' role.');
                 }
 
                 $roleChanged = $currentRole !== $newRole->name;
@@ -86,7 +94,7 @@ class UpdateStaffAccount
                 $this->ensureSuperAdminRemains($locked, $staff, in_array('super_admin', $currentRoles, true), $newRole->name, $isActive);
 
                 $branchesBefore = $staff->branches()->wherePivot('is_active', true)->orderBy('branches.code')->get(['branches.id', 'branches.code']);
-                $branches = $this->assignableBranches($staff, $newRole->name, $data['branch_ids'] ?? []);
+                $branches = $this->assignableBranches($staff, $newRole, $data['branch_ids'] ?? []);
                 $branchesChanged = $branchesBefore->pluck('id')->sort()->values()->all() !== $branches->pluck('id')->sort()->values()->all();
 
                 $profileBefore = ['name' => $staff->name, 'email' => $staff->email];
@@ -128,7 +136,7 @@ class UpdateStaffAccount
                 }
 
                 $actions = $this->record($actor, $staff, [
-                    'role' => [$roleChanged, $currentRole, $newRole->name, $overridesReset],
+                    'role' => [$roleChanged, $currentRoleModel, $newRole, $overridesReset],
                     'branches' => [$branchesChanged, $branchesBefore, $branches],
                     'status' => [$statusChanged, ! $isActive, $isActive],
                     'profile' => [$profileChanged, $profileBefore, $profileAfter],
@@ -196,20 +204,20 @@ class UpdateStaffAccount
     }
 
     /**
-     * Operational Roles need at least one active Branch (existing assignments to a Branch that is temporarily closed
-     * may be kept); business-wide Roles never keep Branch assignments.
+     * Branch Roles need at least one active Branch (existing assignments to a Branch that is temporarily closed may be
+     * kept); business-wide Roles never keep Branch assignments.
      *
      * @param  array<int, mixed>  $branchIds
      * @return Collection<int, Branch>
      */
-    private function assignableBranches(User $staff, string $role, array $branchIds): Collection
+    private function assignableBranches(User $staff, Role $role, array $branchIds): Collection
     {
         $branchIds = array_values(array_unique(array_map('strval', $branchIds)));
 
-        if (StaffRoles::isBusinessWide($role)) {
+        if ($role->isBusinessWide()) {
             if ($branchIds !== []) {
                 throw ValidationException::withMessages([
-                    'branch_ids' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',
+                    'branch_ids' => StaffRoles::branchesProhibitedMessage($role),
                 ]);
             }
 
@@ -260,8 +268,8 @@ class UpdateStaffAccount
         [$branchesChanged, $branchesBefore, $branchesAfter] = $changes['branches'];
         if ($roleChanged) {
             $write('staff.role_changed',
-                ['role' => $roleBefore, 'branch_codes' => $this->branchCodes($branchesBefore)],
-                ['role' => $roleAfter, 'branch_codes' => $this->branchCodes($branchesAfter), 'branch_access' => StaffRoles::isBusinessWide($roleAfter) ? 'business_wide' : 'assigned'],
+                ['role' => $roleBefore?->name, 'role_label' => $roleBefore?->displayLabel(), 'branch_codes' => $this->branchCodes($branchesBefore)],
+                ['role' => $roleAfter->name, 'role_label' => $roleAfter->displayLabel(), 'branch_codes' => $this->branchCodes($branchesAfter), 'branch_access' => $roleAfter->isBusinessWide() ? 'business_wide' : 'assigned'],
                 ['custom_access_reset' => $overridesReset],
             );
         } elseif ($branchesChanged) {
@@ -291,13 +299,13 @@ class UpdateStaffAccount
     }
 
     /**
-     * @param  array{0: string|null, 1: string}|null  $role
+     * @param  array{0: Role|null, 1: Role}|null  $role
      * @param  list<string>|null  $branchCodes
      */
     private function notify(User $actor, User $staff, ?array $role, ?bool $active, ?array $branchCodes): void
     {
         $changes = array_values(array_filter([
-            $role === null ? null : 'role '.($role[0] === null ? 'none' : StaffRoles::label($role[0])).' → '.StaffRoles::label($role[1]),
+            $role === null ? null : 'role '.($role[0] === null ? 'none' : $role[0]->displayLabel()).' → '.$role[1]->displayLabel(),
             $active === null ? null : ($active ? 'reactivated' : 'deactivated'),
             $branchCodes === null ? null : 'Branch access '.($branchCodes === [] ? 'cleared' : implode(', ', $branchCodes)),
         ]));

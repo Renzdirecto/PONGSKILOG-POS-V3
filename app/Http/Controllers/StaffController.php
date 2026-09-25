@@ -34,12 +34,12 @@ class StaffController extends Controller
         abort_unless($actor instanceof User, 401);
         $surface = $this->surface($request);
         $manageable = StaffRoles::manageableBy($actor);
-        $fullAccess = $manageable === StaffRoles::names();
+        $fullAccess = StaffRoles::managesEveryAccount($actor);
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
             ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'avatar_path', 'created_at'])
             ->with([
-                'roles:id,name',
+                'roles:id,name,label,is_system,scope,archived_at',
                 'branches' => fn ($query) => $query
                     ->select(['branches.id', 'branches.name', 'branches.code'])
                     ->wherePivot('is_active', true)
@@ -63,8 +63,6 @@ class StaffController extends Controller
             ->paginate(25)
             ->withQueryString()
             ->through(function (User $user) use ($surface, $actor): array {
-                $roleNames = $user->roles->pluck('name')->all();
-
                 return [
                     'id' => $user->id,
                     'employee_id' => $user->employee_id,
@@ -74,11 +72,12 @@ class StaffController extends Controller
                         ? null
                         : route($surface === 'owner' ? 'staff.avatar' : 'super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
                     'is_active' => $user->is_active,
-                    'roles' => array_map(fn (string $role): array => [
-                        'name' => $role,
-                        'label' => StaffRoles::label($role),
-                    ], $roleNames),
-                    'business_wide' => array_intersect($roleNames, StaffRoles::BUSINESS_WIDE) !== [],
+                    'roles' => $user->roles->map(fn (Role $role): array => [
+                        'name' => $role->name,
+                        'label' => $role->displayLabel(),
+                        'custom' => $role->isCustom(),
+                    ])->values()->all(),
+                    'business_wide' => $user->roles->contains(fn (Role $role): bool => $role->isBusinessWide()),
                     'branches' => $user->branches
                         ->map(fn (Branch $branch): array => $branch->only(['id', 'name', 'code']))
                         ->values()
@@ -89,16 +88,11 @@ class StaffController extends Controller
                 ];
             });
 
-        $seededRoles = Role::query()->whereIn('name', StaffRoles::names())->pluck('name')->all();
-
         return Inertia::render('super-admin/staff', [
             'staff' => $staff,
             'filters' => $filters,
             'surface' => $surface,
-            'roles' => array_values(array_filter(
-                StaffRoles::options($manageable),
-                fn (array $role): bool => in_array($role['name'], $seededRoles, true),
-            )),
+            'roles' => StaffRoles::options($manageable),
             'branches' => Branch::query()
                 ->where('status', BranchStatus::Active)
                 ->orderBy('name')

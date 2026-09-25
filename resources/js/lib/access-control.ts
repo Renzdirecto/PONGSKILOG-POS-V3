@@ -104,3 +104,51 @@ export function sameOverrides(
         (key) => (a[key] ?? 'inherit') === (b[key] ?? 'inherit'),
     );
 }
+
+export type RoleScope = 'branch' | 'business';
+
+/** Trims and single-spaces a role name exactly like the server (CustomRoles::normalizeLabel). */
+export function normalizeRoleName(name: string): string {
+    return name.replace(/\s+/gu, ' ').trim();
+}
+
+const ROLE_NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} &+\-/().',]*$/u;
+
+/**
+ * The first problem with a Custom Role name, or null when it is valid. `taken` lists the display names of the active
+ * roles (System roles included); the server checks the same rules again inside the save transaction.
+ */
+export function roleNameError(
+    name: string,
+    max: number,
+    taken: readonly string[],
+): string | null {
+    const normalized = normalizeRoleName(name);
+    if (normalized === '') {
+        return 'Role name is required.';
+    }
+    if (normalized.length > max) {
+        return `Use at most ${max} characters.`;
+    }
+    if (!ROLE_NAME_PATTERN.test(normalized)) {
+        return "Use letters, numbers, spaces or & + - / ( ) . ' , only.";
+    }
+    if (
+        taken.some(
+            (label) =>
+                label.toLocaleLowerCase() === normalized.toLocaleLowerCase(),
+        )
+    ) {
+        return `A role named "${normalized}" already exists. Choose a different name.`;
+    }
+
+    return null;
+}
+
+/** Keeps only the permissions the chosen scope may hold (switching scope never submits a locked permission). */
+export function permissionsForScope(
+    permissions: readonly string[],
+    locks: Record<string, string | null>,
+): string[] {
+    return permissions.filter((permission) => locks[permission] === null);
+}

@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\Role;
+
 /**
  * The one catalog of seeded permissions: user-facing metadata, first-install Role defaults and the safe grant envelope
  * of every Role. Access Control, the RBAC seeder, the effective-permission resolver and the React matrix all read it,
@@ -177,6 +179,25 @@ class PermissionCatalog
         'kitchen_staff' => ['kitchen.access', 'customer_display.launch', 'reports.view'],
     ];
 
+    /** @var array<'branch'|'business', string> */
+    public const SCOPES = [
+        'branch' => 'Branch',
+        'business' => 'Business-wide',
+    ];
+
+    /**
+     * The grant envelope of a Custom Role, by its scope. A Branch Custom Role runs the same Branch-scoped surfaces as
+     * Cashier staff (the backend keeps each inside the assigned Branches, Reports included); a business-wide Custom Role
+     * gets the Owner management surfaces, whose backend already requires business-wide scope. Control stays with the
+     * Super Admin and QR Orders follows POS, so neither is ever listed.
+     *
+     * @var array<'branch'|'business', list<string>>
+     */
+    public const CUSTOM_GRANTABLE = [
+        'branch' => ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'],
+        'business' => ['transactions.view', 'reports.view', 'products.manage', 'inventory.manage', 'staff.manage', 'settings.manage'],
+    ];
+
     /** @return list<string> */
     public static function names(): array
     {
@@ -203,10 +224,18 @@ class PermissionCatalog
     }
 
     /**
-     * Why a permission cannot be configured for a Role (baseline or user override), or null when it can.
+     * Why a permission cannot be configured for a Role (baseline or user override), or null when it can. System roles
+     * are identified by name; a Custom Role must be passed as its model so its scope decides the envelope.
      */
-    public static function lockReason(string $role, string $permission): ?string
+    public static function lockReason(Role|string $role, string $permission): ?string
     {
+        if ($role instanceof Role && $role->isCustom()) {
+            return $role->scope === null
+                ? 'This custom role has no access scope.'
+                : self::scopeLockReason($role->scope, $permission);
+        }
+        $role = $role instanceof Role ? $role->name : $role;
+
         if (! self::exists($permission)) {
             return 'Unknown permission.';
         }
@@ -218,6 +247,9 @@ class PermissionCatalog
         }
         if ($permission === self::FOLLOWS_POS) {
             return 'QR Orders always follow POS access.';
+        }
+        if (! StaffRoles::isSystem($role)) {
+            return 'Not available for this role.';
         }
         if ($role === self::DERIVED_ROLE) {
             $reasons = array_map(fn (string $source): ?string => self::lockReason($source, $permission), self::DERIVED_FROM);
@@ -239,13 +271,50 @@ class PermissionCatalog
         };
     }
 
-    public static function isGrantable(string $role, string $permission): bool
+    /**
+     * Why a permission is outside the grant envelope of a Custom Role with this scope, or null when it is inside.
+     */
+    public static function scopeLockReason(string $scope, string $permission): ?string
+    {
+        if (! self::exists($permission)) {
+            return 'Unknown permission.';
+        }
+        if (! array_key_exists($scope, self::CUSTOM_GRANTABLE)) {
+            return 'Choose Branch or Business-wide scope.';
+        }
+        if (in_array($permission, self::SUPER_ADMIN_ONLY, true)) {
+            return 'Super Admin only.';
+        }
+        if ($permission === self::FOLLOWS_POS) {
+            return 'QR Orders always follow POS access.';
+        }
+        if (in_array($permission, self::CUSTOM_GRANTABLE[$scope], true)) {
+            return null;
+        }
+        $label = self::PERMISSIONS[$permission]['label'];
+
+        return $scope === 'branch'
+            ? $label.' is business-wide and cannot be limited to one Branch. Use a Business-wide role for it.'
+            : $label.' runs inside one Branch. Use a Branch role for it.';
+    }
+
+    /**
+     * Lock reasons of every permission for a Custom Role scope, for the Custom Role builder.
+     *
+     * @return array<string, string|null>
+     */
+    public static function scopeLocks(string $scope): array
+    {
+        return array_combine(self::names(), array_map(fn (string $permission): ?string => self::scopeLockReason($scope, $permission), self::names()));
+    }
+
+    public static function isGrantable(Role|string $role, string $permission): bool
     {
         return self::lockReason($role, $permission) === null;
     }
 
     /** @return list<string> */
-    public static function grantableFor(string $role): array
+    public static function grantableFor(Role|string $role): array
     {
         return array_values(array_filter(self::names(), fn (string $permission): bool => self::isGrantable($role, $permission)));
     }

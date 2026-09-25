@@ -615,3 +615,48 @@ QR Orders has no route of its own (it is enforced through POS) and always follow
 - In-app only (Laravel database notifications, `notifications` table). The Control Center notification center is Super Admin only (`access_control.manage`); a viewer reads and marks only their own rows (another account's id is 404).
 - Recipients: active Super Admins, excluding the actor. Delivery runs after the business transaction commits and is rescued (a failed notification never fails the change). Payloads hold category, title, summary and a server-generated same-app link only — no credentials, audit payloads or money.
 - Realtime: `notifications.changed` (event id/type/time only) on the recipient's own `App.Models.User.{id}` channel, which now also requires an active account.
+
+## Phase 18 final — Custom Roles — 2026-09-25
+
+### Model
+
+- **System Role** = one of the five built-in roles (Super Admin, Owner, Cashier, Kitchen Staff, Cashier + Kitchen), identified by its unchanged machine name, never editable as a custom record, never archived or deleted. Super Admin stays **Locked · Full access**; Cashier + Kitchen stays derived.
+- **Custom Role** = a reusable permission package a Super Admin creates (e.g. "Branch Supervisor"), shared by many Staff accounts. Stable key `custom_{id}`; editable display name (trimmed, single-spaced, ≤ 40 characters, letters/numbers/spaces and `& + - / ( ) . ' ,`, unique ignoring case among active roles including System names).
+- **User override** = the existing per-account ALLOW / DENY exception. Effective access for a Custom Role account = ALLOW → yes, DENY → no, otherwise the Custom Role baseline (the same `EffectivePermissions` resolver; no second engine).
+
+### Scope (WHERE) is separate from permissions (WHAT)
+
+- **Branch role**: every account needs ≥ 1 active Branch; everything stays inside its assigned Branches (Reports: selected assigned Branch only, never All Branches; `branch.{branch}.reports` channel only). A Branch Custom Role runs Cashier operations like a Cashier (`Role::scopeCashierOperations()`), still gated by each permission (e.g. POS needs `pos.access`).
+- **Business-wide role**: no Branch assignments (fabricated ones are rejected); reaches every Branch through `User::hasBusinessWideScope()`, which is now metadata-driven (`Role::scopeBusinessWide()`: Owner/Super Admin by name, plus active business-wide Custom Roles). It never gains Cashier operations or Control permissions.
+- Scope can change only while **no** account holds the role (checked under the Role row lock that Staff assignment also takes); otherwise reassign Staff first or create a new role.
+
+### Grant envelope (PermissionCatalog::CUSTOM_GRANTABLE)
+
+| Scope | May hold (baseline or user ALLOW) | Locked |
+| --- | --- | --- |
+| Branch | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display, Reports (own Branch) | Products, Inventory, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control |
+| Business-wide | Transactions, Reports, Products, Inventory, Staff (operational Staff only, like the Owner), Settings | POS, QR, Store Open / Close, Expenses, Kitchen, Customer Display (Branch operations); Audit Trail, Void Orders, Access Control |
+
+Every business permission's backend was checked: business Transactions, Owner Dashboard, Operations, Branch settings and Staff management already require business-wide scope; Inventory/Products are gated by permission and stay business-wide. A per-user ALLOW is limited by the same envelope (`PermissionCatalog::lockReason(Role, …)`), so it can never escape the role's scope or reach Control.
+
+### Custom Role Builder (Super Admin only)
+
+- Routes (`super-admin.access-control.custom-roles.store|update|archive`) sit in the `permission:access_control.manage` group (throttled); `SaveCustomRoleRequest` authorizes again; `CreateCustomRole` / `UpdateCustomRole` / `ArchiveCustomRole` re-read the actor inside the transaction. Owner, Cashier, Kitchen, Custom Roles, inactive accounts and forged requests are refused.
+- Create: name, scope, baseline inside the envelope, QR follows POS, audit, one transaction; the partial unique index is the final guard against two admins racing on one name (one wins, the other gets a validation error).
+- Update: Role row `FOR UPDATE`, then the whole submitted baseline replaces the old one, so concurrent saves serialize to one complete submission (never a merge). User overrides are never touched; inheriting accounts follow the new baseline on their next request.
+- Archive: blocked while any account holds the role ("Reassign them in Staff first"); an archived role is never offered or accepted for assignment; System roles cannot be archived or deleted.
+- Audit (`module = access_control`): `access.custom_role_created`, `access.custom_role_updated` (name/scope before/after), `access.custom_role_permissions_updated` (permission names + labels, added/removed), `access.custom_role_archived` — Role id, key, label, scope; never credentials. Notifications go to the **other** active Super Admins only (one per save).
+
+### Staff assignment
+
+- Only Super Admin access control assigns Custom Roles (`StaffRoles::manageableBy()` = System roles + active Custom Roles). Owner Staff management stays limited to Cashier, Kitchen Staff and Cashier + Kitchen and never lists or edits Custom Role accounts.
+- Any Role change (System ↔ Custom, Custom A → Custom B) resets custom access to INHERIT (audited with the removed map) and follows the scope's Branch rule (Branch role: explicit active Branch; business-wide: Branch assignments cleared).
+- Lock order: Staff writers take the target Role row (`FOR SHARE`) **before** the account rows. Access Control writers hold Role rows and then key-share the actor's account row through their audit insert; the inverted order was reproduced as a real PostgreSQL deadlock (archive vs assign) and fixed.
+
+### RbacSeeder
+
+Maintains only System roles (canonical label/is_system/scope, Super Admin completion, Cashier + Kitchen derivation) and known permissions. It never reads, renames, archives, re-permissions or reassigns Custom Roles (tested on SQLite and PostgreSQL).
+
+### Super Admin Executive Dashboard
+
+`workspaces.super-admin` (`SuperAdminDashboardController`, `access_control.manage`) is read-only. Money comes only from `SalesAnalytics` (the Owner Dashboard's own call); live state from `BusinessSnapshot`; Staff counts, the viewer's unread count and a payload-free Audit summary (action, actor, Branch, time) from `ExecutiveSnapshot`. No before/after audit payloads, credentials or other users' notifications are exposed.

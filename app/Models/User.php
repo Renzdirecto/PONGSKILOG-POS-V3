@@ -81,22 +81,23 @@ class User extends Authenticatable
         return $this->hasMany(UserPermissionOverride::class);
     }
 
+    /**
+     * Business-wide scope comes from role semantics (Owner, Super Admin, or an active business-wide Custom Role), never
+     * from a Branch assignment or a page permission. See Role::scopeBusinessWide().
+     */
     public function hasBusinessWideScope(): bool
     {
-        return $this->roles()
-            ->whereIn('roles.name', ['super_admin', 'owner'])
-            ->exists();
+        return $this->roles()->businessWide()->exists();
     }
 
     /**
-     * Cashier operational surfaces belong to assigned Cashiers and to Super Admin, whose full-access role
-     * covers every operational workspace. Owner business-wide scope alone never grants Cashier operations.
+     * Cashier operational surfaces belong to assigned Cashiers (and Branch Custom Roles) and to Super Admin, whose
+     * full-access role covers every operational workspace. Owner or business-wide Custom Role scope alone never grants
+     * Cashier operations. See Role::scopeCashierOperations().
      */
     public function hasCashierOperationsRole(): bool
     {
-        return $this->roles()
-            ->whereIn('roles.name', ['cashier', 'cashier_kitchen', 'super_admin'])
-            ->exists();
+        return $this->roles()->cashierOperations()->exists();
     }
 
     /**

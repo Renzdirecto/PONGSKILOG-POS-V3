@@ -903,7 +903,7 @@ This supersedes the §7 core navigation list. No Super Admin standalone is autho
 
 | Section | Destination | Status |
 | --- | --- | --- |
-| Overview | Dashboard | Control Center landing: quick links to Staff, Audit Trail, Void Orders, and Settings plus Branch workspace guidance. No analytics. |
+| Overview | Dashboard | **Executive Overview** (Phase 18 final): real CEO dashboard — see "Phase 18 final" below. |
 | Overview | Notifications | Real (Phase 18): persisted in-app notifications with unread/read state and a real unread badge. |
 | Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
 | Owner | Owner Dashboard, Products, Inventory | Real existing pages. The Owner Dashboard is the Phase 16C analytics dashboard. |
@@ -978,3 +978,29 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 ### Branch staff with custom Reports
 
 - A Cashier / Kitchen account with custom Reports access gets a **Reports** item in its operational rail/dock and reads the Branch report inside the operational shell (never the Owner shell, never All Branches).
+
+## Phase 18 final — Custom Roles and Executive Overview — 2026-09-25
+
+### Access Control → Roles
+
+- **System roles** grid (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin) and a **Custom roles** grid with **+ Create custom role** (empty state explains the use). Archived roles sit in a collapsed "Archived roles (N)" list, read-only.
+- A selected Custom Role shows "Custom · Branch-scoped / business-wide", the same grouped checkbox editor and save bar as System roles, **Rename or change scope** (scope fixed while assigned, with the reason), **Archive** (disabled while assigned, with the reason) and **Assigned staff (N)** chips linking to that account's Staff overrides.
+- Create dialog: steps Name → Scope (Branch / Business-wide cards) → Access (grouped permissions; locked ones visible with the reason) → Review → Create role.
+- "All roles at a glance" matrix includes active Custom Roles and scrolls horizontally inside its card when needed.
+
+### Staff
+
+- Role select: System roles, then a "Custom roles" group labelled "· Branch" / "· Business-wide" (Super Admin only). Owner surface is unchanged.
+
+### Executive Overview (Overview → Dashboard, `workspaces.super-admin`)
+
+1. Dark header card: "Super Admin · Control Center", scope · period, Today / 7 days / 30 days (the global Branch selector stays in the shell header).
+2. **Attention needed** (or an emerald "Nothing needs attention"): server-computed items — products out of stock (red), Ingredients at zero (red), products low (amber), unread notifications (violet), closed Stores (neutral) — each linking to the page that resolves it.
+3. KPI row: the Owner Dashboard KPI cards (Total sales, Transactions, Average order, Items sold, Cashless sales) with canonical deltas; money-movement tiles (Collected, Expenses, Voided orders, Store Sessions).
+4. Sales trend (previous-period compare, keyboard/hover tooltip) + Payment mix donut (Show Split toggle, Reports semantics).
+5. Operations health (Store OPEN/CLOSED per Branch with opener and time, Kitchen preparing/ready, products out/low, Ingredients at zero) · Top products · Sales by category.
+6. Branch performance (comparison only with > 1 Branch; honest single-Branch note) + Latest Store Session.
+7. People & security (active/inactive Staff, Super Admins, Custom Roles, unread notifications, the latest six audit actions linking to Audit Trail).
+8. Quick admin actions (Staff, Access Control, Audit Trail, Void Orders, Reports, Settings).
+
+Responsive: single column at 360–430px with Attention near the top; two/three columns from tablet; the 1.7fr/1fr executive grid from 1120px.

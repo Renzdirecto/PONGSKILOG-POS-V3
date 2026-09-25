@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
-import { logout } from '@/routes';
+import { logout, workspace } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
 import { index as staffIndex } from '@/routes/staff';
@@ -133,8 +133,8 @@ export function OwnerWorkspaceShell({
     const page = usePage<SharedProps & OperationsPageProps>();
     const { auth, branchContext } = page.props;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell is Owner-only. */
-    const workspaceLabel = 'Owner';
+    /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell serves the Owner and business-wide custom roles. */
+    const workspaceLabel = auth.roleLabel ?? 'Owner';
     const dashboardRoute = owner();
     const isCatalog = page.component.startsWith('catalog/');
     const isInventory = page.component.startsWith('inventory/');
@@ -152,6 +152,7 @@ export function OwnerWorkspaceShell({
     const planQuery = page.props.operations?.active_plan_id
         ? { query: { plan: page.props.operations.active_plan_id } }
         : undefined;
+    const canReports = auth.permissions.includes('reports.view');
     const canProducts = auth.permissions.includes('products.manage');
     const canInventory = auth.permissions.includes('inventory.manage');
     const canTransactions = auth.permissions.includes('transactions.view');
@@ -167,8 +168,9 @@ export function OwnerWorkspaceShell({
                     label: 'Dashboard',
                     shortLabel: 'Home',
                     icon: LayoutDashboard,
-                    href: dashboardRoute,
+                    href: canReports ? dashboardRoute : undefined,
                     active: isDashboard,
+                    unavailableReason: 'No access',
                 },
             ],
         },
@@ -187,8 +189,9 @@ export function OwnerWorkspaceShell({
                     label: 'Reports',
                     shortLabel: 'Reports',
                     icon: BarChart3,
-                    href: reports(),
+                    href: canReports ? reports() : undefined,
                     active: isReports,
+                    unavailableReason: 'No access',
                 },
             ],
         },
@@ -229,7 +232,9 @@ export function OwnerWorkspaceShell({
                 label,
                 shortLabel,
                 icon,
-                href: canInventory ? operationsRoutes[key](planQuery) : undefined,
+                href: canInventory
+                    ? operationsRoutes[key](planQuery)
+                    : undefined,
                 active: operationsPage === key,
                 unavailableReason: 'Operations management is unavailable.',
             })),
@@ -265,18 +270,18 @@ export function OwnerWorkspaceShell({
     const pageTitle = operationsPage
         ? (navigationItems.find((item) => item.active)?.label ?? 'Operations')
         : isCatalog
-        ? 'Products'
-        : isInventory
-          ? 'Inventory'
-          : isBranches
-            ? 'Settings'
-            : isReports
-              ? 'Reports'
-              : isTransactions
-                ? 'Transactions'
-                : isStaff
-                  ? 'Staff'
-                  : 'Dashboard';
+          ? 'Products'
+          : isInventory
+            ? 'Inventory'
+            : isBranches
+              ? 'Settings'
+              : isReports
+                ? 'Reports'
+                : isTransactions
+                  ? 'Transactions'
+                  : isStaff
+                    ? 'Staff'
+                    : 'Dashboard';
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
         : 'All Branches';
@@ -353,7 +358,7 @@ export function OwnerWorkspaceShell({
 
             <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
-                    href={dashboardRoute}
+                    href={canReports ? dashboardRoute : workspace()}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
                 >
                     <img
@@ -361,8 +366,8 @@ export function OwnerWorkspaceShell({
                         alt="PONGSKILOG"
                         className="max-w-[70px]"
                     />
-                    <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
-                        Owner
+                    <span className="max-w-full truncate text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
+                        {workspaceLabel}
                     </span>
                 </Link>
                 <p className="px-1.5 pt-2 text-center text-[9px] font-semibold tracking-[0.06em] text-white/40 uppercase">
@@ -395,7 +400,7 @@ export function OwnerWorkspaceShell({
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
-                <header className="flex h-[60px] shrink-0 items-center gap-2.5 print:hidden border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
+                <header className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5 print:hidden">
                     <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {pageTitle}

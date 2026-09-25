@@ -5,13 +5,13 @@ namespace App\Actions\AccessControl;
 use App\Actions\Audit\AuditRecorder;
 use App\Enums\PermissionOverrideEffect;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use App\Models\UserPermissionOverride;
 use App\Notifications\AdminAlert;
 use App\Support\AdminNotifier;
 use App\Support\EffectivePermissions;
 use App\Support\PermissionCatalog;
-use App\Support\StaffRoles;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,7 +23,8 @@ class UpdateUserPermissionOverrides
      * Replace one account's custom access. The map lists INHERIT, ALLOW or DENY per permission; permissions left out
      * are INHERIT. INHERIT deletes the row, and an ALLOW of a permission the Role already includes (or a DENY of one it
      * excludes) is stored as INHERIT, so no meaningless rows exist. Super Admin accounts are locked full access and
-     * never receive overrides; every other account is limited to its Role's grant envelope.
+     * never receive overrides; every other account (System or Custom Role) is limited to its Role's grant envelope, so
+     * an ALLOW never escapes the Role's scope.
      *
      * @param  array<string, string>  $overrides
      * @return bool whether the custom access changed
@@ -33,7 +34,7 @@ class UpdateUserPermissionOverrides
         return DB::transaction(function () use ($actor, $target, $overrides): bool {
             $actor = AccessControlActor::resolve($actor);
             [$target, $role] = $this->lockTarget($target);
-            $baseline = EffectivePermissions::roleBaselines()[$role] ?? [];
+            $baseline = PermissionCatalog::ordered($role->permissions()->pluck('permissions.name')->all());
 
             $desired = [];
             foreach ($overrides as $permission => $effect) {
@@ -101,23 +102,24 @@ class UpdateUserPermissionOverrides
 
     /**
      * Locks the target account row (serializing with Staff role changes, which lock it too) and returns its single
-     * canonical Role.
+     * System or Custom Role.
      *
-     * @return array{User, string}
+     * @return array{User, Role}
      */
     private function lockTarget(User $target): array
     {
         $target = User::query()->whereKey($target->getKey())->lockForUpdate()->firstOrFail();
-        $roles = $target->roles()->pluck('name')->all();
+        $roles = $target->roles()->get(['roles.id', 'roles.name', 'roles.label', 'roles.is_system', 'roles.scope', 'roles.archived_at']);
 
-        if (in_array(PermissionCatalog::SUPER_ADMIN, $roles, true)) {
+        if ($roles->contains('name', PermissionCatalog::SUPER_ADMIN)) {
             throw ValidationException::withMessages(['user' => 'Super Admin accounts are locked to full access and have no custom access.']);
         }
-        if (count($roles) !== 1 || ! in_array($roles[0], StaffRoles::names(), true)) {
+        $role = $roles->count() === 1 ? $roles->first() : null;
+        if (! $role instanceof Role || ! $role->isAssignable()) {
             throw ValidationException::withMessages(['user' => 'Custom access needs an account with exactly one staff role.']);
         }
 
-        return [$target, $roles[0]];
+        return [$target, $role];
     }
 
     /** @return array<string, string> */
@@ -133,7 +135,7 @@ class UpdateUserPermissionOverrides
      * @param  array<string, string>  $before
      * @param  array<string, string>  $after
      */
-    private function record(User $actor, User $target, string $role, string $action, array $before, array $after): void
+    private function record(User $actor, User $target, Role $role, string $action, array $before, array $after): void
     {
         $this->audit->record(
             branch: null,
@@ -147,12 +149,13 @@ class UpdateUserPermissionOverrides
             metadata: [
                 'employee_id' => $target->employee_id,
                 'name' => $target->name,
-                'role' => $role,
+                'role' => $role->name,
+                'role_label' => $role->displayLabel(),
             ],
         );
 
         $summary = $after === []
-            ? 'now follows the '.StaffRoles::label($role).' role only.'
+            ? 'now follows the '.$role->displayLabel().' role only.'
             : 'custom access: '.implode(', ', array_map(
                 fn (string $permission, string $effect): string => PermissionCatalog::label($permission).' '.($effect === 'allow' ? 'allowed' : 'removed'),
                 array_keys($after),
@@ -161,7 +164,7 @@ class UpdateUserPermissionOverrides
         AdminNotifier::superAdmins(new AdminAlert(
             'access',
             'Custom access changed for '.$target->name,
-            $actor->name.' updated '.$target->name.' ('.StaffRoles::label($role).'): '.$summary,
+            $actor->name.' updated '.$target->name.' ('.$role->displayLabel().'): '.$summary,
             route('super-admin.access-control', ['user' => $target->id], false),
         ), except: $actor);
     }

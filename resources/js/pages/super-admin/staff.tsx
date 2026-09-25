@@ -28,6 +28,7 @@ import PasswordInput from '@/components/password-input';
 import {
     EditStaffForm,
     ResetStaffPasswordForm,
+    StaffRoleSelectOptions,
 } from '@/components/staff-account-dialogs';
 import {
     Dialog,
@@ -48,7 +49,12 @@ import {
 import { index as staffIndex, store } from '@/routes/super-admin/staff';
 import type { BranchSummary } from '@/types';
 
-type StaffRole = { name: string; label: string; business_wide: boolean };
+type StaffRole = {
+    name: string;
+    label: string;
+    business_wide: boolean;
+    custom?: boolean;
+};
 type StaffMember = {
     id: number;
     employee_id: string | null;
@@ -1103,11 +1109,7 @@ function AddStaffForm({
                         <option value="" disabled>
                             Choose a role
                         </option>
-                        {roles.map((role) => (
-                            <option key={role.name} value={role.name}>
-                                {role.label}
-                            </option>
-                        ))}
+                        <StaffRoleSelectOptions roles={roles} />
                     </select>
                     <FieldError
                         id="staff-role-error"

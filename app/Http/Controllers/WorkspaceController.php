@@ -38,12 +38,17 @@ class WorkspaceController extends Controller
 
     private function redirectToRoleWorkspace(User $user): RedirectResponse
     {
-        $roleNames = $user->roles()->pluck('name');
-
         $routeName = match (true) {
-            $roleNames->contains('super_admin') => 'workspaces.super-admin',
-            $roleNames->contains('owner') => 'workspaces.owner',
-            $roleNames->contains('cashier'), $roleNames->contains('cashier_kitchen'), $roleNames->contains('kitchen_staff') => $this->branchStaffWorkspace($user, ! $roleNames->contains('cashier') && ! $roleNames->contains('cashier_kitchen')),
+            $user->hasRole('super_admin') => 'workspaces.super-admin',
+            $user->hasBusinessWideScope() => $this->firstAllowed($user, [
+                'reports.view' => 'workspaces.owner',
+                'transactions.view' => 'workspaces.transactions',
+                'products.manage' => 'products.index',
+                'inventory.manage' => 'inventory.index',
+                'staff.manage' => 'staff.index',
+                'settings.manage' => 'branches.index',
+            ]),
+            $user->roles()->exists() => $this->branchStaffWorkspace($user, ! $user->hasCashierOperationsRole()),
             default => null,
         };
 
@@ -53,19 +58,31 @@ class WorkspaceController extends Controller
     }
 
     /**
-     * Branch staff land on their Role's home workspace, or on the first workspace their effective permissions still
-     * allow when Access Control removed it (so a changed baseline never strands an account on a 403).
+     * Branch staff (System or Branch Custom Role) land on their Role's home workspace, or on the first workspace their
+     * effective permissions still allow when Access Control removed it (so a changed baseline never strands an account
+     * on a 403).
      */
     private function branchStaffWorkspace(User $user, bool $kitchenFirst): ?string
     {
         $candidates = $kitchenFirst
             ? ['kitchen.access' => 'workspaces.kitchen', 'pos.access' => 'workspaces.cashier']
             : ['pos.access' => 'workspaces.cashier', 'kitchen.access' => 'workspaces.kitchen'];
-        $candidates += [
+
+        return $this->firstAllowed($user, $candidates + [
             'transactions.view' => 'workspaces.transaction-history',
             'reports.view' => 'workspaces.reports',
-        ];
+            'customer_display.launch' => 'workspaces.customer-display',
+        ]);
+    }
 
+    /**
+     * The first destination whose permission the account holds. Owner and business-wide Custom Roles use the
+     * management pages; Branch staff use their operational workspaces.
+     *
+     * @param  array<string, string>  $candidates  permission => route name, in preference order
+     */
+    private function firstAllowed(User $user, array $candidates): ?string
+    {
         foreach ($candidates as $permission => $routeName) {
             if ($user->hasPermission($permission)) {
                 return $routeName;

@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\StaffRoles;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
@@ -128,6 +129,7 @@ test('super admin creates operational staff with a hashed temporary password bra
             'name' => 'Jamie Cruz',
             'email' => 'jamie@pongskilog.test',
             'role' => $role,
+            'role_label' => StaffRoles::LABELS[$role],
             'branch_access' => 'assigned',
             'branch_ids' => [$this->branch->id],
             'branch_codes' => ['ALPHA'],

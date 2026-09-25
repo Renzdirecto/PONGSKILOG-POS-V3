@@ -628,3 +628,10 @@ Operations follows the approved Owner Operations v2 standalone inside the real O
 ## Required-field visual rule (Phase 16E Final QA, manual QA)
 
 Required and still empty/invalid/unconfigured → **red outline** + readable text ("Required …", "Recipe required") + `aria-invalid` (+ `aria-describedby` to the text). Valid → **neutral gray** outline. Optional controls never turn red. Text inputs use the shared Input's `aria-invalid` styling; cards, chip groups and pick lists use `resources/js/lib/required-field.ts` (`requiredOutline`, `requiredGroupOutline`). Do not repaint every input globally; apply it to required controls deliberately.
+
+## Phase 18 final — Custom Roles and Executive Dashboard UI rules (2026-09-25)
+
+- Access Control shows **System roles** and **Custom roles** as separate groups; a Custom Role card shows its scope and assigned Staff count. Locked permissions stay visible with the reason; a checkbox is only shown when the backend accepts it for that role/scope.
+- Custom Role creation is a four-step dialog (Name → Scope → Access → Review). The required name and scope follow the required-field rule (red + text until valid, then neutral gray).
+- Staff role selects group System and Custom roles (`optgroup`); a role change always states that custom access resets.
+- The Super Admin landing is the **Executive Overview**: semantic colour only — emerald for healthy/positive money, blue for neutral analytics, amber for low stock, red only for something that cannot be sold, violet for Control/security, neutral for a closed Store. Real data only; every empty state says what is missing. Navigation links are secondary (Quick admin actions at the bottom).

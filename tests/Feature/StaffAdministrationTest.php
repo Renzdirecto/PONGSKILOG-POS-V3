@@ -123,7 +123,7 @@ test('promoting to owner clears branch assignments and resets custom access', fu
         ->and(UserPermissionOverride::query()->where('user_id', $this->cashier->id)->exists())->toBeFalse();
 
     $audit = AuditLog::query()->where('action', 'staff.role_changed')->sole();
-    expect($audit->before)->toBe(['role' => 'cashier', 'branch_codes' => ['MAIN']])
+    expect($audit->before)->toBe(['role' => 'cashier', 'role_label' => 'Cashier', 'branch_codes' => ['MAIN']])
         ->and($audit->after['role'])->toBe('owner')
         ->and($audit->after['branch_access'])->toBe('business_wide')
         ->and($audit->metadata['custom_access_reset'])->toBe(['reports.view' => 'allow']);

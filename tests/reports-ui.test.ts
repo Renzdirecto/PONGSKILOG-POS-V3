@@ -250,7 +250,7 @@ test('the payment method card has a default-off Include split checkbox in its he
 test('Owner and Super Admin render the report inside their management shells', () => {
     assert.match(
         ownerShell,
-        /label: 'Reports',[\s\S]{0,120}href: reports\(\),\s+active: isReports,/,
+        /label: 'Reports',[\s\S]{0,120}href: canReports \? reports\(\) : undefined,\s+active: isReports,/,
     );
     assert.match(
         ownerShell,

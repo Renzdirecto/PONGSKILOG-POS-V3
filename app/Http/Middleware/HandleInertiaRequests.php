@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
+use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\EffectivePermissions;
@@ -65,16 +66,19 @@ class HandleInertiaRequests extends Middleware
         ];
     }
 
-    /** @return array{user: array{id: int, name: string, email: string}|null, roles: list<string>, permissions: list<string>} */
+    /** @return array{user: array{id: int, name: string, email: string}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
     private function authProps(?User $user): array
     {
         if ($user === null) {
             return [
                 'user' => null,
                 'roles' => [],
+                'roleLabel' => null,
                 'permissions' => [],
             ];
         }
+
+        $roles = $user->roles()->orderBy('name')->get(['roles.name', 'roles.label']);
 
         return [
             'user' => [
@@ -82,7 +86,8 @@ class HandleInertiaRequests extends Middleware
                 'name' => $user->name,
                 'email' => $user->email,
             ],
-            'roles' => array_values($user->roles()->orderBy('name')->pluck('name')->all()),
+            'roles' => array_values($roles->pluck('name')->all()),
+            'roleLabel' => $roles->isEmpty() ? null : $roles->map(fn (Role $role): string => $role->displayLabel())->implode(' / '),
             'permissions' => EffectivePermissions::names($user),
         ];
     }

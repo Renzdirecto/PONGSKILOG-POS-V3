@@ -94,11 +94,19 @@ export function useUnreadNotifications(
     return unread;
 }
 
-/** Keeps the Notifications page list live by partially reloading its own props after a signal. */
-export function useNotificationsPageRefresh(userId: number): void {
+/**
+ * Keeps a page's notification-driven props live by partially reloading them after a signal on the viewer's own
+ * channel (the Notifications list, or the Executive Dashboard's security and attention summaries).
+ */
+export function useNotificationsPageRefresh(
+    userId: number,
+    only: string[] = ['notifications', 'unreadCount'],
+): void {
+    const onlyRef = useRef(only);
+    onlyRef.current = only;
+
     useNotificationSignal({
         userId,
-        onSignal: () =>
-            router.reload({ only: ['notifications', 'unreadCount'] }),
+        onSignal: () => router.reload({ only: onlyRef.current }),
     });
 }

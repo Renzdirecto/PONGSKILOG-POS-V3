@@ -76,7 +76,7 @@ class StoreStaffRequest extends FormRequest
                 },
             ],
             'password' => $this->passwordRules(),
-            'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')],
+            'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')->whereNull('archived_at')],
             'branch_ids' => $requiresBranch
                 ? ['required', 'array', 'min:1']
                 : ['prohibited'],
@@ -96,12 +96,14 @@ class StoreStaffRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
+        $role = $this->input('role');
+
         return [
             'employee_id.regex' => 'Use MMDDYY followed by a two-digit number, for example 09242601.',
             'employee_id.unique' => 'This Employee ID is already used by another account.',
             'branch_ids.required' => 'Choose at least one active Branch for this role.',
             'branch_ids.min' => 'Choose at least one active Branch for this role.',
-            'branch_ids.prohibited' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',
+            'branch_ids.prohibited' => StaffRoles::branchesProhibitedMessage($role),
             'branch_ids.*.exists' => 'Choose active Branches only.',
             'branch_ids.*.uuid' => 'Choose active Branches only.',
             'role.in' => 'Choose a valid role.',

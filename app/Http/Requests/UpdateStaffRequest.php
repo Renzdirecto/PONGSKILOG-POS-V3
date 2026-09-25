@@ -28,7 +28,7 @@ class UpdateStaffRequest extends FormRequest
         }
         $manageable = StaffRoles::manageableBy($actor);
 
-        return $manageable !== [] && ($manageable === StaffRoles::names() || StaffRoles::canManage($actor, $staff));
+        return $manageable !== [] && (StaffRoles::managesEveryAccount($actor) || StaffRoles::canManage($actor, $staff));
     }
 
     protected function prepareForValidation(): void
@@ -65,7 +65,7 @@ class UpdateStaffRequest extends FormRequest
                     }
                 },
             ],
-            'role' => ['required', 'string', Rule::in($actor instanceof User ? StaffRoles::manageableBy($actor) : []), Rule::exists('roles', 'name')],
+            'role' => ['required', 'string', Rule::in($actor instanceof User ? StaffRoles::manageableBy($actor) : []), Rule::exists('roles', 'name')->whereNull('archived_at')],
             'branch_ids' => $requiresBranch ? ['required', 'array', 'min:1'] : ['prohibited'],
             'branch_ids.*' => ['required', 'uuid', 'distinct', Rule::exists('branches', 'id')],
             'is_active' => ['required', 'boolean'],
@@ -79,10 +79,12 @@ class UpdateStaffRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
+        $role = $this->input('role');
+
         return [
             'branch_ids.required' => 'Choose at least one active Branch for this role.',
             'branch_ids.min' => 'Choose at least one active Branch for this role.',
-            'branch_ids.prohibited' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',
+            'branch_ids.prohibited' => StaffRoles::branchesProhibitedMessage($role),
             'branch_ids.*.exists' => 'Choose active Branches only.',
             'branch_ids.*.uuid' => 'Choose active Branches only.',
             'role.in' => 'Choose a valid role.',

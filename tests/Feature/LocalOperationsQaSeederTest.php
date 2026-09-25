@@ -51,14 +51,20 @@ test('the operations qa command seeds recipe-backed lemon drinks with different 
     $this->artisan('operations:seed-qa')->assertSuccessful();
 
     $products = Product::query()->whereIn('name', LocalOperationsQaSeeder::PRODUCTS)->get();
-    $plan = OperationPlan::query()->where('name', 'Drinks')->sole();
+    $mainId = Branch::query()->where('code', 'MAIN')->value('id');
+    /** Each Branch owns its Drinks Plan, Ingredients, Recipes and effects. */
+    expect(OperationPlan::query()->where('name', 'Drinks')->count())->toBe(2)
+        ->and(OperationPlan::query()->where('name', 'Drinks')->distinct()->pluck('lineage_id')->count())->toBe(2);
+    $plan = OperationPlan::query()->where('name', 'Drinks')->where('branch_id', $mainId)->sole();
     foreach ($products as $product) {
         expect(array_column(app(ProductSizes::class)->forProduct($product), 'name'))->toBe(['Small', 'Medium', 'Large'])
-            ->and(OperationPlanProduct::query()->where('product_id', $product->id)->value('operation_plan_id'))->toBe($plan->id)
+            ->and(OperationPlanProduct::query()->where('branch_id', $mainId)->where('product_id', $product->id)->value('operation_plan_id'))->toBe($plan->id)
             ->and(BranchProduct::query()->where('product_id', $product->id)->where(fn ($query) => $query->where('tracks_inventory', true)->orWhere('is_available', false))->exists())->toBeFalse();
     }
-    expect(Recipe::query()->count())->toBe(12)
-        ->and(ProductModifierEffect::query()->count())->toBe(8)
+    expect(Recipe::query()->count())->toBe(24)
+        ->and(Recipe::query()->where('branch_id', $mainId)->count())->toBe(12)
+        ->and(ProductModifierEffect::query()->count())->toBe(16)
+        ->and(Ingredient::query()->where('branch_id', $mainId)->count())->toBe(10)
         ->and(ModifierOption::query()->whereHas('modifierGroup', fn ($query) => $query->where('semantic_role', 'instruction'))->where('price_delta', '!=', 0)->exists())->toBeFalse();
 
     expect(qaBalances('MAIN'))->toBe([
@@ -118,8 +124,9 @@ test('running it again duplicates nothing and resets consumed stock with one cou
 
 test('an existing ingredient with another locked unit is kept and the qa fallback is used', function () {
     $owner = User::query()->where('email', 'owner@gmail.com')->sole();
-    $plan = OperationPlan::query()->create(['name' => 'Drinks', 'icon' => 'glass', 'created_by_user_id' => $owner->id]);
-    session([ActiveBranchContext::SESSION_KEY => Branch::query()->where('code', 'MAIN')->value('id')]);
+    $mainId = Branch::query()->where('code', 'MAIN')->value('id');
+    $plan = OperationPlan::query()->create(['branch_id' => $mainId, 'name' => 'Drinks', 'icon' => 'glass', 'created_by_user_id' => $owner->id]);
+    session([ActiveBranchContext::SESSION_KEY => $mainId]);
     app(SaveIngredient::class)->execute($owner, null, [
         'name' => 'Yakult', 'icon' => 'bottle', 'base_unit' => 'pack', 'target_quantity' => '3', 'replenishment_rule' => 'none',
         'plan_ids' => [$plan->id], 'initial_quantity' => '3',
@@ -127,10 +134,13 @@ test('an existing ingredient with another locked unit is kept and the qa fallbac
 
     $this->artisan('operations:seed-qa')->assertSuccessful();
 
-    expect(Ingredient::query()->where('name', 'Yakult')->value('base_unit'))->toBe('pack')
+    /** Only MAIN's own Yakult is locked to packs; QAVE's setup is independent and uses the plain name. */
+    expect(Ingredient::query()->where('branch_id', $mainId)->where('name', 'Yakult')->value('base_unit'))->toBe('pack')
         ->and(qaBalances('MAIN')['Yakult'])->toBe('3')
         ->and(qaBalances('MAIN')['Yakult Bottle'])->toBe('24')
-        ->and(OperationPlan::query()->count())->toBe(1);
+        ->and(qaBalances('QAVE')['Yakult'])->toBe('12')
+        ->and(OperationPlan::query()->where('branch_id', $mainId)->count())->toBe(1)
+        ->and(OperationPlan::query()->count())->toBe(2);
 });
 
 test('the qa command refuses to run outside local and testing', function () {

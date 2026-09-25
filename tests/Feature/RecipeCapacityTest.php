@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\BranchInventory;
+use App\Models\BranchProduct;
 use App\Models\CustomerQrSession;
 use App\Support\ActiveBranchContext;
 use App\Support\BranchCatalog;
@@ -73,7 +74,6 @@ test('a shared ingredient limits every product using it; negative and missing ba
     }
 
     $this->ops->setStock('water', '8000');
-    $this->ops->actAsOwnerOn(null);
     $this->ops->ingredients['ice'] = $this->ops->ingredient('Ice', 'g', '1000', null, null, null, 'none', null, [$this->ops->silog]);
     $this->ops->recipe($this->ops->tapsilog, null, ['rice' => '200', 'ice' => '50']);
     expect(catalogRow($this->ops, $this->ops->tapsilog->id)['recipe']['capacity'])->toBe(0);
@@ -81,7 +81,7 @@ test('a shared ingredient limits every product using it; negative and missing ba
 
 test('products outside recipe management keep their existing availability', function () {
     $tea = $this->ops->legacyDrink();
-    $tea->update(['no_recipe_needed' => false]);
+    BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $tea->id)->update(['no_recipe_needed' => false]);
 
     $coke = catalogRow($this->ops, $this->ops->coke->id);
     expect($coke['recipe'])->toBeNull()->and($coke['tracks_inventory'])->toBeTrue()->and($coke['on_hand'])->toBe(20);

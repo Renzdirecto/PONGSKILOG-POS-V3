@@ -769,3 +769,9 @@ Supersedes "Custom Roles add no realtime contract" above. Backend authorization 
 - `staff.changed` (`StaffChanged`) on `private-staff` (Super Admin or business-wide `staff.manage`) and `private-branch.{branch}.staff` (`staff.manage` + access to that Branch) for every Branch the changed account was or is assigned to. Payload: `event_id`, `event_type`, `occurred_at` only. Open Staff pages partially reload `staff`, `roles`, `branches` (the server re-scopes; an Owner or Branch manager never receives accounts it cannot see).
 - Bulk Branch assortment changes reuse `product.branch_configuration_changed` / `product.availability_changed` per changed Product on that Branch's `branch.{branch}.inventory` channel plus one `qr.catalog_changed` (`CatalogRealtime::branchProductsChanged()`); no other Branch is signalled.
 - All clients use `createRealtimeRefresh` (debounce + one trailing refresh, held during the page's own visits). No polling was added.
+
+
+## Phase 18 pass #2.1 — Branch configuration invalidation — 2026-09-25
+
+- `CatalogRealtime::branchConfigurationChanged(Branch, reason)` = `ingredients.changed` + `qr.catalog_changed` on that Branch's channels + `reports.changed` (Operations pages partial-reload) — after commit, ids/reason/time only. Used by recipe mode, Recipes, Add-on effects, Ingredient save/archive, Plan save/archive and setup copies. Assortment add/remove/copy use `branchProductsChanged()` (per-Product availability events, removal reports unavailable) plus `reports.changed`. A QAVE-only change never signals MAIN (`BranchSetupCopyTest`).
+- Reconnect: POS/QR refetch their authoritative catalog and Operations pages refetch through the existing reports refresh hook; no missed event is assumed.

@@ -14,7 +14,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Batched, read-only view of Ingredients and their canonical Branch stock: the same balance Catalog › Inventory and
+ * Batched, read-only view of one Branch's Ingredients and their canonical Branch stock: the same balance Catalog › Inventory and
  * every Operations page show. Today's figures are the Branch's movements since Asia/Manila midnight; the start of day
  * is derived from the current balance minus today's movements, so nothing is stored twice.
  *
@@ -28,12 +28,18 @@ class IngredientStockReport
     public function __construct(private ReplenishmentAdvisor $advisor) {}
 
     /**
+     * The Branch's own Ingredients (none for All Branches: there is no shared Ingredient setup).
+     *
      * @param  bool  $includeArchived  archived Ingredients are listed only where history needs them
      * @return array<int, IngredientRow>
      */
     public function rows(?Branch $branch, bool $includeArchived = false): array
     {
+        if ($branch === null) {
+            return [];
+        }
         $ingredients = Ingredient::query()
+            ->where('branch_id', $branch->id)
             ->when(! $includeArchived, fn ($query) => $query->whereNull('archived_at'))
             ->orderBy('name')->orderBy('id')->get();
         if ($ingredients->isEmpty()) {
@@ -51,11 +57,11 @@ class IngredientStockReport
         /** Every movement bumps its balance version, so a used balance marks the base unit as locked. */
         $withMovements = BranchIngredientStock::query()->whereIn('ingredient_id', $ids)->where('version', '>', 0)->distinct()->pluck('ingredient_id')->flip();
         $inRecipes = RecipeLine::query()->whereIn('ingredient_id', $ids)->distinct()->pluck('ingredient_id')->flip();
-        $figures = $branch === null ? [] : $this->figures($branch, $ids);
+        $figures = $this->figures($branch, $ids);
 
-        return $ingredients->map(function (Ingredient $ingredient) use ($plans, $withMovements, $inRecipes, $figures, $branch): array {
-            $stock = $branch === null ? null : ($figures[$ingredient->id] ?? $this->emptyFigures());
-            $recommendation = $stock === null ? null : $this->advisor->recommend($ingredient, $stock['current']);
+        return $ingredients->map(function (Ingredient $ingredient) use ($plans, $withMovements, $inRecipes, $figures): array {
+            $stock = $figures[$ingredient->id] ?? $this->emptyFigures();
+            $recommendation = $this->advisor->recommend($ingredient, $stock['current']);
 
             return [
                 'ingredient' => $ingredient,
@@ -63,7 +69,7 @@ class IngredientStockReport
                 'locked_unit' => $withMovements->has($ingredient->id) || $inRecipes->has($ingredient->id),
                 'stock' => $stock,
                 'recommendation' => $recommendation,
-                'status' => $stock === null || $recommendation === null ? null : $this->status($ingredient, $stock['current'], $recommendation),
+                'status' => $this->status($ingredient, $stock['current'], $recommendation),
             ];
         })->values()->all();
     }

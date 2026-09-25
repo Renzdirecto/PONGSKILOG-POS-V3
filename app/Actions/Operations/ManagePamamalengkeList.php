@@ -39,6 +39,7 @@ class ManagePamamalengkeList
     {
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
+        $this->access->ownedBy($plan, $branch);
         $this->activePlan($plan);
         foreach (['name', 'unit', 'note', 'estimated_unit_cost'] as $field) {
             $input[$field] = is_string($input[$field] ?? null) && trim($input[$field]) !== '' ? trim($input[$field]) : null;
@@ -79,6 +80,8 @@ class ManagePamamalengkeList
     {
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
+        $this->access->ownedBy($plan, $branch);
+        $this->access->ownedBy($ingredient, $branch);
         $this->activePlan($plan);
         if ($skipped && ($ingredient->archived_at !== null || ! DB::table('operation_plan_ingredients')
             ->where('operation_plan_id', $plan->id)->where('ingredient_id', $ingredient->id)->exists())) {

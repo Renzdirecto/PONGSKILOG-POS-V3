@@ -16,9 +16,10 @@ use App\Models\RecipeLine;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The one authority for Recipe-based Product availability. A Recipe-backed Product (it has at least one recipe, does
- * not track Product stock at the Branch and is not marked No recipe needed) can be sold only while its required Branch
- * Ingredient stock covers it:
+ * The one authority for Recipe-based Product availability. Everything resolves at the selected Branch only (no global
+ * fallback): its Branch Product mode, its Recipes, its Add-on effects and its Ingredient stock. A Recipe-backed Product
+ * (it has at least one recipe at the Branch, does not track Product stock there and is not in direct / No recipe
+ * needed mode there) can be sold only while its required Branch Ingredient stock covers it:
  *
  *     servings = min over required Ingredients of floor(max(current stock, 0) / quantity per serving)
  *
@@ -82,7 +83,9 @@ class RecipeCapacity
     }
 
     /**
-     * Recipe profiles (base recipe per Size and Product-specific Add-on effects) of Products at a Branch.
+     * Recipe profiles (base recipe per Size and Product-specific Add-on effects) of Products at a Branch, from that
+     * Branch's configuration only. A Product outside the Branch assortment is never recipe-limited here: the catalog
+     * membership gate rejects it first.
      *
      * @param  array<int, string>  $productIds  any Product ids; duplicates are ignored
      * @return array<string, Profile>
@@ -93,16 +96,16 @@ class RecipeCapacity
         if ($productIds === []) {
             return [];
         }
-        $products = Product::query()->whereKey($productIds)->get(['id', 'name', 'no_recipe_needed'])->keyBy('id');
-        $tracked = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)
-            ->where('tracks_inventory', true)->pluck('product_id')->flip();
-        $recipes = Recipe::query()->whereIn('product_id', $productIds)->with('lines:id,recipe_id,ingredient_id,quantity')->get()
+        $products = Product::query()->whereKey($productIds)->get(['id', 'name'])->keyBy('id');
+        $configurations = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)
+            ->get(['product_id', 'tracks_inventory', 'no_recipe_needed'])->keyBy('product_id');
+        $recipes = Recipe::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->with('lines:id,recipe_id,ingredient_id,quantity')->get()
             ->keyBy(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key);
         $recipeProducts = $recipes->map(fn (Recipe $recipe): string => $recipe->product_id)->flip();
         $resolved = $this->sizes->resolve($productIds);
         /** Only Add-on / Modifier options (semantic_role null) carry an Ingredient effect; Size and Instruction never. */
         $addOnGroupIds = ModifierGroup::query()->whereNull('semantic_role')->select('id');
-        $effects = ProductModifierEffect::query()->whereIn('product_id', $productIds)
+        $effects = ProductModifierEffect::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)
             ->whereHas('option', fn ($query) => $query->whereIn('modifier_group_id', $addOnGroupIds))
             ->with('lines:id,product_modifier_effect_id,ingredient_id,quantity')->get();
 
@@ -112,8 +115,10 @@ class RecipeCapacity
             if ($product === null) {
                 continue;
             }
+            $configuration = $configurations->get($productId);
             $mode = match (true) {
-                $tracked->has($productId), $product->no_recipe_needed => 'direct',
+                $configuration === null => 'none',
+                $configuration->tracks_inventory, $configuration->no_recipe_needed => 'direct',
                 $recipeProducts->has($productId) => 'recipe',
                 default => 'none',
             };

@@ -715,3 +715,12 @@ Supersedes "Products, Inventory, Operations, Staff, Settings stay business-wide 
 ### Business-wide Custom Roles
 
 Unchanged: all normal permissions, All Branches where the page aggregates, one concrete Branch for operations, never Control. Owner is not widened.
+
+
+## Phase 18 pass #2.1 — Branch-owned Operations and explicit assortment — 2026-09-25
+
+Supersedes "shared Operations definitions are business-wide only" and "no row = sold".
+
+- `operations.manage` on a concrete selected Branch configures that Branch's Plans, Ingredients, Recipes, Add-on effects and recipe mode (`OperationsAccess::configurationBranch()`); a Branch role only its assigned Branch (never All Branches), a business-wide role any active Branch after selecting it. All Branches is read-only (Branch picker; Purchases list). Any Plan/Ingredient/list entry id of another Branch is 404 (`ownedBy()`); submitted Ingredient ids of another Branch are rejected (and blocked by composite FKs on PostgreSQL).
+- Copy authorization: products.manage + `canAccessBranch()` on both source and destination (source must be another active Branch); bringing Operations setup additionally needs `operations.manage`. A MAIN-only manager cannot read or copy TEST/QAVE configuration.
+- `inventory.manage` (Product stock) and `operations.manage` stay separate. Control stays Super Admin only.

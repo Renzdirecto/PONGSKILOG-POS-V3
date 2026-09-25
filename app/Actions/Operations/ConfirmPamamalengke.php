@@ -76,6 +76,7 @@ class ConfirmPamamalengke
     {
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
+        $this->access->ownedBy($plan, $branch);
         $input['note'] = is_string($input['note'] ?? null) && trim($input['note']) !== '' ? trim($input['note']) : null;
         /** @var array{idempotency_key: string, payment_source: string, note: string|null, items: list<array{type: string, ingredient_id?: string|null, entry_id?: string|null, name?: string|null, unit?: string|null, actual_quantity: string, actual_unit_cost: string, note?: string|null}>} $data */
         $data = Validator::make($input, self::rules(), [
@@ -266,9 +267,9 @@ class ConfirmPamamalengke
     {
         $ingredientIds = array_values(array_filter(array_column($lines, 'ingredient_id')));
         /** FOR NO KEY UPDATE serializes definition edits without blocking sales' foreign-key KEY SHARE checks. */
-        $ingredients = Ingredient::query()->whereKey($ingredientIds)->whereNull('archived_at')->orderBy('id')->lock('for no key update')->get()->keyBy('id');
+        $ingredients = Ingredient::query()->where('branch_id', $branch->id)->whereKey($ingredientIds)->whereNull('archived_at')->orderBy('id')->lock('for no key update')->get()->keyBy('id');
         if ($ingredients->count() !== count($ingredientIds)) {
-            throw ValidationException::withMessages(['items' => 'Use only active ingredients.']);
+            throw ValidationException::withMessages(['items' => 'Use only active ingredients of '.$branch->code.'.']);
         }
         $stocks = BranchIngredientStock::query()->where('branch_id', $branch->id)->whereIn('ingredient_id', $ingredientIds)->pluck('on_hand', 'ingredient_id');
         $entryIds = array_values(array_filter(array_column($lines, 'entry_id')));

@@ -47,7 +47,9 @@ class InventoryController extends Controller
             : Branch::query()->whereKey($globalBranch?->id)->get(['id', 'name', 'code', 'status']);
         $branch = $globalBranch ?? $branches->firstWhere('id', $request->validated('branch_id'));
 
+        /** The current list is the Branch's assortment; a removed Product's movement history stays reachable by its link. */
         $baseQuery = Product::query()
+            ->when($branch !== null, fn ($query) => $query->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branch?->id)))
             ->when($filters['search'] !== '', fn ($query) => $query->whereLike('products.name', '%'.$filters['search'].'%'))
             ->when($filters['category'] !== '', fn ($query) => $query->where('products.category_id', $filters['category']));
 
@@ -99,7 +101,7 @@ class InventoryController extends Controller
         ));
         /** The Products tab only needs the Ingredient tab count, not the full stock report. */
         $ingredientCount = $branch === null ? 0 : ($filters['type'] === 'products'
-            ? Ingredient::query()->whereNull('archived_at')
+            ? Ingredient::query()->where('branch_id', $branch->id)->whereNull('archived_at')
                 ->when($filters['search'] !== '', fn ($query) => $query->whereLike('name', '%'.$filters['search'].'%'))->count()
             : count($ingredients));
 

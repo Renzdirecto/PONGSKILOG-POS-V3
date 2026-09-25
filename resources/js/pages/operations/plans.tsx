@@ -28,6 +28,7 @@ import {
     opsPrimaryClass,
     operationsHref,
 } from '@/components/operations-ui';
+import { OperationsSetupCopyButton } from '@/components/operations-setup-copy-dialog';
 import { formatPeso } from '@/lib/operations';
 import operationsRoutes from '@/routes/operations';
 import type {
@@ -86,8 +87,8 @@ export default function OperationsPlans({
     products,
 }: Props) {
     const [editing, setEditing] = useState<OperationsPlan | 'new' | null>(null);
-    /** Plans are shared by every Branch; only business-wide Operations edits them. */
-    const canEdit = operations.can_manage_definitions;
+    /** Plans belong to the selected Branch; its Operations manager configures them. */
+    const canEdit = operations.can_configure;
     const planName = (id: string) =>
         operations.plans.find((plan) => plan.id === id)?.name ?? 'Plan';
     const business = summary.business;
@@ -96,16 +97,19 @@ export default function OperationsPlans({
         <OperationsShell
             operations={operations}
             title="Pamalengke Plans"
-            description="Plans group products, recipes, ingredients and market planning. Ingredient stock stays shared per branch."
+            description={`Plans of ${operations.branch?.code ?? 'this Branch'} group its products, recipes, ingredients and market planning. Other Branches keep their own plans.`}
             action={
                 canEdit ? (
-                    <button
-                        type="button"
-                        className={opsPrimaryClass}
-                        onClick={() => setEditing('new')}
-                    >
-                        <Plus className="size-4" /> Add plan
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <OperationsSetupCopyButton operations={operations} />
+                        <button
+                            type="button"
+                            className={opsPrimaryClass}
+                            onClick={() => setEditing('new')}
+                        >
+                            <Plus className="size-4" /> Add plan
+                        </button>
+                    </div>
                 ) : undefined
             }
         >
@@ -140,17 +144,23 @@ export default function OperationsPlans({
 
             {operations.plans.length === 0 ? (
                 <EmptyState
-                    title="No plans yet"
-                    body="Create a plan for a product family, such as Drinks or Silog. Then attach recipes to its existing Catalog products and add the ingredients they use."
+                    title="No Pamalengke Plans yet."
+                    body={`${operations.branch?.code ?? 'This Branch'} has no Operations setup yet (${operations.setup.ingredients} ingredients, ${operations.setup.recipes} recipes). Create a plan for a product family, such as Drinks or Silog, or copy the setup from another Branch. Stock is never copied.`}
                     action={
                         canEdit ? (
-                            <button
-                                type="button"
-                                className={opsPrimaryClass}
-                                onClick={() => setEditing('new')}
-                            >
-                                <Plus className="size-4" /> Add the first plan
-                            </button>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                <button
+                                    type="button"
+                                    className={opsButtonClass}
+                                    onClick={() => setEditing('new')}
+                                >
+                                    <Plus className="size-4" /> Create manually
+                                </button>
+                                <OperationsSetupCopyButton
+                                    operations={operations}
+                                    primary
+                                />
+                            </div>
                         ) : undefined
                     }
                 />

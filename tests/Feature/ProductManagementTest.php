@@ -240,7 +240,7 @@ test('a selected global branch limits product configuration exposure and writes'
     $main = Branch::factory()->create(['code' => 'MAIN']);
     $qave = Branch::factory()->create(['code' => 'QAVE']);
     $category = Category::factory()->create();
-    Product::factory()->create();
+    Product::factory()->soldAt($main)->create();
 
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $main->id])
         ->get(route('products.index'))
@@ -261,7 +261,7 @@ test('a selected global branch limits product configuration exposure and writes'
     ]))->assertForbidden();
 
     $this->assertDatabaseCount('products', 1);
-    $this->assertDatabaseCount('branch_products', 0);
+    $this->assertDatabaseCount('branch_products', 1);
 });
 
 test('product stock presentation and stock filters follow the selected branch', function () {
@@ -351,8 +351,8 @@ test('branch prices can be overridden and restored without changing other branch
 });
 
 test('zero override prices are preserved and invalid prices do not replace them', function () {
-    $product = Product::factory()->create();
     $branch = Branch::factory()->create();
+    $product = Product::factory()->soldAt($branch)->create();
     $this->actingAs(catalogWebManager())->put(route('products.branches.update', [$product, $branch]), ['price_override' => '0.00', 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null])->assertSessionHasNoErrors();
     $this->assertDatabaseHas('branch_products', ['product_id' => $product->id, 'branch_id' => $branch->id, 'price_override' => 0]);
 
@@ -362,9 +362,9 @@ test('zero override prices are preserved and invalid prices do not replace them'
 
 test('managers can enable branch inventory configuration without affecting another branch', function (string $role) {
     $user = catalogWebManager($role);
-    $product = Product::factory()->create();
     $main = Branch::factory()->create(['code' => 'MAIN']);
     $qave = Branch::factory()->create(['code' => 'QAVE']);
+    $product = Product::factory()->soldAt($main)->create();
     $other = BranchProduct::factory()->for($product)->for($qave)->create();
     $otherAttributes = $other->fresh()->getAttributes();
 
@@ -698,13 +698,47 @@ test('image storage failures return a recoverable error and preserve the current
 
 test('product and category inactivity override branch availability in management', function (bool $categoryActive, bool $productActive) {
     $category = Category::factory()->create(['is_active' => $categoryActive]);
-    Product::factory()->for($category)->create(['is_active' => $productActive]);
-    Branch::factory()->create();
+    $branch = Branch::factory()->create();
+    Product::factory()->for($category)->soldAt($branch)->create(['is_active' => $productActive]);
 
     $this->actingAs(catalogWebManager())->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+        ->where('products.data.0.branch_prices.0.in_assortment', true)
         ->where('products.data.0.branch_prices.0.is_available', true)
         ->where('products.data.0.branch_prices.0.effective_available', false));
 })->with([[false, true], [true, false]]);
+
+test('all branches lists every global product with its membership per branch, including products sold nowhere', function () {
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    Branch::factory()->create(['code' => 'QAVE']);
+    Product::factory()->soldAt($main)->create(['name' => 'A sold at MAIN']);
+    Product::factory()->create(['name' => 'B sold nowhere']);
+
+    $this->actingAs(catalogWebManager())->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+        ->has('products.data', 2)
+        ->where('products.data.0.branch_prices.0.in_assortment', true)
+        ->where('products.data.0.branch_prices.1.in_assortment', false)
+        ->where('products.data.0.branch_prices.1.effective_available', false)
+        ->where('products.data.1.branch_prices.0.in_assortment', false)
+        ->where('products.data.1.branch_prices.1.in_assortment', false));
+});
+
+test('a new global product joins only the branches selected when it is created', function () {
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    $qave = Branch::factory()->create(['code' => 'QAVE']);
+    $category = Category::factory()->create();
+
+    $this->actingAs(catalogWebManager())->post(route('products.store'), catalogProductInput($category, [
+        'name' => 'Only MAIN',
+        'branch_configs' => [['branch_id' => $main->id, 'price_override' => null, 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null]],
+    ]))->assertRedirect();
+    $this->post(route('products.store'), catalogProductInput($category, ['name' => 'Nowhere yet', 'branch_configs' => []]))->assertRedirect();
+
+    $onlyMain = Product::query()->where('name', 'Only MAIN')->sole();
+    $nowhere = Product::query()->where('name', 'Nowhere yet')->sole();
+    expect(BranchProduct::query()->where('product_id', $onlyMain->id)->pluck('branch_id')->all())->toBe([$main->id])
+        ->and(BranchProduct::query()->where('product_id', $nowhere->id)->exists())->toBeFalse()
+        ->and(BranchProduct::query()->where('branch_id', $qave->id)->exists())->toBeFalse();
+});
 
 test('missing catalog records return not found without creating branch overrides', function () {
     $this->actingAs(catalogWebManager());

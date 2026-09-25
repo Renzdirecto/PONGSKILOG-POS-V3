@@ -24,7 +24,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Read-only props for the Owner Operations pages. Every figure comes from a server-side authority:
+ * Read-only props for the Owner Operations pages, always for one Branch's own setup (its Plans, Ingredients, Recipes,
+ * Add-on effects, recipe modes and stock); All Branches has no single setup and shows none. Every figure comes from a
+ * server-side authority:
  * IngredientStockReport (canonical Branch stock + ReplenishmentAdvisor), OperationsSummary (sales/COGS/profit on the
  * Phase 16 reporting authority) and the append-only movement and purchase records. React only formats these values.
  *
@@ -40,10 +42,33 @@ class OperationsWorkspace
         private RecipeCapacity $capacity,
     ) {}
 
-    /** @return EloquentCollection<int, OperationPlan> */
-    public function activePlans(): EloquentCollection
+    /** @return EloquentCollection<int, OperationPlan> the Branch's active Plans (none for All Branches) */
+    public function activePlans(?Branch $branch): EloquentCollection
     {
-        return OperationPlan::query()->whereNull('archived_at')->orderBy('name')->orderBy('id')->get();
+        if ($branch === null) {
+            return new EloquentCollection;
+        }
+
+        return OperationPlan::query()->where('branch_id', $branch->id)->whereNull('archived_at')->orderBy('name')->orderBy('id')->get();
+    }
+
+    /**
+     * How much Operations setup the Branch has, for truthful empty states and the copy entry points.
+     *
+     * @return array{plans: int, ingredients: int, recipes: int, products: int}
+     */
+    public function setupCounts(?Branch $branch): array
+    {
+        if ($branch === null) {
+            return ['plans' => 0, 'ingredients' => 0, 'recipes' => 0, 'products' => 0];
+        }
+
+        return [
+            'plans' => OperationPlan::query()->where('branch_id', $branch->id)->whereNull('archived_at')->count(),
+            'ingredients' => Ingredient::query()->where('branch_id', $branch->id)->whereNull('archived_at')->count(),
+            'recipes' => Recipe::query()->where('branch_id', $branch->id)->count(),
+            'products' => BranchProduct::query()->where('branch_id', $branch->id)->count(),
+        ];
     }
 
     /** @param EloquentCollection<int, OperationPlan> $plans */
@@ -73,6 +98,7 @@ class OperationsWorkspace
         return [
             'page' => $page,
             'branch' => $branch?->only(['id', 'name', 'code']),
+            'setup' => $this->setupCounts($branch),
             'plans' => $plans->map(fn (OperationPlan $plan): array => [
                 'id' => $plan->id,
                 'name' => $plan->name,
@@ -95,9 +121,10 @@ class OperationsWorkspace
     {
         $rows = $this->stock->rows($branch);
         $summary = $this->summary->today($branch);
-        $memberships = OperationPlanProduct::query()->get(['operation_plan_id', 'product_id']);
-        $recipeProducts = Recipe::query()->distinct()->pluck('product_id')->flip();
-        $direct = $this->directResaleProducts($memberships->map(fn (OperationPlanProduct $membership): string => $membership->product_id)->values()->all());
+        $branchId = $branch?->id;
+        $memberships = OperationPlanProduct::query()->where('branch_id', $branchId)->get(['operation_plan_id', 'product_id']);
+        $recipeProducts = Recipe::query()->where('branch_id', $branchId)->distinct()->pluck('product_id')->flip();
+        $direct = $this->directResaleProducts($branchId, $memberships->map(fn (OperationPlanProduct $membership): string => $membership->product_id)->values()->all());
 
         $cards = $plans->map(function (OperationPlan $plan) use ($rows, $memberships, $recipeProducts, $direct, $summary): array {
             $productIds = $memberships->where('operation_plan_id', $plan->id)->pluck('product_id')->all();
@@ -122,9 +149,10 @@ class OperationsWorkspace
             ];
         })->values()->all();
 
-        $outside = Product::query()->where('is_active', true)
-            ->whereNotIn('id', OperationPlanProduct::query()->select('product_id'))
-            ->orderBy('name')->limit(3)->pluck('name');
+        $outsideQuery = fn () => Product::query()->where('is_active', true)
+            ->whereIn('id', BranchProduct::query()->where('branch_id', $branchId)->select('product_id'))
+            ->whereNotIn('id', OperationPlanProduct::query()->where('branch_id', $branchId)->select('product_id'));
+        $outside = $outsideQuery()->orderBy('name')->limit(3)->pluck('name');
         $shared = null;
         foreach ($rows as $row) {
             if (count($row['plan_ids']) > 1) {
@@ -137,26 +165,26 @@ class OperationsWorkspace
             'cards' => $cards,
             'summary' => $this->presentSummary($summary),
             'outside' => [
-                'count' => Product::query()->where('is_active', true)->whereNotIn('id', OperationPlanProduct::query()->select('product_id'))->count(),
+                'count' => $outsideQuery()->count(),
                 'examples' => $outside->all(),
             ],
             'shared' => $shared === null ? null : [
                 ...$this->presentIngredient($shared),
                 'plan_ids' => $shared['plan_ids'],
             ],
-            'products' => $this->productPicker(),
+            'products' => $this->productPicker($branchId),
         ];
     }
 
     /** @return array<string, mixed> */
-    public function overviewPage(?Branch $branch, OperationPlan $plan): array
+    public function overviewPage(Branch $branch, OperationPlan $plan): array
     {
         $rows = $this->planRows($this->stock->rows($branch), $plan);
         $summary = $this->summary->today($branch);
         $figures = $summary['plans'][$plan->id] ?? null;
         $market = $this->market($rows, $this->skips($branch, $plan));
         $manual = $this->manualEntries($branch, $plan);
-        $recipes = $this->recipeStates($plan);
+        $recipes = $this->recipeStates($branch, $plan);
         $used = [];
         foreach ($rows as $row) {
             $quantity = $row['stock']['consumed_by_plan'][$plan->id] ?? 0;
@@ -174,7 +202,7 @@ class OperationsWorkspace
             'market' => [...$market, 'manual' => $manual, 'estimate_cents' => $market['estimate_cents'] + array_sum(array_map(fn (array $entry): int => $entry['estimate_cents'] ?? 0, $manual)), 'unknown' => $market['unknown'] + count(array_filter($manual, fn (array $entry): bool => $entry['estimate_cents'] === null))],
             'recipes' => $recipes,
             'consumption' => $consumption,
-            'movements' => $branch === null ? [] : $this->movements($branch, array_map(fn (array $row): string => $row['ingredient']->id, $rows), 5),
+            'movements' => $this->movements($branch, array_map(fn (array $row): string => $row['ingredient']->id, $rows), 5),
             'summary' => $this->presentSummary($summary, $plan),
             'earlier' => $this->purchasesToday($branch, $plan),
         ];
@@ -187,41 +215,39 @@ class OperationsWorkspace
     }
 
     /**
-     * Base recipes per Size (the one Size group only), Product-specific Add-on / Modifier Ingredient effects, the
-     * Product's inventory mode (Product stock, No recipe needed or Ingredient recipe) and, for a concrete Branch, the
-     * servings each Size can make now (RecipeCapacity). Instructions are listed only to explain that they never use
-     * ingredients. The recipe mode is always decided from every Branch, but a Branch-scoped viewer ($visibleBranchIds)
-     * only sees its own Branches by name; other Branches are counted, never named.
+     * The Branch's base recipes per Size (the one Size group only), its Product-specific Add-on / Modifier Ingredient
+     * effects, each Product's inventory mode at this Branch (Product stock, No recipe needed or Ingredient recipe) and
+     * the servings each Size can make now (RecipeCapacity). Instructions are listed only to explain that they never use
+     * ingredients. Other Branches never affect or appear in this page: they have their own recipes and modes.
      *
-     * @param  list<string>|null  $visibleBranchIds  null = every Branch (business-wide viewer)
      * @return array<string, mixed>
      */
-    public function recipesPage(?Branch $branch, OperationPlan $plan, ?array $visibleBranchIds = null): array
+    public function recipesPage(Branch $branch, OperationPlan $plan): array
     {
         $products = Product::query()->whereIn('id', OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->select('product_id'))
+            ->whereIn('id', BranchProduct::query()->where('branch_id', $branch->id)->select('product_id'))
             ->with(['category:id,name', 'modifierGroups' => fn ($query) => $query->where('is_active', true)->orderBy('name')
                 ->with(['options' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('name')])])
             ->orderBy('name')->orderBy('id')->get();
         $resolved = $this->sizes->resolve($products->modelKeys());
-        $recipes = Recipe::query()->whereIn('product_id', $products->modelKeys())->with('lines')->get()
+        $recipes = Recipe::query()->where('branch_id', $branch->id)->whereIn('product_id', $products->modelKeys())->with('lines')->get()
             ->keyBy(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key);
-        $effects = ProductModifierEffect::query()->whereIn('product_id', $products->modelKeys())->with('lines')->get()
+        $effects = ProductModifierEffect::query()->where('branch_id', $branch->id)->whereIn('product_id', $products->modelKeys())->with('lines')->get()
             ->keyBy(fn (ProductModifierEffect $effect): string => $effect->product_id.'|'.$effect->modifier_option_id);
-        $tracked = BranchProduct::query()->whereIn('product_id', $products->modelKeys())->where('tracks_inventory', true)
-            ->join('branches', 'branches.id', '=', 'branch_products.branch_id')
-            ->orderBy('branches.code')
-            ->get(['branch_products.product_id', 'branches.id AS branch_id', 'branches.code', 'branches.name'])->groupBy('product_id');
-        $prices = $branch === null ? collect() : BranchProduct::query()->where('branch_id', $branch->id)
-            ->whereIn('product_id', $products->modelKeys())->whereNotNull('price_override')->pluck('price_override', 'product_id');
-        $availability = $branch === null ? [] : $this->capacity->catalog($branch, $products->map(fn (Product $product): string => $product->id)->values()->all());
+        $configurations = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $products->modelKeys())->get()->keyBy('product_id');
+        $availability = $this->capacity->catalog($branch, $products->map(fn (Product $product): string => $product->id)->values()->all());
         $present = fn (iterable $lines): array => collect($lines)->sortBy('ingredient_id')->map(fn (RecipeLine|ProductModifierEffectLine $line): array => [
             'ingredient_id' => $line->ingredient_id,
             'quantity' => ExactQuantity::display(ExactQuantity::parse($line->quantity)),
         ])->values()->all();
 
         return [
-            'products' => $products->map(function (Product $product) use ($resolved, $recipes, $effects, $tracked, $prices, $availability, $present, $visibleBranchIds): array {
-                $base = ExactMoney::cents((string) ($prices[$product->id] ?? $product->default_price));
+            'products' => $products->map(function (Product $product) use ($branch, $resolved, $recipes, $effects, $configurations, $availability, $present): array {
+                /** @var BranchProduct $configuration */
+                $configuration = $configurations->get($product->id);
+                $tracked = $configuration->tracks_inventory;
+                $noRecipeNeeded = $configuration->no_recipe_needed;
+                $base = ExactMoney::cents((string) ($configuration->price_override ?? $product->default_price));
                 $servings = collect($availability[$product->id]['sizes'] ?? [])->pluck('capacity', 'key');
                 $productSizes = array_map(function (array $size) use ($product, $recipes, $base, $servings, $present): array {
                     $recipe = $recipes->get($product->id.'|'.$size['key']);
@@ -235,10 +261,6 @@ class OperationsWorkspace
                         'servings' => $servings->get($size['key']),
                     ];
                 }, $resolved['sizes'][$product->id]);
-                $trackedAt = $tracked->get($product->id)?->pluck('code')->all() ?? [];
-                $trackedRows = $tracked->get($product->id) ?? collect();
-                $visibleTracked = $visibleBranchIds === null ? $trackedRows
-                    : $trackedRows->filter(fn (BranchProduct $row): bool => in_array((string) $row->getAttribute('branch_id'), $visibleBranchIds, true));
                 $conflict = $resolved['conflicts'][$product->id] ?? null;
                 $addOns = [];
                 foreach ($product->modifierGroups->whereNull('semantic_role') as $group) {
@@ -260,29 +282,22 @@ class OperationsWorkspace
                     'category' => $product->category?->name,
                     'is_active' => $product->is_active,
                     'image_url' => $this->images->safeCardUrl($product),
-                    'no_recipe_needed' => $product->no_recipe_needed,
-                    'tracked_at' => array_values($visibleTracked->map(fn (BranchProduct $row): string => (string) $row->getAttribute('code'))->all()),
-                    /** Every visible Branch whose direct Product stock blocks Ingredient recipe mode, to open its own settings. */
-                    'tracked_branches' => array_values($visibleTracked->map(fn (BranchProduct $row): array => [
-                        'id' => (string) $row->getAttribute('branch_id'),
-                        'code' => (string) $row->getAttribute('code'),
-                        'name' => (string) $row->getAttribute('name'),
-                    ])->all()),
-                    /** Blocking Branches outside a Branch-scoped viewer's scope: counted, never named. */
-                    'tracked_elsewhere' => $trackedRows->count() - $visibleTracked->count(),
+                    'no_recipe_needed' => $noRecipeNeeded,
+                    /** Only this Branch's own Product stock tracking can block its Ingredient recipe mode. */
+                    'tracks_product_stock' => $tracked,
                     'inventory_mode' => match (true) {
-                        $trackedAt !== [] => 'product_stock',
-                        $product->no_recipe_needed => 'no_recipe_needed',
+                        $tracked => 'product_stock',
+                        $noRecipeNeeded => 'no_recipe_needed',
                         default => 'recipe',
                     },
                     'size_conflict' => $conflict,
-                    'state' => $conflict !== null && $trackedAt === [] && ! $product->no_recipe_needed
+                    'state' => $conflict !== null && ! $tracked && ! $noRecipeNeeded
                         ? 'configuration_error'
-                        : $this->recipeState($trackedAt !== [], $product->no_recipe_needed, $productSizes),
+                        : $this->recipeState($tracked, $noRecipeNeeded, $productSizes),
                     'sizes' => $productSizes,
                     'add_ons' => $addOns,
                     'instruction_groups' => $product->modifierGroups->where('semantic_role', ModifierSemanticRole::Instruction)->pluck('name')->values()->all(),
-                    'settings_url' => route('products.index', ['search' => $product->name, 'edit' => $product->id], false),
+                    'settings_url' => route('products.index', ['search' => $product->name, 'edit' => $product->id, 'branch' => $branch->id], false),
                 ];
             })->values()->all(),
             'ingredients' => array_map(fn (array $row): array => $this->presentIngredient($row), $this->stock->rows($branch)),
@@ -608,29 +623,34 @@ class OperationsWorkspace
     }
 
     /**
-     * Recipe coverage of a Plan's Products: set, some sizes missing, missing, No recipe needed, uses Product stock, or a
-     * Size group configuration error.
+     * Recipe coverage of a Plan's Products at its Branch: set, some sizes missing, missing, No recipe needed, uses
+     * Product stock, or a Size group configuration error.
      *
      * @return array<int, array{id: string, name: string, state: string}>
      */
-    private function recipeStates(OperationPlan $plan): array
+    private function recipeStates(Branch $branch, OperationPlan $plan): array
     {
         $products = Product::query()->whereIn('id', OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->select('product_id'))
-            ->orderBy('name')->get(['id', 'name', 'no_recipe_needed']);
+            ->orderBy('name')->get(['id', 'name']);
         $resolved = $this->sizes->resolve($products->modelKeys());
-        $recipes = Recipe::query()->whereIn('product_id', $products->modelKeys())->whereHas('lines')->get(['product_id', 'size_key'])
+        $recipes = Recipe::query()->where('branch_id', $branch->id)->whereIn('product_id', $products->modelKeys())->whereHas('lines')->get(['product_id', 'size_key'])
             ->map(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key)->flip();
-        $tracked = BranchProduct::query()->whereIn('product_id', $products->modelKeys())->where('tracks_inventory', true)->pluck('product_id')->flip();
+        $configurations = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $products->modelKeys())->get()->keyBy('product_id');
 
-        return $products->map(fn (Product $product): array => [
-            'id' => $product->id,
-            'name' => $product->name,
-            'state' => isset($resolved['conflicts'][$product->id]) && ! $tracked->has($product->id) && ! $product->no_recipe_needed
-                ? 'configuration_error'
-                : $this->recipeState($tracked->has($product->id), $product->no_recipe_needed, array_map(fn (array $size): array => [
-                    'lines' => $recipes->has($product->id.'|'.$size['key']) ? [true] : null,
-                ], $resolved['sizes'][$product->id])),
-        ])->values()->all();
+        return $products->map(function (Product $product) use ($resolved, $recipes, $configurations): array {
+            $tracked = (bool) $configurations->get($product->id)?->tracks_inventory;
+            $noRecipeNeeded = (bool) $configurations->get($product->id)?->no_recipe_needed;
+
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'state' => isset($resolved['conflicts'][$product->id]) && ! $tracked && ! $noRecipeNeeded
+                    ? 'configuration_error'
+                    : $this->recipeState($tracked, $noRecipeNeeded, array_map(fn (array $size): array => [
+                        'lines' => $recipes->has($product->id.'|'.$size['key']) ? [true] : null,
+                    ], $resolved['sizes'][$product->id])),
+            ];
+        })->values()->all();
     }
 
     /** @param array<int, array{lines: array<mixed>|null}> $sizes */
@@ -652,17 +672,17 @@ class OperationsWorkspace
     }
 
     /**
-     * Products whose sales use Product stock or are marked No recipe needed (direct resale, no Ingredient recipe).
+     * Products whose sales at this Branch use Product stock or are marked No recipe needed (direct resale, no Ingredient
+     * recipe).
      *
      * @param  array<int, string>  $productIds
      * @return Collection<string, int>
      */
-    private function directResaleProducts(array $productIds): Collection
+    private function directResaleProducts(?string $branchId, array $productIds): Collection
     {
-        return Product::query()->whereKey($productIds)
-            ->where(fn ($query) => $query->where('no_recipe_needed', true)
-                ->orWhereIn('id', BranchProduct::query()->where('tracks_inventory', true)->select('product_id')))
-            ->pluck('id')->flip();
+        return BranchProduct::query()->where('branch_id', $branchId)->whereIn('product_id', $productIds)
+            ->where(fn ($query) => $query->where('no_recipe_needed', true)->orWhere('tracks_inventory', true))
+            ->pluck('product_id')->flip();
     }
 
     /**
@@ -674,12 +694,18 @@ class OperationsWorkspace
         return array_values(array_filter($rows, fn (array $row): bool => in_array($plan->id, $row['plan_ids'], true)));
     }
 
-    /** @return array<int, array{id: string, name: string, category: string|null, plan_id: string|null}> */
-    private function productPicker(): array
+    /**
+     * Active Products of this Branch's assortment for the Plan editor, with their current Plan at this Branch.
+     *
+     * @return array<int, array{id: string, name: string, category: string|null, plan_id: string|null}>
+     */
+    private function productPicker(?string $branchId): array
     {
-        $plans = OperationPlanProduct::query()->pluck('operation_plan_id', 'product_id');
+        $plans = OperationPlanProduct::query()->where('branch_id', $branchId)->pluck('operation_plan_id', 'product_id');
 
-        return Product::query()->where('is_active', true)->with('category:id,name')->orderBy('name')->orderBy('id')->get(['id', 'name', 'category_id'])
+        return Product::query()->where('is_active', true)
+            ->whereIn('id', BranchProduct::query()->where('branch_id', $branchId)->select('product_id'))
+            ->with('category:id,name')->orderBy('name')->orderBy('id')->get(['id', 'name', 'category_id'])
             ->map(fn (Product $product): array => [
                 'id' => $product->id,
                 'name' => $product->name,

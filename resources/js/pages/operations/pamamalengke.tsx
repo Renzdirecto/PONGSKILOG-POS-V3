@@ -585,7 +585,7 @@ export default function OperationsPamamalengke(props: Props) {
                                                     }
                                                 </span>
                                             </span>
-                                            {operations.can_manage_definitions && (
+                                            {operations.can_configure && (
                                                 <button
                                                     type="button"
                                                     className={opsButtonClass}

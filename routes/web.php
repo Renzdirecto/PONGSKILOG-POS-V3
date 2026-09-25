@@ -26,6 +26,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\OperationPlanController;
 use App\Http\Controllers\OperationsController;
+use App\Http\Controllers\OperationsSetupCopyController;
 use App\Http\Controllers\OrderAdjustmentAllocationController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\PamamalengkeController;
@@ -92,6 +93,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('products', [ProductController::class, 'index'])->name('products.index');
         Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
         Route::post('products/branch-assortment', [BranchAssortmentController::class, 'store'])->middleware('throttle:30,1')->name('products.branch-assortment.store');
+        Route::delete('products/branch-assortment', [BranchAssortmentController::class, 'destroy'])->middleware('throttle:30,1')->name('products.branch-assortment.destroy');
         Route::get('products/branch-assortment/copy', [BranchAssortmentController::class, 'preview'])->name('products.branch-assortment.copy.preview');
         Route::post('products/branch-assortment/copy', [BranchAssortmentController::class, 'copy'])->middleware('throttle:20,1')->name('products.branch-assortment.copy');
     });
@@ -165,7 +167,7 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:transactions.view')
         ->name('workspaces.transactions.show');
 
-    /** Owner Operations & Pamamalengke (Phase 16E): operations.manage with business-wide scope, checked again server-side. */
+    /** Operations & Pamamalengke: operations.manage on the selected Branch (business-wide or assigned), checked again server-side. */
     Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:operations.manage')->group(function () {
         Route::get('/', [OperationsController::class, 'plans'])->name('plans');
         Route::get('overview', [OperationsController::class, 'overview'])->name('overview');
@@ -191,6 +193,8 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('pamamalengke/manual-items/{entry}', [PamamalengkeController::class, 'destroyManual'])->whereUuid('entry')->name('pamamalengke.manual.destroy');
             Route::put('pamamalengke/{plan}/skips/{ingredient}', [PamamalengkeController::class, 'skip'])->whereUuid(['plan', 'ingredient'])->name('pamamalengke.skip');
         });
+        Route::get('setup-copy', [OperationsSetupCopyController::class, 'preview'])->name('setup-copy.preview');
+        Route::post('setup-copy', [OperationsSetupCopyController::class, 'store'])->middleware('throttle:20,1')->name('setup-copy.store');
         Route::post('pamamalengke/{plan}/confirm', [PamamalengkeController::class, 'confirm'])
             ->whereUuid('plan')->middleware('throttle:20,1')->name('pamamalengke.confirm');
     });

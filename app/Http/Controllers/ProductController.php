@@ -31,9 +31,10 @@ use Inertia\Response;
 class ProductController extends Controller
 {
     /**
-     * The Products page. Business-wide Product management edits the shared catalog for All Branches or the selected
-     * Branch. A Branch-scoped Product manager sees the same canonical Products but manages only its selected assigned
-     * Branch's assortment and configuration (never the shared definitions, never another Branch).
+     * The Products page. For a selected Branch it lists only that Branch's assortment (Products with a Branch Product
+     * row); All Branches (business-wide only) lists every global Product with its membership per Branch, including
+     * Products sold nowhere yet. A Branch-scoped Product manager manages only its selected assigned Branch's assortment
+     * and configuration (never the shared definitions, never another Branch).
      */
     public function index(Request $request, ProductImages $images, ActiveBranchContext $activeBranchContext, InventoryState $inventoryState): Response|RedirectResponse
     {
@@ -60,6 +61,7 @@ class ProductController extends Controller
             'inventoryBalances' => fn ($query) => $query->where('branch_id', $inventoryBranch?->id)
                 ->select(['id', 'product_id', 'on_hand', 'updated_at']),
         ])
+            ->when($inventoryBranch !== null, fn ($query) => $query->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $inventoryBranch?->id)))
             ->when($filters['search'] ?? null, fn ($query, $search) => $query->whereLike('name', '%'.$search.'%'))
             ->when($filters['category'] ?? null, fn ($query, $category) => $query->where('category_id', $category))
             ->when(in_array($filters['status'] ?? null, ['active', 'inactive'], true), fn ($query) => $query->where('is_active', $filters['status'] === 'active'));
@@ -97,12 +99,14 @@ class ProductController extends Controller
                             'branch_id' => $branch->id,
                             'code' => $branch->code,
                             'name' => $branch->name,
+                            /** No row: the Product is not part of this Branch's assortment (not sold there). */
+                            'in_assortment' => $override !== null,
                             'price_override' => $override?->price_override,
                             'effective_price' => $override->price_override ?? $product->default_price,
-                            'is_available' => $override->is_available ?? true,
-                            'tracks_inventory' => $override->tracks_inventory ?? false,
+                            'is_available' => $override !== null && $override->is_available,
+                            'tracks_inventory' => $override !== null && $override->tracks_inventory,
                             'low_stock_threshold' => $override?->low_stock_threshold,
-                            'effective_available' => $product->is_active && $product->category->is_active && ($override->is_available ?? true),
+                            'effective_available' => $override !== null && $override->is_available && $product->is_active && $product->category->is_active,
                         ];
                     })->all(),
                 ];
@@ -125,14 +129,16 @@ class ProductController extends Controller
                 'can_edit_definitions' => $canEditDefinitions,
                 'branch' => $inventoryBranch?->only(['id', 'name', 'code']),
                 'copy_sources' => $inventoryBranch === null ? [] : ConfigureBranchAssortment::copySources($user, $inventoryBranch),
+                /** Copying Products may also bring their Operations setup, which needs Operations access. */
+                'can_copy_operations' => $user->hasPermission('operations.manage'),
             ],
-            /** Loaded only when "Add products to this Branch" opens: canonical Products this Branch does not sell. */
+            /** Loaded only when "Add products to this Branch" opens: canonical Products not in this Branch's assortment. */
             'assortmentCandidates' => Inertia::optional(fn (): array => $inventoryBranch === null ? [] : $this->assortmentCandidates($inventoryBranch)),
         ]);
     }
 
     /**
-     * Canonical Products removed from this Branch's assortment (a configuration row with is_available = false).
+     * Canonical Products not in this Branch's assortment (no Branch Product row), including new Products sold nowhere.
      *
      * @return list<array{id: string, name: string, category_name: string, default_price: string, is_active: bool}>
      */
@@ -140,7 +146,7 @@ class ProductController extends Controller
     {
         return array_values(Product::query()
             ->with('category:id,name')
-            ->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branch->id)->where('is_available', false))
+            ->whereDoesntHave('branchProducts', fn ($query) => $query->where('branch_id', $branch->id))
             ->orderBy('name')->orderBy('id')
             ->get(['id', 'name', 'category_id', 'default_price', 'is_active'])
             ->map(fn (Product $product): array => [

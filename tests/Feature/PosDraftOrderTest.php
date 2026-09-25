@@ -110,7 +110,7 @@ test('saving order information fills the early reservation without changing its 
     $branch = Branch::factory()->create();
     $user = posCashier($branch);
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create(['default_price' => '95.00']);
+    $product = Product::factory()->soldAt($branch)->create(['default_price' => '95.00']);
 
     $reservation = $this->actingAs($user)->postJson(route('pos.orders.reservations.store'), [
         'order_type' => 'take_out',
@@ -165,7 +165,7 @@ test('size groups prefix operational item names without changing the canonical p
     $branch = Branch::factory()->create();
     $user = posCashier($branch);
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create(['name' => 'Yakult', 'default_price' => '55.00']);
+    $product = Product::factory()->soldAt($branch)->create(['name' => 'Yakult', 'default_price' => '55.00']);
     $size = ModifierGroup::factory()->create([
         'name' => 'Size',
         'semantic_role' => ModifierSemanticRole::Size,
@@ -212,7 +212,7 @@ test('instruction selections remain structured price neutral and separate from i
     $branch = Branch::factory()->create();
     $user = posCashier($branch);
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
+    $product = Product::factory()->soldAt($branch)->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
     $group = ModifierGroup::factory()->create([
         'name' => 'Instructions',
         'semantic_role' => ModifierSemanticRole::Instruction,
@@ -274,7 +274,7 @@ test('instruction selections remain structured price neutral and separate from i
 test('instruction groups enforce product attachment active state and zero persisted prices', function (string $state) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create();
+    $product = Product::factory()->soldAt($branch)->create();
     $group = ModifierGroup::factory()->create([
         'semantic_role' => ModifierSemanticRole::Instruction,
         'selection_type' => 'multiple',
@@ -303,7 +303,7 @@ test('both order types accept an optional current branch table', function (strin
     $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();
     $table = $tableState === 'active' ? BranchTable::factory()->for($branch)->create() : null;
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     $payload['order_type'] = $orderType;
     $payload['customer_label'] = $orderType === 'dine_in' ? null : 'Maria';
     $payload['branch_table_id'] = $table?->id;
@@ -326,7 +326,7 @@ test('both order types accept an optional current branch table', function (strin
 test('direct draft callers can leave the optional table blank', function (string $orderType) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     $payload['order_type'] = $orderType;
     $payload['branch_table_id'] = '';
 
@@ -341,7 +341,7 @@ test('both order types reject inactive or foreign tables without saving a draft'
     StoreSession::factory()->for($branch)->create();
     $table = BranchTable::factory()->for($tableState === 'foreign' ? Branch::factory()->create(['code' => 'QAVE']) : $branch)
         ->create(['is_active' => $tableState !== 'inactive']);
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     $payload['order_type'] = $orderType;
     $payload['branch_table_id'] = $table->id;
 
@@ -356,7 +356,7 @@ test('both order types reject inactive or foreign tables without saving a draft'
 test('both order types accept a null or blank customer label', function (string $orderType, ?string $customerLabel) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     $payload['order_type'] = $orderType;
     $payload['customer_label'] = $customerLabel;
 
@@ -375,7 +375,7 @@ test('both order types accept a null or blank customer label', function (string 
 test('invalid order information and cart values are rejected before persistence', function (string $path, mixed $value) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     data_set($payload, $path, $value);
 
     $this->actingAs(posCashier($branch))->post(route('pos.orders.store'), $payload)->assertInvalid($path);
@@ -427,7 +427,7 @@ test('stale or unavailable catalog products are rejected without changing invent
 test('modifier rules reject stale unassigned foreign duplicate and invalid counts', function (string $state) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create();
+    $product = Product::factory()->soldAt($branch)->create();
     $group = ModifierGroup::factory()->create(['selection_type' => 'multiple', 'min_select' => 1, 'max_select' => 2]);
     $product->modifierGroups()->attach($group);
     $options = ModifierOption::factory()->count(3)->for($group)->create();
@@ -484,7 +484,7 @@ test('exact cents multiple groups and repeated configurations use current branch
 test('money overflow is rejected before inserting any order rows', function (string $kind) {
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
-    $product = Product::factory()->create(['default_price' => '999999999999.99']);
+    $product = Product::factory()->soldAt($branch)->create(['default_price' => '999999999999.99']);
     $payload = posPayload($product);
     if ($kind === 'subtotal') {
         $payload['items'][0]['quantity'] = 1;
@@ -509,7 +509,7 @@ test('closed stores and stale open state cannot create a draft', function () {
     $this->actingAs($user)->get(route('workspaces.cashier'))->assertOk();
     $session->update(['status' => 'closed']);
 
-    $this->post(route('pos.orders.store'), posPayload(Product::factory()->create()))->assertInvalid(['store' => 'Store is closed. Open the store before creating an order.']);
+    $this->post(route('pos.orders.store'), posPayload(Product::factory()->soldAt($branch)->create()))->assertInvalid(['store' => 'Store is closed. Open the store before creating an order.']);
 
     $this->assertDatabaseCount('orders', 0);
     $this->assertDatabaseCount('store_sessions', 1);
@@ -521,7 +521,7 @@ test('non cashier roles cannot create or read POS drafts even when assigned', fu
     $order = Order::factory()->for($branch)->create();
     $user = posCashier($branch, $role);
 
-    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])->post(route('pos.orders.store'), posPayload(Product::factory()->create()))->assertForbidden();
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])->post(route('pos.orders.store'), posPayload(Product::factory()->soldAt($branch)->create()))->assertForbidden();
     $this->get(route('pos.orders.show', $order))->assertForbidden();
 
     $this->assertDatabaseCount('orders', 1);
@@ -531,7 +531,7 @@ test('persisted authorization rejects disabled accounts assignments branches and
     $branch = Branch::factory()->create();
     $user = posCashier($branch);
     StoreSession::factory()->for($branch)->create();
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     $user->load('roles', 'branches');
     match ($change) {
         'user' => User::query()->whereKey($user->id)->update(['is_active' => false]),
@@ -560,7 +560,7 @@ test('inactive accounts cannot reach the draft endpoint', function () {
     $user = posCashier($branch);
     User::query()->whereKey($user->id)->update(['is_active' => false]);
 
-    $this->actingAs($user)->post(route('pos.orders.store'), posPayload(Product::factory()->create()))->assertRedirectToRoute('login');
+    $this->actingAs($user)->post(route('pos.orders.store'), posPayload(Product::factory()->soldAt($branch)->create()))->assertRedirectToRoute('login');
 
     $this->assertDatabaseCount('orders', 0);
 });
@@ -575,7 +575,7 @@ test('missing or revoked assignments cannot reach the draft endpoint', function 
     }
 
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
-        ->post(route('pos.orders.store'), posPayload(Product::factory()->create()))->assertRedirectToRoute('workspace');
+        ->post(route('pos.orders.store'), posPayload(Product::factory()->soldAt($branch)->create()))->assertRedirectToRoute('workspace');
 
     $this->assertDatabaseCount('orders', 0);
 })->with([false, true]);
@@ -591,7 +591,7 @@ test('direct draft requests reject revoked permission and nonoperational branche
     }
 
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
-        ->post(route('pos.orders.store'), posPayload(Product::factory()->create()))->assertForbidden();
+        ->post(route('pos.orders.store'), posPayload(Product::factory()->soldAt($branch)->create()))->assertForbidden();
 
     $this->assertDatabaseCount('orders', 0);
 })->with(['permission', 'temporarily_closed', 'inactive']);
@@ -629,7 +629,7 @@ test('repeated draft creation produces independent branch scoped numbers without
 
 test('POS customization exposes only active assigned groups and active option fields', function () {
     $branch = Branch::factory()->create();
-    $product = Product::factory()->create();
+    $product = Product::factory()->soldAt($branch)->create();
     $group = ModifierGroup::factory()->create(['name' => 'Extras', 'min_select' => 0, 'max_select' => 1]);
     $product->modifierGroups()->attach($group);
     $option = ModifierOption::factory()->for($group)->create(['name' => 'Egg', 'price_delta' => '20.00', 'sort_order' => 2]);
@@ -708,7 +708,7 @@ test('order creation rolls back all rows on snapshot insertion failure', functio
     $branch = Branch::factory()->create();
     StoreSession::factory()->for($branch)->create();
     $user = posCashier($branch);
-    $payload = posPayload(Product::factory()->create());
+    $payload = posPayload(Product::factory()->soldAt($branch)->create());
     DB::unprepared("CREATE TRIGGER fail_pos_item BEFORE INSERT ON order_items BEGIN SELECT RAISE(ABORT, 'injected snapshot failure'); END");
 
     try {
@@ -728,7 +728,7 @@ test('numeric order allocation skips historical collisions and uses the Manila c
     StoreSession::factory()->for($branch)->create();
     $legacy = Order::factory()->for($branch)->create(['order_number' => '1001', 'reference_number' => null]);
 
-    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->create()));
+    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->soldAt($branch)->create()));
 
     expect($legacy->fresh()->order_number)->toBe('1001')
         ->and($legacy->fresh()->reference_number)->toBeNull()
@@ -743,7 +743,7 @@ test('numeric order allocation skips historical collisions and uses the Manila c
 test('order number and reference remain immutable after allocation', function () {
     $branch = Branch::factory()->create(['code' => 'MAIN']);
     StoreSession::factory()->for($branch)->create();
-    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->create()));
+    $order = app(CreatePosDraftOrder::class)->execute(posCashier($branch), $branch, posPayload(Product::factory()->soldAt($branch)->create()));
     $number = $order->order_number;
     $reference = $order->reference_number;
 

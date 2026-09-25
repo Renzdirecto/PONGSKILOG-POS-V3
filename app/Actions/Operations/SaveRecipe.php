@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Recipe;
 use App\Models\RecipeLine;
 use App\Models\User;
+use App\Support\BranchConfiguration;
 use App\Support\CatalogRealtime;
 use App\Support\ExactQuantity;
 use App\Support\OperationsAccess;
@@ -18,10 +19,11 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Saves the recipe of one existing Catalog Product size (or removes it when no lines remain). Recipes apply to future
- * sales only: every committed sale keeps its own Order recipe snapshot, so editing a recipe never changes history.
- * A Product that deducts Product stock at any Branch, or is marked No recipe needed, cannot get a recipe, so one sale
- * never consumes both Product and Ingredient stock.
+ * Saves the selected Branch's recipe of one Product size in its assortment (or removes it when no lines remain), using
+ * only that Branch's active Ingredients. Another Branch's recipe of the same Product never changes. Recipes apply to
+ * future sales only: every committed sale keeps its own Order recipe snapshot, so editing a recipe never changes history.
+ * A Product that deducts Product stock at this Branch, or is in direct / No recipe needed mode here, cannot get a recipe,
+ * so one sale never consumes both Product and Ingredient stock.
  */
 class SaveRecipe
 {
@@ -41,7 +43,8 @@ class SaveRecipe
     /** @param array<string, mixed> $input */
     public function execute(User $actor, Product $product, array $input): ?Recipe
     {
-        $actor = $this->access->authorizeDefinitions($actor);
+        $actor = $this->access->authorize($actor);
+        $branch = $this->access->configurationBranch($actor);
         /** @var array{size_option_id: string|null, lines: list<array{ingredient_id: string, quantity: string}>} $data */
         $data = Validator::make($input, self::rules(), [
             'lines.*.quantity.regex' => 'Enter a quantity above zero with no more than four decimal places.',
@@ -58,8 +61,13 @@ class SaveRecipe
         }
         ksort($lines);
 
-        return DB::transaction(function () use ($actor, $product, $sizeOptionId, $lines): ?Recipe {
-            $product = Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($actor, $branch, $product, $sizeOptionId, $lines): ?Recipe {
+            $branch = BranchConfiguration::lock($branch);
+            $configuration = BranchProduct::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->lockForUpdate()->first();
+            if ($configuration === null) {
+                throw ValidationException::withMessages(['product' => $product->name.' is not in the '.$branch->code.' assortment. Add it to '.$branch->code.' before setting up its recipe.']);
+            }
+            $product = Product::query()->whereKey($product->id)->firstOrFail();
             $conflict = $this->sizes->conflicts([$product->id])[$product->id] ?? null;
             if ($conflict !== null) {
                 throw ValidationException::withMessages(['size_option_id' => ProductSizes::conflictMessage($product->name, $conflict)]);
@@ -69,19 +77,19 @@ class SaveRecipe
             if ($size === null) {
                 throw ValidationException::withMessages(['size_option_id' => 'Choose one of this product\'s existing sizes.']);
             }
-            if ($lines !== [] && $product->no_recipe_needed) {
-                throw ValidationException::withMessages(['product' => $product->name.' is marked No recipe needed. Choose Add a recipe instead first.']);
+            if ($lines !== [] && $configuration->no_recipe_needed) {
+                throw ValidationException::withMessages(['product' => $product->name.' is marked No recipe needed at '.$branch->code.'. Choose Add a recipe instead first.']);
             }
-            if ($lines !== [] && BranchProduct::query()->where('product_id', $product->id)->where('tracks_inventory', true)->exists()) {
-                throw ValidationException::withMessages(['product' => $product->name.' deducts Product stock in Catalog › Inventory. Turn off stock tracking for it before adding a recipe, so one sale never uses both.']);
+            if ($lines !== [] && $configuration->tracks_inventory) {
+                throw ValidationException::withMessages(['product' => $product->name.' deducts Product stock at '.$branch->code.' in Catalog › Inventory. Turn off stock tracking for it at '.$branch->code.' before adding a recipe, so one sale never uses both.']);
             }
-            $ingredients = Ingredient::query()->whereKey(array_keys($lines))->whereNull('archived_at')->pluck('id')->all();
+            $ingredients = Ingredient::query()->where('branch_id', $branch->id)->whereKey(array_keys($lines))->whereNull('archived_at')->pluck('id')->all();
             if (count($ingredients) !== count($lines)) {
-                throw ValidationException::withMessages(['lines' => 'Use only active ingredients.']);
+                throw ValidationException::withMessages(['lines' => 'Use only active ingredients of '.$branch->code.'.']);
             }
 
             $key = Recipe::sizeKey($sizeOptionId);
-            $recipe = Recipe::query()->where('product_id', $product->id)->where('size_key', $key)->lockForUpdate()->first();
+            $recipe = Recipe::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->where('size_key', $key)->lockForUpdate()->first();
             $before = $recipe === null ? [] : RecipeLine::query()->where('recipe_id', $recipe->id)->orderBy('ingredient_id')->get()
                 ->mapWithKeys(fn (RecipeLine $line): array => [$line->ingredient_id => ExactQuantity::display(ExactQuantity::parse($line->quantity))])->all();
 
@@ -89,7 +97,7 @@ class SaveRecipe
                 $recipe?->delete();
                 $recipe = null;
             } else {
-                $recipe ??= Recipe::query()->create(['product_id' => $product->id, 'size_modifier_option_id' => $sizeOptionId, 'size_key' => $key]);
+                $recipe ??= Recipe::query()->create(['branch_id' => $branch->id, 'product_id' => $product->id, 'size_modifier_option_id' => $sizeOptionId, 'size_key' => $key]);
                 $recipe->update(['updated_by_user_id' => $actor->id]);
                 $recipe->touch();
                 RecipeLine::query()->where('recipe_id', $recipe->id)->delete();
@@ -101,17 +109,17 @@ class SaveRecipe
             $after = array_map(fn (int $quantity): string => ExactQuantity::display($quantity), $lines);
             if ($before !== $after) {
                 $this->audit->record(
-                    branch: null,
+                    branch: $branch,
                     actor: $actor,
                     module: 'operations',
                     action: $lines === [] ? 'recipe.removed' : 'recipe.saved',
                     auditableType: Product::class,
                     auditableId: $product->id,
-                    before: ['size' => $size['name'], 'lines' => $before],
-                    after: ['size' => $size['name'], 'lines' => $after],
+                    before: ['branch_code' => $branch->code, 'size' => $size['name'], 'lines' => $before],
+                    after: ['branch_code' => $branch->code, 'size' => $size['name'], 'lines' => $after],
                 );
-                /** Only a real change invalidates Branch catalogs (after commit). */
-                $this->realtime->ingredientsChanged(null, 'recipe_changed');
+                /** Only a real change invalidates this Branch's catalogs (after commit); other Branches are untouched. */
+                $this->realtime->branchConfigurationChanged($branch, 'recipe_changed');
             }
 
             return $recipe;

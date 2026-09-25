@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\ReplenishmentRule;
+use App\Models\Branch;
 use App\Models\Ingredient;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -20,6 +21,7 @@ class IngredientFactory extends Factory
     public function definition(): array
     {
         return [
+            'branch_id' => Branch::factory(),
             'name' => ucfirst(fake()->unique()->lexify('Ingredient ????')),
             'icon' => 'box',
             'base_unit' => 'pc',

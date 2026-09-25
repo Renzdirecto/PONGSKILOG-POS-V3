@@ -33,10 +33,11 @@ use RuntimeException;
 /**
  * LOCAL QA / DEVELOPMENT ONLY (`php artisan operations:seed-qa`). Never part of DatabaseSeeder.
  *
- * Ensures the Phase 16E Owner Operations manual-QA dataset on top of LocalDevelopmentSeeder: the Drinks Plan with the
- * four Lemon drinks (Product stock tracking off, available at MAIN and QAVE), one Size group (Small / Medium / Large),
- * a "Drink Add-ons" Add-on / Modifier group (Nata, Extra Yakult) with Product-specific Ingredient effects, a
- * price-neutral "Instructions" group, ten Ingredients, a base recipe per Size, and different MAIN / QAVE stock.
+ * Ensures the Phase 16E Owner Operations manual-QA dataset on top of LocalDevelopmentSeeder: the four Lemon drinks
+ * (Product stock tracking off, in the MAIN and QAVE assortments), one Size group (Small / Medium / Large), a "Drink
+ * Add-ons" Add-on / Modifier group (Nata, Extra Yakult) and a price-neutral "Instructions" group, and — separately for
+ * MAIN and for QAVE, since Operations setup belongs to one Branch — the Drinks Plan, ten Ingredients, a base recipe per
+ * Size, the Add-on Ingredient effects and different MAIN / QAVE stock.
  *
  * Idempotent and non-destructive: everything is found or created through the production actions; existing prices,
  * groups and assignments are kept. An existing Ingredient is reused only when its base unit matches (a locked,
@@ -135,35 +136,35 @@ class LocalOperationsQaSeeder extends Seeder
                 ])));
             }
 
-            $plan = $this->plan($owner, $products->map(fn (Product $product): string => $product->id)->values()->all());
-            foreach (self::INGREDIENTS as $key => $definition) {
-                $this->ingredients[$key] = $this->ingredient($owner, $plan, $definition);
-            }
+            $sizeOptions = $size->options()->pluck('id', 'name');
             foreach ($branches as $code => $branch) {
                 $this->withBranch($branch);
+                $plan = $this->plan($owner, $branch, $products->map(fn (Product $product): string => $product->id)->values()->all());
+                $this->ingredients = [];
                 foreach (self::INGREDIENTS as $key => $definition) {
+                    $this->ingredients[$key] = $this->ingredient($owner, $branch, $plan, $definition);
                     $this->stock($owner, $branch, $this->ingredients[$key], $definition[$code === 'MAIN' ? 10 : 11]);
+                }
+                foreach (self::RECIPES as $productName => $recipes) {
+                    foreach ($recipes as $sizeName => $lines) {
+                        app(SaveRecipe::class)->execute($owner, $products[$productName], [
+                            'size_option_id' => $sizeOptions[$sizeName],
+                            'lines' => $this->lines($lines),
+                        ]);
+                    }
+                    foreach (self::EFFECTS as $optionName => $lines) {
+                        app(SaveModifierEffect::class)->execute($owner, $products[$productName], $addOns->options()->where('name', $optionName)->sole(), [
+                            'lines' => $this->lines($lines),
+                        ]);
+                    }
                 }
             }
             $this->withBranch(null);
-
-            $sizeOptions = $size->options()->pluck('id', 'name');
-            foreach (self::RECIPES as $productName => $recipes) {
-                foreach ($recipes as $sizeName => $lines) {
-                    app(SaveRecipe::class)->execute($owner, $products[$productName], [
-                        'size_option_id' => $sizeOptions[$sizeName],
-                        'lines' => $this->lines($lines),
-                    ]);
-                }
-                foreach (self::EFFECTS as $optionName => $lines) {
-                    app(SaveModifierEffect::class)->execute($owner, $products[$productName], $addOns->options()->where('name', $optionName)->sole(), [
-                        'lines' => $this->lines($lines),
-                    ]);
-                }
-            }
         });
 
-        app(CatalogRealtime::class)->ingredientsChanged(null, 'recipe_changed');
+        foreach ($branches as $branch) {
+            app(CatalogRealtime::class)->ingredientsChanged($branch, 'recipe_changed');
+        }
     }
 
     /** @return array{ModifierGroup, ModifierGroup, ModifierGroup} */
@@ -204,9 +205,9 @@ class LocalOperationsQaSeeder extends Seeder
     }
 
     /** @param array<int, string> $productIds */
-    private function plan(User $owner, array $productIds): OperationPlan
+    private function plan(User $owner, Branch $branch, array $productIds): OperationPlan
     {
-        $plan = OperationPlan::query()->whereNull('archived_at')->whereRaw('LOWER(name) = ?', ['drinks'])->first();
+        $plan = OperationPlan::query()->where('branch_id', $branch->id)->whereNull('archived_at')->whereRaw('LOWER(name) = ?', ['drinks'])->first();
         $members = $plan === null ? [] : OperationPlanProduct::query()->where('operation_plan_id', $plan->id)->pluck('product_id')->all();
         if ($plan !== null && array_diff($productIds, $members) === []) {
             return $plan;
@@ -221,19 +222,19 @@ class LocalOperationsQaSeeder extends Seeder
     }
 
     /** @param array{0: string, 1: string, 2: string, 3: string, 4: string, 5: string, 6: string, 7: string, 8: string, 9: string|null, 10: string, 11: string} $definition */
-    private function ingredient(User $owner, OperationPlan $plan, array $definition): Ingredient
+    private function ingredient(User $owner, Branch $branch, OperationPlan $plan, array $definition): Ingredient
     {
         [$name, $fallback, $unit, $icon, $target, $purchaseUnit, $purchaseSize, $cost, $rule, $reorder] = $definition;
         $ingredient = null;
         foreach ([$name, $fallback] as $candidate) {
-            $existing = Ingredient::query()->where('name', $candidate)->first();
+            $existing = Ingredient::query()->where('branch_id', $branch->id)->where('name', $candidate)->first();
             if ($existing === null || $existing->base_unit === $unit) {
                 $ingredient = $existing;
                 $name = $candidate;
                 break;
             }
         }
-        if ($ingredient === null && Ingredient::query()->where('name', $name)->exists()) {
+        if ($ingredient === null && Ingredient::query()->where('branch_id', $branch->id)->where('name', $name)->exists()) {
             throw new RuntimeException("{$definition[0]} and {$fallback} both exist with a unit other than {$unit}.");
         }
         $ingredient ??= app(SaveIngredient::class)->execute($owner, null, [
@@ -244,7 +245,7 @@ class LocalOperationsQaSeeder extends Seeder
         if ($ingredient->archived_at !== null) {
             $ingredient = app(SetIngredientArchived::class)->execute($owner, $ingredient, false);
         }
-        OperationPlanIngredient::query()->firstOrCreate(['operation_plan_id' => $plan->id, 'ingredient_id' => $ingredient->id]);
+        OperationPlanIngredient::query()->firstOrCreate(['operation_plan_id' => $plan->id, 'ingredient_id' => $ingredient->id], ['branch_id' => $branch->id]);
 
         return $ingredient;
     }

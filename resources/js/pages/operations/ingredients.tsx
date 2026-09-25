@@ -1,6 +1,8 @@
+import { Link } from '@inertiajs/react';
 import { Info, Pencil, Plus, Search, X } from 'lucide-react';
 import { useState } from 'react';
 import { IngredientDialog } from '@/components/operations-ingredient-dialog';
+import { OperationsSetupCopyButton } from '@/components/operations-setup-copy-dialog';
 import {
     Chip,
     EmptyState,
@@ -10,6 +12,7 @@ import {
     StatusChip,
     StockBar,
     formatQuantityOrDash,
+    operationsHref,
     opsButtonClass,
     opsLabelClass,
     opsPrimaryClass,
@@ -43,8 +46,8 @@ export default function OperationsIngredients({
     const [editing, setEditing] = useState<OperationsIngredient | 'new' | null>(
         null,
     );
-    /** Ingredient definitions are shared by every Branch; only business-wide Operations edits them. */
-    const canEdit = operations.can_manage_definitions;
+    /** Ingredients belong to the selected Branch; its Operations manager configures them. */
+    const canEdit = operations.can_configure;
     const planName = (id: string) =>
         operations.plans.find((item) => item.id === id)?.name ?? 'Plan';
     const inPlan = ingredients.filter(
@@ -63,17 +66,20 @@ export default function OperationsIngredients({
         <OperationsShell
             operations={operations}
             title="Ingredients"
-            description={`Ingredient records${plan ? ` used by the ${plan.name} plan` : ''}. Each is one branch stock record, shared with any other plan that uses it.`}
+            description={`${operations.branch?.code ?? 'This Branch'} ingredients${plan ? ` used by the ${plan.name} plan` : ''}: its own unit, cost and rules, and one stock record shared by its plans.`}
             action={
                 canEdit ? (
-                    <button
-                        type="button"
-                        className={opsPrimaryClass}
-                        onClick={() => setEditing('new')}
-                        disabled={operations.plans.length === 0}
-                    >
-                        <Plus className="size-4" /> Add ingredient
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <OperationsSetupCopyButton operations={operations} />
+                        <button
+                            type="button"
+                            className={opsPrimaryClass}
+                            onClick={() => setEditing('new')}
+                            disabled={operations.plans.length === 0}
+                        >
+                            <Plus className="size-4" /> Add ingredient
+                        </button>
+                    </div>
                 ) : undefined
             }
         >
@@ -136,8 +142,22 @@ export default function OperationsIngredients({
 
             {operations.plans.length === 0 ? (
                 <EmptyState
-                    title="Create a plan first"
-                    body="Ingredients are shown in plans. Add a plan in Pamalengke Plans, then add its ingredients here."
+                    title="No Ingredients configured for this Branch."
+                    body="Ingredients belong to a Branch and are shown in its plans. Create a plan in Pamalengke Plans first, or copy the setup from another Branch (stock is never copied)."
+                    action={
+                        <div className="flex flex-wrap justify-center gap-2">
+                            <Link
+                                href={operationsHref('plans')}
+                                className={opsButtonClass}
+                            >
+                                Open Pamalengke Plans
+                            </Link>
+                            <OperationsSetupCopyButton
+                                operations={operations}
+                                primary
+                            />
+                        </div>
+                    }
                 />
             ) : list.length === 0 ? (
                 <EmptyState

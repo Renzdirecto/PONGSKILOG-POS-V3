@@ -1004,3 +1004,10 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 8. Quick admin actions (Staff, Access Control, Audit Trail, Void Orders, Reports, Settings).
 
 Responsive: single column at 360–430px with Attention near the top; two/three columns from tablet; the 1.7fr/1fr executive grid from 1120px.
+
+
+## Phase 18 pass #2.1 — Branch assortment and Branch Operations UI — 2026-09-25
+
+- **Products — {CODE}** (selected Branch): lists only that Branch's assortment; empty state "No products in {CODE} yet." with Add products / Copy from another Branch. Card actions: Branch settings, Mark unavailable / Mark available, Remove from {CODE} (confirmation explains stock/history are kept; unavailable is the pause), Edit product (business-wide only). All Branches: global catalog cards show "Sold at MAIN, QAVE" or "Not sold at any Branch yet". Product editor: per-Branch "Sell at {CODE}" (new Products join only selected Branches).
+- **Copy products** dialog: optional "Copy Operations setup for selected products" (Operations access only); review shows Source, Destination, Products, Plans/Ingredients/Recipes/Add-on effects counts, kept items, conflicts, **Will NOT copy** (Product stock, Ingredient stock, movements, purchases/expenses, sales/sessions) and the replace warning.
+- **Operations · {CODE}**: every heading names the Branch; All Branches shows "Choose a Branch". Empty states: "No Pamalengke Plans yet." (Create manually / Copy setup), "No Ingredients configured for this Branch.", "No Recipes configured for this Branch.". **Copy setup from another Branch** (`OperationsSetupCopyButton`): source, sections (Plans · Ingredients & settings · Recipes & add-on effects), Keep (default) / Replace, server dry-run review, confirm. Recipes: "Uses Product stock" names only this Branch and links to its product settings.

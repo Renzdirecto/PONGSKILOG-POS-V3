@@ -31,7 +31,7 @@ import {
     recipeNavNote,
     recipeSetupState,
 } from '@/lib/operations';
-import ActiveBranchController from '@/actions/App/Http/Controllers/ActiveBranchController';
+import { OperationsSetupCopyButton } from '@/components/operations-setup-copy-dialog';
 import { requiredOutline } from '@/lib/required-field';
 import operationsRoutes from '@/routes/operations';
 import type {
@@ -100,15 +100,25 @@ export default function OperationsRecipes({
                 description="What each existing product consumes from ingredient stock when it sells."
             >
                 <EmptyState
-                    title="This plan has no products yet."
-                    body="Recipes attach to existing products from Catalog › Products. Add products to the plan from Pamalengke Plans."
+                    title={
+                        operations.setup.recipes === 0
+                            ? 'No Recipes configured for this Branch.'
+                            : 'This plan has no products yet.'
+                    }
+                    body={`Recipes attach to products of the ${operations.branch?.code ?? 'selected'} assortment and use only its ingredients. Add products to the plan from Pamalengke Plans, or copy the setup from another Branch.`}
                     action={
-                        <Link
-                            href={operationsHref('plans')}
-                            className={opsButtonClass}
-                        >
-                            Open Pamalengke Plans
-                        </Link>
+                        <div className="flex flex-wrap justify-center gap-2">
+                            <Link
+                                href={operationsHref('plans')}
+                                className={opsButtonClass}
+                            >
+                                Open Pamalengke Plans
+                            </Link>
+                            <OperationsSetupCopyButton
+                                operations={operations}
+                                primary
+                            />
+                        </div>
                     }
                 />
             </OperationsShell>
@@ -146,23 +156,9 @@ export default function OperationsRecipes({
         (item) => item.key !== size?.key && item.lines?.length,
     );
     const anyRecipe = product.sizes.some((item) => item.lines?.length);
-    const blockingBranches = [
-        ...product.tracked_branches.map(
-            (branch) => `${branch.code} (${branch.name})`,
-        ),
-        ...(product.tracked_elsewhere > 0
-            ? [
-                  `${product.tracked_elsewhere} other ${product.tracked_elsewhere === 1 ? 'Branch' : 'Branches'}`,
-              ]
-            : []),
-    ].join(', ');
-    /** Recipes and Add-on effects are shared by every Branch; only business-wide Operations edits them. */
-    const canEdit = operations.can_manage_definitions;
-    /** Switch to the blocking Branch through the existing Branch context, then open that Product's Branch settings. */
-    const openBranchSettings = (branchId: string) =>
-        router.put(ActiveBranchController.update.url(branchId), {
-            redirect: `${product.settings_url}&section=branch`,
-        });
+    const branchCode = operations.branch?.code ?? 'this Branch';
+    /** Recipes, Add-on effects and the recipe mode belong to the selected Branch only. */
+    const canEdit = operations.can_configure;
 
     const save = () => {
         const bad = rows.find((row) => !(parseQuantity(row.quantity) ?? 0));
@@ -329,9 +325,9 @@ export default function OperationsRecipes({
                             role="note"
                             className="rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-3 text-[12.5px] leading-5 text-[#555]"
                         >
-                            Recipes are shared by every Branch, so they are
-                            read-only here. A business-wide Operations role
-                            changes them; your Branch's sales still use them.
+                            Recipes of this Branch are read-only here. Choose
+                            one Branch in the header to configure its own
+                            recipes.
                         </p>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
@@ -372,22 +368,16 @@ export default function OperationsRecipes({
                         <StatePanel
                             icon={<Box className="size-6" aria-hidden="true" />}
                             title="Uses Product stock"
-                            body={`Ingredient recipes cannot be enabled while ${product.name} tracks direct Product stock in: ${blockingBranches}. Recipes are shared by every Branch, so Product stock tracking must be turned off in ${product.tracked_branches.length > 1 ? 'each Branch listed' : 'that Branch'} to prevent double inventory deduction.`}
-                            note="Nothing changes automatically: existing Product stock is kept until you decide. Selling prices can still differ by Branch."
+                            body={`${product.name} tracks direct Product stock at ${branchCode}, so an Ingredient recipe cannot be enabled here (one sale never deducts both). Other Branches are configured on their own and may use a recipe for this product.`}
+                            note="Nothing changes automatically: existing Product stock is kept until you decide."
                         >
-                            {product.tracked_branches.map((branch) => (
-                                <button
-                                    key={branch.id}
-                                    type="button"
-                                    className={opsPrimaryClass}
-                                    onClick={() =>
-                                        openBranchSettings(branch.id)
-                                    }
-                                >
-                                    <Settings2 className="size-4" /> Open{' '}
-                                    {branch.code} product settings
-                                </button>
-                            ))}
+                            <Link
+                                href={`${product.settings_url}&section=branch`}
+                                className={opsPrimaryClass}
+                            >
+                                <Settings2 className="size-4" /> Open{' '}
+                                {branchCode} product settings
+                            </Link>
                         </StatePanel>
                     ) : setup === 'no_recipe_needed' ? (
                         <StatePanel

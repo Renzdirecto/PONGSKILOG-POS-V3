@@ -206,7 +206,9 @@ test('management stock uses only the selected branch configuration and does not 
     $main = Branch::factory()->create(['code' => 'MAIN']);
     $qave = Branch::factory()->create(['code' => 'QAVE']);
     $product = Product::factory()->create(['name' => 'A tracked meal', 'is_active' => false]);
-    Product::factory()->create(['name' => 'B untracked meal']);
+    Product::factory()->soldAt($main)->create(['name' => 'B untracked meal']);
+    /** Not in the MAIN assortment: never listed there. */
+    Product::factory()->create(['name' => 'C sold nowhere']);
     BranchProduct::factory()->for($main)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 5]);
     BranchProduct::factory()->for($qave)->for($product)->create(['tracks_inventory' => true, 'low_stock_threshold' => 2]);
     BranchInventory::factory()->for($qave)->for($product)->create(['on_hand' => 3]);
@@ -285,7 +287,8 @@ test('management stock filters include missing balances and respect threshold bo
             BranchInventory::factory()->for($branch)->for($product)->create(['on_hand' => $quantity]);
         }
     }
-    Product::factory()->for($category)->create(['name' => 'E untracked']);
+    Product::factory()->for($category)->soldAt($branch)->create(['name' => 'E untracked']);
+    Product::factory()->for($category)->create(['name' => 'F not in this Branch']);
 
     $response = $this->actingAs($user)->get(route('inventory.index', ['branch_id' => $branch->id, 'stock_status' => $status]));
 
@@ -333,7 +336,7 @@ test('management search pagination and image signing operate only on the current
     $user = inventoryManager();
     $branch = Branch::factory()->create();
     $category = Category::factory()->create();
-    $products = Product::factory()->for($category)->count(26)->sequence(fn ($sequence) => ['name' => sprintf('Meal %02d', $sequence->index)])->create();
+    $products = Product::factory()->for($category)->soldAt($branch)->count(26)->sequence(fn ($sequence) => ['name' => sprintf('Meal %02d', $sequence->index)])->create();
     foreach ($products as $product) {
         $product->update(['image_path' => 'catalog/products/'.$product->id.'/'.Str::uuid().'/detail.webp']);
     }
@@ -361,14 +364,14 @@ test('management search pagination and image signing operate only on the current
 test('management listing never queries per-product movement history and stays bounded with more products', function () {
     $user = inventoryManager();
     $branch = Branch::factory()->create();
-    Product::factory()->create();
+    Product::factory()->soldAt($branch)->create();
     $this->actingAs($user);
     DB::flushQueryLog();
     DB::enableQueryLog();
     $this->get(route('inventory.index', ['branch_id' => $branch->id]))->assertOk();
     $initialCount = count(DB::getQueryLog());
     DB::disableQueryLog();
-    Product::factory()->count(29)->create();
+    Product::factory()->soldAt($branch)->count(29)->create();
     DB::flushQueryLog();
     DB::enableQueryLog();
 

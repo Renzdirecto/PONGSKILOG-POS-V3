@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Operations\CopyOperationsSetup;
 use App\Http\Requests\OperationsPageRequest;
 use App\Models\Branch;
 use App\Models\OperationPlan;
@@ -15,8 +16,9 @@ use Inertia\Response;
 
 /**
  * The Operations pages. Each is a real route with the active Plan in the URL (?plan=), inside the management shell
- * and global Branch context (a Branch-scoped account only ever sees its selected assigned Branch). All pages are
- * read-only; writes go through the dedicated Operations controllers.
+ * and global Branch context (a Branch-scoped account only ever sees its selected assigned Branch). Every page shows the
+ * selected Branch's own setup; All Branches has no single setup, so it offers only the Branch picker and the combined
+ * purchase list. All pages are read-only; writes go through the dedicated Operations controllers.
  */
 class OperationsController extends Controller
 {
@@ -43,7 +45,7 @@ class OperationsController extends Controller
         if ($branch === false) {
             return to_route('workspace');
         }
-        if ($active === null) {
+        if ($branch === null || $active === null) {
             return to_route('operations.plans');
         }
 
@@ -72,16 +74,14 @@ class OperationsController extends Controller
         if ($branch === false) {
             return to_route('workspace');
         }
-        if ($active === null) {
+        if ($branch === null || $active === null) {
             return to_route('operations.plans');
         }
 
         return Inertia::render('operations/recipes', [
             'operations' => $this->context('recipes', $branch, $plans, $active),
             'selectedProductId' => $request->validated('product'),
-            ...$this->workspace->recipesPage($branch, $active, $this->viewer?->hasBusinessWideScope() === false
-                ? array_values($this->viewer->branches()->wherePivot('is_active', true)->pluck('branches.id')->map(fn ($id): string => (string) $id)->all())
-                : null),
+            ...$this->workspace->recipesPage($branch, $active),
         ]);
     }
 
@@ -91,13 +91,13 @@ class OperationsController extends Controller
         if ($branch === false) {
             return to_route('workspace');
         }
-        if ($active === null) {
+        if ($branch === null || $active === null) {
             return to_route('operations.plans');
         }
 
         return Inertia::render('operations/stock', [
             'operations' => $this->context('stock', $branch, $plans, $active),
-            ...($branch === null ? ['ingredients' => [], 'movements' => []] : $this->workspace->stockPage($branch, $active)),
+            ...$this->workspace->stockPage($branch, $active),
         ]);
     }
 
@@ -107,7 +107,7 @@ class OperationsController extends Controller
         if ($branch === false) {
             return to_route('workspace');
         }
-        if ($active === null) {
+        if ($branch === null || $active === null) {
             return to_route('operations.plans');
         }
 
@@ -143,14 +143,15 @@ class OperationsController extends Controller
     {
         $user = $this->access->authorize($request->user());
         $this->viewer = $user;
-        $plans = $this->workspace->activePlans();
+        $branch = $this->access->branch($user);
+        $plans = $this->workspace->activePlans($branch === false ? null : $branch);
 
-        return [$this->access->branch($user), $plans, $this->workspace->resolvePlan($plans, $request->validated('plan'))];
+        return [$branch, $plans, $this->workspace->resolvePlan($plans, $request->validated('plan'))];
     }
 
     /**
-     * The shared Operations context plus whether the viewer may change the shared definitions (business-wide only); a
-     * Branch-scoped Operations role sees them read-only and runs its Branch's stock, list and purchases.
+     * The Branch's Operations context plus whether the viewer may configure it (any Operations manager of that concrete
+     * Branch; never for All Branches) and the Branches it may copy setup from.
      *
      * @param  Collection<int, OperationPlan>  $plans
      * @return array<string, mixed>
@@ -159,7 +160,8 @@ class OperationsController extends Controller
     {
         return [
             ...$this->workspace->context($page, $branch, $plans, $active),
-            'can_manage_definitions' => $this->viewer !== null && $this->access->canManageDefinitions($this->viewer),
+            'can_configure' => $branch !== null && $this->viewer !== null,
+            'copy_sources' => $branch === null || $this->viewer === null ? [] : CopyOperationsSetup::sources($this->viewer, $branch),
         ];
     }
 }

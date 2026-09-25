@@ -117,7 +117,7 @@ test('product disable and enable schedule one availability and configuration eve
     Event::fake([ProductAvailabilityChanged::class, ProductBranchConfigurationChanged::class]);
     $user = realtimeUser('owner');
     $branches = Branch::factory()->count(2)->create();
-    $product = Product::factory()->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
+    $product = Product::factory()->soldAt(...$branches->all())->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
     $payload = [
         'name' => 'Bangsilog',
         'category_id' => $product->category_id,
@@ -155,7 +155,7 @@ test('branch availability changes schedule only the affected branch events witho
     $user = realtimeUser('owner');
     $main = Branch::factory()->create(['code' => 'MAIN']);
     Branch::factory()->create(['code' => 'QAVE']);
-    $product = Product::factory()->create(['default_price' => '105.00']);
+    $product = Product::factory()->soldAt($main)->create(['default_price' => '105.00']);
 
     $this->actingAs($user)->put(route('products.branches.update', [$product, $main]), [
         'price_override' => '99.00',

@@ -14,10 +14,15 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Writes one Branch Product configuration (price, availability, Product stock tracking, low-stock threshold). A row is
+ * the Product's membership in the Branch assortment: creating one adds the Product to that Branch, so only an explicit
+ * add (Product create/edit with that Branch selected, Add products, Copy) may pass $createMembership.
+ */
 class UpsertBranchProduct
 {
     /** @param array{price_override?: mixed, is_available?: mixed, tracks_inventory?: mixed, low_stock_threshold?: mixed} $attributes */
-    public function execute(User $user, Branch $branch, Product $product, array $attributes): BranchProduct
+    public function execute(User $user, Branch $branch, Product $product, array $attributes, bool $createMembership = true): BranchProduct
     {
         Gate::forUser($user)->authorize('products.manage');
         /** A Branch-scoped Product manager configures only its own assigned Branches; business-wide reaches every Branch. */
@@ -40,18 +45,30 @@ class UpsertBranchProduct
 
         $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
         $product = Product::query()->whereKey($product->getKey())->firstOrFail();
-        /** A recipe-backed Product consumes Ingredient stock; it must never also deduct Product stock for one sale. */
-        if ($validated['tracks_inventory']
-            && (Recipe::query()->where('product_id', $product->id)->exists() || ProductModifierEffect::query()->where('product_id', $product->id)->exists())
-            && ! BranchProduct::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->where('tracks_inventory', true)->exists()) {
+        $existing = BranchProduct::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->lockForUpdate()->first();
+        if ($existing === null && ! $createMembership) {
             throw ValidationException::withMessages([
-                'tracks_inventory' => $product->name.' has an ingredient recipe or add-on ingredient effects in Operations. Remove them before tracking Product stock.',
+                'product' => $product->name.' is not in the '.$branch->code.' assortment. Add it to '.$branch->code.' first.',
+            ]);
+        }
+        /**
+         * A Product using an Ingredient recipe at this Branch consumes Ingredient stock here; it must never also deduct
+         * Product stock for one sale. Other Branches may configure the same Product differently.
+         */
+        if ($validated['tracks_inventory'] && ($existing === null || ! $existing->tracks_inventory)
+            && (Recipe::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->exists()
+                || ProductModifierEffect::query()->where('branch_id', $branch->id)->where('product_id', $product->id)->exists())) {
+            throw ValidationException::withMessages([
+                'tracks_inventory' => $product->name.' has an ingredient recipe or add-on ingredient effects at '.$branch->code.' in Operations. Remove them there before tracking Product stock at '.$branch->code.'.',
             ]);
         }
 
-        return BranchProduct::query()->updateOrCreate([
-            'branch_id' => $branch->id,
-            'product_id' => $product->id,
-        ], $validated);
+        if ($existing !== null) {
+            $existing->update($validated);
+
+            return $existing;
+        }
+
+        return BranchProduct::query()->create([...$validated, 'branch_id' => $branch->id, 'product_id' => $product->id]);
     }
 }

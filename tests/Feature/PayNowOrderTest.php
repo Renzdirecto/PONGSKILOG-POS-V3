@@ -278,7 +278,7 @@ test('current product availability is revalidated for an existing draft', functi
 
 test('duplicate product lines aggregate one sale movement while untracked products create none', function () {
     [$branch, $user, $product, $balance] = paymentFixture('10.00');
-    $untracked = Product::factory()->create(['default_price' => '20.00']);
+    $untracked = Product::factory()->soldAt($branch)->create(['default_price' => '20.00']);
     $payload = paymentPayload($product);
     $payload['items'][] = [...$payload['items'][0], 'notes' => 'Different preparation'];
     $payload['items'][] = ['product_id' => $untracked->id, 'quantity' => 1, 'modifiers' => []];

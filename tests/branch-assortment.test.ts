@@ -71,7 +71,12 @@ test('branch product management edits only branch settings and never shows defin
     const editor = source('components/product-editor-form.tsx');
 
     assert.match(products, /const branchOnly = !scope\.can_edit_definitions;/);
-    assert.match(products, /branchOnly \? \(\s*<BranchProductCard/);
+    /** A selected Branch lists its assortment; only a business-wide manager also reaches the shared definition. */
+    assert.match(products, /assortment \? \(\s*<BranchProductCard/);
+    assert.match(
+        products,
+        /onEditProduct=\{\s*branchOnly\s*\? undefined\s*: \(\) => openEditor\(product, 'product'\)\s*\}/,
+    );
     assert.match(
         catalog,
         /action=\{definitions \? <CatalogQuickActions \/> : undefined\}/,
@@ -86,11 +91,10 @@ test('branch settings hide branch creation and lock identity fields', () => {
     assert.match(settings, /editing !== null && !scope\.can_edit_identity/);
 });
 
-test('shared operations definitions are read-only without business-wide operations', () => {
+test('operations setup is configured per selected branch, never as one shared set', () => {
     for (const page of ['plans', 'ingredients', 'recipes']) {
-        assert.match(
-            source(`pages/operations/${page}.tsx`),
-            /const canEdit = operations\.can_manage_definitions;/,
-        );
+        const text = source(`pages/operations/${page}.tsx`);
+        assert.match(text, /const canEdit = operations\.can_configure;/);
+        assert.doesNotMatch(text, /can_manage_definitions/);
     }
 });

@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\CustomRoles;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -80,9 +81,11 @@ test('a branch manager without pos lands on its first branch management page', f
     $this->actingAs($lead)->get(route('workspace'))->assertRedirectToRoute('products.index');
 });
 
-test('products show only the selected branch configuration and no shared definition tools', function () {
-    $product = Product::factory()->create();
+test('products show only the selected branch assortment and configuration and no shared definition tools', function () {
+    $product = Product::factory()->soldAt($this->main)->create();
     BranchProduct::factory()->for($this->qave)->for($product)->create(['price_override' => '99.00']);
+    /** Sold only at QAVE: not part of the MAIN list. */
+    BranchProduct::factory()->for($this->qave)->for(Product::factory()->create())->create();
 
     atBranch($this->manager, $this->main)->get(route('products.index'))
         ->assertOk()
@@ -95,7 +98,10 @@ test('products show only the selected branch configuration and no shared definit
             ->where('modifierGroups', [])
             ->has('branchConfigurations', 1)
             ->where('branchConfigurations.0.code', 'MAIN')
+            ->has('products.data', 1)
+            ->where('products.data.0.id', $product->id)
             ->has('products.data.0.branch_prices', 1)
+            ->where('products.data.0.branch_prices.0.in_assortment', true)
             ->where('products.data.0.branch_prices.0.code', 'MAIN'));
 });
 
@@ -118,68 +124,103 @@ test('a branch product manager cannot change any shared product definition', fun
 });
 
 test('a branch product manager configures its own branch and never another', function () {
-    $product = Product::factory()->create();
+    $product = Product::factory()->soldAt($this->main)->create();
+    $notSold = Product::factory()->create();
     $configuration = ['price_override' => '55.00', 'is_available' => false, 'tracks_inventory' => false, 'low_stock_threshold' => null];
 
     $this->actingAs($this->manager)->put(route('products.branches.update', [$product, $this->main]), $configuration)->assertRedirect();
     $this->actingAs($this->manager)->put(route('products.branches.update', [$product, $this->qave]), $configuration)->assertForbidden();
+    /** Branch settings edit an existing membership only; adding is its own explicit action. */
+    $this->actingAs($this->manager)->put(route('products.branches.update', [$notSold, $this->main]), $configuration)->assertSessionHasErrors('product');
 
     expect(BranchProduct::query()->where('branch_id', $this->main->id)->sole()->only(['price_override', 'is_available']))
         ->toBe(['price_override' => '55.00', 'is_available' => false])
         ->and(BranchProduct::query()->where('branch_id', $this->qave->id)->exists())->toBeFalse();
 });
 
-test('adding existing products sells them at the branch again without duplicating anything', function () {
-    $removed = Product::factory()->create();
-    $alreadySold = Product::factory()->create();
-    $row = BranchProduct::factory()->for($this->main)->for($removed)->create(['is_available' => false, 'price_override' => '42.00']);
+test('adding existing products creates their branch membership once without duplicating anything', function () {
+    $notSold = Product::factory()->create();
+    $unavailable = Product::factory()->create();
+    $row = BranchProduct::factory()->for($this->main)->for($unavailable)->create(['is_available' => false, 'price_override' => '42.00']);
     $productCount = Product::query()->count();
     $categoryCount = Category::query()->count();
 
     atBranch($this->manager, $this->main)
-        ->post(route('products.branch-assortment.store'), ['product_ids' => [$removed->id, $alreadySold->id]])
+        ->post(route('products.branch-assortment.store'), ['product_ids' => [$notSold->id, $unavailable->id]])
         ->assertRedirect();
     atBranch($this->manager, $this->main)
-        ->post(route('products.branch-assortment.store'), ['product_ids' => [$removed->id]])
+        ->post(route('products.branch-assortment.store'), ['product_ids' => [$notSold->id]])
         ->assertRedirect();
 
-    expect($row->fresh()->is_available)->toBeTrue()
+    /** Unavailable is still a member: Add never touches it (availability is its own toggle). */
+    expect($row->fresh()->is_available)->toBeFalse()
         ->and($row->fresh()->price_override)->toBe('42.00')
-        ->and(BranchProduct::query()->where('product_id', $alreadySold->id)->exists())->toBeFalse()
-        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->count())->toBe(1)
+        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->where('product_id', $notSold->id)->sole()->only(['price_override', 'is_available', 'tracks_inventory']))
+        ->toBe(['price_override' => null, 'is_available' => true, 'tracks_inventory' => false])
+        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->count())->toBe(2)
+        ->and(BranchProduct::query()->where('branch_id', $this->qave->id)->exists())->toBeFalse()
         ->and(Product::query()->count())->toBe($productCount)
         ->and(Category::query()->count())->toBe($categoryCount)
         ->and(AuditLog::query()->where('action', 'branch_products.added')->count())->toBe(1);
 });
 
-test('the add list offers only products the selected branch does not sell', function () {
-    $removed = Product::factory()->create(['name' => 'Halo-halo']);
+test('the add list offers only products outside the selected branch assortment', function () {
+    $unavailable = Product::factory()->create(['name' => 'Halo-halo']);
     Product::factory()->create(['name' => 'Iced Tea']);
-    BranchProduct::factory()->for($this->main)->for($removed)->create(['is_available' => false]);
-    BranchProduct::factory()->for($this->qave)->for(Product::factory()->create(['name' => 'Qave Only']))->create(['is_available' => false]);
+    BranchProduct::factory()->for($this->main)->for($unavailable)->create(['is_available' => false]);
+    BranchProduct::factory()->for($this->qave)->for(Product::factory()->create(['name' => 'Qave Only']))->create();
 
     atBranch($this->manager, $this->main)->get(route('products.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->missing('assortmentCandidates')
             ->reloadOnly('assortmentCandidates', fn (Assert $reload) => $reload
-                ->has('assortmentCandidates', 1)
-                ->where('assortmentCandidates.0.name', 'Halo-halo')));
+                ->has('assortmentCandidates', 2)
+                ->where('assortmentCandidates.0.name', 'Iced Tea')
+                ->where('assortmentCandidates.1.name', 'Qave Only')));
+});
+
+test('removing a product ends branch membership only; unavailable is a different action and history stays', function () {
+    $product = Product::factory()->create();
+    BranchProduct::factory()->for($this->main)->for($product)->create(['tracks_inventory' => true]);
+    BranchProduct::factory()->for($this->qave)->for($product)->create();
+    BranchInventory::factory()->for($this->main)->for($product)->create(['on_hand' => 7]);
+    $plan = OperationPlan::factory()->for($this->main)->create();
+    OperationPlan::query()->whereKey($plan->id)->first()?->products()->attach($product->id, ['id' => (string) Str::uuid(), 'branch_id' => $this->main->id]);
+
+    atBranch($this->manager, $this->main)->put(route('products.branches.update', [$product, $this->main]), [
+        'price_override' => null, 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => null,
+    ])->assertRedirect();
+    atBranch($this->manager, $this->main)->get(route('products.index'))
+        ->assertInertia(fn (Assert $page) => $page->has('products.data', 1)->where('products.data.0.branch_prices.0.is_available', false));
+
+    atBranch($this->manager, $this->main)->delete(route('products.branch-assortment.destroy'), ['product_ids' => [$product->id]])->assertRedirect();
+
+    atBranch($this->manager, $this->main)->get(route('products.index'))->assertInertia(fn (Assert $page) => $page->has('products.data', 0));
+    expect(BranchProduct::query()->where('branch_id', $this->main->id)->exists())->toBeFalse()
+        ->and(BranchProduct::query()->where('branch_id', $this->qave->id)->where('product_id', $product->id)->exists())->toBeTrue()
+        ->and(Product::query()->whereKey($product->id)->exists())->toBeTrue()
+        ->and(BranchInventory::query()->where('branch_id', $this->main->id)->sole()->on_hand)->toBe(7)
+        ->and(DB::table('operation_plan_products')->where('branch_id', $this->main->id)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'branch_products.removed')->sole()->branch_id)->toBe($this->main->id);
+    /** Its movement history stays readable by link. */
+    $this->actingAs($this->manager)->get(route('inventory.movements.index', [$this->main, $product]))->assertOk();
 });
 
 test('copying from an authorized branch copies configuration only, skips existing rows and never stock', function () {
     $this->manager->branches()->attach($this->qave, ['is_active' => true]);
-    [$new, $existing, $defaults] = Product::factory()->count(3)->create()->all();
+    [$new, $existing, $notAtSource] = Product::factory()->count(3)->create()->all();
     BranchProduct::factory()->for($this->qave)->for($new)->create(['price_override' => '75.00', 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => 4]);
     BranchProduct::factory()->for($this->qave)->for($existing)->create(['price_override' => '80.00']);
     BranchInventory::factory()->for($this->qave)->for($new)->create(['on_hand' => 30]);
     $kept = BranchProduct::factory()->for($this->main)->for($existing)->create(['price_override' => '65.00']);
     $productCount = Product::query()->count();
-    $payload = ['source_branch_id' => $this->qave->id, 'product_ids' => [$new->id, $existing->id, $defaults->id], 'overwrite' => false];
+    $payload = ['source_branch_id' => $this->qave->id, 'product_ids' => [$new->id, $existing->id, $notAtSource->id], 'overwrite' => false];
 
+    /** Only Products QAVE sells can be copied from QAVE. */
     atBranch($this->manager, $this->main)->getJson(route('products.branch-assortment.copy.preview', ['source_branch_id' => $this->qave->id]))
         ->assertOk()
         ->assertJsonPath('destination.code', 'MAIN')
-        ->assertJsonCount(3, 'products');
+        ->assertJsonCount(2, 'products');
     atBranch($this->manager, $this->main)->post(route('products.branch-assortment.copy'), $payload)->assertRedirect();
     atBranch($this->manager, $this->main)->post(route('products.branch-assortment.copy'), $payload)->assertRedirect();
 
@@ -187,8 +228,8 @@ test('copying from an authorized branch copies configuration only, skips existin
     expect($copied->only(['price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold']))
         ->toBe(['price_override' => '75.00', 'is_available' => false, 'tracks_inventory' => true, 'low_stock_threshold' => 4])
         ->and($kept->fresh()->price_override)->toBe('65.00')
-        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->where('product_id', $defaults->id)->sole()->price_override)->toBeNull()
-        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->count())->toBe(3)
+        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->where('product_id', $notAtSource->id)->exists())->toBeFalse()
+        ->and(BranchProduct::query()->where('branch_id', $this->main->id)->count())->toBe(2)
         ->and(BranchInventory::query()->where('branch_id', $this->main->id)->exists())->toBeFalse()
         ->and(InventoryMovement::query()->where('branch_id', $this->main->id)->exists())->toBeFalse()
         ->and(Product::query()->count())->toBe($productCount);
@@ -206,11 +247,12 @@ test('copy never reads or writes a branch outside the manager scope', function (
     atBranch($this->manager, $this->main)->post(route('products.branch-assortment.copy'), [
         'source_branch_id' => $this->qave->id, 'product_ids' => [$product->id], 'overwrite' => true,
     ])->assertForbidden();
-    atBranch($this->manager, $this->qave)->post(route('products.branch-assortment.store'), ['product_ids' => [$product->id]])->assertRedirect();
+    /** A forged QAVE selection falls back to the manager's own MAIN: QAVE is never removed from or written. */
+    atBranch($this->manager, $this->qave)->delete(route('products.branch-assortment.destroy'), ['product_ids' => [$product->id]])->assertRedirect();
 
     expect(BranchProduct::query()->where('branch_id', $this->main->id)->exists())->toBeFalse()
-        ->and(BranchProduct::query()->where('branch_id', $this->qave->id)->sole()->is_available)->toBeTrue()
-        ->and(AuditLog::query()->whereIn('action', ['branch_products.added', 'branch_products.copied'])->exists())->toBeFalse();
+        ->and(BranchProduct::query()->where('branch_id', $this->qave->id)->sole()->only(['is_available', 'price_override']))->toBe(['is_available' => true, 'price_override' => '75.00'])
+        ->and(AuditLog::query()->whereIn('action', ['branch_products.added', 'branch_products.copied', 'branch_products.removed'])->exists())->toBeFalse();
 });
 
 test('a business-wide product manager may copy from every other active branch', function () {
@@ -240,25 +282,37 @@ test('inventory stays on the assigned branch and a foreign branch cannot be read
     expect(BranchInventory::query()->where('branch_id', $this->qave->id)->sole()->on_hand)->toBe(10);
 });
 
-test('operations run on the assigned branch while shared definitions stay read-only', function () {
-    $ingredient = Ingredient::factory()->create(['name' => 'Calamansi']);
-    $plan = OperationPlan::factory()->create();
+test('a branch operations manager configures only its own branch setup and never reaches another branch', function () {
+    $ingredient = Ingredient::factory()->for($this->main)->create(['name' => 'Calamansi']);
+    $qaveIngredient = Ingredient::factory()->for($this->qave)->create(['name' => 'Calamansi']);
+    $qavePlan = OperationPlan::factory()->for($this->qave)->create(['name' => 'Qave drinks']);
 
     atBranch($this->manager, $this->main)->get(route('operations.ingredients'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('operations.branch.code', 'MAIN')
-            ->where('operations.can_manage_definitions', false));
+            ->where('operations.can_configure', true)
+            ->where('operations.copy_sources', [])
+            ->where('ingredients', fn ($rows): bool => collect($rows)->pluck('id')->all() === [$ingredient->id]));
     atBranch($this->manager, $this->main)->post(route('operations.ingredients.adjust', $ingredient), [
         'mode' => 'count', 'quantity' => '12', 'reason' => 'Opening count', 'idempotency_key' => (string) Str::uuid(),
     ])->assertRedirect()->assertSessionHasNoErrors();
-    atBranch($this->manager, $this->main)->put(route('operations.ingredients.update', $ingredient), ['name' => 'Renamed'])->assertForbidden();
-    atBranch($this->manager, $this->main)->post(route('operations.plans.store'), ['name' => 'Hack', 'icon' => 'box', 'product_ids' => []])->assertForbidden();
-    atBranch($this->manager, $this->main)->post(route('operations.plans.archive', $plan))->assertForbidden();
+    atBranch($this->manager, $this->main)->post(route('operations.plans.store'), ['name' => 'Main drinks', 'icon' => 'box', 'product_ids' => []])
+        ->assertRedirect()->assertSessionHasNoErrors();
+
+    atBranch($this->manager, $this->main)->post(route('operations.ingredients.adjust', $qaveIngredient), [
+        'mode' => 'count', 'quantity' => '99', 'reason' => 'Opening count', 'idempotency_key' => (string) Str::uuid(),
+    ])->assertNotFound();
+    atBranch($this->manager, $this->main)->put(route('operations.ingredients.update', $qaveIngredient), ['name' => 'Renamed'])->assertNotFound();
+    atBranch($this->manager, $this->main)->post(route('operations.plans.archive', $qavePlan))->assertNotFound();
+    atBranch($this->manager, $this->main)->getJson(route('operations.setup-copy.preview', ['source_branch_id' => $this->qave->id, 'sections' => ['ingredients'], 'replace' => 0]))
+        ->assertForbidden();
 
     expect(BranchIngredientStock::query()->where('ingredient_id', $ingredient->id)->sole()->branch_id)->toBe($this->main->id)
-        ->and($ingredient->fresh()->name)->toBe('Calamansi')
-        ->and(OperationPlan::query()->where('name', 'Hack')->exists())->toBeFalse();
+        ->and(BranchIngredientStock::query()->where('ingredient_id', $qaveIngredient->id)->exists())->toBeFalse()
+        ->and($qaveIngredient->fresh()->name)->toBe('Calamansi')
+        ->and($qavePlan->fresh()->archived_at)->toBeNull()
+        ->and(OperationPlan::query()->where('name', 'Main drinks')->sole()->branch_id)->toBe($this->main->id);
 });
 
 test('a branch staff manager lists only other accounts of its own branches', function () {

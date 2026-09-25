@@ -31,6 +31,8 @@ import type {
 
 type BranchConfig = {
     branch_id: string;
+    /** Client-only: whether this Branch sells the Product. Only selected Branches are submitted (explicit assortment). */
+    in_assortment: boolean;
     price_override: string | null;
     is_available: boolean;
     tracks_inventory: boolean;
@@ -123,6 +125,10 @@ export function ProductEditorForm({
 
             return {
                 branch_id: branch.branch_id,
+                /** A new Product created while one Branch is selected is added to it; otherwise nothing is implicit. */
+                in_assortment:
+                    existing?.in_assortment ??
+                    (product === null && branches.length === 1),
                 price_override: existing?.price_override ?? null,
                 is_available: existing?.is_available ?? true,
                 tracks_inventory: existing?.tracks_inventory ?? false,
@@ -185,6 +191,13 @@ export function ProductEditorForm({
                     return;
                 }
                 submitting.current = true;
+                /** A Branch joins the assortment only when explicitly selected; unselected Branches are never sent. */
+                form.transform((data) => ({
+                    ...data,
+                    branch_configs: data.branch_configs
+                        .filter((config) => config.in_assortment)
+                        .map(({ in_assortment: _member, ...config }) => config),
+                }));
                 form.submit(product ? update(product.id) : store(), {
                     preserveScroll: true,
                     forceFormData: true,
@@ -361,7 +374,7 @@ export function ProductEditorForm({
                                             ? `Settings for ${branches[0]?.code} only. The product name, image, category and options are shared by every Branch and managed business-wide.`
                                             : singleBranch
                                               ? `Showing ${branches[0]?.code}, the selected global branch.`
-                                              : 'All authorized branches are shown in All Branches scope.'}
+                                              : 'Choose the Branches that sell this product. A product sold nowhere stays in the shared catalog until you add it to a Branch.'}
                                     </p>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
@@ -369,6 +382,13 @@ export function ProductEditorForm({
                                         <BranchEditor
                                             key={branch.branch_id}
                                             branch={branch}
+                                            member={
+                                                product?.branch_prices.find(
+                                                    (price) =>
+                                                        price.branch_id ===
+                                                        branch.branch_id,
+                                                )?.in_assortment ?? false
+                                            }
                                             value={
                                                 form.data.branch_configs[index]
                                             }
@@ -663,22 +683,59 @@ function AvailabilitySwitch({
 
 function BranchEditor({
     branch,
+    member,
     value,
     showOnHand,
     currentOnHand,
     onChange,
 }: {
     branch: BranchConfiguration;
+    /** Already in this Branch's assortment (removal is its own action on the Products page). */
+    member: boolean;
     value: BranchConfig;
     showOnHand: boolean;
     currentOnHand: number | null;
     onChange: (value: BranchConfig) => void;
 }) {
+    if (!value.in_assortment) {
+        return (
+            <div className="space-y-2 rounded-xl border border-dashed border-neutral-300 p-3">
+                <p className="text-[13px] font-semibold">
+                    {branch.code} · {branch.name}
+                </p>
+                <p className="text-[11.5px] leading-5 text-neutral-500">
+                    Not in the {branch.code} assortment: it is not sold there.
+                </p>
+                <ActiveField
+                    label={`Sell at ${branch.code}`}
+                    value={false}
+                    onChange={(sell) =>
+                        onChange({ ...value, in_assortment: sell })
+                    }
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-3 rounded-xl border border-neutral-200 p-3">
             <p className="text-[13px] font-semibold">
                 {branch.code} · {branch.name}
             </p>
+            {member ? (
+                <p className="text-[11.5px] text-neutral-500">
+                    In the {branch.code} assortment. To stop selling it there,
+                    use Remove from {branch.code} on the Products page.
+                </p>
+            ) : (
+                <ActiveField
+                    label={`Sell at ${branch.code}`}
+                    value
+                    onChange={(sell) =>
+                        onChange({ ...value, in_assortment: sell })
+                    }
+                />
+            )}
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
                 <Field
                     id={`branch-price-${branch.branch_id}`}
@@ -737,7 +794,7 @@ function BranchEditor({
                 )}
             </div>
             <ActiveField
-                label="Available at this branch"
+                label="Available now (off = temporarily unavailable)"
                 value={value.is_available}
                 onChange={(isAvailable) =>
                     onChange({ ...value, is_available: isAvailable })

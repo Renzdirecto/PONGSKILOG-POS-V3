@@ -35,7 +35,7 @@ function catalogCashier(Branch $branch, string $role = 'cashier'): User
 test('authorized cashier roles receive the lean real catalog with default prices', function (string $role) {
     $branch = Branch::factory()->create();
     $category = Category::factory()->create(['name' => 'Silog']);
-    $product = Product::factory()->for($category)->create(['name' => 'Tapsilog', 'default_price' => '99.25']);
+    $product = Product::factory()->soldAt($branch)->for($category)->create(['name' => 'Tapsilog', 'default_price' => '99.25']);
 
     $this->actingAs(catalogCashier($branch, $role))->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
@@ -112,7 +112,7 @@ test('cashier must select a branch when multiple assignments exist', function ()
 
 test('unavailable branches retain their safe workspace state without catalog data', function (BranchStatus $status) {
     $branch = Branch::factory()->create(['status' => $status]);
-    Product::factory()->create();
+    Product::factory()->soldAt($branch)->create();
 
     $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
@@ -126,15 +126,15 @@ test('catalog keeps disabled products visible and explains why they cannot be or
     $second = Category::factory()->create(['name' => 'Silog', 'sort_order' => 1]);
     $first = Category::factory()->create(['name' => 'Extras', 'sort_order' => 1]);
     Category::factory()->create(['name' => 'Empty']);
-    $disabledProduct = Product::factory()->for(Category::factory()->create(['name' => 'Inactive only']))
+    $disabledProduct = Product::factory()->soldAt($branch)->for(Category::factory()->create(['name' => 'Inactive only']))
         ->create(['name' => 'Disabled product', 'is_active' => false]);
-    $disabledCategoryProduct = Product::factory()->for(Category::factory()->create(['name' => 'Disabled category', 'is_active' => false]))
+    $disabledCategoryProduct = Product::factory()->soldAt($branch)->for(Category::factory()->create(['name' => 'Disabled category', 'is_active' => false]))
         ->create(['name' => 'Category-disabled product']);
-    Product::factory()->for($last)->create(['name' => 'Water']);
-    Product::factory()->for($second)->create(['name' => 'Tapsilog']);
-    Product::factory()->for($first)->create(['name' => 'Rice']);
-    Product::factory()->for($first)->create(['name' => 'Egg']);
-    $otherDisabledProduct = Product::factory()->for($first)->create(['name' => 'Disabled extra', 'is_active' => false]);
+    Product::factory()->soldAt($branch)->for($last)->create(['name' => 'Water']);
+    Product::factory()->soldAt($branch)->for($second)->create(['name' => 'Tapsilog']);
+    Product::factory()->soldAt($branch)->for($first)->create(['name' => 'Rice']);
+    Product::factory()->soldAt($branch)->for($first)->create(['name' => 'Egg']);
+    $otherDisabledProduct = Product::factory()->soldAt($branch)->for($first)->create(['name' => 'Disabled extra', 'is_active' => false]);
 
     $response = $this->actingAs(catalogCashier($branch))->get(route('workspaces.cashier'));
     $response->assertInertia(fn (Assert $page) => $page->has('catalog.categories', 5)->has('catalog.products', 7));
@@ -153,7 +153,7 @@ test('branch switching isolates prices and unavailable overrides and ignores for
     $qave = Branch::factory()->create(['code' => 'QAVE']);
     $user = catalogCashier($main);
     $user->branches()->attach($qave, ['is_active' => true]);
-    $product = Product::factory()->create(['default_price' => '95.00']);
+    $product = Product::factory()->soldAt($qave)->create(['default_price' => '95.00']);
     BranchProduct::factory()->for($product)->for($main)->create(['price_override' => '99.00', 'is_available' => false]);
 
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $main->id])
@@ -192,8 +192,8 @@ test('catalog signs only returned card variants and exposes no image internals',
     $product->update(['image_path' => $directory.'/detail.webp']);
     BranchProduct::factory()->for($branch)->for($product)->create(['price_override' => '0.00', 'tracks_inventory' => true, 'low_stock_threshold' => 5]);
     $product->modifierGroups()->attach(ModifierGroup::factory()->create());
-    Product::factory()->create(['is_active' => false]);
-    Product::factory()->for(Category::factory()->create(['is_active' => false]))
+    Product::factory()->soldAt($branch)->create(['is_active' => false]);
+    Product::factory()->soldAt($branch)->for(Category::factory()->create(['is_active' => false]))
         ->create();
     $signedPaths = [];
     Storage::fake('s3')->buildTemporaryUrlsUsing(function (string $path, DateTimeInterface $expiration) use (&$signedPaths) {
@@ -226,7 +226,7 @@ test('catalog signs only returned card variants and exposes no image internals',
 
 test('only active assigned modifier groups and active options are exposed for customization', function (bool $active, bool $assigned, bool $expected) {
     $branch = Branch::factory()->create();
-    $product = Product::factory()->create();
+    $product = Product::factory()->soldAt($branch)->create();
     $group = ModifierGroup::factory()->create(['is_active' => $active]);
     ModifierOption::factory()->for($group)->create(['is_active' => false]);
     if ($assigned) {

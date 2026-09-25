@@ -9,14 +9,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * The current Ingredient effect of one Add-on / Modifier option on one Product (for example Extra Yakult on Lemon
- * Yakult → Yakult +1 pc). Scoped to the Product because Modifier Groups are reusable across Products. Past sales keep
+ * The current Ingredient effect of one Add-on / Modifier option on one Product at one Branch (for example Extra Yakult on
+ * Lemon Yakult → Yakult +1 pc at MAIN, +2 pc at QAVE), using only that Branch's Ingredients. Scoped to the Product because Modifier Groups are reusable across Products. Past sales keep
  * their own Order recipe snapshot modifiers.
  */
-#[Fillable(['product_id', 'modifier_option_id', 'updated_by_user_id'])]
+#[Fillable(['branch_id', 'product_id', 'modifier_option_id', 'updated_by_user_id'])]
 class ProductModifierEffect extends Model
 {
     use HasUuids;
+
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
 
     /** @return BelongsTo<Product, $this> */
     public function product(): BelongsTo

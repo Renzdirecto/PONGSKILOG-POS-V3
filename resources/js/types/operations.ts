@@ -22,11 +22,20 @@ export type OperationsContext = {
     plans: OperationsPlan[];
     active_plan_id: string | null;
     has_open_store_session: boolean | null;
+    /** How much Operations setup the selected Branch has (all zero for All Branches or a new Branch). */
+    setup: {
+        plans: number;
+        ingredients: number;
+        recipes: number;
+        products: number;
+    };
     /**
-     * Whether the viewer may change the shared definitions (Ingredients, Recipes, Add-on effects, Plans). False for a
-     * Branch-scoped Operations role: it reads them and runs its own Branch's stock, list and purchases only.
+     * Whether the viewer may configure the selected Branch's own setup (Plans, Ingredients, Recipes, Add-on effects,
+     * recipe mode). Always false for All Branches, which has no single setup.
      */
-    can_manage_definitions: boolean;
+    can_configure: boolean;
+    /** Other Branches this account may copy Operations setup from into the selected Branch. */
+    copy_sources: { id: string; name: string; code: string }[];
 };
 
 export type RecommendationKind = 'setup' | 'manual' | 'buy' | 'hold' | 'ok';
@@ -215,10 +224,8 @@ export type RecipeProduct = {
     is_active: boolean;
     image_url: string | null;
     no_recipe_needed: boolean;
-    tracked_at: string[];
-    tracked_branches: { id: string; code: string; name: string }[];
-    /** Blocking Branches outside a Branch-scoped viewer's scope (counted, never named). */
-    tracked_elsewhere: number;
+    /** Only this Branch's own Product stock tracking blocks its Ingredient recipe; other Branches never do. */
+    tracks_product_stock: boolean;
     inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
     size_conflict: string[] | null;
     state: RecipeState;

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Branch;
 use App\Models\OperationPlan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,6 +20,7 @@ class OperationPlanFactory extends Factory
     public function definition(): array
     {
         return [
+            'branch_id' => Branch::factory(),
             'name' => ucfirst(fake()->unique()->word()),
             'description' => null,
             'icon' => 'box',

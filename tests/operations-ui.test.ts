@@ -323,7 +323,7 @@ test('the active plan lives in the URL and every page shares one shell', () => {
 
 test('plans, recipes and ingredients tell the truth about missing data', () => {
     assert.match(plans, /A plan does not hold stock of its own\./);
-    assert.match(plans, /No plans yet/);
+    assert.match(plans, /No Pamalengke Plans yet\./);
     assert.match(plans, /moves it for future sales only/);
     assert.match(recipes, /Recipe required for \$\{sizeLabel\}/);
     assert.match(recipes, /No recipe needed/);

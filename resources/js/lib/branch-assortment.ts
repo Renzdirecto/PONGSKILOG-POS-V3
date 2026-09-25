@@ -6,9 +6,11 @@ export type ProductScope = {
     can_edit_definitions: boolean;
     branch: BranchSummary | null;
     copy_sources: BranchSummary[];
+    /** Copying Products may also bring their Operations setup, which needs Operations access. */
+    can_copy_operations: boolean;
 };
 
-/** A canonical Product that the selected Branch does not sell (removed from its assortment). */
+/** A global Product that is not in the selected Branch's assortment (never added, removed, or sold nowhere yet). */
 export type AssortmentCandidate = {
     id: string;
     name: string;
@@ -38,11 +40,106 @@ export type CopyPreviewRow = {
     };
 };
 
+/** The source's Operations setup per Product, with each Plan and Ingredient it brings and its destination state. */
+export type CopyOperationsDetails = {
+    products: Record<
+        string,
+        {
+            mode: 'recipe' | 'direct' | 'product_stock' | 'none';
+            plan_id: string | null;
+            recipes: number;
+            effects: number;
+            ingredient_ids: string[];
+            destination_configured: boolean;
+        }
+    >;
+    plans: Record<string, { name: string; exists: boolean }>;
+    ingredients: Record<
+        string,
+        { name: string; exists: boolean; conflict: boolean }
+    >;
+};
+
 export type CopyPreview = {
     source: BranchSummary;
     destination: BranchSummary;
     products: CopyPreviewRow[];
+    /** Null when the viewer has no Operations access (Operations setup cannot be copied then). */
+    operations: CopyOperationsDetails | null;
 };
+
+/**
+ * What "Copy Operations setup for selected Products" brings to the destination, deduplicated across the selection:
+ * Plans and Ingredients already there are reused (kept), recipe setup already there is kept unless overwrite was
+ * chosen. Stock and history are never part of it.
+ */
+export function operationsCopySummary(
+    details: CopyOperationsDetails,
+    selectedIds: ReadonlySet<string>,
+    overwrite: boolean,
+): {
+    plans: number;
+    plansKept: number;
+    ingredients: number;
+    ingredientsKept: number;
+    conflicts: number;
+    recipes: number;
+    effects: number;
+    direct: number;
+    configuredKept: number;
+} {
+    const plans = new Set<string>();
+    const ingredients = new Set<string>();
+    let recipes = 0;
+    let effects = 0;
+    let direct = 0;
+    let configuredKept = 0;
+    for (const id of selectedIds) {
+        const product = details.products[id];
+        if (!product) {
+            continue;
+        }
+        if (product.plan_id !== null) {
+            plans.add(product.plan_id);
+        }
+        product.ingredient_ids.forEach((ingredient) =>
+            ingredients.add(ingredient),
+        );
+        if (product.mode !== 'recipe' && product.mode !== 'direct') {
+            continue;
+        }
+        if (product.destination_configured && !overwrite) {
+            configuredKept++;
+            continue;
+        }
+        recipes += product.recipes;
+        effects += product.effects;
+        direct += product.mode === 'direct' ? 1 : 0;
+    }
+    const planRows = [...plans].map((id) => details.plans[id]).filter(Boolean);
+    const ingredientRows = [...ingredients]
+        .map((id) => details.ingredients[id])
+        .filter(Boolean);
+
+    return {
+        plans: planRows.filter((plan) => overwrite || !plan.exists).length,
+        plansKept: overwrite
+            ? 0
+            : planRows.filter((plan) => plan.exists).length,
+        ingredients: ingredientRows.filter(
+            (row) => !row.exists || (overwrite && !row.conflict),
+        ).length,
+        ingredientsKept: overwrite
+            ? 0
+            : ingredientRows.filter((row) => row.exists && !row.conflict)
+                  .length,
+        conflicts: ingredientRows.filter((row) => row.conflict).length,
+        recipes,
+        effects,
+        direct,
+        configuredKept,
+    };
+}
 
 /**
  * What confirming the copy will do for the selected Products. Products already configured at the destination are kept

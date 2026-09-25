@@ -992,6 +992,16 @@ Same branch, on top of `058c5b6` (0 behind `origin/dev`). No dependency change. 
 - Realtime: `user.context_changed` (identity/access/branches/status) revalidates open sessions (sidebar, Position, picture, Branch selector, safe redirect on revocation); `access_control.changed` and `staff.changed` refresh other admins' pages; reconnect revalidates; no polling. Super Admin sidebar section renamed "Store Operations".
 - Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
 
+### Phase 18 — Manual QA refinement pass #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Same branch on top of `32e2500` (0 behind `origin/dev`). No dependency change. One forward migration `2026_09_25_112126_make_branch_catalog_and_operations_independent` (applied to the local development DB forward-only; never reset). Rules: `02` / `04` / `05` / `06` / `07` / `09` / `11` sections "pass #2.1"; `.ai/rules` operations, access-control, hooks, seeders.
+
+- Explicit Branch assortment (no row = not sold; unavailable ≠ removed; Remove keeps stock/history); new Branch and new Product start with no memberships.
+- Plans, Ingredients, Recipes, Add-on effects and recipe mode are Branch-owned; existing Branches received independent copies at cutover with history re-pointed and quantities unchanged.
+- Copy Products (+ optional Operations setup) and Operations › Copy setup: configuration only, clone once, skip by default, explicit replace, reviewed; never stock or history.
+- Removal-vs-sale and recipe-edit-vs-sale serialize on the Branch configuration lock (PostgreSQL verified, no deadlock).
+- Focused automated checks only (not Final QA). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED. **Status: READY FOR USER MANUAL QA.** Phase 18 Final QA is **not** passed.
+
 - [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
 - [x] Audit Trail (real register, filters, detail, realtime)
 - [x] Void Orders (protected history, detail, global Void approval PIN)

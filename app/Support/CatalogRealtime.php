@@ -7,6 +7,7 @@ use App\Events\CustomerCatalogChanged;
 use App\Events\IngredientStockChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
@@ -78,6 +79,17 @@ class CatalogRealtime
         foreach ($products as $product) {
             $this->productChanged($product, availabilityChanged: $availabilityChanged);
         }
+    }
+
+    /**
+     * One Branch's configuration changed (assortment, recipe mode, Recipes, Add-on effects, Ingredients, Plans or a setup
+     * copy): that Branch's POS and Customer QR catalogs and its open Operations pages refetch their authoritative state
+     * (compact invalidation only, after commit). Another Branch is never signalled.
+     */
+    public function branchConfigurationChanged(Branch $branch, string $reason): void
+    {
+        $this->ingredientsChanged($branch, $reason);
+        ReportsChanged::dispatch((string) $branch->id, $reason);
     }
 
     /**

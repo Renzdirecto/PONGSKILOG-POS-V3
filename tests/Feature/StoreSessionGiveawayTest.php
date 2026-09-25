@@ -217,15 +217,17 @@ test('only active Store Session operators of the selected Branch may record give
     'other branch cashier' => ['other branch cashier', 422],
 ]);
 
-test('a Product of another Branch cannot be given away here', function () {
+test('a Product outside this Branch assortment cannot be given away here, even if another Branch sells it', function () {
     $other = Branch::factory()->create();
     BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->coke->id)->delete();
     BranchProduct::factory()->for($other)->for($this->ops->coke)->create(['tracks_inventory' => true]);
     BranchInventory::factory()->for($other)->for($this->ops->coke)->create(['on_hand' => 9]);
 
-    giveaway($this->ops, 'coke', null, 1)->assertOk()->assertJsonPath('giveaway.stock_mode', 'none');
+    giveaway($this->ops, 'coke', null, 1)->assertUnprocessable()->assertJsonValidationErrors('product_id');
 
-    expect(BranchInventory::query()->where('branch_id', $other->id)->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(9);
+    expect(StoreSessionGiveaway::query()->count())->toBe(0)
+        ->and(BranchInventory::query()->where('branch_id', $other->id)->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(9)
+        ->and(BranchInventory::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(20);
 });
 
 test('a duplicate submit is idempotent and a changed payload under the same key conflicts', function () {

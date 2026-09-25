@@ -290,8 +290,10 @@ export function BranchRequired({ what }: { what: string }) {
 }
 
 /**
- * Operations page frame inside the existing Owner/Super Admin shell: page heading, the URL-addressable Active Plan
- * switcher, the Branch scope and (below the desktop sidebar width) a compact Operations sub-navigation.
+ * Operations page frame inside the existing Owner/Super Admin shell: page heading with the selected Branch, the
+ * URL-addressable Active Plan switcher, the Branch scope and (below the desktop sidebar width) a compact Operations
+ * sub-navigation. Every Operations setup belongs to one Branch, so All Branches shows the Branch picker state instead
+ * of a page (Purchases alone lists every Branch's runs).
  */
 export function OperationsShell({
     operations,
@@ -313,15 +315,22 @@ export function OperationsShell({
         (plan) => plan.id === operations.active_plan_id,
     );
     const scoped = operations.page !== 'plans';
+    const branch = operations.branch;
+    const needsBranch = branch === null && operations.page !== 'purchases';
     useReportsRealtimeRefresh(
         ['operations', ...liveProps[operations.page]],
-        operations.branch?.id ?? null,
+        branch?.id ?? null,
     );
+    const heading = branch ? `${title} · ${branch.code}` : title;
 
     return (
         <>
-            <Head title={`${title} · Operations`} />
-            <OwnerPage title={title} description={description} action={action}>
+            <Head title={`${heading} · Operations`} />
+            <OwnerPage
+                title={heading}
+                description={description}
+                action={needsBranch ? undefined : action}
+            >
                 <div className="flex flex-wrap items-center gap-2">
                     {scoped && active && (
                         <DropdownMenu>
@@ -403,9 +412,9 @@ export function OperationsShell({
                         </DropdownMenu>
                     )}
                     <p className="min-w-0 flex-[1_1_180px] text-[11.5px] leading-5 text-[#767676]">
-                        {operations.branch
-                            ? `${operations.branch.name} (${operations.branch.code}) branch stock. Plans only change the view; stock stays one record per ingredient.`
-                            : 'All Branches: read-only analytics. Choose one Branch in the header to see or change physical ingredient stock.'}
+                        {branch
+                            ? `${branch.name} (${branch.code}) setup: its own Plans, Ingredients, Recipes and stock. Other Branches are configured separately.`
+                            : 'All Branches has no single Operations setup. Choose one Branch in the header to see or change its Plans, Ingredients, Recipes and stock.'}
                     </p>
                     <button
                         type="button"
@@ -447,7 +456,14 @@ export function OperationsShell({
                     })}
                 </nav>
 
-                {children}
+                {needsBranch ? (
+                    <EmptyState
+                        title="Choose a Branch"
+                        body="Plans, Ingredients, Recipes, Ingredient Stock and Pamamalengke belong to one Branch. Choose a Branch in the header to open its Operations."
+                    />
+                ) : (
+                    children
+                )}
             </OwnerPage>
             <HowItWorksDialog
                 open={howOpen}

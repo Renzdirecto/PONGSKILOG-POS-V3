@@ -45,6 +45,7 @@ export type CashierCatalog = {
         availability_reason?:
             | 'product_disabled'
             | 'category_disabled'
+            | 'not_in_branch'
             | 'branch_unavailable'
             | 'out_of_stock'
             | 'recipe_required'
@@ -97,6 +98,8 @@ export type BranchPrice = {
     branch_id: string;
     code: string;
     name: string;
+    /** False: the Product is not part of this Branch's assortment (not sold there). */
+    in_assortment: boolean;
     price_override: string | null;
     effective_price: string;
     is_available: boolean;

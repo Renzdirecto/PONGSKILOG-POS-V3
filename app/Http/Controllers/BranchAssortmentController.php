@@ -18,7 +18,7 @@ use Inertia\Inertia;
  */
 class BranchAssortmentController extends Controller
 {
-    /** Add existing canonical Products back to the selected Branch's assortment. */
+    /** Add existing canonical Products to the selected Branch's assortment. */
     public function store(Request $request, ActiveBranchContext $context, ConfigureBranchAssortment $assortment): RedirectResponse
     {
         $request->validate(['product_ids' => ['required', 'array', 'min:1', 'max:'.ConfigureBranchAssortment::MAX_PRODUCTS]]);
@@ -26,8 +26,26 @@ class BranchAssortmentController extends Controller
         $result = $assortment->add($user, $this->destination($user, $context), (array) $request->input('product_ids'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $result['added'] === 0
-            ? 'Those products are already sold at this Branch.'
+            ? 'Those products are already in this Branch.'
             : $result['added'].' '.($result['added'] === 1 ? 'product' : 'products').' added to this Branch.']);
+
+        return back();
+    }
+
+    /**
+     * Remove Products from the selected Branch's assortment (not the same as unavailable). The global Product, its
+     * stock history and past Orders are kept.
+     */
+    public function destroy(Request $request, ActiveBranchContext $context, ConfigureBranchAssortment $assortment): RedirectResponse
+    {
+        $request->validate(['product_ids' => ['required', 'array', 'min:1', 'max:'.ConfigureBranchAssortment::MAX_PRODUCTS]]);
+        $user = $this->actor($request);
+        $branch = $this->destination($user, $context);
+        $result = $assortment->remove($user, $branch, (array) $request->input('product_ids'));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $result['removed'] === 0
+            ? 'Those products are not in '.$branch->code.'.'
+            : $result['removed'].' '.($result['removed'] === 1 ? 'product' : 'products').' removed from '.$branch->code.'. Stock history and past orders are kept.']);
 
         return back();
     }
@@ -39,12 +57,13 @@ class BranchAssortmentController extends Controller
         $user = $this->actor($request);
         $destination = $this->destination($user, $context);
         $source = $this->source($data['source_branch_id']);
-        $products = $assortment->preview($user, $source, $destination);
+        $preview = $assortment->preview($user, $source, $destination);
 
         return response()->json([
             'source' => $source->only(['id', 'name', 'code']),
             'destination' => $destination->only(['id', 'name', 'code']),
-            'products' => $products,
+            'products' => $preview['products'],
+            'operations' => $preview['operations'],
         ])->header('Cache-Control', 'no-store');
     }
 
@@ -54,13 +73,27 @@ class BranchAssortmentController extends Controller
             'source_branch_id' => ['required', 'uuid'],
             'product_ids' => ['required', 'array', 'min:1', 'max:'.ConfigureBranchAssortment::MAX_PRODUCTS],
             'overwrite' => ['required', 'boolean'],
+            'copy_operations' => ['sometimes', 'boolean'],
         ]);
         $user = $this->actor($request);
-        $result = $assortment->copy($user, $this->source($data['source_branch_id']), $this->destination($user, $context), (array) $request->input('product_ids'), $request->boolean('overwrite'));
+        $result = $assortment->copy(
+            $user,
+            $this->source($data['source_branch_id']),
+            $this->destination($user, $context),
+            (array) $request->input('product_ids'),
+            $request->boolean('overwrite'),
+            $request->boolean('copy_operations'),
+        );
         $changed = $result['copied'] + $result['overwritten'];
+        $operations = $result['operations'];
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $changed.' '.($changed === 1 ? 'product' : 'products').' copied'
-            .($result['skipped'] > 0 ? ' · '.$result['skipped'].' already configured and kept' : '').'.']);
+            .($result['skipped'] > 0 ? ' · '.$result['skipped'].' already in this Branch and kept' : '')
+            .($operations === null ? '' : ' · Operations setup: '.$operations['recipes']['products'].' configured, '
+                .($operations['ingredients']['new'] + $operations['ingredients']['replaced']).' ingredients, '
+                .($operations['plans']['new'] + $operations['plans']['replaced']).' plans'
+                .($operations['skipped'] === [] ? '' : ' ('.count($operations['skipped']).' skipped)'))
+            .'. Stock was not copied.']);
 
         return back();
     }

@@ -183,13 +183,18 @@ test('a branch reports account reloading dashboard props with a forged branch st
         'effect' => PermissionOverrideEffect::Allow,
     ]);
 
-    /** A forged QAVE selection is cleared: the Branch account goes to its Branch picker, never QAVE or All Branches. */
-    $forged = test()->actingAs($juan)->withSession([ActiveBranchContext::SESSION_KEY => $qave->branch->id])
-        ->withHeaders(['X-Inertia' => 'true', 'X-Inertia-Partial-Component' => 'workspaces/owner-dashboard', 'X-Inertia-Partial-Data' => 'analytics,report'])
-        ->get(route('workspaces.owner'));
-    test()->flushHeaders();
-    expect($forged->isRedirect() || $forged->status() === 409)->toBeTrue()
-        ->and($forged->getContent())->not->toContain($qave->branch->code);
+    /**
+     * A forged QAVE selection is cleared and, on the same request, the account's only active assigned Branch (MAIN) is
+     * selected instead: never QAVE, never All Branches.
+     */
+    [, $forged] = partialReload($juan, route('workspaces.owner'), 'workspaces/owner-dashboard', 'analytics,report', $qave->branch);
+    $forged->assertOk()->assertSessionHas(ActiveBranchContext::SESSION_KEY, $main->branch->id);
+
+    expect($forged->json('props.report.scope.code'))->toBe($main->branch->code)
+        ->and($forged->json('props.analytics.kpis.transactions.value'))->toBe(3)
+        ->and($forged->json('props.analytics.branches'))->toBeNull()
+        ->and($forged->getContent())->not->toContain($qave->branch->code)
+        ->and($forged->getContent())->not->toContain((string) $qave->branch->id);
 
     [, $response] = partialReload($juan, route('workspaces.owner'), 'workspaces/owner-dashboard', 'analytics,report,recentTransactions', $main->branch);
     $response->assertOk();

@@ -69,9 +69,17 @@ test('cashier, kitchen, guest and inactive users cannot open or change operation
     expect($this->ops->stock('lemon'))->toBe('29.5');
 })->with(['cashier', 'kitchen', 'guest', 'inactive']);
 
-test('all branches can read operations but never mutate physical stock or purchases', function () {
+test('all branches has no single setup: it shows the branch picker state and never configures or mutates', function () {
     opsAs($this, $this->ops->owner, null)->get(route('operations.stock', ['plan' => $this->ops->drinks->id]))
-        ->assertOk()->assertInertia(fn (Assert $page) => $page->where('operations.branch', null)->where('ingredients', []));
+        ->assertRedirect(route('operations.plans'));
+    opsAs($this, $this->ops->owner, null)->get(route('operations.plans'))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->where('operations.branch', null)
+        ->where('operations.plans', [])->where('operations.can_configure', false)->where('cards', []));
+    opsAs($this, $this->ops->owner, null)->get(route('operations.ingredients'))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->where('ingredients', []));
+    opsAs($this, $this->ops->owner, null)->put(route('operations.plans.update', $this->ops->drinks), [
+        'name' => 'All drinks', 'icon' => 'glass', 'product_ids' => [],
+    ])->assertSessionHasErrors('branch');
 
     opsAs($this, $this->ops->owner, null)->post(route('operations.ingredients.adjust', $this->ops->ingredients['lemon']), [
         'mode' => 'count', 'quantity' => '40', 'reason' => 'End-of-day count', 'idempotency_key' => (string) Str::uuid(),
@@ -86,28 +94,41 @@ test('all branches can read operations but never mutate physical stock or purcha
         'initial_quantity' => '15',
     ])->assertSessionHasErrors('branch');
 
-    expect($this->ops->stock('lemon'))->toBe('29.5')->and(Ingredient::query()->where('name', 'Calamansi')->exists())->toBeFalse();
+    expect($this->ops->stock('lemon'))->toBe('29.5')->and(Ingredient::query()->where('name', 'Calamansi')->exists())->toBeFalse()
+        ->and($this->ops->drinks->fresh()->name)->toBe('Drinks');
 });
 
-test('another branch ingredient stock is separate and cross-branch list entries cannot be touched', function () {
+test('another branch never reaches this branch ingredients, plans or list entries', function () {
     $other = Branch::factory()->create(['code' => 'EAST']);
+    $otherPlan = OperationPlan::factory()->for($other)->create(['name' => 'East drinks']);
     $entry = PamamalengkeListEntry::query()->create([
-        'branch_id' => $other->id, 'operation_plan_id' => $this->ops->drinks->id, 'entry_type' => 'manual', 'name' => 'Ice',
+        'branch_id' => $other->id, 'operation_plan_id' => $otherPlan->id, 'entry_type' => 'manual', 'name' => 'Ice',
         'quantity' => '1.0000', 'unit' => 'bag', 'created_by_user_id' => $this->ops->owner->id,
     ]);
 
     opsAs($this, $this->ops->owner, $this->ops->branch)->delete(route('operations.pamamalengke.manual.destroy', $entry))->assertNotFound();
+    /** MAIN's Lemon is not an Ingredient of EAST: no stock change, no Plan edit, no Recipe through a forged id. */
     opsAs($this, $this->ops->owner, $other)->post(route('operations.ingredients.adjust', $this->ops->ingredients['lemon']), [
         'mode' => 'count', 'quantity' => '4', 'reason' => 'Opening count', 'idempotency_key' => (string) Str::uuid(),
-    ])->assertRedirect();
+    ])->assertNotFound();
+    opsAs($this, $this->ops->owner, $other)->put(route('operations.plans.update', $this->ops->drinks), [
+        'name' => 'Hijacked', 'icon' => 'glass', 'product_ids' => [],
+    ])->assertNotFound();
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.plans.update', $otherPlan), [
+        'name' => 'Hijacked', 'icon' => 'glass', 'product_ids' => [],
+    ])->assertNotFound();
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.pamamalengke.skip', [$otherPlan, $this->ops->ingredients['lemon']]), ['skipped' => true])
+        ->assertNotFound();
 
     expect($this->ops->stock('lemon'))->toBe('29.5')
-        ->and($this->ops->stock('lemon', $other))->toBe('4')
+        ->and(BranchIngredientStock::query()->where('branch_id', $other->id)->exists())->toBeFalse()
+        ->and($this->ops->drinks->fresh()->name)->toBe('Drinks')
+        ->and($otherPlan->fresh()->name)->toBe('East drinks')
         ->and(PamamalengkeListEntry::query()->whereKey($entry->id)->exists())->toBeTrue();
 });
 
 test('a product belongs to one active plan; moving it only changes future sales', function () {
-    expect(fn () => OperationPlanProduct::query()->create(['operation_plan_id' => $this->ops->silog->id, 'product_id' => $this->ops->coke->id]))
+    expect(fn () => OperationPlanProduct::query()->create(['branch_id' => $this->ops->branch->id, 'operation_plan_id' => $this->ops->silog->id, 'product_id' => $this->ops->coke->id]))
         ->toThrow(UniqueConstraintViolationException::class);
 
     opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.plans.update', $this->ops->silog), [
@@ -166,6 +187,22 @@ test('an ingredient update never rewrites stock and locks the base unit once use
     expect($this->ops->stock('lemon'))->toBe('29.5')
         ->and(IngredientMovement::query()->where('ingredient_id', $this->ops->ingredients['lemon']->id)->count())->toBe(1)
         ->and($this->ops->ingredients['lemon']->fresh()->purchase_unit_cost)->toBe('95.00');
+});
+
+test('an ingredient used only by an add-on effect keeps its base unit', function () {
+    $this->ops->withAddOns();
+    $this->ops->ingredients['pearls'] = $this->ops->ingredient('Pearls', 'g', '500', 'kg', '1000', '120.00', 'top_up', null, [$this->ops->drinks]);
+    $this->ops->effect($this->ops->lemonYakult, 'pearl', ['pearls' => '40']);
+    $input = [
+        'name' => 'Pearls', 'icon' => 'box', 'base_unit' => 'pc', 'target_quantity' => '500', 'purchase_unit_name' => 'kg',
+        'purchase_unit_size' => '1000', 'purchase_unit_cost' => '120.00', 'replenishment_rule' => 'top_up', 'plan_ids' => [$this->ops->drinks->id],
+    ];
+
+    opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.ingredients.update', $this->ops->ingredients['pearls']), $input)
+        ->assertSessionHasErrors('base_unit');
+
+    expect($this->ops->ingredients['pearls']->fresh()->base_unit)->toBe('g')
+        ->and(BranchIngredientStock::query()->where('ingredient_id', $this->ops->ingredients['pearls']->id)->where('version', '>', 0)->exists())->toBeFalse();
 });
 
 test('invalid replenishment settings are rejected on the server', function (array $change, string $field) {
@@ -244,15 +281,14 @@ test('no recipe needed and product stock tracking never combine with a recipe', 
     opsAs($this, $this->ops->owner, $this->ops->branch)->put(route('operations.recipes.mode', $water), ['no_recipe_needed' => true])->assertRedirect();
     $order = $this->ops->payNow([$this->ops->line($water, 1)]);
 
-    expect($water->fresh()->no_recipe_needed)->toBeTrue()
+    expect(BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $water->id)->value('no_recipe_needed'))->toBeTrue()
         ->and(OrderRecipeSnapshot::query()->where('order_id', $order->id)->sole()->recipe_state->value)->toBe('not_needed')
         ->and(IngredientMovement::query()->where('order_id', $order->id)->exists())->toBeFalse();
 });
 
 test('the recipes page separates product stock, no recipe needed and missing recipes, with a direct fix for each', function () {
     $water = Product::factory()->create(['name' => 'Bottled Water']);
-    BranchProduct::factory()->for($this->ops->branch)->for($water)->create(['tracks_inventory' => false]);
-    $water->update(['no_recipe_needed' => true]);
+    BranchProduct::factory()->for($this->ops->branch)->for($water)->create(['tracks_inventory' => false, 'no_recipe_needed' => true]);
     $this->ops->recipe($this->ops->lemonYakult, 'm', []);
     $this->ops->recipe($this->ops->lemonYakult, 'l', []);
     app(SaveOperationPlan::class)->execute($this->ops->owner, $this->ops->drinks, [
@@ -264,8 +300,8 @@ test('the recipes page separates product stock, no recipe needed and missing rec
     $page()->assertInertia(fn (Assert $page) => $page
         ->where('products.0.inventory_mode', 'no_recipe_needed')->where('products.0.state', 'not_needed')
         ->where('products.1.inventory_mode', 'product_stock')->where('products.1.state', 'product_stock')
-        ->where('products.1.tracked_at', ['MAIN'])
-        ->where('products.1.settings_url', route('products.index', ['search' => 'Coke Mismo', 'edit' => $this->ops->coke->id], false))
+        ->where('products.1.tracks_product_stock', true)
+        ->where('products.1.settings_url', route('products.index', ['search' => 'Coke Mismo', 'edit' => $this->ops->coke->id, 'branch' => $this->ops->branch->id], false))
         ->where('products.2.inventory_mode', 'recipe')->where('products.2.state', 'missing')
         ->where('products.2.sizes.1.lines', null));
 
@@ -287,7 +323,7 @@ test('the recipes page separates product stock, no recipe needed and missing rec
         ->where('products.2.sizes.0.name', 'Small'));
 
     opsAs($this, $this->ops->owner, null)->get(route('operations.recipes', ['plan' => $this->ops->drinks->id]))
-        ->assertInertia(fn (Assert $page) => $page->where('products.1.sizes.0.servings', null));
+        ->assertRedirect(route('operations.plans'));
 });
 
 test('wastage and count correction append exact audited movements and never rewrite the balance', function () {

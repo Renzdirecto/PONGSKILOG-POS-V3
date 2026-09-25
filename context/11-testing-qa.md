@@ -618,3 +618,17 @@ A feature/release cannot be considered production-ready until:
   - **G-A..G-D** Giveaway vs Pay Now for the last stock (one winner), direct-stock Giveaway vs Pay Now (no deadlock), duplicate Giveaway submit (one record, one deduction), two different reversal requests (restored once).
   - Giveaway migration rollback/re-apply, movement-type constraints, partial unique indexes and a guard against new PostgreSQL identifier truncation.
 - Pest: `StoreSessionGiveawayTest`, `RecipeBranchModeTest`, `OperationsFinalQaTest` (QR gate, change-only broadcasts, list validation, bounded query counts for the POS catalog with recipe Products and the Operations summary). Frontend: `store-giveaway-ui.test.ts`.
+
+
+### Phase 18 pass #2.1 verification (2026-09-25)
+
+- Pest: `BranchOperationsCutoverMigrationTest` (legacy dataset in an isolated SQLite file, forward cutover, `PRAGMA foreign_key_check`, new Branch clean, refusal to roll back Branch setup), `BranchSetupCopyTest` (new Branch clean, Product + Operations copy, independence, skip/replace without duplicates, standalone copy review, copy authorization, removal vs stale draft/cart/QR ids, Branch-scoped realtime), updated `RecipeBranchModeTest` (per-Branch mode: MAIN recipe while QAVE direct; QAVE recipe only QAVE Ingredients), `OperationsManagementTest`, `BranchScopedManagementTest`, `ProductManagementTest`, `BranchCatalogTest` and fixtures that now declare membership (`ProductFactory::soldAt()`).
+- PostgreSQL: `tests/verify-branch-operations-postgres.php` (random `bops_*` schema, dropped): A rollback-on-empty + cutover with composite-FK rejection and identifier-length guard; B/C four racing copies incl. replace and reverse direction → one setup, no stock, no deadlock; D Pay Now vs Remove in both queue orders (sale then removal, or clean rejection; no partial Order/Payment/movement); E Pay Now vs Recipe edit (snapshot = one whole recipe version). `tests/verify-branch-assortment-postgres.php` still passes.
+- Frontend: `tests/branch-setup-copy.test.ts` plus updated assortment/operations/recipe tests.
+
+
+### Phase 18 Final QA verification (2026-09-25)
+
+- All 16 `tests/verify-*-postgres.php` harnesses run (random schemas, all dropped). Three had stale assertions after the Branch cutover and were corrected: access-admin rolls back every migration from the Custom Role migration on (not `--step 1`); branch-operations scopes its composite-FK check to the isolated schema (the migrated development schema has the same constraint names); operations checks the post-cutover Branch unique keys and runs Branch-only page projections only for a concrete Branch.
+- New operations case **G-E**: Confirm Pamamalengke vs a Plan save queued behind the held Branch row, 3 rounds, no deadlock. With the previous Plan-before-Branch order it reproduced SQLSTATE 40P01.
+- Regression tests: Product with zero Groups over multipart (absent list = empty; null/keyed/blank values rejected), each server error shown once, committed edit keeps the committed stock path after a Branch mode change, Ingredient unit locked by Add-on effects, grouped Branch attention counts equal the per-Branch filters, dashboard query count stable as Branches grow, staff email change Super Admin only, no self-deletion, case-insensitive profile email, staff-creation notification, Operations-only channel access, tracking-change signal.

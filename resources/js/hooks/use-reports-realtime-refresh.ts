@@ -1,11 +1,14 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 import {
     createRealtimeRefresh,
     createReportsEventGuard,
+    reportsChannelFor,
 } from '@/lib/realtime-refresh';
+import type { BranchContext } from '@/types';
 
 const REPORTS_FALLBACK_POLL_MS = 30_000;
 
@@ -22,6 +25,8 @@ export function useReportsRealtimeRefresh(
     branchId: string | null,
     debounceMs = 1200,
 ): void {
+    const { branchContext } = usePage<{ branchContext: BranchContext }>().props;
+    const channel = reportsChannelFor(branchContext.businessWide, branchId);
     const connectionStatus = useConnectionStatus();
     const previousStatus = useRef(connectionStatus);
     const hasConnected = useRef(connectionStatus === 'connected');
@@ -37,6 +42,8 @@ export function useReportsRealtimeRefresh(
                     onCancelToken: (token) => {
                         cancel = token.cancel;
                     },
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
                     onFinish,
                 });
 
@@ -51,7 +58,7 @@ export function useReportsRealtimeRefresh(
     );
 
     useEcho<Record<string, unknown>>(
-        'reports',
+        channel,
         ['.reports.changed'],
         (event) => {
             if (acceptEvent(event)) {

@@ -712,7 +712,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 - Products, Categories, and Modifiers share segmented route navigation. Product stock is branch-specific; All Branches never fabricates an aggregate stock value.
 - Inventory uses full-dataset server summaries, compact filters, a dense desktop table, wrapped mobile rows, real update timestamps, and real adjustment/history actions.
 - Management dialogs become bottom sheets on mobile and centered dialogs from the small desktop breakpoint upward.
-- Dashboard, Transactions, Reports, Products, Inventory, Staff and Settings link to real protected routes (Phase 16B–D). Navigation groups follow the standalone: Overview, Operations, Catalog, Administration. A destination without permission shows "No access" and is disabled. Super Admin-only Audit Trail, Void Orders and Access Control never appear in the Owner shell.
+- Dashboard, Transactions, Reports, Products, Inventory, Staff and Settings link to real protected routes (Phase 16B–D). *Since Phase 18 Manual QA refinement #1* the shell is driven by `lib/management-navigation.ts` with sections Overview, Store Operations (POS, QR Orders, Kitchen, Display), Sales, Catalog, Operations, Administration, and a destination without permission is **not rendered** (no "No access" rows; empty sections disappear). The ≥1180px sidebar collapses to a 76px icon rail through a labelled toggle (`aria-expanded`, per-device `localStorage` preference); collapsed icons carry `aria-label` + tooltip. Section headings are brighter/bolder than before but below the active page. The footer shows Name + Position (fallback Role label). Tablet rail and mobile dock/More sheet are unchanged in behavior. Super Admin-only Audit Trail, Void Orders and Access Control never appear in the Owner shell.
 - The Owner presentation never replaces backend permission, branch, inventory, catalog, image, or Store Session authority.
 
 ## 12.1 Standalone Product Editor and Groups
@@ -903,15 +903,15 @@ This supersedes the §7 core navigation list. No Super Admin standalone is autho
 
 | Section | Destination | Status |
 | --- | --- | --- |
-| Overview | Dashboard | Control Center landing: quick links to Staff, Audit Trail, Void Orders, and Settings plus Branch workspace guidance. No analytics. |
-| Overview | Notifications | Placeholder (`super-admin.notifications`). No notification service, database, or unread count. |
+| Overview | Dashboard | **Executive Overview** (Phase 18 final): real CEO dashboard — see "Phase 18 final" below. |
+| Overview | Notifications | Real (Phase 18): persisted in-app notifications with unread/read state and a real unread badge. |
 | Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
 | Owner | Owner Dashboard, Products, Inventory | Real existing pages. The Owner Dashboard is the Phase 16C analytics dashboard. |
 | Owner | Transactions | Real: the shared Transaction History on the business surface (`workspaces.transactions`, Phase 16B). |
 | Owner | Reports | Real: the shared Sales & Store Sessions report (`workspaces.reports`, Phase 16A). The former `super-admin.reports` placeholder route was removed. |
 | Control | Audit Trail, Void Orders | Real existing registers. |
 | Control | Staff | Real: account list and Add Staff (below). |
-| Control | Access Control | Placeholder (`super-admin.access-control`) with a read-only role-group overview. No toggles. |
+| Control | Access Control | Real (Phase 18): Role baselines and per-account custom access, backend-enforced. |
 | Control | Settings | Real existing Branch Management / Receipt / QR settings (`branches.index`). Not duplicated under Owner. |
 
 Navigation comes from the registry in `resources/js/lib/super-admin-navigation.ts` (label, section, route, required permission, availability, Branch requirement), so future permission-driven Access Control can filter the same source.
@@ -922,7 +922,7 @@ Navigation comes from the registry in `resources/js/lib/super-admin-navigation.t
 - Add Staff dialog (bottom sheet on mobile): optional profile picture (JPG/PNG/WebP up to 2 MB, preview, Remove), Employee ID (typed by the Super Admin as `MMDDYY` + a two-digit number, e.g. `09242601`; required and unique), Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
 - Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
 - Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
-- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing or deactivating existing staff is not part of this slice.
+- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing, deactivating and password reset of existing staff arrived in Phase 18 (below).
 
 ### Staff (Owner → Administration → Staff, Phase 16D)
 
@@ -956,3 +956,58 @@ Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Al
 
 - LOAD switches to the POS immediately using the order LOAD returned (no second full page round trip before the switch); the waiting count refreshes in the background.
 - A loaded QR order shows the customer's submitted items read-only, and the Cashier can add more items below them (editable: quantity, edit, remove). Totals, Pay Now and Pay Later include them; Cancel LOAD discards them.
+
+## Phase 18 — Access Control, Staff management and Notifications — 2026-09-25
+
+### Access Control (Control → Access Control)
+
+- Two views: **Roles** and **Staff overrides** (URL `tab`).
+- Roles: five role chips (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin). The selected Role shows permission groups (Operations, Management, Control) with label, plain description and state — Included / Not included / Locked (with the reason) / Derived. Editable Roles use labelled checkboxes and a sticky save bar with Discard; saving opens a confirmation listing what is added and removed and noting the Cashier + Kitchen effect. Super Admin shows "Locked · Full access"; Cashier + Kitchen shows "Derived from Cashier + Kitchen Staff". From `md` up an "All roles at a glance" read-only matrix follows; phones keep the grouped cards (no horizontal document scroll).
+- Staff overrides: search (debounced) and pick an account; the panel shows Name, Employee ID, email, Role, status and Branch access with a reminder that custom access never widens Branch access. Each permission has a keyboard-usable Inherit / Allow / Deny radio group (options equal to the Role default are disabled with a tooltip), "Role default: …", a lock reason when locked, and the effective result badge (Included by role / Custom access / No access / No access · removed). Save and "Reset all custom access" both confirm first. Super Admin accounts show the locked full-access note.
+
+### Staff (Control → Staff and Owner → Staff)
+
+- Every card and list row has **Manage** (and, for Super Admin, **Reset password**, never on one's own account); accounts with custom access show an "N custom access" label (managed in Access Control → Staff overrides).
+- Manage sheet (bottom sheet on mobile): photo replace/remove, **read-only Employee ID** with a lock, name, email, Role, Branch access (active Branches plus any currently assigned one), Active/Inactive. Own account: Role and status are disabled with an explanation. High-impact changes (any Role change — custom access resets —, into/out of Owner or Super Admin, deactivation, removed Branch access) show a plain-language confirmation step before saving.
+- Reset password sheet: new temporary password + confirmation with show/hide, then a confirmation that the person is signed out everywhere. The password is never shown again.
+
+### Notifications (Overview → Notifications)
+
+- Header bell and sidebar item show the real unread count (hidden at zero, "99+" cap, count in the accessible name). The page lists the viewer's notifications newest first (20 per page, All / Unread), each with category, Unread label (text, not colour only), time, Open (marks read and follows the same-app link) and Mark read; Mark all read. Empty state: "No notifications yet".
+
+### Branch staff with custom Reports
+
+- A Cashier / Kitchen account with custom Reports access gets a **Reports** item in its operational rail/dock and reads the Branch report inside the operational shell (never the Owner shell, never All Branches).
+
+## Phase 18 final — Custom Roles and Executive Overview — 2026-09-25
+
+### Access Control → Roles
+
+- **System roles** grid (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin) and a **Custom roles** grid with **+ Create custom role** (empty state explains the use). Archived roles sit in a collapsed "Archived roles (N)" list, read-only.
+- A selected Custom Role shows "Custom · Branch-scoped / business-wide", the same grouped checkbox editor and save bar as System roles, **Rename or change scope** (scope fixed while assigned, with the reason), **Archive** (disabled while assigned, with the reason) and **Assigned staff (N)** chips linking to that account's Staff overrides.
+- Create dialog: steps Name → Scope (Branch / Business-wide cards) → Access (grouped permissions; locked ones visible with the reason) → Review → Create role.
+- "All roles at a glance" matrix includes active Custom Roles and scrolls horizontally inside its card when needed.
+
+### Staff
+
+- Role select: System roles, then a "Custom roles" group labelled "· Branch" / "· Business-wide" (Super Admin only). Owner surface is unchanged.
+
+### Executive Overview (Overview → Dashboard, `workspaces.super-admin`)
+
+1. Dark header card: "Super Admin · Control Center", scope · period, Today / 7 days / 30 days (the global Branch selector stays in the shell header).
+2. **Attention needed** (or an emerald "Nothing needs attention"): server-computed items — products out of stock (red), Ingredients at zero (red), products low (amber), unread notifications (violet), closed Stores (neutral) — each linking to the page that resolves it.
+3. KPI row: the Owner Dashboard KPI cards (Total sales, Transactions, Average order, Items sold, Cashless sales) with canonical deltas; money-movement tiles (Collected, Expenses, Voided orders, Store Sessions).
+4. Sales trend (previous-period compare, keyboard/hover tooltip) + Payment mix donut (Show Split toggle, Reports semantics).
+5. Operations health (Store OPEN/CLOSED per Branch with opener and time, Kitchen preparing/ready, products out/low, Ingredients at zero) · Top products · Sales by category.
+6. Branch performance (comparison only with > 1 Branch; honest single-Branch note) + Latest Store Session.
+7. People & security (active/inactive Staff, Super Admins, Custom Roles, unread notifications, the latest six audit actions linking to Audit Trail).
+8. Quick admin actions (Staff, Access Control, Audit Trail, Void Orders, Reports, Settings).
+
+Responsive: single column at 360–430px with Attention near the top; two/three columns from tablet; the 1.7fr/1fr executive grid from 1120px.
+
+
+## Phase 18 pass #2.1 — Branch assortment and Branch Operations UI — 2026-09-25
+
+- **Products — {CODE}** (selected Branch): lists only that Branch's assortment; empty state "No products in {CODE} yet." with Add products / Copy from another Branch. Card actions: Branch settings, Mark unavailable / Mark available, Remove from {CODE} (confirmation explains stock/history are kept; unavailable is the pause), Edit product (business-wide only). All Branches: global catalog cards show "Sold at MAIN, QAVE" or "Not sold at any Branch yet". Product editor: per-Branch "Sell at {CODE}" (new Products join only selected Branches).
+- **Copy products** dialog: optional "Copy Operations setup for selected products" (Operations access only); review shows Source, Destination, Products, Plans/Ingredients/Recipes/Add-on effects counts, kept items, conflicts, **Will NOT copy** (Product stock, Ingredient stock, movements, purchases/expenses, sales/sessions) and the replace warning.
+- **Operations · {CODE}**: every heading names the Branch; All Branches shows "Choose a Branch". Empty states: "No Pamalengke Plans yet." (Create manually / Copy setup), "No Ingredients configured for this Branch.", "No Recipes configured for this Branch.". **Copy setup from another Branch** (`OperationsSetupCopyButton`): source, sections (Plans · Ingredients & settings · Recipes & add-on effects), Keep (default) / Replace, server dry-run review, confirm. Recipes: "Uses Product stock" names only this Branch and links to its product settings.

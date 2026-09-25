@@ -6,10 +6,19 @@ import type { BranchContext } from '@/types';
 
 type PageProps = {
     branchContext: BranchContext;
+    /** Active Branches a business-wide operator may run Branch operations at (absent for assigned Branch staff). */
+    branches?: BranchContext['selectableBranches'];
 };
 
 export default function SelectBranch() {
-    const { branchContext } = usePage<PageProps>().props;
+    const page = usePage<PageProps>();
+    const { branchContext } = page.props;
+    const businessWide = page.props.branches !== undefined;
+    const branches = page.props.branches ?? branchContext.selectableBranches;
+    /** Where to continue after choosing (for example POS); the server only follows same-application paths. */
+    const redirect = new URL(page.url, 'http://localhost').searchParams.get(
+        'redirect',
+    );
 
     return (
         <>
@@ -24,13 +33,14 @@ export default function SelectBranch() {
                         Choose where you’re working
                     </h1>
                     <p className="text-base leading-7 text-neutral-600">
-                        Your account is assigned to more than one branch. Select
-                        the branch you want to use for this session.
+                        {businessWide
+                            ? 'Your access spans all Branches, but Branch operations run at one Branch at a time. Select the active Branch you want to operate.'
+                            : 'Your account is assigned to more than one branch. Select the branch you want to use for this session.'}
                     </p>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                    {branchContext.selectableBranches.map((branch) => (
+                    {branches.map((branch) => (
                         <article
                             key={branch.id}
                             className="flex min-w-0 flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6"
@@ -57,22 +67,31 @@ export default function SelectBranch() {
                                 className="mt-auto"
                             >
                                 {({ processing }) => (
-                                    <button
-                                        type="submit"
-                                        disabled={processing}
-                                        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                        {processing ? (
-                                            <>
-                                                <Spinner /> Selecting…
-                                            </>
-                                        ) : (
-                                            <>
-                                                Select branch
-                                                <ArrowRight className="size-4" />
-                                            </>
+                                    <>
+                                        {redirect && (
+                                            <input
+                                                type="hidden"
+                                                name="redirect"
+                                                value={redirect}
+                                            />
                                         )}
-                                    </button>
+                                        <button
+                                            type="submit"
+                                            disabled={processing}
+                                            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {processing ? (
+                                                <>
+                                                    <Spinner /> Selecting…
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Select branch
+                                                    <ArrowRight className="size-4" />
+                                                </>
+                                            )}
+                                        </button>
+                                    </>
                                 )}
                             </Form>
                         </article>

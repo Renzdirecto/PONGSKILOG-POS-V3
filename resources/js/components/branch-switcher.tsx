@@ -14,20 +14,27 @@ import type { BranchContext, BranchSummary } from '@/types';
 type Props = {
     branchContext: BranchContext;
     compact?: boolean;
+    /** Same-app page to stay on after switching (management pages); otherwise the workspace decides. */
+    redirectTo?: string;
 };
 
 function BranchOption({
     branch,
     currentBranchId,
+    redirectTo,
 }: {
     branch: BranchSummary;
     currentBranchId?: string;
+    redirectTo?: string;
 }) {
     const isCurrent = branch.id === currentBranchId;
 
     return (
         <Form
             {...ActiveBranchController.update.form(branch.id)}
+            transform={(data) =>
+                redirectTo ? { ...data, redirect: redirectTo } : data
+            }
             className="w-full"
         >
             {({ processing }) => (
@@ -56,7 +63,11 @@ function BranchOption({
     );
 }
 
-export function BranchSwitcher({ branchContext, compact = false }: Props) {
+export function BranchSwitcher({
+    branchContext,
+    compact = false,
+    redirectTo,
+}: Props) {
     const canSwitch =
         branchContext.businessWide ||
         branchContext.selectableBranches.length > 1;
@@ -157,6 +168,7 @@ export function BranchSwitcher({ branchContext, compact = false }: Props) {
                             key={branch.id}
                             branch={branch}
                             currentBranchId={branchContext.current?.id}
+                            redirectTo={redirectTo}
                         />
                     ))}
                 </div>

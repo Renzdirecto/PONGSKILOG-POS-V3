@@ -1,25 +1,33 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
-    Bell,
     Boxes,
+    ChefHat,
     Layers,
     LayoutDashboard,
     LayoutGrid,
     Leaf,
     ListChecks,
+    LogOut,
     Menu,
+    MonitorUp,
     PackageSearch,
+    PanelLeftClose,
+    PanelLeftOpen,
+    QrCode,
     ReceiptText,
     Settings,
     ShoppingBasket,
     ShoppingCart,
     UserRound,
     Users,
+    UtensilsCrossed,
+    type LucideIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
+import { PersonAvatar } from '@/components/person-avatar';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -35,14 +43,36 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { index as branchesIndex } from '@/routes/branches';
+import {
+    activeManagementDestination,
+    identitySubtitle,
+    MANAGEMENT_SIDEBAR_STORAGE_KEY,
+    managementDestinations,
+    managementNavigation,
+    pinnedManagementDestinations,
+    restoredSidebarCollapsed,
+    storedSidebarValue,
+    type ManagementDestination,
+    type ManagementDestinationId,
+} from '@/lib/management-navigation';
+import {
+    index as branchesIndex,
+    select as selectBranch,
+} from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
-import { logout } from '@/routes';
+import { logout, workspace } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
 import { index as staffIndex } from '@/routes/staff';
 import operationsRoutes from '@/routes/operations';
-import { owner, reports, transactions } from '@/routes/workspaces';
+import {
+    cashier,
+    customerDisplay,
+    kitchen,
+    owner,
+    reports,
+    transactions,
+} from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
@@ -52,76 +82,134 @@ type SharedProps = {
     surface?: string;
 };
 
-type NavigationItem = {
-    label: string;
-    shortLabel: string;
-    icon: typeof LayoutDashboard;
-    href?: ReturnType<typeof owner>;
-    active: boolean;
-    unavailableReason?: string;
-};
-
 type OperationsPageProps = {
     operations?: { active_plan_id: string | null };
 };
 
-function initials(name?: string): string {
-    return (name ?? 'Owner')
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0])
-        .join('')
-        .toUpperCase();
+type RouteTarget = ReturnType<typeof owner>;
+
+/** Every registry destination binds to an icon; hrefs are resolved per render (Branch and active Plan aware). */
+const destinationIcons: Record<ManagementDestinationId, LucideIcon> = {
+    dashboard: LayoutDashboard,
+    pos: UtensilsCrossed,
+    'qr-orders': QrCode,
+    kitchen: ChefHat,
+    'customer-display': MonitorUp,
+    transactions: ReceiptText,
+    reports: BarChart3,
+    products: Boxes,
+    inventory: PackageSearch,
+    plans: ShoppingBasket,
+    overview: LayoutGrid,
+    ingredients: Leaf,
+    recipes: ListChecks,
+    stock: Layers,
+    pamamalengke: ShoppingCart,
+    purchases: ReceiptText,
+    staff: Users,
+    settings: Settings,
+};
+
+const focusRing =
+    'focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none';
+
+/**
+ * The href of a management destination. Store Operations always run at one concrete Branch: with a Branch selected the
+ * link opens it, otherwise the Branch picker comes first and then continues to the workspace. Operations links keep
+ * the URL-addressable active Plan.
+ */
+export function managementDestinationHref(
+    id: ManagementDestinationId,
+    { hasBranch, planId }: { hasBranch: boolean; planId?: string | null },
+): RouteTarget {
+    const branchOperation = (route: RouteTarget) =>
+        hasBranch ? route : selectBranch({ query: { redirect: route.url } });
+
+    switch (id) {
+        case 'dashboard':
+            return owner();
+        case 'pos':
+            return branchOperation(cashier());
+        case 'qr-orders':
+            return branchOperation(cashier({ query: { view: 'qr' } }));
+        case 'kitchen':
+            return branchOperation(kitchen());
+        case 'customer-display':
+            return branchOperation(customerDisplay());
+        case 'transactions':
+            return transactions();
+        case 'reports':
+            return reports();
+        case 'products':
+            return productsIndex();
+        case 'inventory':
+            return inventoryIndex();
+        case 'staff':
+            return staffIndex();
+        case 'settings':
+            return branchesIndex();
+        default:
+            return operationsRoutes[id](
+                planId ? { query: { plan: planId } } : undefined,
+            );
+    }
 }
 
+/**
+ * One permitted destination. `full` is the expanded sidebar row, `rail` the collapsed desktop icon (named through
+ * aria-label and a tooltip), `compact` the tablet rail and mobile dock tile.
+ */
 function NavigationControl({
-    item,
-    compact = false,
+    destination,
+    href,
+    active,
+    variant,
     onNavigate,
 }: {
-    item: NavigationItem;
-    compact?: boolean;
+    destination: ManagementDestination;
+    href: RouteTarget;
+    active: boolean;
+    variant: 'full' | 'rail' | 'compact';
     onNavigate?: () => void;
 }) {
-    const Icon = item.icon;
-    const className = compact
-        ? `relative flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 text-center text-[10px] font-semibold leading-tight transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${item.active ? 'bg-white text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`
-        : `flex h-[46px] w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${item.active ? 'bg-white font-semibold text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`;
-
-    if (!item.href) {
-        return (
-            <button
-                type="button"
-                disabled
-                title={item.unavailableReason}
-                className={`${className} cursor-not-allowed opacity-45`}
-            >
-                <Icon className="size-[18px] shrink-0" />
-                <span className={compact ? '' : 'min-w-0 flex-1 truncate'}>
-                    {compact ? item.shortLabel : item.label}
-                </span>
-                {!compact && (
-                    <span className="text-[9px] font-semibold tracking-[0.06em] uppercase">
-                        No access
-                    </span>
-                )}
-            </button>
-        );
-    }
+    const Icon = destinationIcons[destination.id];
+    const tone = active
+        ? 'bg-white font-semibold text-[#111111]'
+        : 'text-white/70 hover:bg-white/10 hover:text-white';
+    const className = {
+        full: `flex h-[46px] w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition ${focusRing} ${tone}`,
+        rail: `mx-auto flex size-11 items-center justify-center rounded-[10px] transition ${focusRing} ${tone}`,
+        compact: `relative flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 text-center text-[10px] leading-tight font-semibold transition ${focusRing} ${tone}`,
+    }[variant];
 
     return (
         <Link
-            href={item.href}
-            aria-current={item.active ? 'page' : undefined}
+            href={href}
+            aria-current={active ? 'page' : undefined}
+            aria-label={variant === 'rail' ? destination.label : undefined}
+            title={variant === 'full' ? undefined : destination.label}
             className={className}
             onClick={onNavigate}
         >
-            <Icon className="size-[18px] shrink-0" />
-            <span className={compact ? '' : 'min-w-0 flex-1 truncate'}>
-                {compact ? item.shortLabel : item.label}
-            </span>
+            <Icon className="size-[18px] shrink-0" aria-hidden="true" />
+            {variant === 'full' && (
+                <span className="min-w-0 flex-1 truncate">
+                    {destination.label}
+                </span>
+            )}
+            {variant === 'compact' && <span>{destination.shortLabel}</span>}
         </Link>
+    );
+}
+
+/** Section headings sit above their pages: brighter and bolder than before, still below the active page. */
+function SectionHeading({ label, touch }: { label: string; touch?: boolean }) {
+    return (
+        <p
+            className={`${touch ? 'px-3' : 'px-2.5'} pb-2 text-[10.5px] font-bold tracking-[0.12em] text-white/80 uppercase`}
+        >
+            {label}
+        </p>
     );
 }
 
@@ -133,250 +221,270 @@ export function OwnerWorkspaceShell({
     const page = usePage<SharedProps & OperationsPageProps>();
     const { auth, branchContext } = page.props;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell is Owner-only. */
-    const workspaceLabel = 'Owner';
-    const dashboardRoute = owner();
-    const isCatalog = page.component.startsWith('catalog/');
-    const isInventory = page.component.startsWith('inventory/');
-    const isBranches = page.component === 'branches/index';
-    const isReports = page.component === 'workspaces/reports';
-    const isDashboard = page.component === 'workspaces/owner-dashboard';
-    const isTransactions =
-        page.component === 'workspaces/transaction-history' &&
-        page.props.surface === 'business';
-    const isStaff = page.component === 'super-admin/staff';
-    const operationsPage = page.component.startsWith('operations/')
-        ? page.component.slice('operations/'.length)
-        : null;
+    const [collapsed, setCollapsed] = useState(false);
+    /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell serves the Owner and business-wide custom roles. */
+    const workspaceLabel = auth.roleLabel ?? 'Owner';
+    /** Position (business/job title) names the person; it never grants access. Falls back to the Role label. */
+    const identityLabel = identitySubtitle(auth.user?.position, workspaceLabel);
+    const canReports = auth.permissions.includes('reports.view');
+    const groups = managementNavigation(auth.permissions, {
+        businessWide: branchContext.businessWide,
+    });
+    const destinations = groups.flatMap((group) => group.destinations);
+    const activeId = activeManagementDestination({
+        component: page.component,
+        surface: page.props.surface,
+    });
+    const pinned = pinnedManagementDestinations(destinations);
+    const activeInMenu =
+        activeId !== null &&
+        !pinned.some((destination) => destination.id === activeId);
     /** Operations links keep the URL-addressable active Plan while moving between Operations pages. */
-    const planQuery = page.props.operations?.active_plan_id
-        ? { query: { plan: page.props.operations.active_plan_id } }
-        : undefined;
-    const canProducts = auth.permissions.includes('products.manage');
-    const canInventory = auth.permissions.includes('inventory.manage');
-    const canTransactions = auth.permissions.includes('transactions.view');
-    const canStaff = auth.permissions.includes('staff.manage');
-    const canSettings =
-        branchContext.businessWide &&
-        auth.permissions.includes('settings.manage');
-    const navigation: { label: string; items: NavigationItem[] }[] = [
-        {
-            label: 'Overview',
-            items: [
-                {
-                    label: 'Dashboard',
-                    shortLabel: 'Home',
-                    icon: LayoutDashboard,
-                    href: dashboardRoute,
-                    active: isDashboard,
-                },
-            ],
-        },
-        {
-            label: 'Sales',
-            items: [
-                {
-                    label: 'Transactions',
-                    shortLabel: 'Sales',
-                    icon: ReceiptText,
-                    href: canTransactions ? transactions() : undefined,
-                    active: isTransactions,
-                    unavailableReason: 'Transaction history is unavailable.',
-                },
-                {
-                    label: 'Reports',
-                    shortLabel: 'Reports',
-                    icon: BarChart3,
-                    href: reports(),
-                    active: isReports,
-                },
-            ],
-        },
-        {
-            label: 'Catalog',
-            items: [
-                {
-                    label: 'Products',
-                    shortLabel: 'Products',
-                    icon: Boxes,
-                    href: canProducts ? productsIndex() : undefined,
-                    active: isCatalog,
-                    unavailableReason: 'Product management is unavailable.',
-                },
-                {
-                    label: 'Inventory',
-                    shortLabel: 'Stock',
-                    icon: PackageSearch,
-                    href: canInventory ? inventoryIndex() : undefined,
-                    active: isInventory,
-                    unavailableReason: 'Inventory management is unavailable.',
-                },
-            ],
-        },
-        {
-            label: 'Operations',
-            items: (
-                [
-                    ['plans', 'Pamalengke Plans', 'Plans', ShoppingBasket],
-                    ['overview', 'Overview', 'Overview', LayoutGrid],
-                    ['ingredients', 'Ingredients', 'Ingredients', Leaf],
-                    ['recipes', 'Recipes', 'Recipes', ListChecks],
-                    ['stock', 'Ingredient Stock', 'Stock', Layers],
-                    ['pamamalengke', 'Pamamalengke', 'Market', ShoppingCart],
-                    ['purchases', 'Purchases', 'Purchases', ReceiptText],
-                ] as const
-            ).map(([key, label, shortLabel, icon]) => ({
-                label,
-                shortLabel,
-                icon,
-                href: canInventory ? operationsRoutes[key](planQuery) : undefined,
-                active: operationsPage === key,
-                unavailableReason: 'Operations management is unavailable.',
-            })),
-        },
-        {
-            label: 'Administration',
-            items: [
-                {
-                    label: 'Staff',
-                    shortLabel: 'Staff',
-                    icon: Users,
-                    href: canStaff ? staffIndex() : undefined,
-                    active: isStaff,
-                    unavailableReason: 'Staff management is unavailable.',
-                },
-                {
-                    label: 'Settings',
-                    shortLabel: 'Settings',
-                    icon: Settings,
-                    href: canSettings ? branchesIndex() : undefined,
-                    active: isBranches,
-                    unavailableReason: 'Business settings are unavailable.',
-                },
-            ],
-        },
-    ];
-    const navigationItems = navigation.flatMap((group) => group.items);
-    const mobileItems = [
-        navigationItems[0],
-        navigationItems.find((item) => item.label === 'Products')!,
-        navigationItems.find((item) => item.label === 'Inventory')!,
-    ];
-    const pageTitle = operationsPage
-        ? (navigationItems.find((item) => item.active)?.label ?? 'Operations')
-        : isCatalog
-        ? 'Products'
-        : isInventory
-          ? 'Inventory'
-          : isBranches
-            ? 'Settings'
-            : isReports
-              ? 'Reports'
-              : isTransactions
-                ? 'Transactions'
-                : isStaff
-                  ? 'Staff'
-                  : 'Dashboard';
+    const hrefFor = (id: ManagementDestinationId): RouteTarget =>
+        managementDestinationHref(id, {
+            hasBranch: branchContext.current !== null,
+            planId: page.props.operations?.active_plan_id,
+        });
+    const avatarUrl = auth.user?.avatarUrl ?? null;
+    const pageTitle =
+        managementDestinations.find(
+            (destination) => destination.id === activeId,
+        )?.label ??
+        (page.component.startsWith('operations/') ? 'Operations' : 'Dashboard');
+    /** A Branch-scoped account never has an All Branches scope; its pages always run on a selected assigned Branch. */
     const currentScope = branchContext.current
         ? `${branchContext.current.name} · ${branchContext.current.code}`
-        : 'All Branches';
+        : branchContext.businessWide
+          ? 'All Branches'
+          : 'Choose a Branch';
+    const canSettings = destinations.some(
+        (destination) => destination.id === 'settings',
+    );
+
+    useEffect(() => {
+        try {
+            setCollapsed(
+                restoredSidebarCollapsed(
+                    window.localStorage.getItem(MANAGEMENT_SIDEBAR_STORAGE_KEY),
+                ),
+            );
+        } catch {
+            /** Storage can be unavailable (private mode); the sidebar simply starts expanded. */
+        }
+    }, []);
+
+    function toggleCollapsed() {
+        const next = !collapsed;
+        setCollapsed(next);
+        try {
+            window.localStorage.setItem(
+                MANAGEMENT_SIDEBAR_STORAGE_KEY,
+                storedSidebarValue(next),
+            );
+        } catch {
+            /** The preference is a convenience only. */
+        }
+    }
 
     return (
         <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
-            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
-                <div className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4">
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[168px]"
-                    />
+            <aside
+                data-collapsed={collapsed}
+                className={`hidden shrink-0 flex-col overflow-hidden bg-[#111111] transition-[width] duration-200 ease-out motion-reduce:transition-none min-[1180px]:flex print:hidden! ${collapsed ? 'w-[76px]' : 'w-[248px]'}`}
+            >
+                <div
+                    className={`flex h-[72px] shrink-0 items-center border-b border-white/10 ${collapsed ? 'justify-center px-2' : 'justify-between gap-2 pr-3 pl-4'}`}
+                >
+                    {!collapsed && (
+                        <img
+                            src="/images/branding/logo.png"
+                            alt="PONGSKILOG"
+                            className="w-[168px]"
+                        />
+                    )}
+                    <button
+                        type="button"
+                        onClick={toggleCollapsed}
+                        aria-expanded={!collapsed}
+                        aria-controls="management-sidebar-navigation"
+                        aria-label={
+                            collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                        }
+                        title={
+                            collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                        }
+                        className={`flex size-10 shrink-0 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white ${focusRing}`}
+                    >
+                        {collapsed ? (
+                            <PanelLeftOpen
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                        ) : (
+                            <PanelLeftClose
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                        )}
+                    </button>
                 </div>
-                <div className="border-b border-white/10 p-3">
-                    <div className="flex h-14 items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-3">
-                        <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-white/10 text-white">
-                            <LayoutDashboard className="size-[18px]" />
-                        </span>
-                        <span className="min-w-0">
-                            <span className="block text-[10px] font-semibold tracking-[0.1em] text-white/40 uppercase">
-                                Workspace
+                <div
+                    className={`shrink-0 border-b border-white/10 ${collapsed ? 'flex justify-center px-2 py-3' : 'p-3'}`}
+                >
+                    {collapsed ? (
+                        <span
+                            title={`${workspaceLabel} workspace`}
+                            className="flex size-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white"
+                        >
+                            <LayoutDashboard
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                            <span className="sr-only">
+                                {workspaceLabel} workspace
                             </span>
-                            <span className="block truncate text-sm font-semibold text-white">
-                                {workspaceLabel}
-                            </span>
                         </span>
-                    </div>
+                    ) : (
+                        <div className="flex h-14 items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-3">
+                            <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-white/10 text-white">
+                                <LayoutDashboard
+                                    className="size-[18px]"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-[10px] font-semibold tracking-[0.1em] text-white/50 uppercase">
+                                    Workspace
+                                </span>
+                                <span className="block truncate text-sm font-semibold text-white">
+                                    {workspaceLabel}
+                                </span>
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <nav
+                    id="management-sidebar-navigation"
                     aria-label={`${workspaceLabel} navigation`}
-                    className="owner-hide-scrollbar flex-1 overflow-y-auto px-2.5 py-3.5"
+                    className={`owner-hide-scrollbar flex-1 overflow-x-hidden overflow-y-auto py-3.5 ${collapsed ? 'px-2' : 'px-2.5'}`}
                 >
-                    {navigation.map((group) => (
-                        <div key={group.label} className="mb-4">
-                            <p className="px-2.5 pb-2 text-[10px] font-semibold tracking-[0.1em] text-white/40 uppercase">
-                                {group.label}
-                            </p>
-                            <div className="flex flex-col gap-0.5">
-                                {group.items.map((item) => (
+                    {groups.map(({ section, destinations: items }, index) => (
+                        <div
+                            key={section.id}
+                            role="group"
+                            aria-label={section.label}
+                            className={collapsed ? 'mb-2' : 'mb-4'}
+                        >
+                            {collapsed ? (
+                                index > 0 && (
+                                    <hr
+                                        aria-hidden="true"
+                                        className="mx-auto mb-2 w-8 border-white/15"
+                                    />
+                                )
+                            ) : (
+                                <SectionHeading label={section.label} />
+                            )}
+                            <div
+                                className={`flex flex-col ${collapsed ? 'gap-1' : 'gap-0.5'}`}
+                            >
+                                {items.map((destination) => (
                                     <NavigationControl
-                                        key={item.label}
-                                        item={item}
+                                        key={destination.id}
+                                        destination={destination}
+                                        href={hrefFor(destination.id)}
+                                        active={destination.id === activeId}
+                                        variant={collapsed ? 'rail' : 'full'}
                                     />
                                 ))}
                             </div>
                         </div>
                     ))}
                 </nav>
-                <div className="border-t border-white/10 p-3">
-                    <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
-                        <span className="flex size-[34px] shrink-0 items-center justify-center rounded-full bg-white/12 text-xs font-semibold">
-                            {initials(auth.user?.name)}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold">
-                                {auth.user?.name}
+                <div className="shrink-0 border-t border-white/10 p-3">
+                    {collapsed ? (
+                        <div className="flex flex-col items-center gap-2 text-white">
+                            <span
+                                title={`${auth.user?.name ?? ''} · ${identityLabel}`}
+                                className="flex size-[34px] items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                            >
+                                <PersonAvatar
+                                    name={auth.user?.name}
+                                    avatarUrl={avatarUrl}
+                                    className="flex size-full items-center justify-center"
+                                />
+                                <span className="sr-only">
+                                    {auth.user?.name}, {identityLabel}
+                                </span>
                             </span>
-                            <span className="block text-[11px] text-white/60">
-                                {workspaceLabel}
+                            <Link
+                                href={logout()}
+                                method="post"
+                                as="button"
+                                aria-label="Log out"
+                                title="Log out"
+                                className={`flex size-10 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white ${focusRing}`}
+                            >
+                                <LogOut className="size-4" aria-hidden="true" />
+                            </Link>
+                        </div>
+                    ) : (
+                        <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
+                            <PersonAvatar
+                                name={auth.user?.name}
+                                avatarUrl={avatarUrl}
+                                className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                            />
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold">
+                                    {auth.user?.name}
+                                </span>
+                                <span className="block truncate text-[11px] text-white/60">
+                                    {identityLabel}
+                                </span>
                             </span>
-                        </span>
-                        <Link
-                            href={logout()}
-                            method="post"
-                            as="button"
-                            className="rounded-lg px-2 py-2 text-[11px] font-semibold text-white/70 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
-                        >
-                            Log out
-                        </Link>
-                    </div>
+                            <Link
+                                href={logout()}
+                                method="post"
+                                as="button"
+                                className={`rounded-lg px-2 py-2 text-[11px] font-semibold text-white/70 hover:bg-white/10 hover:text-white ${focusRing}`}
+                            >
+                                Log out
+                            </Link>
+                        </div>
+                    )}
                 </div>
             </aside>
 
             <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
-                    href={dashboardRoute}
-                    className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
+                    href={canReports ? owner() : workspace()}
+                    className={`flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-inset ${focusRing}`}
                 >
                     <img
                         src="/images/branding/logo.png"
                         alt="PONGSKILOG"
                         className="max-w-[70px]"
                     />
-                    <span className="text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
-                        Owner
+                    <span className="max-w-full truncate text-[9px] font-bold tracking-[0.08em] text-white/60 uppercase">
+                        {workspaceLabel}
                     </span>
                 </Link>
                 <p className="px-1.5 pt-2 text-center text-[9px] font-semibold tracking-[0.06em] text-white/40 uppercase">
-                    {branchContext.current?.code ?? 'All branches'}
+                    {branchContext.current?.code ??
+                        (branchContext.businessWide ? 'All branches' : '')}
                 </p>
                 <nav
                     aria-label={`${workspaceLabel} navigation`}
                     className="owner-hide-scrollbar flex flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
                 >
-                    {navigationItems.map((item) => (
+                    {destinations.map((destination) => (
                         <NavigationControl
-                            key={item.label}
-                            item={item}
-                            compact
+                            key={destination.id}
+                            destination={destination}
+                            href={hrefFor(destination.id)}
+                            active={destination.id === activeId}
+                            variant="compact"
                         />
                     ))}
                 </nav>
@@ -387,24 +495,35 @@ export function OwnerWorkspaceShell({
                         as="button"
                         aria-label="Log out"
                         title="Log out"
-                        className="flex size-11 items-center justify-center rounded-full bg-white/12 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                        className={`flex size-11 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold text-white ${focusRing}`}
                     >
-                        {initials(auth.user?.name)}
+                        <PersonAvatar
+                            name={auth.user?.name}
+                            avatarUrl={avatarUrl}
+                            className="flex size-full items-center justify-center"
+                        />
                     </Link>
                 </div>
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white print:block print:overflow-visible">
-                <header className="flex h-[60px] shrink-0 items-center gap-2.5 print:hidden border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5">
+                <header className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-[#e5e5e5] bg-white px-3 md:h-[72px] md:gap-3.5 md:px-5 print:hidden">
                     <AppLogoIcon className="size-9 shrink-0 md:hidden" />
                     <p className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] md:hidden">
                         {pageTitle}
                     </p>
                     <div className="hidden min-w-0 flex-1 md:block">
-                        <BranchSwitcher branchContext={branchContext} />
+                        <BranchSwitcher
+                            branchContext={branchContext}
+                            redirectTo={page.url}
+                        />
                     </div>
                     <div className="md:hidden">
-                        <BranchSwitcher branchContext={branchContext} compact />
+                        <BranchSwitcher
+                            branchContext={branchContext}
+                            redirectTo={page.url}
+                            compact
+                        />
                     </div>
                     <div className="hidden min-w-0 flex-1 text-right md:block">
                         <p className="truncate text-[13px] font-semibold">
@@ -418,35 +537,15 @@ export function OwnerWorkspaceShell({
                         <DropdownMenuTrigger asChild>
                             <button
                                 type="button"
-                                aria-label="Notifications"
-                                title="Notifications"
-                                className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#e5e5e5] bg-white text-[#555] hover:border-[#bbb] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
-                            >
-                                <Bell className="size-[18px]" />
-                            </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                            align="end"
-                            className="owner-surface w-[min(310px,calc(100vw-24px))] rounded-xl p-2"
-                        >
-                            <DropdownMenuLabel className="text-[13px] font-semibold">
-                                Notifications
-                            </DropdownMenuLabel>
-                            <p className="px-2 pb-2 text-[11.5px] leading-5 text-[#666]">
-                                Notifications are coming later. No notification
-                                count is shown until the real service is ready.
-                            </p>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                type="button"
                                 aria-label="Open account menu"
                                 title="Account"
-                                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
+                                className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
-                                {initials(auth.user?.name)}
+                                <PersonAvatar
+                                    name={auth.user?.name}
+                                    avatarUrl={avatarUrl}
+                                    className="flex size-full items-center justify-center"
+                                />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
@@ -458,7 +557,7 @@ export function OwnerWorkspaceShell({
                                     {auth.user?.name}
                                 </span>
                                 <span className="block text-[11px] font-normal text-[#666]">
-                                    {workspaceLabel} · {currentScope}
+                                    {identityLabel} · {currentScope}
                                 </span>
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator />
@@ -499,19 +598,28 @@ export function OwnerWorkspaceShell({
 
             <nav
                 aria-label={`Mobile ${workspaceLabel} navigation`}
-                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
+                style={{
+                    gridTemplateColumns: `repeat(${pinned.length + 1}, minmax(0, 1fr))`,
+                }}
+                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
-                {mobileItems.map((item) => (
-                    <NavigationControl key={item.label} item={item} compact />
+                {pinned.map((destination) => (
+                    <NavigationControl
+                        key={destination.id}
+                        destination={destination}
+                        href={hrefFor(destination.id)}
+                        active={destination.id === activeId}
+                        variant="compact"
+                    />
                 ))}
                 <button
                     type="button"
                     aria-haspopup="dialog"
                     aria-expanded={mobileMenuOpen}
                     onClick={() => setMobileMenuOpen(true)}
-                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${isBranches || isReports || isTransactions || isStaff || operationsPage ? 'bg-white text-[#111111]' : 'text-white/70'}`}
+                    className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold ${focusRing} ${activeInMenu ? 'bg-white text-[#111111]' : 'text-white/70'}`}
                 >
-                    <Menu className="size-[18px]" />
+                    <Menu className="size-[18px]" aria-hidden="true" />
                     More
                 </button>
             </nav>
@@ -527,16 +635,17 @@ export function OwnerWorkspaceShell({
                         </DialogDescription>
                     </DialogHeader>
                     <nav className="owner-hide-scrollbar overflow-y-auto px-3 pb-[max(18px,env(safe-area-inset-bottom))]">
-                        {navigation.map((group) => (
-                            <div key={group.label} className="pt-4">
-                                <p className="px-3 pb-2 text-[10px] font-semibold tracking-[0.1em] text-white/40 uppercase">
-                                    {group.label}
-                                </p>
+                        {groups.map(({ section, destinations: items }) => (
+                            <div key={section.id} className="pt-4">
+                                <SectionHeading label={section.label} touch />
                                 <div className="flex flex-col gap-1">
-                                    {group.items.map((item) => (
+                                    {items.map((destination) => (
                                         <NavigationControl
-                                            key={item.label}
-                                            item={item}
+                                            key={destination.id}
+                                            destination={destination}
+                                            href={hrefFor(destination.id)}
+                                            active={destination.id === activeId}
+                                            variant="full"
                                             onNavigate={() =>
                                                 setMobileMenuOpen(false)
                                             }
@@ -549,7 +658,7 @@ export function OwnerWorkspaceShell({
                             href={logout()}
                             method="post"
                             as="button"
-                            className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl border border-white/15 text-sm font-semibold text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                            className={`mt-4 flex min-h-12 w-full items-center justify-center rounded-xl border border-white/15 text-sm font-semibold text-white ${focusRing}`}
                         >
                             Log out
                         </Link>

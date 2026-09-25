@@ -748,3 +748,38 @@ Operations pages reuse the private `reports` invalidation channel and `useReport
 - Giveaways and their reversals broadcast only through existing after-commit events: Product-stock ones via `inventory.changed` + `qr.catalog_changed` (from `ApplyInventoryMovement`), Recipe ones via `ingredients.changed` (reasons `giveaway`, `giveaway_reversal`), and `ReportsChanged` (`giveaway.recorded`, `giveaway.reversed`). No payload carries quantities, costs or money. The Store Session dialog now also refreshes on `.ingredients.changed`.
 - Recipe, Add-on effect and recipe-mode saves broadcast **only when something changed**, from inside the action (after commit), and a business-wide invalidation reaches **active Branches only**.
 - Correction: the Operations events above carry no money. The pre-existing Phase 14 `store.expense_recorded` event (Cashier Store Session channel) still includes the expense `amount` and payment source, including for a Pamamalengke confirmation's expense; Cashiers already see those amounts in the Store Session dialog.
+
+## Phase 18 realtime — 2026-09-25
+
+- `notifications.changed` on `private-App.Models.User.{id}` (the recipient only; channel requires the same, active account). Payload: `event_id`, `event_type`, `occurred_at` — never a title, body, audit payload or credential. Dispatched after commit for every recipient of a new notification and after mark read / mark all read. The Control Center bell refetches the cheap unread-count endpoint (debounced, plus once after reconnect); the Notifications page partially reloads its list. No polling timer.
+- `reports.changed` now broadcasts on `private-reports` (business-wide, unchanged) **and** `private-branch.{branch}.reports` (reports.view + access to that Branch) for Branch-scoped custom Reports viewers, who subscribe only to their selected Branch channel. Payload unchanged (identity, Branch, reason, time).
+- Out-of-stock alerts are created only by the canonical stock writers (`ApplyInventoryMovement`, `ApplyIngredientMovement`) for the movement that takes a balance from above zero to zero or below while holding its row lock, delivered after commit — one alert per real transition, none for an already-empty balance, a new one after a restock sells out again.
+
+## Phase 18 final — Executive Dashboard realtime — 2026-09-25
+
+- No new channel or event. The Super Admin Executive Dashboard reuses `reports.changed` through `useReportsRealtimeRefresh` (partial reload of `analytics`, `report`, `kitchen`, `inventory`, `stores`, `ingredients`, `attention`; 30s fallback only while disconnected; reload on reconnect) and the viewer's own `notifications.changed` signal through `useNotificationsPageRefresh` (partial reload of `security`, `people`, `attention`). Props are lazy on the server, so a partial reload computes only what it asks for.
+- Custom Roles add no realtime contract; permission changes apply on the next request (nothing is cached across requests).
+
+## Phase 18 Manual QA refinement #2 — user context and admin invalidation — 2026-09-25
+
+Supersedes "Custom Roles add no realtime contract" above. Backend authorization still never depends on these signals (nothing is cached across requests).
+
+- `user.context_changed` (`UserContextChanged`) on `private-App.Models.User.{id}` — the affected account only (same, active account). Payload: `event_id`, `event_type`, `user_id`, `change_type` (`identity` | `access` | `branches` | `status`), `occurred_at`; never permissions, email, credentials, Branch details or audit values. Dispatched after commit by Staff create/update (name, Position, picture, Role, Branch assignments, status), Super Admin password reset, own Profile update, per-user override save/reset, every member of a changed Custom Role and every account inheriting a changed System baseline (including re-derived Cashier + Kitchen). The client (`useUserContextRealtime`, mounted in every workspace shell) coalesces signals and reloads the current page: fresh shared `auth` (permissions, Role label, Position, `avatarUrl`) and `branchContext` update the sidebar and Branch selector; a 403/404 visits the workspace (server-side landing or Branch picker); 401/419 goes to login. It also revalidates once after a reconnect.
+- `access_control.changed` (`AccessControlChanged`) on `private-access-control` (`access_control.manage`): Role baseline, Custom Role, override and Staff changes. Open Access Control pages partially reload their projection.
+- `staff.changed` (`StaffChanged`) on `private-staff` (Super Admin or business-wide `staff.manage`) and `private-branch.{branch}.staff` (`staff.manage` + access to that Branch) for every Branch the changed account was or is assigned to. Payload: `event_id`, `event_type`, `occurred_at` only. Open Staff pages partially reload `staff`, `roles`, `branches` (the server re-scopes; an Owner or Branch manager never receives accounts it cannot see).
+- Bulk Branch assortment changes reuse `product.branch_configuration_changed` / `product.availability_changed` per changed Product on that Branch's `branch.{branch}.inventory` channel plus one `qr.catalog_changed` (`CatalogRealtime::branchProductsChanged()`); no other Branch is signalled.
+- All clients use `createRealtimeRefresh` (debounce + one trailing refresh, held during the page's own visits). No polling was added.
+
+
+## Phase 18 pass #2.1 — Branch configuration invalidation — 2026-09-25
+
+- `CatalogRealtime::branchConfigurationChanged(Branch, reason)` = `ingredients.changed` + `qr.catalog_changed` on that Branch's channels + `reports.changed` (Operations pages partial-reload) — after commit, ids/reason/time only. Used by recipe mode, Recipes, Add-on effects, Ingredient save/archive, Plan save/archive and setup copies. Assortment add/remove/copy use `branchProductsChanged()` (per-Product availability events, removal reports unavailable) plus `reports.changed`. A QAVE-only change never signals MAIN (`BranchSetupCopyTest`).
+- Reconnect: POS/QR refetch their authoritative catalog and Operations pages refetch through the existing reports refresh hook; no missed event is assumed.
+
+
+## Phase 18 Final QA — realtime corrections — 2026-09-25
+
+- `reports` and `branch.{branch}.reports` authorize `reports.view` **or** `operations.manage` (plus business-wide scope / `canAccessBranch`). The Operations workspace refreshes on `reports.changed`, and Operations is a separate permission.
+- `UpsertBranchProduct` dispatches `ReportsChanged` for its Branch only when a membership is created or `tracks_inventory` changes (it is part of the Branch recipe mode).
+- Operations partial reloads now include every prop those signals can change (Plans: `outside`, `products`; Overview: `recipes`, `business_date`; Recipes: `products`; Pamamalengke: `manual`).
+- `useInvalidationRefresh` and `useReportsRealtimeRefresh` share `handleRevalidationException` with `useUserContextRealtime`: a background reload refused with 403/404 goes to the workspace, 401/419 to login, never a raw error modal.

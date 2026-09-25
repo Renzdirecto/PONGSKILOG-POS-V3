@@ -11,6 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/** Edits one Branch configuration (price, availability, stock tracking) of a Product already in that Branch assortment. */
 class BranchProductController extends Controller
 {
     public function update(Request $request, Product $product, Branch $branch, UpsertBranchProduct $upsert, CatalogRealtime $realtime): RedirectResponse
@@ -27,7 +28,7 @@ class BranchProductController extends Controller
                 || $configuration->tracks_inventory !== $request->boolean('tracks_inventory');
             $upsert->execute($request->user(), $branch, $product, $request->only([
                 'price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold',
-            ]));
+            ]), createMembership: false);
             $realtime->productChanged($product, $branch, $availabilityChanged);
         });
 

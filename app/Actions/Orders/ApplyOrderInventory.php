@@ -16,7 +16,9 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The one committed-sale stock path shared by Pay Now and Pay Later: tracked Product stock is deducted and
- * recipe-backed Products consume Ingredient stock, once, inside the caller's commit transaction.
+ * recipe-backed Products consume Ingredient stock, once, inside the caller's commit transaction. Every Product must
+ * still belong to the Branch assortment under the caller's Branch lock, so a stale or forged Product id (a draft or
+ * loaded QR order made before a removal) is never newly committed.
  */
 class ApplyOrderInventory
 {
@@ -59,7 +61,7 @@ class ApplyOrderInventory
         foreach ($quantities as $productId => $quantity) {
             $product = $products->get($productId);
             if ($product === null || ! $product->is_active || ! $product->category->is_active
-                || $product->branchProducts->first()?->is_available === false) {
+                || $product->branchProducts->first()?->is_available !== true) {
                 throw ValidationException::withMessages(['items' => 'A product is no longer available. Refresh the catalog before trying again.']);
             }
             if ($this->catalog->resolveLoaded($product)['tracked']) {

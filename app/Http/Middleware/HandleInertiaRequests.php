@@ -4,10 +4,10 @@ namespace App\Http\Middleware;
 
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\EffectivePermissions;
 use App\Support\StoreState;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -61,42 +61,53 @@ class HandleInertiaRequests extends Middleware
             'auth' => $this->authProps($user),
             'branchContext' => $this->branchContextProps($user, $currentBranch),
             'storeContext' => fn (): array => $this->storeContextProps($currentBranch),
+            'notificationCenter' => fn (): ?array => $this->notificationCenterProps($user),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
 
-    /** @return array{user: array{id: int, name: string, email: string}|null, roles: list<string>, permissions: list<string>} */
+    /** @return array{user: array{id: int, name: string, email: string, position: string|null, avatarUrl: string|null}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
     private function authProps(?User $user): array
     {
         if ($user === null) {
             return [
                 'user' => null,
                 'roles' => [],
+                'roleLabel' => null,
                 'permissions' => [],
             ];
         }
 
-        $roles = $user->roles()
-            ->with('permissions:id,name')
-            ->orderBy('name')
-            ->get(['roles.id', 'roles.name']);
+        $roles = $user->roles()->orderBy('name')->get(['roles.name', 'roles.label']);
 
         return [
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'position' => $user->position,
+                /** Versioned by the stored path, so a new picture shows after a realtime revalidation. */
+                'avatarUrl' => $user->avatar_path === null ? null : route('profile.avatar', [], false).'?v='.substr(md5($user->avatar_path), 0, 12),
             ],
-            'roles' => array_values($roles
-                ->map(fn (Role $role): string => $role->name)
-                ->all()),
-            'permissions' => array_values($roles
-                ->flatMap(fn (Role $role) => $role->permissions
-                    ->map(fn (Permission $permission): string => $permission->name))
-                ->unique()
-                ->sort()
-                ->all()),
+            'roles' => array_values($roles->pluck('name')->all()),
+            'roleLabel' => $roles->isEmpty() ? null : $roles->map(fn (Role $role): string => $role->displayLabel())->implode(' / '),
+            'permissions' => EffectivePermissions::names($user),
         ];
+    }
+
+    /**
+     * The Control Center unread badge: a real count of the viewer's unread in-app notifications, only for accounts
+     * that hold the notification center (Super Admin access control). Never a placeholder number.
+     *
+     * @return array{unread: int}|null
+     */
+    private function notificationCenterProps(?User $user): ?array
+    {
+        if ($user === null || ! $user->is_active || ! $user->hasPermission('access_control.manage')) {
+            return null;
+        }
+
+        return ['unread' => $user->unreadNotifications()->count()];
     }
 
     /** @return array{current: array{id: string, name: string, code: string}|null, businessWide: bool, selectableBranches: list<array{id: string, name: string, code: string}>} */

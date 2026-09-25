@@ -37,6 +37,11 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuditRealtimeRefresh } from '@/hooks/use-audit-realtime-refresh';
+import {
+    auditActionLabel,
+    auditActorName,
+    titleCase,
+} from '@/lib/audit-actions';
 import { auditTrail } from '@/routes/workspaces';
 
 type Option = {
@@ -51,7 +56,12 @@ type AuditLog = {
     id: string;
     created_at: string;
     branch: { id: string; name: string; code: string } | null;
-    actor: { id: number; name: string; email: string } | null;
+    actor: {
+        id: number;
+        name: string;
+        email: string;
+        position?: string | null;
+    } | null;
     module: string;
     action: string;
     auditable_type: string;
@@ -110,23 +120,72 @@ const actionStyles: Record<
         iconClass: 'bg-blue-50 text-blue-700 ring-blue-100',
         badge: 'blue',
     },
+    'staff.updated': {
+        icon: Pencil,
+        iconClass: 'bg-blue-50 text-blue-700 ring-blue-100',
+        badge: 'blue',
+    },
+    'staff.role_changed': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'staff.branch_access_changed': {
+        icon: Store,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'staff.deactivated': {
+        icon: ShieldBan,
+        iconClass: 'bg-red-50 text-red-700 ring-red-100',
+        badge: 'red',
+    },
+    'staff.reactivated': {
+        icon: CircleUserRound,
+        iconClass: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+        badge: 'green',
+    },
+    'staff.password_reset': {
+        icon: KeyRound,
+        iconClass: 'bg-amber-50 text-amber-700 ring-amber-100',
+        badge: 'amber',
+    },
+    'access.role_permissions_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.user_override_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.user_overrides_reset': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
+    'access.custom_role_created': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
+    'access.custom_role_updated': {
+        icon: Pencil,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'blue',
+    },
+    'access.custom_role_permissions_updated': {
+        icon: ShieldCheck,
+        iconClass: 'bg-violet-50 text-violet-700 ring-violet-100',
+        badge: 'amber',
+    },
+    'access.custom_role_archived': {
+        icon: ShieldBan,
+        iconClass: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+        badge: 'neutral',
+    },
 };
-
-export function auditActionLabel(action: string): string {
-    const labels: Record<string, string> = {
-        'auth.login': 'User signed in',
-        'order.created': 'Order created',
-        'order.paid': 'Order paid',
-        'order.voided': 'Order voided',
-        'void_pin.configured': 'Void PIN configured',
-        'staff.created': 'Staff account created',
-    };
-
-    return (
-        labels[action] ??
-        titleCase(action.replaceAll('.', ' ').replaceAll('_', ' '))
-    );
-}
 
 export function auditChangeRows(
     before: AuditValues,
@@ -269,7 +328,7 @@ export default function AuditTrail({
                             )}
                         </div>
                     </div>
-                    <div className="grid gap-2 p-3 md:p-4 lg:grid-cols-[minmax(240px,2fr)_minmax(130px,1fr)_minmax(130px,1fr)_minmax(105px,.75fr)_minmax(150px,1.2fr)_135px]">
+                    <div className="grid gap-2 p-3 min-[1320px]:grid-cols-[minmax(240px,2fr)_minmax(130px,1fr)_minmax(130px,1fr)_minmax(105px,.75fr)_minmax(150px,1.2fr)_135px] md:grid-cols-2 md:p-4 lg:grid-cols-3">
                         <label className="relative min-w-0">
                             <span className="sr-only">Search audit trail</span>
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
@@ -479,7 +538,7 @@ function AuditRow({
                 </span>
                 <span className="min-w-0">
                     <span className="block truncate text-xs font-semibold">
-                        {log.actor?.name ?? 'System process'}
+                        {auditActorName(log.actor)}
                     </span>
                     <span className="block truncate text-[11px] text-neutral-500">
                         {log.actor?.email ?? 'Automated activity'}
@@ -552,7 +611,7 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
                         <DetailStat
                             icon={CircleUserRound}
                             label="Actor"
-                            value={log.actor?.name ?? 'System process'}
+                            value={auditActorName(log.actor)}
                         />
                         <DetailStat
                             icon={Store}
@@ -807,10 +866,6 @@ function shortId(value: string): string {
     return value.length > 16
         ? `${value.slice(0, 8)}…${value.slice(-4)}`
         : value;
-}
-
-function titleCase(value: string): string {
-    return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function displayValue(value: unknown): string {

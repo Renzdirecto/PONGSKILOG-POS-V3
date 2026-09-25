@@ -17,7 +17,6 @@ import {
     parseSignedQuantity,
     planQuery,
     readChecklist,
-    stockPercent,
     unitLabel,
     writeChecklist,
 } from '../resources/js/lib/operations.ts';
@@ -31,6 +30,7 @@ const source = (path: string): string =>
     ).replace(/\s+/g, ' ');
 const ui = source('components/operations-ui.tsx');
 const shell = source('components/owner-workspace-shell.tsx');
+const managementNavigation = source('lib/management-navigation.ts');
 const layout = source('layouts/workspace-layout.tsx');
 const app = source('app.tsx');
 const plans = source('pages/operations/plans.tsx');
@@ -260,8 +260,8 @@ test('only bought, available lines with a quantity reach Confirm; actual cost st
 
 test('operations is a real sidebar section of the existing Owner shell, with Sales kept separate', () => {
     assert.match(
-        shell,
-        /label: 'Sales',[\s\S]*label: 'Transactions'[\s\S]*label: 'Reports'/,
+        managementNavigation,
+        /id: 'transactions',[\s\S]*section: 'sales'[\s\S]*id: 'reports',[\s\S]*section: 'sales'/,
     );
     for (const [key, label] of [
         ['plans', 'Pamalengke Plans'],
@@ -272,10 +272,20 @@ test('operations is a real sidebar section of the existing Owner shell, with Sal
         ['pamamalengke', 'Pamamalengke'],
         ['purchases', 'Purchases'],
     ]) {
-        assert.match(shell, new RegExp(`\\['${key}', '${label}'`));
+        assert.match(
+            managementNavigation,
+            new RegExp(`\\['${key}', '${label}'`),
+        );
     }
-    assert.match(shell, /label: 'Operations',/);
-    assert.match(shell, /operationsRoutes\[key\]\(planQuery\)/);
+    assert.match(
+        managementNavigation,
+        /\{ id: 'operations', label: 'Operations' \}/,
+    );
+    assert.match(managementNavigation, /permission: 'operations\.manage'/);
+    assert.match(
+        shell,
+        /operationsRoutes\[id\]\(\s*planId \? \{ query: \{ plan: planId \} \} : undefined,?\s*\)/,
+    );
     assert.match(layout, /page\.component\.startsWith\('operations\/'\)/);
     assert.match(app, /case name\.startsWith\('operations\/'\):/);
 });
@@ -312,7 +322,7 @@ test('the active plan lives in the URL and every page shares one shell', () => {
 
 test('plans, recipes and ingredients tell the truth about missing data', () => {
     assert.match(plans, /A plan does not hold stock of its own\./);
-    assert.match(plans, /No plans yet/);
+    assert.match(plans, /No Pamalengke Plans yet\./);
     assert.match(plans, /moves it for future sales only/);
     assert.match(recipes, /Recipe required for \$\{sizeLabel\}/);
     assert.match(recipes, /No recipe needed/);
@@ -365,4 +375,19 @@ test('important actions keep 44px touch targets and never overflow the page', ()
         /top-auto bottom-0 flex max-h-\[92dvh\]/,
         'dialogs open as bottom sheets on phones',
     );
+});
+
+test('a live signal reloads every operations prop that recipes, sales and assortment changes can alter', () => {
+    assert.match(
+        ui,
+        /plans: \['cards', 'summary', 'shared', 'outside', 'products'\]/,
+    );
+    assert.match(ui, /recipes: \['products', 'ingredients'\]/);
+    assert.match(ui, /'market', 'recipes', 'consumption'/);
+    assert.match(ui, /pamamalengke: \['ingredients', 'market', 'manual',/);
+});
+
+test('the owner and custom role shell has no placeholder notification control', () => {
+    assert.doesNotMatch(shell, /coming later/i);
+    assert.doesNotMatch(shell, /aria-label="Notifications"/);
 });

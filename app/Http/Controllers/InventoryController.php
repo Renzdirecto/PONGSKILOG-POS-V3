@@ -17,13 +17,18 @@ use App\Support\InventoryState;
 use App\Support\OperationsWorkspace;
 use App\Support\ProductImages;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class InventoryController extends Controller
 {
-    public function index(InventoryIndexRequest $request, InventoryState $inventoryState, ProductImages $images, ActiveBranchContext $activeBranchContext, IngredientStockReport $ingredientStock, OperationsWorkspace $operations): Response
+    /**
+     * Product (and Ingredient) stock. Business-wide Inventory reads All Branches or picks a Branch; a Branch-scoped
+     * account reads only its selected assigned Branch (a browser-supplied branch_id is ignored for it).
+     */
+    public function index(InventoryIndexRequest $request, InventoryState $inventoryState, ProductImages $images, ActiveBranchContext $activeBranchContext, IngredientStockReport $ingredientStock, OperationsWorkspace $operations): Response|RedirectResponse
     {
         $filters = [
             'type' => $request->validated('type') ?? 'all',
@@ -33,11 +38,18 @@ class InventoryController extends Controller
         ];
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $branches = Branch::query()->orderBy('code')->get(['id', 'name', 'code', 'status']);
-        $globalBranch = $activeBranchContext->current($user);
+        $globalBranch = $activeBranchContext->managementBranch($user);
+        if ($globalBranch === false) {
+            return to_route('workspace');
+        }
+        $branches = $user->hasBusinessWideScope()
+            ? Branch::query()->orderBy('code')->get(['id', 'name', 'code', 'status'])
+            : Branch::query()->whereKey($globalBranch?->id)->get(['id', 'name', 'code', 'status']);
         $branch = $globalBranch ?? $branches->firstWhere('id', $request->validated('branch_id'));
 
+        /** The current list is the Branch's assortment; a removed Product's movement history stays reachable by its link. */
         $baseQuery = Product::query()
+            ->when($branch !== null, fn ($query) => $query->whereHas('branchProducts', fn ($query) => $query->where('branch_id', $branch?->id)))
             ->when($filters['search'] !== '', fn ($query) => $query->whereLike('products.name', '%'.$filters['search'].'%'))
             ->when($filters['category'] !== '', fn ($query) => $query->where('products.category_id', $filters['category']));
 
@@ -89,7 +101,7 @@ class InventoryController extends Controller
         ));
         /** The Products tab only needs the Ingredient tab count, not the full stock report. */
         $ingredientCount = $branch === null ? 0 : ($filters['type'] === 'products'
-            ? Ingredient::query()->whereNull('archived_at')
+            ? Ingredient::query()->where('branch_id', $branch->id)->whereNull('archived_at')
                 ->when($filters['search'] !== '', fn ($query) => $query->whereLike('name', '%'.$filters['search'].'%'))->count()
             : count($ingredients));
 
@@ -118,6 +130,7 @@ class InventoryController extends Controller
 
     public function store(AdjustInventoryRequest $request, Branch $branch, Product $product, AdjustInventory $adjust): RedirectResponse
     {
+        $this->authorizeBranch($request, $branch);
         $adjust->execute(
             $request->user(),
             $branch,
@@ -129,13 +142,22 @@ class InventoryController extends Controller
         return back();
     }
 
-    public function movements(Branch $branch, Product $product): Response
+    public function movements(Request $request, Branch $branch, Product $product): Response
     {
+        $this->authorizeBranch($request, $branch);
+
         return Inertia::render('inventory/movements', [
             'branch' => $branch->only(['id', 'name', 'code']),
             'product' => $product->only(['id', 'name']),
             'movements' => $this->movementHistory($branch, $product),
         ]);
+    }
+
+    /** A Branch-scoped Inventory manager reads and adjusts only its assigned Branches; business-wide reaches every Branch. */
+    private function authorizeBranch(Request $request, Branch $branch): void
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User && $user->canAccessBranch($branch), 403);
     }
 
     /** @return LengthAwarePaginator<int, covariant array<string, mixed>> */

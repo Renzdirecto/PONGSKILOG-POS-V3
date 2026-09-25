@@ -5,7 +5,9 @@ use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\TransitionKitchenOrder;
 use App\Enums\KitchenStatus;
 use App\Models\BranchInventory;
+use App\Models\BranchProduct;
 use App\Models\IngredientMovement;
+use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\OrderRecipeSnapshot;
 use App\Support\ExactQuantity;
@@ -125,6 +127,35 @@ test('an edit appends only the compensating delta for decreases, increases, repl
     expect(orderIngredientNet($order))->toBe(['Egg' => '-1', 'Purified Water' => '-100', 'Rice' => '-200'])
         ->and($this->ops->stock('lemon'))->toBe('29.5')
         ->and($this->ops->stock('water'))->toBe('7900');
+});
+
+test('an edit keeps a recipe-sold product on ingredients after its branch switches it to product stock', function () {
+    $order = $this->ops->payLater([$this->ops->line($this->ops->tapsilog, 1)]);
+    BranchProduct::query()->where('product_id', $this->ops->tapsilog->id)->update(['tracks_inventory' => true]);
+    BranchInventory::factory()->for($this->ops->branch)->for($this->ops->tapsilog)->create(['on_hand' => 10]);
+
+    $order = $this->ops->edit($order, [$this->ops->line($this->ops->tapsilog, 3)]);
+    expect(orderIngredientNet($order))->toBe(['Egg' => '-3', 'Purified Water' => '-300', 'Rice' => '-600'])
+        ->and(BranchInventory::query()->where('product_id', $this->ops->tapsilog->id)->value('on_hand'))->toBe(10);
+
+    $order = $this->ops->edit($order, [$this->ops->line($this->ops->tapsilog, 1)]);
+    expect(orderIngredientNet($order))->toBe(['Egg' => '-1', 'Purified Water' => '-100', 'Rice' => '-200'])
+        ->and(BranchInventory::query()->where('product_id', $this->ops->tapsilog->id)->value('on_hand'))->toBe(10)
+        ->and(InventoryMovement::query()->where('order_id', $order->id)->exists())->toBeFalse();
+});
+
+test('an edit never silently drops product stock sold from a product whose tracking was turned off', function () {
+    $order = $this->ops->payLater([$this->ops->line($this->ops->coke, 2), $this->ops->line($this->ops->tapsilog, 1)]);
+    BranchProduct::query()->where('product_id', $this->ops->coke->id)->update(['tracks_inventory' => false]);
+
+    expect(fn () => $this->ops->edit($order, [$this->ops->line($this->ops->coke, 4), $this->ops->line($this->ops->tapsilog, 1)]))
+        ->toThrow(ValidationException::class, 'Coke Mismo was sold from Product stock');
+    expect(BranchInventory::query()->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(18)
+        ->and($order->refresh()->version)->toBe($order->version);
+
+    $order = $this->ops->edit($order, [$this->ops->line($this->ops->coke, 2), $this->ops->line($this->ops->tapsilog, 2)]);
+    expect(BranchInventory::query()->where('product_id', $this->ops->coke->id)->value('on_hand'))->toBe(18)
+        ->and(orderIngredientNet($order))->toBe(['Egg' => '-2', 'Purified Water' => '-200', 'Rice' => '-400']);
 });
 
 test('recipe-backed to a product without a recipe and back only moves the recipe-backed part', function () {

@@ -11,9 +11,11 @@ use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * The canonical Branch catalog projection shared by Cashier POS, committed-order edits and Customer QR. Existing gates
- * (Product/Category active, Branch availability, Product stock) come first; a Recipe-backed Product is then available
- * only while RecipeCapacity finds at least one Size that its Branch Ingredient stock can make.
+ * The canonical Branch catalog projection shared by Cashier POS, committed-order edits, Customer QR and Giveaways, and
+ * the single assortment authority: only Products with a Branch Product row (explicit membership) are listed or
+ * sellable; there is no implicit global fallback. Existing gates (Product/Category active, Branch availability, Product
+ * stock) come next; a Recipe-backed Product is then available only while RecipeCapacity finds at least one Size that its
+ * Branch Ingredient stock can make.
  *
  * @phpstan-import-type CatalogAvailability from RecipeCapacity
  */
@@ -29,15 +31,17 @@ class BranchCatalog
      */
     public function browse(Branch $branch, bool $customization = false): array
     {
+        $member = fn ($query) => $query->where('branch_id', $branch->getKey());
         $categories = Category::query()
-            ->whereHas('products')
+            ->whereHas('products', fn ($query) => $query->whereHas('branchProducts', $member))
             ->orderBy('sort_order')->orderBy('name')->orderBy('id')
             ->with(['products' => fn ($query) => $query
                 ->select(['id', 'category_id', 'name', 'description', 'default_price', 'image_path', 'is_active'])
+                ->whereHas('branchProducts', $member)
                 ->when($customization, fn ($query) => $query->with($this->modifierRelations()))
                 ->orderBy('name')->orderBy('id')
                 ->withExists(['modifierGroups as has_modifiers' => fn ($query) => $query->where('is_active', true)])
-                ->withExists('recipes as has_recipe')
+                ->withExists(['recipes as has_recipe' => $member])
                 ->with(['branchProducts' => fn ($query) => $query
                     ->where('branch_id', $branch->getKey())
                     ->select(['id', 'product_id', 'price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold']),
@@ -108,7 +112,7 @@ class BranchCatalog
      */
     public function productsForOrder(Branch $branch, array $ids): Collection
     {
-        return Product::query()->whereKey($ids)->withExists('recipes as has_recipe')->with([
+        return Product::query()->whereKey($ids)->withExists(['recipes as has_recipe' => fn ($query) => $query->where('branch_id', $branch->id)])->with([
             'category',
             'branchProducts' => fn ($query) => $query->where('branch_id', $branch->id),
             'inventoryBalances' => fn ($query) => $query->where('branch_id', $branch->id),
@@ -116,7 +120,7 @@ class BranchCatalog
         ])->get();
     }
 
-    /** Resolve only freshly loaded, branch-scoped relations.
+    /** Resolve only freshly loaded, branch-scoped relations. No Branch Product row means "not sold at this Branch".
      * @return array{effective_price: string, is_available: bool, availability_reason: string|null, stock_status: string, tracked: bool, on_hand: int|null}
      */
     public function resolveLoaded(Product $product): array
@@ -125,9 +129,10 @@ class BranchCatalog
         $stock = $this->inventoryState->resolve($override, $product->inventoryBalances->first());
 
         $availabilityReason = match (true) {
+            $override === null => 'not_in_branch',
             ! $product->is_active => 'product_disabled',
             ! $product->category->is_active => 'category_disabled',
-            $override?->is_available === false => 'branch_unavailable',
+            ! $override->is_available => 'branch_unavailable',
             $stock['status'] === 'out_of_stock' => 'out_of_stock',
             default => null,
         };

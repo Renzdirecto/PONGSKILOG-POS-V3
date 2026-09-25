@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\BusinessSnapshot;
 use App\Support\SalesAnalytics;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -16,13 +17,17 @@ class OwnerDashboardController extends Controller
     private const SESSION_LIMIT = 4;
 
     /**
-     * The business Dashboard for the global Branch scope: the same analytics as Reports plus live operating state.
+     * The Dashboard for the global Branch scope: the same analytics as Reports plus live operating state. A
+     * Branch-scoped account without a selected assigned Branch is sent to choose one, never shown All Branches.
      */
-    public function __invoke(OwnerDashboardRequest $request, ActiveBranchContext $context, SalesAnalytics $analytics, BusinessSnapshot $snapshot): Response
+    public function __invoke(OwnerDashboardRequest $request, ActiveBranchContext $context, SalesAnalytics $analytics, BusinessSnapshot $snapshot): Response|RedirectResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $branch = $context->current($user);
+        $branch = $context->managementBranch($user);
+        if ($branch === false) {
+            return to_route('workspace');
+        }
         $period = $request->validated('period') ?? 'today';
         $result = $analytics->for($branch, ['date' => $period]);
         $report = $result['report'];

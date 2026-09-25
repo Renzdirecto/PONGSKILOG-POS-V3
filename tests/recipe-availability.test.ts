@@ -193,19 +193,19 @@ test('the recipes page separates product stock, no recipe needed and a missing r
     );
 
     assert.match(recipes, /title="Uses Product stock"/);
+    /** Only the selected Branch's own Product stock tracking blocks its recipe; other Branches never do. */
     assert.match(
         recipes,
-        /Ingredient recipes cannot be enabled while \$\{product\.name\} tracks direct Product stock in: \$\{blockingBranches\}/,
+        /tracks direct Product stock at \$\{branchCode\}, so an Ingredient recipe cannot be enabled here \(one sale never deducts both\)/,
     );
-    assert.match(recipes, /to prevent double inventory deduction/);
+    assert.match(recipes, /Other Branches are configured on their own/);
     assert.match(recipes, /existing Product stock is kept/);
-    /** Each blocking Branch gets its own action through the existing Branch context, never the global selection. */
-    assert.match(recipes, /product\.tracked_branches\.map\(\(branch\) => \(/);
-    assert.match(recipes, /\{branch\.code\} product settings/);
+    assert.doesNotMatch(recipes, /tracked_branches|tracked_elsewhere/);
     assert.match(
         recipes,
-        /router\.put\(ActiveBranchController\.update\.url\(branchId\), \{\s*redirect: `\$\{product\.settings_url\}&section=branch`,/,
+        /href=\{`\$\{product\.settings_url\}&section=branch`\}/,
     );
+    assert.match(recipes, /\{branchCode\} product settings/);
     assert.doesNotMatch(
         recipes,
         /Open Product\s+settings\s*<\/Link>[\s\S]*Uses Product stock/,

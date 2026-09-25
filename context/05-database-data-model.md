@@ -39,17 +39,20 @@ Use DB constraints/indexes in addition to application validation.
 - `email`
 - `password`
 - `is_active`
+- `position` (nullable `varchar(100)`, Phase 18 Manual QA refinement #1): business/job title for display only; never a source of access
 - timestamps
 
 ### `roles`
 
-Examples:
+System roles (machine `name` never changes):
 
 - super_admin
 - owner
 - cashier
 - kitchen_staff
 - cashier_kitchen
+
+Since Phase 18 final: `label`, `is_system`, `scope` (`branch` / `business`), `archived_at`; Custom Roles use the stable key `custom_{id}` (see the Phase 18 final section below).
 
 ### `permissions`
 
@@ -842,3 +845,38 @@ Migration `2026_09_24_134328_create_store_session_giveaways`:
 - `ingredient_movements.store_session_giveaway_id` (indexed; FK on PostgreSQL) and partial unique indexes `ingredient_movements_giveaway_once` / `ingredient_movements_giveaway_reversal_once` on (`store_session_giveaway_id`, `ingredient_id`).
 - `movement_type` CHECK constraints of `ingredient_movements` and `inventory_movements` extended with `giveaway` and `giveaway_reversal` (PostgreSQL constraint swap; SQLite definition-preserving rebuild). Rollback refuses while giveaway history exists.
 - Known PostgreSQL identifier truncation (functional, no collision; guarded against new ones by the harness): `operation_plan_ingredients_…_uniq`, `order_recipe_snapshot_lines_…_ingredient`, `pamamalengke_list_entries_…_entry_typ` and three pre-existing `store_session_inventory_adjustments_*` names.
+
+## Phase 18 — Access Control and Notifications (additive) — 2026-09-25
+
+Migration `2026_09_24_165603_create_user_permission_overrides_table`:
+
+- `user_permission_overrides`: `id`, `user_id` (FK users, cascade), `permission_id` (FK permissions, cascade), `effect` `varchar(5)` CHECK (`allow`, `deny`), timestamps; **unique (`user_id`, `permission_id`)**, index `permission_id`. No row = INHERIT. Users are deactivated, never deleted, so the cascade removes only exceptions of a genuinely removed row; audit history is untouched.
+
+Migration `2026_09_24_165604_create_notifications_table` (Laravel's standard database notifications table):
+
+- `notifications`: UUID `id`, `type` (`admin.access`, `admin.staff`, `admin.stock`), morph `notifiable`, JSON-text `data` (`category`, `title`, `body`, `url`), `read_at`, timestamps; index (`notifiable_type`, `notifiable_id`, `read_at`) for the unread badge.
+
+Role baselines keep using `role_permissions`; Cashier + Kitchen rows are always the union of Cashier and Kitchen Staff. Index names stay under PostgreSQL's 63-byte limit (checked by `tests/verify-access-admin-postgres.php`).
+
+## Phase 18 final — Custom Roles (additive) — 2026-09-25
+
+Migration `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (additive; existing rows and assignments are kept):
+
+- `roles.label` `varchar(60)` nullable — display name. System roles are backfilled (`Super Admin`, `Owner`, `Cashier`, `Kitchen Staff`, `Cashier + Kitchen`); any other pre-existing row gets its `name`.
+- `roles.is_system` boolean, default false — backfilled true for the five canonical names. A System role is always identified by its canonical `name`; its stored metadata never widens it.
+- `roles.scope` `varchar(16)` nullable, CHECK (`branch`, `business`) — WHERE a role works. System scope is canonical by name (Owner/Super Admin business, the three operational roles Branch).
+- `roles.archived_at` timestamp nullable — an archived Custom Role keeps its row and baseline for audit meaning and cannot be assigned.
+- Partial unique index `roles_active_label_unique` on `LOWER(label) WHERE archived_at IS NULL` (PostgreSQL and SQLite): active display names are unique ignoring case; an archived name may be reused.
+- `roles.name` stays the unique machine key. A Custom Role is inserted with a temporary key and renamed to `custom_{id}` in the same transaction, so renaming the display name never changes identity. No UUID was added; the Role PK is the identity.
+- Custom Role baselines use the existing `role_permissions`; assignments use the existing `user_roles` and `user_branch_assignments`. Rollback drops the index then the four columns (verified on disposable PostgreSQL and isolated SQLite).
+
+
+## Phase 18 pass #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Forward migration `2026_09_25_112126_make_branch_catalog_and_operations_independent` (one authoritative model after cutover; no legacy shared rows remain):
+
+- `branch_products.no_recipe_needed` boolean (Branch recipe mode); `products.no_recipe_needed` dropped. A `branch_products` row is now explicit assortment membership (unique `branch_id, product_id` unchanged).
+- `branch_id` (NOT NULL, FK) on `ingredients`, `operation_plans`, `recipes`, `product_modifier_effects`, `operation_plan_products`, `operation_plan_ingredients`; `lineage_id` (NOT NULL) on `ingredients` and `operation_plans` (copy provenance: own id when created, source lineage when copied).
+- Uniques: `ingredients (branch_id, lower(name))` (replaces global `name`), `ingredients/operation_plans (branch_id, lineage_id)` and `(branch_id, id)`; `recipes (branch_id, product_id, size_key)`; `product_modifier_effects_branch_unique (branch_id, product_id, modifier_option_id)`; `operation_plan_products (branch_id, product_id)` (a Product may sit in a different Plan per Branch). Indexes: `operation_plans (branch_id, archived_at, name)`, `operation_plan_ingredients (branch_id, ingredient_id)`, `product_id` on recipes/effects/plan products.
+- PostgreSQL composite FKs `(branch_id, ingredient_id) → ingredients (branch_id, id)` on `branch_ingredient_stocks`, `ingredient_movements`, `operation_plan_ingredients`, `pamamalengke_list_entries`, and `(branch_id, operation_plan_id) → operation_plans (branch_id, id)` on `operation_plan_ingredients`, `operation_plan_products`, `pamamalengke_list_entries` — a cross-Branch reference is rejected by the database.
+- Cutover: explicit rows for every existing Branch × Product (existing rows kept). The oldest Branch keeps the original Ingredient/Plan/Recipe/effect ids; each other Branch gets copies through an explicit old → new id map, and its stock, movements (Ingredient and Plan ids), working list, purchases/purchase items, Order recipe snapshots (lines, add-on lines, Plan) and Giveaway recipe basis are re-pointed to its own copies. Quantities, balances, costs, totals and timestamps are untouched. `down()` works only while no Branch-owned setup exists (it refuses to merge Branch configurations).

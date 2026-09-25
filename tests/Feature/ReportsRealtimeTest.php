@@ -95,13 +95,14 @@ test('opening a store session signals the reports channel', function () {
         && $event->broadcastWith()['branch_id'] === $scenario->branch->id);
 });
 
-test('the reports signal is privacy-minimal and business-wide', function () {
+test('the reports signal is privacy-minimal on the business-wide and its own branch channel', function () {
     $branch = Branch::factory()->create();
     $event = new ReportsChanged($branch->id, 'order.committed');
 
     expect(array_keys($event->broadcastWith()))->toBe(['event_id', 'event_type', 'branch_id', 'reason', 'occurred_at'])
         ->and($event->broadcastAs())->toBe('reports.changed')
-        ->and($event->broadcastOn()->name)->toBe('private-reports');
+        ->and(array_map(fn ($channel) => $channel->name, $event->broadcastOn()))
+        ->toBe(['private-reports', 'private-branch.'.$branch->id.'.reports']);
 });
 
 test('owner and super admin may listen to the reports channel', function (string $role) {
@@ -122,7 +123,7 @@ test('operational staff cannot listen to the reports channel', function (string 
     ])->assertForbidden();
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
 
-test('guests, inactive owners and owners without report access cannot listen to the reports channel', function () {
+test('guests, inactive owners and owners without report or operations access cannot listen to the reports channel', function () {
     authorizeReportsChannel();
     $payload = ['socket_id' => '123.456', 'channel_name' => 'private-reports'];
 
@@ -133,6 +134,11 @@ test('guests, inactive owners and owners without report access cannot listen to 
     /** The active-user middleware signs an inactive account out before the channel is even checked. */
     $this->actingAs($inactive)->postJson('/broadcasting/auth', $payload)->assertUnauthorized();
 
-    Role::query()->where('name', 'owner')->sole()->permissions()->detach(Permission::query()->where('name', 'reports.view')->sole());
+    /** Operations pages refresh on the same signal, so Operations access alone still listens. */
+    $owner = Role::query()->where('name', 'owner')->sole();
+    $owner->permissions()->detach(Permission::query()->where('name', 'reports.view')->sole());
+    $this->actingAs(reportsChannelUser('owner'))->postJson('/broadcasting/auth', $payload)->assertOk();
+
+    $owner->permissions()->detach(Permission::query()->where('name', 'operations.manage')->sole());
     $this->actingAs(reportsChannelUser('owner'))->postJson('/broadcasting/auth', $payload)->assertForbidden();
 });

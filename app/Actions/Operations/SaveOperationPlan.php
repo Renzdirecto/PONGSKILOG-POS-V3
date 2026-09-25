@@ -3,10 +3,12 @@
 namespace App\Actions\Operations;
 
 use App\Actions\Audit\AuditRecorder;
+use App\Models\BranchProduct;
 use App\Models\OperationPlan;
 use App\Models\OperationPlanProduct;
-use App\Models\Product;
 use App\Models\User;
+use App\Support\BranchConfiguration;
+use App\Support\CatalogRealtime;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -14,13 +16,14 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Creates or updates a Pamalengke Plan and its Product membership. Products come only from the existing Catalog; a
- * Product belongs to at most one active Plan, so choosing it here moves it from its previous Plan. Moving affects only
- * future sales: committed sales keep the Plan recorded in their Order recipe snapshot.
+ * Creates or updates a Pamalengke Plan of the selected Branch and its Product membership. Products come only from that
+ * Branch's assortment; a Product belongs to at most one active Plan per Branch (it may sit in another Plan at another
+ * Branch), so choosing it here moves it from its previous Plan of this Branch. Moving affects only future sales:
+ * committed sales keep the Plan recorded in their Order recipe snapshot.
  */
 class SaveOperationPlan
 {
-    public function __construct(private OperationsAccess $access, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     /** @return array<string, mixed> */
     public static function rules(): array
@@ -38,6 +41,10 @@ class SaveOperationPlan
     public function execute(User $actor, ?OperationPlan $plan, array $input): OperationPlan
     {
         $actor = $this->access->authorize($actor);
+        $branch = $this->access->configurationBranch($actor);
+        if ($plan !== null) {
+            $this->access->ownedBy($plan, $branch);
+        }
         $input['name'] = is_string($input['name'] ?? null) ? trim($input['name']) : ($input['name'] ?? null);
         $input['description'] = is_string($input['description'] ?? null) && trim($input['description']) !== '' ? trim($input['description']) : null;
         /** @var array{name: string, description: string|null, icon: string, product_ids: list<string>} $data */
@@ -45,30 +52,31 @@ class SaveOperationPlan
         $productIds = array_values(array_unique(array_map('strtolower', $data['product_ids'])));
         sort($productIds);
 
-        return DB::transaction(function () use ($actor, $plan, $data, $productIds): OperationPlan {
+        return DB::transaction(function () use ($actor, $branch, $plan, $data, $productIds): OperationPlan {
+            $branch = BranchConfiguration::lock($branch);
             if ($plan !== null) {
                 $plan = OperationPlan::query()->whereKey($plan->id)->lockForUpdate()->firstOrFail();
                 if ($plan->archived_at !== null) {
                     throw ValidationException::withMessages(['plan' => 'This Plan is archived.']);
                 }
             }
-            $duplicate = OperationPlan::query()->whereNull('archived_at')
+            $duplicate = OperationPlan::query()->where('branch_id', $branch->id)->whereNull('archived_at')
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
                 ->when($plan !== null, fn ($query) => $query->whereKeyNot($plan?->id))
                 ->exists();
             if ($duplicate) {
-                throw ValidationException::withMessages(['name' => 'Another Plan already uses this name.']);
+                throw ValidationException::withMessages(['name' => 'Another Plan of '.$branch->code.' already uses this name.']);
             }
-            $found = Product::query()->whereKey($productIds)->orderBy('id')->lockForUpdate()->pluck('id')->all();
+            $found = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->orderBy('product_id')->lockForUpdate()->pluck('product_id')->all();
             if (count($found) !== count($productIds)) {
-                throw ValidationException::withMessages(['product_ids' => 'Choose only existing Catalog products.']);
+                throw ValidationException::withMessages(['product_ids' => 'Choose only products sold at '.$branch->code.'.']);
             }
 
             $before = $plan === null ? null : $this->snapshot($plan);
-            $plan ??= new OperationPlan(['created_by_user_id' => $actor->id]);
+            $plan ??= new OperationPlan(['branch_id' => $branch->id, 'created_by_user_id' => $actor->id]);
             $plan->fill(['name' => $data['name'], 'description' => $data['description'], 'icon' => $data['icon']])->save();
 
-            $memberships = OperationPlanProduct::query()
+            $memberships = OperationPlanProduct::query()->where('branch_id', $branch->id)
                 ->where(fn ($query) => $query->where('operation_plan_id', $plan->id)->orWhereIn('product_id', $productIds))
                 ->orderBy('product_id')->lockForUpdate()->get();
             $moved = [];
@@ -82,11 +90,11 @@ class SaveOperationPlan
             }
             $existing = $memberships->pluck('product_id')->all();
             foreach (array_diff($productIds, $existing) as $productId) {
-                OperationPlanProduct::query()->create(['operation_plan_id' => $plan->id, 'product_id' => $productId]);
+                OperationPlanProduct::query()->create(['branch_id' => $branch->id, 'operation_plan_id' => $plan->id, 'product_id' => $productId]);
             }
 
             $this->audit->record(
-                branch: null,
+                branch: $branch,
                 actor: $actor,
                 module: 'operations',
                 action: $before === null ? 'operation_plan.created' : 'operation_plan.updated',
@@ -94,8 +102,9 @@ class SaveOperationPlan
                 auditableId: $plan->id,
                 before: $before,
                 after: $this->snapshot($plan),
-                metadata: ['moved_products' => $moved],
+                metadata: ['branch_code' => $branch->code, 'moved_products' => $moved],
             );
+            $this->realtime->branchConfigurationChanged($branch, 'plan_saved');
 
             return $plan;
         });

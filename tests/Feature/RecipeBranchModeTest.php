@@ -1,6 +1,7 @@
 <?php
 
-use App\Actions\Operations\AdjustIngredientStock;
+use App\Actions\Operations\SaveOperationPlan;
+use App\Actions\Operations\SaveRecipe;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\PayNowOrder;
 use App\Actions\Orders\SubmitCustomerQrOrder;
@@ -8,7 +9,11 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\CustomerQrSession;
+use App\Models\IngredientMovement;
 use App\Models\Order;
+use App\Models\OrderRecipeSnapshot;
+use App\Models\Recipe;
+use App\Models\RecipeLine;
 use App\Models\StoreSession;
 use App\Support\ActiveBranchContext;
 use App\Support\RecipeCapacity;
@@ -22,25 +27,29 @@ beforeEach(function () {
     $this->qave = Branch::factory()->create(['code' => 'QAVE', 'name' => 'Quezon Ave']);
 });
 
-test('the recipe blocker names every Branch that still tracks Product stock, whatever Branch is selected', function () {
-    /** MAIN no longer tracks Coke, but QAVE and EAST still do. */
+test('only this Branch own Product stock tracking blocks its recipe; other Branches tracking it never do', function () {
+    /** MAIN no longer tracks Coke, but QAVE and EAST still do: that no longer blocks a MAIN recipe. */
     BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->coke->id)->update(['tracks_inventory' => false]);
     $east = Branch::factory()->create(['code' => 'EAST', 'name' => 'East']);
     BranchProduct::factory()->for($this->qave)->for($this->ops->coke)->create(['tracks_inventory' => true]);
     BranchProduct::factory()->for($east)->for($this->ops->coke)->create(['tracks_inventory' => true]);
 
-    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->ops->branch->id])
-        ->get(route('operations.recipes', ['plan' => $this->ops->drinks->id]))
-        ->assertInertia(fn (Assert $page) => $page
-            ->where('products.0.name', 'Coke Mismo')
-            ->where('products.0.inventory_mode', 'product_stock')
-            ->where('products.0.tracked_at', ['EAST', 'QAVE'])
-            ->where('products.0.tracked_branches', [
-                ['id' => $east->id, 'code' => 'EAST', 'name' => 'East'],
-                ['id' => $this->qave->id, 'code' => 'QAVE', 'name' => 'Quezon Ave'],
-            ]));
+    $page = fn () => $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->ops->branch->id])
+        ->get(route('operations.recipes', ['plan' => $this->ops->drinks->id]));
+    $page()->assertInertia(fn (Assert $page) => $page
+        ->where('products.0.name', 'Coke Mismo')
+        ->where('products.0.inventory_mode', 'recipe')
+        ->where('products.0.tracks_product_stock', false)
+        ->missing('products.0.tracked_branches'));
 
-    expect(fn () => $this->ops->recipe($this->ops->coke, null, ['water' => '10']))->toThrow(ValidationException::class);
+    $this->ops->recipe($this->ops->coke, null, ['water' => '10']);
+
+    expect(Recipe::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->coke->id)->count())->toBe(1)
+        ->and(BranchProduct::query()->where('product_id', $this->ops->coke->id)->where('tracks_inventory', true)->count())->toBe(2);
+
+    /** MAIN tracking Product stock again is blocked by MAIN's own recipe only. */
+    BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->coke->id)->update(['tracks_inventory' => true]);
+    expect(fn () => $this->ops->recipe($this->ops->coke, null, ['water' => '20']))->toThrow(ValidationException::class, 'deducts Product stock at MAIN');
 });
 
 test('opening a blocking Branch settings switches through the existing Branch context and lands on that Product', function () {
@@ -82,21 +91,23 @@ test('a stale client cannot submit or sell a Size that still needs its recipe th
         ->and(Order::query()->whereNotNull('committed_at')->count())->toBe(1);
 });
 
-test('one shared recipe sells at each Branch price from that Branch stock, and no Branch may track Product stock', function () {
+test('MAIN sells with its recipe while QAVE sells the same Product directly from Product stock, each at its own price', function () {
     $qaveCashier = $this->ops->user('cashier', $this->qave);
     StoreSession::factory()->for($this->qave)->create(['opened_by_user_id' => $qaveCashier->id]);
     BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->tapsilog->id)->update(['price_override' => '45.00']);
     BranchProduct::factory()->for($this->qave)->for($this->ops->tapsilog)->create(['tracks_inventory' => false, 'price_override' => '50.00']);
-    $this->ops->actAsOwnerOn($this->qave);
-    foreach (['rice' => '400', 'egg' => '2', 'water' => '1000'] as $key => $count) {
-        app(AdjustIngredientStock::class)->execute($this->ops->owner, $this->ops->ingredients[$key], [
-            'mode' => 'count', 'quantity' => $count, 'reason' => 'Opening count', 'idempotency_key' => (string) Str::uuid(),
-        ]);
-    }
 
-    /** Same recipe (rice 200, egg 1, water 100), different Branch stock, so different capacity. */
-    expect(app(RecipeCapacity::class)->catalog($this->ops->branch, [$this->ops->tapsilog->id])[$this->ops->tapsilog->id]['capacity'])->toBe(15)
-        ->and(app(RecipeCapacity::class)->catalog($this->qave, [$this->ops->tapsilog->id])[$this->ops->tapsilog->id]['capacity'])->toBe(2);
+    /** QAVE has no Tapsilog recipe, so it may track Product stock while MAIN keeps its Ingredient recipe. */
+    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
+        ->put(route('products.branches.update', [$this->ops->tapsilog, $this->qave]), [
+            'price_override' => '50.00', 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => null,
+        ])->assertSessionHasNoErrors();
+    BranchInventory::factory()->for($this->qave)->for($this->ops->tapsilog)->create(['on_hand' => 5]);
+    $this->ops->actAsOwnerOn($this->ops->branch);
+    $this->ops->recipe($this->ops->tapsilog, null, ['rice' => '250', 'egg' => '1', 'water' => '100']);
+
+    expect(app(RecipeCapacity::class)->catalog($this->ops->branch, [$this->ops->tapsilog->id])[$this->ops->tapsilog->id]['capacity'])->toBe(12)
+        ->and(app(RecipeCapacity::class)->catalog($this->qave, [$this->ops->tapsilog->id])[$this->ops->tapsilog->id])->toBeNull();
 
     $main = $this->ops->payNow([$this->ops->line($this->ops->tapsilog, 1)]);
     $qave = app(PayNowOrder::class)->execute($qaveCashier, $this->qave, [
@@ -106,15 +117,33 @@ test('one shared recipe sells at each Branch price from that Branch stock, and n
 
     expect($main->total)->toBe('45.00')
         ->and($qave->total)->toBe('50.00')
-        ->and($this->ops->stock('rice'))->toBe('2800')
-        ->and($this->ops->stock('rice', $this->qave))->toBe('200')
-        ->and($this->ops->stock('egg', $this->qave))->toBe('1')
-        ->and(BranchInventory::query()->where('product_id', $this->ops->tapsilog->id)->exists())->toBeFalse();
+        ->and($this->ops->stock('rice'))->toBe('2750')
+        ->and(BranchInventory::query()->where('branch_id', $this->qave->id)->where('product_id', $this->ops->tapsilog->id)->value('on_hand'))->toBe(4)
+        ->and(IngredientMovement::query()->where('branch_id', $this->qave->id)->exists())->toBeFalse()
+        ->and(OrderRecipeSnapshot::query()->where('order_id', $qave->id)->sole()->recipe_state->value)->toBe('not_needed');
+});
 
-    /** Recipe mode is global: QAVE cannot start deducting Product stock for it. */
-    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
-        ->put(route('products.branches.update', [$this->ops->tapsilog, $this->qave]), [
-            'price_override' => '50.00', 'is_available' => true, 'tracks_inventory' => true, 'low_stock_threshold' => null,
-        ])->assertSessionHasErrors('tracks_inventory');
-    expect(BranchProduct::query()->where('branch_id', $this->qave->id)->where('product_id', $this->ops->tapsilog->id)->value('tracks_inventory'))->toBeFalse();
+test('a QAVE recipe uses only QAVE ingredients and editing it never changes the MAIN recipe', function () {
+    BranchProduct::factory()->for($this->qave)->for($this->ops->tapsilog)->create();
+    $this->ops->actAsOwnerOn($this->qave);
+    $plan = app(SaveOperationPlan::class)->execute($this->ops->owner, null, ['name' => 'Silog', 'icon' => 'meal', 'product_ids' => [$this->ops->tapsilog->id]]);
+    $rice = $this->ops->ingredient('Rice', 'g', '5000', 'kg', '1000', '60.00', 'top_up', null, [$plan], '1000');
+
+    /** MAIN's Rice is another Branch's Ingredient: a QAVE recipe cannot reference it. */
+    expect(fn () => app(SaveRecipe::class)->execute($this->ops->owner, $this->ops->tapsilog, [
+        'size_option_id' => null, 'lines' => [['ingredient_id' => $this->ops->ingredients['rice']->id, 'quantity' => '200']],
+    ]))->toThrow(ValidationException::class, 'Use only active ingredients of QAVE');
+
+    app(SaveRecipe::class)->execute($this->ops->owner, $this->ops->tapsilog, [
+        'size_option_id' => null, 'lines' => [['ingredient_id' => $rice->id, 'quantity' => '300']],
+    ]);
+
+    $lines = fn (Branch $branch) => RecipeLine::query()->whereIn('recipe_id', Recipe::query()->where('branch_id', $branch->id)->where('product_id', $this->ops->tapsilog->id)->select('id'))
+        ->get()->mapWithKeys(fn (RecipeLine $line): array => [$line->ingredient_id => (string) $line->quantity])->all();
+    expect($lines($this->qave))->toBe([$rice->id => '300.0000'])
+        ->and($lines($this->ops->branch))->toHaveCount(3)
+        ->and($lines($this->ops->branch)[$this->ops->ingredients['rice']->id])->toBe('200.0000')
+        ->and($rice->branch_id)->toBe($this->qave->id)
+        ->and($rice->id)->not->toBe($this->ops->ingredients['rice']->id)
+        ->and(app(RecipeCapacity::class)->catalog($this->qave, [$this->ops->tapsilog->id])[$this->ops->tapsilog->id]['capacity'])->toBe(3);
 });

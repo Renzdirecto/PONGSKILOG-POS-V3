@@ -51,6 +51,8 @@ class AdjustIngredientStock
     {
         $actor = $this->access->authorize($actor);
         $branch = $this->access->mutableBranch($actor);
+        /** Only an Ingredient of the selected Branch; another Branch's Ingredient id is not found here. */
+        $this->access->ownedBy($ingredient, $branch);
         $input['note'] = is_string($input['note'] ?? null) && trim($input['note']) !== '' ? trim($input['note']) : null;
         /** @var array{mode: 'wastage'|'count', quantity: string, reason: string, note: string|null, idempotency_key: string} $data */
         $data = Validator::make($input, self::rules(), [

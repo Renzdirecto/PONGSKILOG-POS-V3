@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { summaryErrors } from '@/lib/required-field';
 import { index as categoriesIndex } from '@/routes/categories';
 import { index as modifiersIndex } from '@/routes/modifier-groups';
 import { index as productsIndex } from '@/routes/products';
@@ -38,28 +39,46 @@ export function CatalogPage({
     children,
     action,
     counts,
+    definitions = true,
+    branchLabel,
 }: {
     tab: CatalogTab;
     children: ReactNode;
     action?: ReactNode;
     counts?: Partial<Record<CatalogTab, number>>;
+    /**
+     * Whether the viewer edits the shared definitions (business-wide Product management). A Branch-scoped Product
+     * manager only sees Products and manages its Branch assortment, so Categories, Groups and Add actions are hidden.
+     */
+    definitions?: boolean;
+    branchLabel?: string;
 }) {
     const tabs: {
         label: CatalogTab;
         href: ReturnType<typeof productsIndex>;
-    }[] = [
-        { label: 'Products', href: productsIndex() },
-        { label: 'Categories', href: categoriesIndex() },
-        { label: 'Groups', href: modifiersIndex() },
-    ];
+    }[] = definitions
+        ? [
+              { label: 'Products', href: productsIndex() },
+              { label: 'Categories', href: categoriesIndex() },
+              { label: 'Groups', href: modifiersIndex() },
+          ]
+        : [{ label: 'Products', href: productsIndex() }];
 
     return (
         <>
             <Head title={`${tab} · Product management`} />
             <OwnerPage
-                title="Products"
-                description="Products, categories and the options offered in the POS and customer QR menu."
-                action={<CatalogQuickActions />}
+                title={
+                    definitions
+                        ? 'Products'
+                        : `Products — ${branchLabel ?? 'Branch'}`
+                }
+                description={
+                    definitions
+                        ? 'Products, categories and the options offered in the POS and customer QR menu.'
+                        : 'What this Branch sells, at what price, and whether it tracks stock. Product details, categories and options are shared by every Branch.'
+                }
+                action={definitions ? <CatalogQuickActions /> : undefined}
             >
                 <nav
                     aria-label="Product management"
@@ -289,11 +308,20 @@ export function Status({ active }: { active: boolean }) {
     );
 }
 
-export function FormErrors({ errors }: { errors: Record<string, string> }) {
+/** Summary of the errors not already rendered beside their field (`inline`), so each problem is announced once. */
+export function FormErrors({
+    errors: allErrors,
+    inline = [],
+}: {
+    errors: Record<string, string>;
+    inline?: readonly (string | RegExp)[];
+}) {
     const summary = useRef<HTMLDivElement>(null);
+    const errors = summaryErrors(allErrors, inline);
+    const hasSummary = Object.keys(errors).length > 0;
     useEffect(() => {
-        if (Object.keys(errors).length > 0) summary.current?.focus();
-    }, [errors]);
+        if (hasSummary) summary.current?.focus();
+    }, [allErrors, hasSummary]);
     return (
         Object.keys(errors).length > 0 && (
             <div

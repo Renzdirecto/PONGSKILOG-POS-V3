@@ -12,16 +12,27 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
- * A Pamalengke Plan: an organizational, planning and reporting scope over existing Catalog Products and Ingredients.
- * A Plan never owns stock; Ingredient stock is one canonical balance per Branch + Ingredient.
+ * A Pamalengke Plan of one Branch: an organizational, planning and reporting scope over that Branch's assortment
+ * Products and Ingredients. A Plan never owns stock; Ingredient stock is one canonical balance per Branch Ingredient.
+ *
+ * @property string $branch_id
+ * @property string $lineage_id
  */
-#[Fillable(['name', 'description', 'icon', 'archived_at', 'created_by_user_id'])]
+#[Fillable(['branch_id', 'lineage_id', 'name', 'description', 'icon', 'archived_at', 'created_by_user_id'])]
 class OperationPlan extends Model
 {
     /** @use HasFactory<OperationPlanFactory> */
     use HasFactory, HasUuids;
 
     public const ICONS = ['glass', 'meal', 'bowl', 'pot', 'box'];
+
+    /** A new record starts its own copy lineage; a Branch setup copy passes the source lineage explicitly. */
+    protected static function booted(): void
+    {
+        static::creating(function (self $model): void {
+            $model->lineage_id ??= $model->getKey();
+        });
+    }
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -33,6 +44,12 @@ class OperationPlan extends Model
     public function scopeActive(Builder $query): void
     {
         $query->whereNull('archived_at');
+    }
+
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     /** @return BelongsToMany<Product, $this> */

@@ -9,13 +9,17 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * An Ingredient definition (business-wide, like a Catalog Product). Quantities are exact decimal strings in the base
- * unit; read them through App\Support\ExactQuantity, never as floats.
+ * An Ingredient configured for one Branch (its unit, target, purchase unit, cost and rule are that Branch's own). Its
+ * physical stock is the Branch balance. Quantities are exact decimal strings in the base unit; read them through
+ * App\Support\ExactQuantity, never as floats. `lineage_id` is the copy provenance used by Branch setup copies.
  *
+ * @property string $branch_id
+ * @property string $lineage_id
  * @property ReplenishmentRule $replenishment_rule
  * @property string $target_quantity
  * @property string|null $purchase_unit_size
@@ -23,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $reorder_point
  */
 #[Fillable([
-    'name', 'icon', 'base_unit', 'target_quantity', 'purchase_unit_name', 'purchase_unit_size', 'purchase_unit_cost',
+    'branch_id', 'lineage_id', 'name', 'icon', 'base_unit', 'target_quantity', 'purchase_unit_name', 'purchase_unit_size', 'purchase_unit_cost',
     'replenishment_rule', 'reorder_point', 'archived_at', 'created_by_user_id', 'updated_by_user_id',
 ])]
 class Ingredient extends Model
@@ -34,6 +38,14 @@ class Ingredient extends Model
     public const UNITS = ['pc', 'pack', 'bottle', 'ml', 'L', 'g', 'kg'];
 
     public const ICONS = ['lemon', 'bottle', 'drop', 'cup', 'tea', 'straw', 'leaf', 'egg', 'bowl', 'box'];
+
+    /** A new record starts its own copy lineage; a Branch setup copy passes the source lineage explicitly. */
+    protected static function booted(): void
+    {
+        static::creating(function (self $model): void {
+            $model->lineage_id ??= $model->getKey();
+        });
+    }
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -52,6 +64,12 @@ class Ingredient extends Model
     public function scopeActive(Builder $query): void
     {
         $query->whereNull('archived_at');
+    }
+
+    /** @return BelongsTo<Branch, $this> */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     /** @return BelongsToMany<OperationPlan, $this> */

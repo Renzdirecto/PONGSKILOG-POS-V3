@@ -38,10 +38,7 @@ test('audit trail keeps websocket-first refresh and debounced server filters', (
     assert.match(realtimeHook, /10_000/);
     assert.match(realtimeHook, /autoStart: false/);
     assert.match(realtimeHook, /\(\) => scheduleRefresh\(\)/);
-    assert.match(
-        realtimeHook,
-        /const recover = \(\) => scheduleRefresh\(0\)/,
-    );
+    assert.match(realtimeHook, /const recover = \(\) => scheduleRefresh\(0\)/);
     assert.match(realtimeHook, /window\.addEventListener\('online', recover\)/);
     assert.match(
         realtimeHook,
@@ -81,4 +78,19 @@ test('audit and void detail dialogs use a wide landscape layout', () => {
 
     assert.match(page, wideDialogClasses);
     assert.match(voidOrdersPage, wideDialogClasses);
+});
+
+test('the audit filter bar only uses its six-column row where every column fits beside the sidebar', () => {
+    const filterBar =
+        page.match(/className="grid gap-2 p-3 [^"]*minmax\(240px[^"]*"/)?.[0] ??
+        '';
+
+    for (const token of [
+        'md:grid-cols-2',
+        'lg:grid-cols-3',
+        'min-[1320px]:grid-cols-[minmax(240px,2fr)',
+    ]) {
+        assert.ok(filterBar.includes(token), token);
+    }
+    assert.ok(!filterBar.includes(' lg:grid-cols-[minmax(240px'));
 });

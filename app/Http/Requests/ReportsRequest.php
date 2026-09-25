@@ -14,7 +14,9 @@ use Illuminate\Validation\Validator;
 class ReportsRequest extends FormRequest
 {
     /**
-     * Reporting is business-wide and read-only: Owner and Super Admin only.
+     * Read-only reporting for any account whose effective permissions include Reports. Owner and Super Admin report on
+     * every Branch; a Branch-scoped account (custom Reports access) is limited to its selected assigned Branch by
+     * ReportsController, never All Branches.
      */
     public function authorize(): bool
     {
@@ -22,8 +24,7 @@ class ReportsRequest extends FormRequest
 
         return $user instanceof User
             && $user->is_active
-            && $user->hasPermission('reports.view')
-            && $user->hasBusinessWideScope();
+            && $user->hasPermission('reports.view');
     }
 
     /**

@@ -17,7 +17,7 @@ class SyncModifierGroupOptions
      */
     public function execute(User $user, ModifierGroup $modifierGroup, array $options): void
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         DB::transaction(function () use ($modifierGroup, $options): void {
             $modifierGroup = ModifierGroup::query()->whereKey($modifierGroup->getKey())->lockForUpdate()->firstOrFail();

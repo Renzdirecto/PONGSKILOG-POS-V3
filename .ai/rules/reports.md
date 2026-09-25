@@ -2,6 +2,7 @@
 paths:
   - '{app/Support/StoreSessionSalesReport.php,app/Support/StoreSessionReconciliation.php,app/Http/Controllers/ReportsController.php,app/Http/Requests/ReportsRequest.php,resources/js/pages/workspaces/reports.tsx,resources/js/lib/reports.ts}'
   - '{app/Support/SalesAnalytics.php,app/Support/ReportPeriod.php,app/Support/ManilaSql.php,app/Support/BusinessSnapshot.php,app/Support/ReportCsvExport.php,app/Http/Controllers/OwnerDashboardController.php,resources/js/pages/workspaces/owner-dashboard.tsx,resources/js/components/owner-analytics.tsx,resources/js/lib/owner-analytics.ts}'
+  - '{app/Http/Controllers/SuperAdminDashboardController.php,app/Support/ExecutiveSnapshot.php,resources/js/pages/super-admin/dashboard.tsx,resources/js/lib/executive-dashboard.ts}'
 ---
 
 # Reports
@@ -14,3 +15,6 @@ paths:
 
 ## Reports payment donut and category filter (manual-QA 2026-09-24)
 The Reports Payment method donut uses `analytics.payment_mix`, shares of paid sales (₱) in exact 0.1% steps. User decision: Include split OFF (default) = `combined` — Cash and Cashless with each Split Order's cash/cashless parts inside them (Split ₱100 = ₱50 + ₱50 with a ₱100 cash order → Cash ₱150, Cashless ₱50). Include split ON = `separate` — Cash-only, Cashless-only and Split (`paymentClassSql()`) order totals (→ Cash ₱100, Cashless ₱0, Split ₱100). Split parts are Payment legs net of allocated corrections; unallocated ones are reported as `split_pending`, never guessed. Never add Split on top of the combined view. Unpaid Pay Later is listed separately. The `categories` report filter (category UUID or `uncategorized`) narrows only Top products and Product performance (and the CSV product table); it never changes KPIs, payments, collections, branches or the category card.
+
+## The Executive Dashboard never recalculates money
+`SuperAdminDashboardController` calls `SalesAnalytics::for()` exactly like the Owner Dashboard and only trims sections (Top products to 5); Expenses/voids/sessions come from the same report summary. Non-financial state comes from `BusinessSnapshot` and `ExecutiveSnapshot` (bounded aggregate queries, payload-free audit rows). Props are lazy + memoized so realtime partial reloads compute only what they request; refresh reuses `useReportsRealtimeRefresh` and the viewer's own `notifications.changed` signal (no new channel). Attention items are real state only; red means something cannot be sold.

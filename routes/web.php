@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\AccessControlController;
 use App\Http\Controllers\ActiveBranchController;
 use App\Http\Controllers\AuditTrailController;
+use App\Http\Controllers\BranchAssortmentController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchQrSettingsController;
@@ -20,9 +22,11 @@ use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OpenStoreSessionController;
 use App\Http\Controllers\OperationPlanController;
 use App\Http\Controllers\OperationsController;
+use App\Http\Controllers\OperationsSetupCopyController;
 use App\Http\Controllers\OrderAdjustmentAllocationController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\PamamalengkeController;
@@ -46,6 +50,7 @@ use App\Http\Controllers\StoreSessionExpenseController;
 use App\Http\Controllers\StoreSessionExpenseReceiptController;
 use App\Http\Controllers\StoreSessionGiveawayController;
 use App\Http\Controllers\StoreSessionInventoryAdjustmentController;
+use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
@@ -83,32 +88,54 @@ Route::middleware(['auth'])->group(function () {
         Route::get('inventory/{branch}/{product}/movements', [InventoryController::class, 'movements'])->name('inventory.movements.index');
         Route::post('inventory/{branch}/{product}/adjustments', [InventoryController::class, 'store'])->name('inventory.adjustments.store');
     });
+    /** Products page and Branch configuration: business-wide or Branch-scoped products.manage (the Branch is checked server-side). */
     Route::middleware('can:products.manage')->group(function () {
-        Route::resource('products', ProductController::class)->only(['index', 'store', 'update']);
+        Route::get('products', [ProductController::class, 'index'])->name('products.index');
+        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
+        Route::post('products/branch-assortment', [BranchAssortmentController::class, 'store'])->middleware('throttle:30,1')->name('products.branch-assortment.store');
+        Route::delete('products/branch-assortment', [BranchAssortmentController::class, 'destroy'])->middleware('throttle:30,1')->name('products.branch-assortment.destroy');
+        Route::get('products/branch-assortment/copy', [BranchAssortmentController::class, 'preview'])->name('products.branch-assortment.copy.preview');
+        Route::post('products/branch-assortment/copy', [BranchAssortmentController::class, 'copy'])->middleware('throttle:20,1')->name('products.branch-assortment.copy');
+    });
+    /** Shared Product definitions (identity, image, Categories, Modifier Groups) change every Branch: business-wide only. */
+    Route::middleware('can:catalog.define')->group(function () {
+        Route::resource('products', ProductController::class)->only(['store', 'update']);
         Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);
         Route::put('modifier-groups/{modifierGroup}/products', [ModifierGroupController::class, 'updateProducts'])->name('modifier-groups.products.update');
         Route::resource('modifier-groups', ModifierGroupController::class)->only(['index', 'store', 'update']);
         Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
         Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:20,1')->name('products.image.store');
         Route::delete('products/{product}/image', [ProductImageController::class, 'destroy'])->name('products.image.destroy');
-        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
     });
     Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
         ->name('branch-context.update');
     Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])
         ->name('branch-context.destroy');
 
-    Route::inertia('workspaces/super-admin', 'super-admin/dashboard')
+    Route::get('workspaces/super-admin', SuperAdminDashboardController::class)
         ->middleware('permission:access_control.manage')->name('workspaces.super-admin');
 
     Route::prefix('workspaces/super-admin')->name('super-admin.')->middleware('permission:access_control.manage')->group(function () {
         Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
         Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('staff.store');
         Route::get('staff/{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('staff.avatar');
-        Route::inertia('notifications', 'super-admin/placeholder', ['destination' => 'notifications'])
-            ->name('notifications');
-        Route::inertia('access-control', 'super-admin/placeholder', ['destination' => 'access-control'])
-            ->name('access-control');
+        Route::put('staff/{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('staff.update');
+        Route::put('staff/{user}/password', [StaffController::class, 'password'])->whereNumber('user')->middleware('throttle:10,1')->name('staff.password');
+
+        Route::get('notifications', [NotificationController::class, 'index'])->name('notifications');
+        Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount'])->middleware('throttle:120,1')->name('notifications.unread-count');
+        Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+        Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification')->name('notifications.read');
+
+        Route::get('access-control', [AccessControlController::class, 'index'])->name('access-control');
+        Route::middleware('throttle:30,1')->group(function () {
+            Route::put('access-control/roles/{role}', [AccessControlController::class, 'updateRole'])->where('role', '[a-z_]+')->name('access-control.roles.update');
+            Route::post('access-control/custom-roles', [AccessControlController::class, 'storeCustomRole'])->name('access-control.custom-roles.store');
+            Route::put('access-control/custom-roles/{role}', [AccessControlController::class, 'updateCustomRole'])->whereNumber('role')->name('access-control.custom-roles.update');
+            Route::post('access-control/custom-roles/{role}/archive', [AccessControlController::class, 'archiveCustomRole'])->whereNumber('role')->name('access-control.custom-roles.archive');
+            Route::put('access-control/users/{user}', [AccessControlController::class, 'updateUser'])->whereNumber('user')->name('access-control.users.update');
+            Route::delete('access-control/users/{user}', [AccessControlController::class, 'resetUser'])->whereNumber('user')->name('access-control.users.reset');
+        });
     });
 
     Route::get('workspaces/audit-trail', AuditTrailController::class)
@@ -140,8 +167,8 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:transactions.view')
         ->name('workspaces.transactions.show');
 
-    /** Owner Operations & Pamamalengke (Phase 16E): Owner/Super Admin business-wide scope, checked again server-side. */
-    Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:inventory.manage')->group(function () {
+    /** Operations & Pamamalengke: operations.manage on the selected Branch (business-wide or assigned), checked again server-side. */
+    Route::prefix('workspaces/operations')->name('operations.')->middleware('permission:operations.manage')->group(function () {
         Route::get('/', [OperationsController::class, 'plans'])->name('plans');
         Route::get('overview', [OperationsController::class, 'overview'])->name('overview');
         Route::get('ingredients', [OperationsController::class, 'ingredients'])->name('ingredients');
@@ -166,6 +193,8 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('pamamalengke/manual-items/{entry}', [PamamalengkeController::class, 'destroyManual'])->whereUuid('entry')->name('pamamalengke.manual.destroy');
             Route::put('pamamalengke/{plan}/skips/{ingredient}', [PamamalengkeController::class, 'skip'])->whereUuid(['plan', 'ingredient'])->name('pamamalengke.skip');
         });
+        Route::get('setup-copy', [OperationsSetupCopyController::class, 'preview'])->name('setup-copy.preview');
+        Route::post('setup-copy', [OperationsSetupCopyController::class, 'store'])->middleware('throttle:20,1')->name('setup-copy.store');
         Route::post('pamamalengke/{plan}/confirm', [PamamalengkeController::class, 'confirm'])
             ->whereUuid('plan')->middleware('throttle:20,1')->name('pamamalengke.confirm');
     });
@@ -174,6 +203,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [StaffController::class, 'index'])->name('index');
         Route::post('/', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('store');
         Route::get('{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('avatar');
+        Route::put('{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('update');
     });
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)

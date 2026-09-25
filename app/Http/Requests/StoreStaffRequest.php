@@ -42,6 +42,7 @@ class StoreStaffRequest extends FormRequest
             'name' => is_string($this->input('name')) ? trim($this->input('name')) : $this->input('name'),
             'employee_id' => is_string($this->input('employee_id')) ? trim($this->input('employee_id')) : $this->input('employee_id'),
             'email' => is_string($this->input('email')) ? mb_strtolower(trim($this->input('email'))) : $this->input('email'),
+            ...($this->exists('position') ? ['position' => StaffRoles::normalizePosition($this->input('position'))] : []),
         ]);
     }
 
@@ -76,7 +77,9 @@ class StoreStaffRequest extends FormRequest
                 },
             ],
             'password' => $this->passwordRules(),
-            'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')],
+            /** Business/job title for display only; access always comes from the Role. */
+            'position' => StaffRoles::positionRules(),
+            'role' => ['required', 'string', Rule::in($this->manageableRoles()), Rule::exists('roles', 'name')->whereNull('archived_at')],
             'branch_ids' => $requiresBranch
                 ? ['required', 'array', 'min:1']
                 : ['prohibited'],
@@ -85,6 +88,7 @@ class StoreStaffRequest extends FormRequest
                 'uuid',
                 'distinct',
                 Rule::exists('branches', 'id')->where('status', BranchStatus::Active->value),
+                ...$this->branchScopeRules(),
             ],
             'is_active' => ['sometimes', 'boolean'],
             'avatar' => ['nullable', File::image(allowSvg: false)->types(['jpg', 'jpeg', 'png', 'webp'])->max('2mb')->dimensions(
@@ -93,17 +97,34 @@ class StoreStaffRequest extends FormRequest
         ];
     }
 
+    /**
+     * A Branch-scoped Staff manager may assign only its own active Branches (re-checked under locks in the action).
+     *
+     * @return list<mixed>
+     */
+    private function branchScopeRules(): array
+    {
+        $user = $this->user();
+        $scope = $user instanceof User ? StaffRoles::branchScope($user) : null;
+
+        return $scope === null ? [] : [Rule::in($scope)];
+    }
+
     /** @return array<string, string> */
     public function messages(): array
     {
+        $role = $this->input('role');
+
         return [
+            ...StaffRoles::positionMessages(),
             'employee_id.regex' => 'Use MMDDYY followed by a two-digit number, for example 09242601.',
             'employee_id.unique' => 'This Employee ID is already used by another account.',
             'branch_ids.required' => 'Choose at least one active Branch for this role.',
             'branch_ids.min' => 'Choose at least one active Branch for this role.',
-            'branch_ids.prohibited' => 'Owner and Super Admin accounts have business-wide access and do not take Branch assignments.',
+            'branch_ids.prohibited' => StaffRoles::branchesProhibitedMessage($role),
             'branch_ids.*.exists' => 'Choose active Branches only.',
             'branch_ids.*.uuid' => 'Choose active Branches only.',
+            'branch_ids.*.in' => 'Choose only Branches you manage.',
             'role.in' => 'Choose a valid role.',
             'role.exists' => 'Choose a valid role.',
         ];

@@ -7,8 +7,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Current Plan membership of a Product (unique per Product). History lives in Order recipe snapshots and audit. */
-#[Fillable(['operation_plan_id', 'product_id'])]
+/**
+ * Current Plan membership of a Product at one Branch (unique per Branch + Product). History lives in Order recipe
+ * snapshots and audit.
+ */
+#[Fillable(['branch_id', 'operation_plan_id', 'product_id'])]
 class OperationPlanProduct extends Model
 {
     use HasUuids;

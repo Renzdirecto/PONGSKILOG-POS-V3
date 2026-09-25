@@ -112,6 +112,8 @@ final class OperationsScenario
         BranchProduct::factory()->for($scenario->branch)->for($scenario->coke)->create(['tracks_inventory' => true]);
         BranchInventory::factory()->for($scenario->branch)->for($scenario->coke)->create(['on_hand' => 20]);
 
+        /** Operations setup belongs to the selected Branch. */
+        $scenario->actAsOwnerOn($scenario->branch);
         $scenario->drinks = app(SaveOperationPlan::class)->execute($scenario->owner, null, [
             'name' => 'Drinks', 'icon' => 'glass', 'product_ids' => [$scenario->lemonYakult->id, $scenario->coke->id],
         ]);
@@ -119,7 +121,6 @@ final class OperationsScenario
             'name' => 'Silog', 'icon' => 'meal', 'product_ids' => [$scenario->tapsilog->id],
         ]);
 
-        $scenario->actAsOwnerOn($scenario->branch);
         $scenario->ingredients['lemon'] = $scenario->ingredient('Lemon', 'pc', '30', 'pc', '1', '10.00', 'top_up', null, [$scenario->drinks], '29.5');
         $scenario->ingredients['yakult'] = $scenario->ingredient('Yakult', 'pc', '5', 'pack', '5', '55.00', 'reorder', '2', [$scenario->drinks], '10');
         $scenario->ingredients['syrup'] = $scenario->ingredient('Syrup', 'ml', '2000', 'bottle', '1000', '150.00', 'reorder', '500', [$scenario->drinks], '1000');

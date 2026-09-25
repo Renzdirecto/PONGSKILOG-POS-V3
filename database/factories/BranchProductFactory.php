@@ -26,6 +26,7 @@ class BranchProductFactory extends Factory
             'is_available' => true,
             'tracks_inventory' => false,
             'low_stock_threshold' => null,
+            'no_recipe_needed' => false,
         ];
     }
 }

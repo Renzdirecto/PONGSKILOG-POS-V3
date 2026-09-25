@@ -270,9 +270,8 @@ export default function TransactionHistory({
         Detail['payment_groups'][number]['payments'][number] | null
     >(null);
     const [searchText, setSearchText] = useState(filters.search ?? '');
-    const canManageKitchen =
-        auth.roles.includes('cashier_kitchen') ||
-        auth.roles.includes('super_admin');
+    /** Mirrors TransitionKitchenOrder: Kitchen access moves orders through every Kitchen status. */
+    const canManageKitchen = auth.permissions.includes('kitchen.access');
     const filtersActive = Object.values(filters).some((value) => value !== '');
 
     function apply(next: Record<string, string | undefined>) {

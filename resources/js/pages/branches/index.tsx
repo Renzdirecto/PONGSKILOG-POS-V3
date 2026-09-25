@@ -72,7 +72,35 @@ const SETTINGS_TABS = [
 
 type SettingsTab = (typeof SETTINGS_TABS)[number][0];
 
-export default function Branches({ branches }: { branches: Branch[] }) {
+/**
+ * Business-wide Settings manages every Branch. A Branch-scoped Settings role sees only its selected assigned Branch
+ * and edits its contact details, receipt and Customer QR settings; creating Branches and changing a Branch's code,
+ * name or status stay business-wide (the server enforces both).
+ */
+type SettingsScope = {
+    mode: 'branch' | 'business';
+    can_create: boolean;
+    can_edit_identity: boolean;
+    branch: { id: string; name: string; code: string } | null;
+};
+
+export default function Branches({
+    branches,
+    scope,
+}: {
+    branches: Branch[];
+    scope: SettingsScope;
+}) {
+    const branchMode = scope.mode === 'branch';
+    const tabs = branchMode
+        ? SETTINGS_TABS.map(
+              ([value, label]) =>
+                  [
+                      value,
+                      value === 'branches' ? 'Branch details' : label,
+                  ] as const,
+          )
+        : SETTINGS_TABS;
     const [section, setSection] = useState<SettingsTab>('branches');
     const [receiptBranchId, setReceiptBranchId] = useState(
         branches[0]?.id ?? '',
@@ -89,17 +117,27 @@ export default function Branches({ branches }: { branches: Branch[] }) {
 
     return (
         <>
-            <Head title="Settings" />
+            <Head title={branchMode ? 'Branch Settings' : 'Settings'} />
             <OwnerPage
-                title="Settings"
-                description="Maintain branch details, availability, customer QR entry points, and current store state."
+                title={
+                    branchMode
+                        ? `Branch Settings — ${scope.branch?.code ?? ''}`
+                        : 'Settings'
+                }
+                description={
+                    branchMode
+                        ? `Contact details, receipt and customer QR settings of ${scope.branch?.name ?? 'this Branch'}.`
+                        : 'Maintain branch details, availability, customer QR entry points, and current store state.'
+                }
                 action={
-                    <Button
-                        className={`${primaryActionClass} w-full md:w-auto`}
-                        onClick={() => setEditing(null)}
-                    >
-                        <Plus className="size-4" /> Add branch
-                    </Button>
+                    scope.can_create ? (
+                        <Button
+                            className={`${primaryActionClass} w-full md:w-auto`}
+                            onClick={() => setEditing(null)}
+                        >
+                            <Plus className="size-4" /> Add branch
+                        </Button>
+                    ) : undefined
                 }
                 maxWidth="max-w-[1180px]"
             >
@@ -107,7 +145,7 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                     <SegmentedTabs
                         label="Settings section"
                         value={section}
-                        options={SETTINGS_TABS}
+                        options={tabs}
                         onChange={setSection}
                         size="lg"
                     />
@@ -334,6 +372,9 @@ export default function Branches({ branches }: { branches: Branch[] }) {
                         <BranchForm
                             key={editing?.id ?? 'new'}
                             branch={editing}
+                            identityLocked={
+                                editing !== null && !scope.can_edit_identity
+                            }
                             onSaved={() => setEditing(undefined)}
                         />
                     )}
@@ -345,9 +386,12 @@ export default function Branches({ branches }: { branches: Branch[] }) {
 
 function BranchForm({
     branch,
+    identityLocked = false,
     onSaved,
 }: {
     branch: Branch | null;
+    /** Code, name and status are business-wide administration: read-only for a Branch-scoped Settings role. */
+    identityLocked?: boolean;
     onSaved: () => void;
 }) {
     const form = useForm({
@@ -402,7 +446,11 @@ function BranchForm({
                                 field
                             ]
                         }
-                        disabled={form.processing}
+                        disabled={
+                            form.processing ||
+                            (identityLocked &&
+                                (field === 'code' || field === 'name'))
+                        }
                         aria-invalid={!!form.errors[field]}
                         aria-describedby={`branch-${field}-hint`}
                         className={controlClass}
@@ -413,9 +461,12 @@ function BranchForm({
                         role={form.errors[field] ? 'alert' : undefined}
                     >
                         {form.errors[field] ||
-                            (field === 'code'
-                                ? 'Uppercase letters, numbers, underscores and hyphens. Start with a letter or number.'
-                                : '')}
+                            (identityLocked &&
+                            (field === 'code' || field === 'name')
+                                ? 'Managed by a business-wide Settings role.'
+                                : field === 'code'
+                                  ? 'Uppercase letters, numbers, underscores and hyphens. Start with a letter or number.'
+                                  : '')}
                     </p>
                 </div>
             ))}
@@ -431,7 +482,7 @@ function BranchForm({
                             event.target.value as BranchStatus,
                         )
                     }
-                    disabled={form.processing}
+                    disabled={form.processing || identityLocked}
                     aria-invalid={!!form.errors.status}
                     aria-describedby="branch-status-error"
                     className={`${controlClass} w-full`}

@@ -47,20 +47,21 @@ test('management roles can list create and update branches', function (string $r
         ->toBe(['branch.created', 'branch.updated']);
 })->with(['owner', 'super_admin']);
 
-test('normal staff cannot manage branches even with settings permission', function (string $roleName) {
+test('branch staff with a forced settings permission never create, rename or reach another branch', function (string $roleName) {
     $user = branchManager($roleName);
     Role::query()->where('name', $roleName)->sole()->permissions()->attach(Permission::query()->where('name', 'settings.manage')->sole());
     $branch = Branch::factory()->create();
+    $foreign = Branch::factory()->create();
     $original = $branch->fresh()->getAttributes();
     $user->branches()->attach($branch, ['is_active' => true]);
 
-    expect(Gate::forUser($user)->allows('viewAny', Branch::class))->toBeFalse()
-        ->and(Gate::forUser($user)->allows('create', Branch::class))->toBeFalse()
-        ->and(Gate::forUser($user)->allows('update', $branch))->toBeFalse();
-    $this->actingAs($user)->get(route('branches.index'))->assertForbidden();
-    $this->post(route('branches.store'), branchInput())->assertForbidden();
-    $this->put(route('branches.update', $branch), branchInput())->assertForbidden();
-    $this->assertDatabaseCount('branches', 1);
+    expect(Gate::forUser($user)->allows('create', Branch::class))->toBeFalse()
+        ->and(Gate::forUser($user)->allows('updateIdentity', $branch))->toBeFalse()
+        ->and(Gate::forUser($user)->allows('update', $foreign))->toBeFalse();
+    $this->actingAs($user)->post(route('branches.store'), branchInput())->assertForbidden();
+    $this->put(route('branches.update', $foreign), branchInput())->assertForbidden();
+    $this->put(route('branches.update', $branch), branchInput())->assertInvalid(['code', 'name']);
+    $this->assertDatabaseCount('branches', 2);
     expect($branch->fresh()->getAttributes())->toBe($original);
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
 

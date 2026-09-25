@@ -55,3 +55,23 @@ export function isWholeQuantity(
 export function isBlank(value: string | null | undefined): boolean {
     return (value ?? '').trim() === '';
 }
+
+/**
+ * Errors for a form's summary box: every server error except the ones already shown next to their field, so one
+ * problem is announced once. `inline` lists exact keys or patterns (e.g. `/^inline_groups\.\d+\.name$/`).
+ */
+export function summaryErrors(
+    errors: Record<string, string>,
+    inline: readonly (string | RegExp)[] = [],
+): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(errors).filter(
+            ([key]) =>
+                !inline.some((rendered) =>
+                    typeof rendered === 'string'
+                        ? rendered === key
+                        : rendered.test(key),
+                ),
+        ),
+    );
+}

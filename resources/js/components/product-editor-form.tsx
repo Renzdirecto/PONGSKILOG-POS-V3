@@ -20,6 +20,7 @@ import {
     modifierRoleLabel,
 } from '@/lib/modifier-roles';
 import { store, update } from '@/routes/products';
+import { update as updateBranchProduct } from '@/routes/products/branches';
 import { destroy as removeImage } from '@/routes/products/image';
 import type {
     BranchConfiguration,
@@ -30,6 +31,8 @@ import type {
 
 type BranchConfig = {
     branch_id: string;
+    /** Client-only: whether this Branch sells the Product. Only selected Branches are submitted (explicit assortment). */
+    in_assortment: boolean;
     price_override: string | null;
     is_available: boolean;
     tracks_inventory: boolean;
@@ -54,6 +57,17 @@ type InlineGroup = {
     is_active: boolean;
     options: InlineOption[];
 };
+
+/** Errors shown beside their field on the Product tab; the summary box lists only the rest, so none appears twice. */
+export const PRODUCT_INLINE_ERRORS: readonly (string | RegExp)[] = [
+    'image',
+    'name',
+    'category_id',
+    'default_price',
+    'description',
+    'modifier_group_ids',
+    /^inline_groups\.\d+\.name$/,
+];
 
 const newOption = (sortOrder = 0): InlineOption => ({
     client_key: crypto.randomUUID(),
@@ -82,6 +96,7 @@ export function ProductEditorForm({
     onSaved,
     onCancel,
     initialSection = 'product',
+    branchOnly = false,
 }: {
     product: CatalogProduct | null;
     categories: CatalogChoice[];
@@ -90,6 +105,11 @@ export function ProductEditorForm({
     onSaved: () => void;
     onCancel: () => void;
     initialSection?: 'product' | 'branch';
+    /**
+     * Branch-scoped Product management: only this Branch's configuration (sold here, price, tracking, threshold) is
+     * editable, saved through the Branch configuration endpoint. The shared definition is never submitted.
+     */
+    branchOnly?: boolean;
 }) {
     const form = useForm<{
         name: string;
@@ -116,6 +136,10 @@ export function ProductEditorForm({
 
             return {
                 branch_id: branch.branch_id,
+                /** A new Product created while one Branch is selected is added to it; otherwise nothing is implicit. */
+                in_assortment:
+                    existing?.in_assortment ??
+                    (product === null && branches.length === 1),
                 price_override: existing?.price_override ?? null,
                 is_available: existing?.is_available ?? true,
                 tracks_inventory: existing?.tracks_inventory ?? false,
@@ -127,7 +151,7 @@ export function ProductEditorForm({
     const removal = useForm({});
     const submitting = useRef(false);
     const [activeSection, setActiveSection] = useState<'product' | 'branch'>(
-        initialSection,
+        branchOnly ? 'branch' : initialSection,
     );
     const [assigningGroups, setAssigningGroups] = useState(false);
     const [groupAssignment, setGroupAssignment] = useState<string[]>([]);
@@ -137,6 +161,8 @@ export function ProductEditorForm({
     );
     const singleBranch = branches.length === 1;
     const busy = form.processing || removal.processing;
+    const removalErrors: Record<string, string> = removal.errors;
+    const imageError = form.errors.image ?? removalErrors.image;
 
     const updateBranchConfig = (index: number, value: BranchConfig) => {
         form.setData(
@@ -154,7 +180,37 @@ export function ProductEditorForm({
             onSubmit={(event) => {
                 event.preventDefault();
                 if (submitting.current) return;
+                const branchConfig = form.data.branch_configs[0];
+                if (branchOnly) {
+                    if (!product || !branchConfig) return;
+                    submitting.current = true;
+                    form.transform((data) => ({ ...data.branch_configs[0] }));
+                    form.submit(
+                        updateBranchProduct({
+                            product: product.id,
+                            branch: branchConfig.branch_id,
+                        }),
+                        {
+                            preserveScroll: true,
+                            onSuccess: () => {
+                                toast.success('Branch settings saved');
+                                onSaved();
+                            },
+                            onFinish: () => {
+                                submitting.current = false;
+                            },
+                        },
+                    );
+                    return;
+                }
                 submitting.current = true;
+                /** A Branch joins the assortment only when explicitly selected; unselected Branches are never sent. */
+                form.transform((data) => ({
+                    ...data,
+                    branch_configs: data.branch_configs
+                        .filter((config) => config.in_assortment)
+                        .map(({ in_assortment: _member, ...config }) => config),
+                }));
                 form.submit(product ? update(product.id) : store(), {
                     preserveScroll: true,
                     forceFormData: true,
@@ -163,13 +219,14 @@ export function ProductEditorForm({
                         onSaved();
                     },
                     onError: (errors) => {
-                        if (
-                            Object.keys(errors).some((key) =>
+                        /** Show the tab that owns the error, so an inline field error is never hidden. */
+                        setActiveSection(
+                            Object.keys(errors).every((key) =>
                                 key.startsWith('branch_configs.'),
                             )
-                        ) {
-                            setActiveSection('branch');
-                        }
+                                ? 'branch'
+                                : 'product',
+                        );
                     },
                     onFinish: () => {
                         submitting.current = false;
@@ -180,6 +237,7 @@ export function ProductEditorForm({
             <div
                 role="tablist"
                 aria-label="Product editor sections"
+                hidden={branchOnly}
                 className="grid shrink-0 grid-cols-2 gap-[3px] border-b border-neutral-200 bg-white px-4 py-3 sm:px-5"
             >
                 {(
@@ -228,12 +286,12 @@ export function ProductEditorForm({
                                         );
                                     }}
                                 />
-                                {form.errors.image && (
+                                {imageError && (
                                     <p
                                         role="alert"
                                         className="text-xs text-red-700"
                                     >
-                                        {form.errors.image}
+                                        {imageError}
                                     </p>
                                 )}
 
@@ -326,9 +384,11 @@ export function ProductEditorForm({
                                         Branch configuration
                                     </h3>
                                     <p className="text-[11.5px] text-neutral-500">
-                                        {singleBranch
-                                            ? `Showing ${branches[0]?.code}, the selected global branch.`
-                                            : 'All authorized branches are shown in All Branches scope.'}
+                                        {branchOnly
+                                            ? `Settings for ${branches[0]?.code} only. The product name, image, category and options are shared by every Branch and managed business-wide.`
+                                            : singleBranch
+                                              ? `Showing ${branches[0]?.code}, the selected global branch.`
+                                              : 'Choose the Branches that sell this product. A product sold nowhere stays in the shared catalog until you add it to a Branch.'}
                                     </p>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
@@ -336,6 +396,13 @@ export function ProductEditorForm({
                                         <BranchEditor
                                             key={branch.branch_id}
                                             branch={branch}
+                                            member={
+                                                product?.branch_prices.find(
+                                                    (price) =>
+                                                        price.branch_id ===
+                                                        branch.branch_id,
+                                                )?.in_assortment ?? false
+                                            }
                                             value={
                                                 form.data.branch_configs[index]
                                             }
@@ -472,8 +539,10 @@ export function ProductEditorForm({
                                 {attachedGroups.length === 0 &&
                                     form.data.inline_groups.length === 0 && (
                                         <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-5 text-center text-sm text-neutral-500">
-                                            No Groups attached. Add a new Group
-                                            or attach one from the library.
+                                            No Groups attached. Groups are
+                                            optional: save as is, or add a new
+                                            Group or attach one from the
+                                            library.
                                         </p>
                                     )}
                             </section>
@@ -483,7 +552,10 @@ export function ProductEditorForm({
             </div>
 
             <div className="border-t border-neutral-200 bg-white p-4">
-                <FormErrors errors={{ ...form.errors, ...removal.errors }} />
+                <FormErrors
+                    errors={{ ...form.errors, ...removalErrors }}
+                    inline={PRODUCT_INLINE_ERRORS}
+                />
                 <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                     <Button
                         type="button"
@@ -501,9 +573,11 @@ export function ProductEditorForm({
                         <Check className="size-4" />
                         {busy
                             ? 'Saving…'
-                            : product
-                              ? 'Save product'
-                              : 'Add product'}
+                            : branchOnly
+                              ? 'Save Branch settings'
+                              : product
+                                ? 'Save product'
+                                : 'Add product'}
                     </Button>
                 </div>
             </div>
@@ -628,22 +702,59 @@ function AvailabilitySwitch({
 
 function BranchEditor({
     branch,
+    member,
     value,
     showOnHand,
     currentOnHand,
     onChange,
 }: {
     branch: BranchConfiguration;
+    /** Already in this Branch's assortment (removal is its own action on the Products page). */
+    member: boolean;
     value: BranchConfig;
     showOnHand: boolean;
     currentOnHand: number | null;
     onChange: (value: BranchConfig) => void;
 }) {
+    if (!value.in_assortment) {
+        return (
+            <div className="space-y-2 rounded-xl border border-dashed border-neutral-300 p-3">
+                <p className="text-[13px] font-semibold">
+                    {branch.code} · {branch.name}
+                </p>
+                <p className="text-[11.5px] leading-5 text-neutral-500">
+                    Not in the {branch.code} assortment: it is not sold there.
+                </p>
+                <ActiveField
+                    label={`Sell at ${branch.code}`}
+                    value={false}
+                    onChange={(sell) =>
+                        onChange({ ...value, in_assortment: sell })
+                    }
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-3 rounded-xl border border-neutral-200 p-3">
             <p className="text-[13px] font-semibold">
                 {branch.code} · {branch.name}
             </p>
+            {member ? (
+                <p className="text-[11.5px] text-neutral-500">
+                    In the {branch.code} assortment. To stop selling it there,
+                    use Remove from {branch.code} on the Products page.
+                </p>
+            ) : (
+                <ActiveField
+                    label={`Sell at ${branch.code}`}
+                    value
+                    onChange={(sell) =>
+                        onChange({ ...value, in_assortment: sell })
+                    }
+                />
+            )}
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
                 <Field
                     id={`branch-price-${branch.branch_id}`}
@@ -702,7 +813,7 @@ function BranchEditor({
                 )}
             </div>
             <ActiveField
-                label="Available at this branch"
+                label="Available now (off = temporarily unavailable)"
                 value={value.is_available}
                 onChange={(isAvailable) =>
                     onChange({ ...value, is_available: isAvailable })
@@ -1020,7 +1131,7 @@ function InlineGroupEditor({
                 />
             </div>
             {errors[`${errorPrefix}.name`] && (
-                <p className="text-xs text-red-700">
+                <p role="alert" className="text-xs text-red-700">
                     {errors[`${errorPrefix}.name`]}
                 </p>
             )}

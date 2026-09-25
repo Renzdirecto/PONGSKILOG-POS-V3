@@ -10,6 +10,7 @@
 use App\Actions\Inventory\AdjustInventory;
 use App\Actions\Operations\AdjustIngredientStock;
 use App\Actions\Operations\ConfirmPamamalengke;
+use App\Actions\Operations\SaveOperationPlan;
 use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\EditCommittedOrder;
@@ -27,6 +28,7 @@ use App\Models\Ingredient;
 use App\Models\IngredientMovement;
 use App\Models\KitchenTicket;
 use App\Models\OperationPlan;
+use App\Models\OperationPlanProduct;
 use App\Models\Order;
 use App\Models\OrderRecipeSnapshot;
 use App\Models\PamamalengkePurchase;
@@ -171,6 +173,10 @@ if ($worker) {
             'reverse_giveaway' => app(ReverseStoreSessionGiveaway::class)->execute($user, $branch, StoreSessionGiveaway::query()->findOrFail($argv[8]), [
                 'idempotency_key' => $key, 'reason' => 'Recorded by mistake',
             ])->id,
+            'save_plan' => app(SaveOperationPlan::class)->execute($user, OperationPlan::query()->findOrFail($argv[8]), [
+                'name' => 'Drinks', 'icon' => 'glass', 'description' => 'Saved during a race',
+                'product_ids' => json_decode($argv[9], true, flags: JSON_THROW_ON_ERROR),
+            ])->id,
         };
         echo json_encode(['status' => 200, 'id' => $result], JSON_THROW_ON_ERROR).PHP_EOL;
     } catch (HttpExceptionInterface $exception) {
@@ -209,7 +215,7 @@ try {
         $definition = $indexes['ingredient_movements_'.$name]->indexdef ?? '';
         verifyPhase16E(str_starts_with($definition, 'CREATE UNIQUE INDEX') && preg_match("/WHERE .*movement_type.*'{$type}'/", $definition) === 1, "Partial unique index {$name} is missing.");
     }
-    foreach (['branch_ingredient_stocks_branch_id_ingredient_id_unique', 'operation_plan_products_product_id_unique', 'ingredient_movements_branch_id_ingredient_id_created_at_index', 'pamamalengke_purchases_store_session_expense_id_unique', 'pamamalengke_purchases_idempotency_key_unique', 'order_recipe_snapshots_order_id_product_id_size_key_unique', 'product_modifier_effects_product_id_modifier_option_id_unique', 'product_modifier_effect_lines_unique', 'order_recipe_snapshot_modifiers_unique', 'order_recipe_snapshot_modifier_lines_unique'] as $index) {
+    foreach (['branch_ingredient_stocks_branch_id_ingredient_id_unique', 'operation_plan_products_branch_id_product_id_unique', 'ingredient_movements_branch_id_ingredient_id_created_at_index', 'pamamalengke_purchases_store_session_expense_id_unique', 'pamamalengke_purchases_idempotency_key_unique', 'order_recipe_snapshots_order_id_product_id_size_key_unique', 'product_modifier_effects_branch_unique', 'recipes_branch_id_product_id_size_key_unique', 'ingredients_branch_name_unique', 'product_modifier_effect_lines_unique', 'order_recipe_snapshot_modifiers_unique', 'order_recipe_snapshot_modifier_lines_unique'] as $index) {
         verifyPhase16E($indexes->has($index), "Index {$index} is missing.");
     }
     foreach (['giveaway' => 'giveaway', 'giveaway_reversal_once' => 'giveaway_reversal'] as $name => $type) {
@@ -235,6 +241,9 @@ try {
         $check = DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = ?::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'", [$table])->def ?? '';
         verifyPhase16E(str_contains($check, "'giveaway'") && str_contains($check, "'giveaway_reversal'"), "{$table}.movement_type does not accept giveaways.");
     }
+    /** Later additive migrations (Phase 18 and beyond) are rolled back first so the giveaway migration is the newest. */
+    $laterSteps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) > '2026_09_24_134328_create_store_session_giveaways.php'));
+    verifyPhase16E($laterSteps === 0 || Artisan::call('migrate:rollback', ['--step' => $laterSteps, '--force' => true, '--no-interaction' => true]) === 0, 'Later migration rollback failed.');
     verifyPhase16E(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'Giveaway rollback failed.');
     verifyPhase16E(! DB::getSchemaBuilder()->hasTable('store_session_giveaways') && ! DB::getSchemaBuilder()->hasColumn('ingredient_movements', 'store_session_giveaway_id')
         && ! str_contains(DB::selectOne("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'inventory_movements'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%movement_type%'")->def, 'giveaway')
@@ -607,21 +616,45 @@ try {
     verifyPhase16E($deadlocks() === $deadlocksBefore, 'G: PostgreSQL recorded a deadlock during the giveaway races.');
     echo 'G-D PASS: two different reversal requests restore the giveaway exactly once; no deadlocks in G.'.PHP_EOL;
 
-    /** P. Every Operations page projection runs on PostgreSQL, for one Branch and for All Branches. */
+    /**
+     * G-E. Confirm Pamamalengke vs saving its Plan. Both queue behind the held Branch row; Plan writers lock Branch →
+     * Plan, so Confirm must too (it used to take the Plan first and could deadlock with a Plan save or archive).
+     */
+    $deadlocksBefore = $deadlocks();
+    $drinkProducts = json_encode(OperationPlanProduct::query()->where('operation_plan_id', $ops->drinks->id)->pluck('product_id')->all(), JSON_THROW_ON_ERROR);
+    foreach (range(1, 3) as $round) {
+        $stockBefore = ExactQuantity::parse(BranchIngredientStock::query()->where('ingredient_id', $lemonId)->value('on_hand'));
+        $results = $start('ge'.$round, [
+            ['confirm', (string) $ops->owner->id, $ops->branch->id, (string) Str::uuid(), $ops->drinks->id, $lemonId],
+            ['save_plan', (string) $ops->owner->id, $ops->branch->id, (string) Str::uuid(), $ops->drinks->id, $drinkProducts],
+        ], 'SELECT id FROM branches WHERE id = ? FOR UPDATE', [$ops->branch->id]);
+        verifyPhase16E(array_column($results, 'status') === [200, 200], 'G-E: Confirm and Plan save must both commit: '.json_encode($results));
+        verifyPhase16E(ExactQuantity::parse(BranchIngredientStock::query()->where('ingredient_id', $lemonId)->value('on_hand')) - $stockBefore === 2 * ExactQuantity::FACTOR, 'G-E: the confirmation did not restock exactly once.');
+    }
+    $ledgerMatches('lemon');
+    usleep(300_000);
+    verifyPhase16E($deadlocks() === $deadlocksBefore, 'G-E: PostgreSQL recorded a deadlock between Confirm Pamamalengke and a Plan save.');
+    echo 'G-E PASS: 3 rounds of Confirm Pamamalengke vs Plan save serialize on Branch → Plan with no deadlock.'.PHP_EOL;
+
+    /**
+     * P. Every Operations page projection runs on PostgreSQL, for one Branch and for All Branches. Plans are Branch-owned,
+     * so (as OperationsController does) Overview, Recipes, Ingredient Stock and Pamamalengke need a concrete Branch.
+     */
     $workspace = app(OperationsWorkspace::class);
+    app(BranchCatalog::class)->browse($ops->branch, true);
     foreach ([$ops->branch, null] as $scope) {
-        $plans = $workspace->activePlans();
+        $plans = $workspace->activePlans($scope);
         $workspace->context('plans', $scope, $plans, $ops->drinks);
         $workspace->plansPage($scope, $plans);
-        $workspace->overviewPage($scope, $ops->drinks);
+        $workspace->setupCounts($scope);
         $workspace->ingredientsPage($scope);
-        $workspace->recipesPage($scope, $ops->drinks);
-        app(BranchCatalog::class)->browse($ops->branch, true);
-        $workspace->pamamalengkePage($scope, $ops->drinks);
         $workspace->purchasesPage($scope, $ops->drinks, 1);
         $workspace->purchasesPage($scope, null, 1);
         if ($scope !== null) {
+            $workspace->overviewPage($scope, $ops->drinks);
+            $workspace->recipesPage($scope, $ops->drinks);
             $workspace->stockPage($scope, $ops->drinks);
+            $workspace->pamamalengkePage($scope, $ops->drinks);
         }
     }
     echo 'P PASS: every Operations page projection runs on PostgreSQL (Branch and All Branches).'.PHP_EOL;

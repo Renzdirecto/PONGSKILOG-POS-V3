@@ -1,9 +1,11 @@
 import { Link, router, useHttp, usePage } from '@inertiajs/react';
 import {
+    BarChart3,
     ChefHat,
     LayoutDashboard,
     LogOut,
     MonitorUp,
+    LayoutGrid,
     QrCode,
     ReceiptText,
     ShieldCheck,
@@ -13,22 +15,31 @@ import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
-import { OwnerWorkspaceShell } from '@/components/owner-workspace-shell';
+import {
+    managementDestinationHref,
+    OwnerWorkspaceShell,
+} from '@/components/owner-workspace-shell';
 import { SuperAdminShell } from '@/components/super-admin-shell';
 import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
 import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
+import { UserContextRealtime } from '@/hooks/use-user-context-realtime';
 import { StoreSessionDetailsContext } from '@/hooks/use-store-session-details';
 import {
     cashier,
     cashierDashboard,
     customerDisplay,
     kitchen,
+    reports,
     superAdmin,
     transactionHistory,
 } from '@/routes/workspaces';
 import { logout } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
+import {
+    hasManagementPages,
+    managementLandingDestination,
+} from '@/lib/management-navigation';
 import {
     discardsStoreSession,
     openStoreSessionDialogState,
@@ -100,16 +111,28 @@ export default function WorkspaceLayout({
     /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
     const ownClosedSessionId = useRef<string | null>(null);
     const isSuperAdmin = auth.roles.includes('super_admin');
+    /** A Branch-scoped account with management pages (Products, Inventory, Operations, Staff, Settings) uses the management shell. */
+    const branchManager =
+        !branchContext.businessWide && hasManagementPages(auth.permissions);
+    /**
+     * A Custom Role running Branch operations can return to its management pages: business-wide ones, and Branch ones
+     * holding management pages. The link opens the first management page directly (the workspace would land on POS).
+     */
+    const managementLanding =
+        isSuperAdmin || (!branchContext.businessWide && !branchManager)
+            ? null
+            : managementLandingDestination(auth.permissions, {
+                  businessWide: branchContext.businessWide,
+              });
+    const userContextRealtime = auth.user ? (
+        <UserContextRealtime userId={auth.user.id} />
+    ) : null;
+    /** The server renders the POS only for accounts it authorized (Cashier roles, Branch custom roles, Super Admin). */
     const isPos =
         page.component === 'workspaces/order-summary' ||
         (page.component === 'workspaces/show' &&
             page.props.workspace === 'Cashier / POS' &&
-            auth.roles.some(
-                (role) =>
-                    role === 'cashier' ||
-                    role === 'cashier_kitchen' ||
-                    role === 'super_admin',
-            ));
+            auth.permissions.includes('pos.access'));
     const isQr =
         isPos &&
         new URL(page.url, 'http://localhost').searchParams.get('view') === 'qr';
@@ -122,14 +145,20 @@ export default function WorkspaceLayout({
         page.component === 'workspaces/transaction-history' &&
         !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
-    const isOperational = isPos || isKitchen || isHistory || isDashboard;
+    /** Branch staff with only custom Reports access read their own Branch report inside the operational shell. */
+    const isBranchReports =
+        page.component === 'workspaces/reports' &&
+        !branchContext.businessWide &&
+        !branchManager;
+    const isOperational =
+        isPos || isKitchen || isHistory || isDashboard || isBranchReports;
     const isOwnerManagement =
         page.component.startsWith('catalog/') ||
         page.component.startsWith('inventory/') ||
         page.component.startsWith('operations/') ||
         page.component.startsWith('super-admin/') ||
         page.component === 'branches/index' ||
-        page.component === 'workspaces/reports' ||
+        (page.component === 'workspaces/reports' && !isBranchReports) ||
         page.component === 'workspaces/owner-dashboard' ||
         isBusinessHistory;
 
@@ -181,6 +210,7 @@ export default function WorkspaceLayout({
             await refreshStoreSession();
         };
 
+        /** Only pages the account can open are listed; the server still authorizes each one. */
         const navigation = [
             {
                 label: 'Dashboard',
@@ -224,9 +254,22 @@ export default function WorkspaceLayout({
                 href: customerDisplay(),
                 active: false,
             },
-        ];
+            ...(auth.permissions.includes('reports.view') &&
+            !branchContext.businessWide
+                ? [
+                      {
+                          label: 'Reports',
+                          icon: BarChart3,
+                          available: true,
+                          href: reports(),
+                          active: isBranchReports,
+                      },
+                  ]
+                : []),
+        ].filter((item) => item.available);
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
+                {userContextRealtime}
                 <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
                         <img
@@ -240,42 +283,26 @@ export default function WorkspaceLayout({
                         className="flex flex-1 flex-col gap-1.5 px-2 py-2.5"
                     >
                         {navigation.map(
-                            ({ label, icon: Icon, available, href, active }) =>
-                                available && href ? (
-                                    <Link
-                                        key={label}
-                                        href={href}
-                                        preserveState
-                                        preserveScroll
-                                        aria-current={
-                                            active ? 'page' : undefined
-                                        }
-                                        className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        {label === 'QR Orders' &&
-                                            (page.props.qrWaitingCount ?? 0) >
-                                                0 && (
-                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
-                                                    {page.props.qrWaitingCount}
-                                                </span>
-                                            )}
-                                    </Link>
-                                ) : (
-                                    <button
-                                        key={label}
-                                        disabled
-                                        title={`${label} is not available yet`}
-                                        className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] leading-tight font-semibold text-white/45"
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        <span className="text-[8px] font-normal">
-                                            Coming later
-                                        </span>
-                                    </button>
-                                ),
+                            ({ label, icon: Icon, href, active }) => (
+                                <Link
+                                    key={label}
+                                    href={href}
+                                    preserveState
+                                    preserveScroll
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
+                                >
+                                    <Icon className="size-5" />
+                                    {label}
+                                    {label === 'QR Orders' &&
+                                        (page.props.qrWaitingCount ?? 0) >
+                                            0 && (
+                                            <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                {page.props.qrWaitingCount}
+                                            </span>
+                                        )}
+                                </Link>
+                            ),
                         )}
                     </nav>
                     <span className="border-t border-white/10 p-3 text-center text-[9px] text-white/50">
@@ -288,13 +315,15 @@ export default function WorkspaceLayout({
                             <h1 className="truncate text-[15px] font-bold">
                                 {isDashboard
                                     ? 'Dashboard'
-                                    : isKitchen
-                                      ? 'Kitchen display'
-                                      : isHistory
-                                      ? 'Transaction history'
-                                    : isQr
-                                      ? 'QR Orders'
-                                      : 'POS / Order'}
+                                    : isBranchReports
+                                      ? 'Reports'
+                                      : isKitchen
+                                        ? 'Kitchen display'
+                                        : isHistory
+                                          ? 'Transaction history'
+                                          : isQr
+                                            ? 'QR Orders'
+                                            : 'POS / Order'}
                             </h1>
                             <p className="truncate text-[11px] text-neutral-500">
                                 {branchContext.current?.name}
@@ -357,6 +386,25 @@ export default function WorkspaceLayout({
                                 </span>
                             </Link>
                         )}
+                        {managementLanding && (
+                            <Link
+                                href={managementDestinationHref(
+                                    managementLanding.id,
+                                    {
+                                        hasBranch:
+                                            branchContext.current !== null,
+                                    },
+                                )}
+                                aria-label="Back to management"
+                                title="Management"
+                                className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-white text-[12px] font-semibold text-neutral-700 hover:border-neutral-400 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none min-[1180px]:w-auto min-[1180px]:px-3"
+                            >
+                                <LayoutGrid className="size-4" />
+                                <span className="hidden min-[1180px]:inline">
+                                    Management
+                                </span>
+                            </Link>
+                        )}
                         <PosProfileControls auth={auth} />
                     </header>
                     {storeSessionDialogOpen && branchContext.current && (
@@ -406,44 +454,32 @@ export default function WorkspaceLayout({
                     </main>
                     <nav
                         aria-label="Mobile operational navigation"
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] grid-cols-6 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        style={{
+                            gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
+                        }}
+                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
-                            ({ label, icon: Icon, available, href, active }) =>
-                                available && href ? (
-                                    <Link
-                                        key={label}
-                                        href={href}
-                                        preserveState
-                                        preserveScroll
-                                        aria-current={
-                                            active ? 'page' : undefined
-                                        }
-                                        className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        {label === 'QR Orders' &&
-                                            (page.props.qrWaitingCount ?? 0) >
-                                                0 && (
-                                                <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
-                                                    {page.props.qrWaitingCount}
-                                                </span>
-                                            )}
-                                    </Link>
-                                ) : (
-                                    <button
-                                        key={label}
-                                        disabled
-                                        className="flex flex-col items-center justify-center gap-1 text-center text-[9px] leading-tight text-white/45"
-                                    >
-                                        <Icon className="size-5" />
-                                        {label}
-                                        <span className="text-[8px]">
-                                            Coming later
-                                        </span>
-                                    </button>
-                                ),
+                            ({ label, icon: Icon, href, active }) => (
+                                <Link
+                                    key={label}
+                                    href={href}
+                                    preserveState
+                                    preserveScroll
+                                    aria-current={active ? 'page' : undefined}
+                                    className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
+                                >
+                                    <Icon className="size-5" />
+                                    {label}
+                                    {label === 'QR Orders' &&
+                                        (page.props.qrWaitingCount ?? 0) >
+                                            0 && (
+                                            <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                                {page.props.qrWaitingCount}
+                                            </span>
+                                        )}
+                                </Link>
+                            ),
                         )}
                     </nav>
                 </div>
@@ -452,15 +488,21 @@ export default function WorkspaceLayout({
     }
 
     if (isOwnerManagement) {
-        return isSuperAdmin ? (
-            <SuperAdminShell>{children}</SuperAdminShell>
-        ) : (
-            <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+        return (
+            <>
+                {userContextRealtime}
+                {isSuperAdmin ? (
+                    <SuperAdminShell>{children}</SuperAdminShell>
+                ) : (
+                    <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+                )}
+            </>
         );
     }
 
     return (
         <div className="min-h-svh bg-[#f4f4f3] text-neutral-950">
+            {userContextRealtime}
             <header className="border-b border-neutral-200 bg-white">
                 <div className="mx-auto flex min-h-18 max-w-[96rem] flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
                     <div className="flex min-w-0 items-center gap-3 sm:mr-auto">
@@ -486,7 +528,7 @@ export default function WorkspaceLayout({
                                     {auth.user.name}
                                 </p>
                                 <p className="text-xs text-neutral-500">
-                                    {roleLabel(auth.roles[0])}
+                                    {auth.roleLabel ?? roleLabel(auth.roles[0])}
                                 </p>
                             </div>
                             <Link

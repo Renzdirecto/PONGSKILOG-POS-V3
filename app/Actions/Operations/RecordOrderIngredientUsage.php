@@ -40,6 +40,10 @@ use Illuminate\Validation\ValidationException;
  * cost basis and Plan), and every Add-on when first committed on it. Edits and Voids always work from those snapshots
  * and the recorded movements, never from today's recipe, Add-on effects, costs or Plan membership.
  *
+ * Snapshots read only the committing Branch's configuration (its Branch Product mode, Recipes, Plan and Add-on effects).
+ * Every commercial commit holds the Branch lock that configuration writers need (BranchConfiguration), so a snapshot is
+ * always one coherent recipe version.
+ *
  * A sale or a usage-increasing edit must not drive a required Ingredient below zero: the whole order's net delta per
  * Ingredient is checked under the locked balances, so one of two racing sales for the last stock is rejected cleanly.
  * Restorations (voids and usage-decreasing edits) are always allowed.
@@ -338,8 +342,9 @@ class RecordOrderIngredientUsage
     }
 
     /**
-     * Snapshots the recipe state, recipe lines, cost basis and Plan in force now for Product/size pairs committed for
-     * the first time. A Product that tracks Product stock at this Branch never also consumes Ingredients. A
+     * Snapshots the recipe state, recipe lines, cost basis and Plan in force now at this Branch for Product/size pairs
+     * committed for the first time. A Product that tracks Product stock (or is in direct mode) at this Branch never also
+     * consumes Ingredients. A
      * Recipe-backed Product (it has a recipe for some size) cannot sell a size without a recipe, nor while it has more
      * than one Size group.
      *
@@ -350,22 +355,19 @@ class RecordOrderIngredientUsage
     private function createSnapshots(Order $order, Branch $branch, array $pairs, ?Collection $loaded = null): array
     {
         $productIds = array_values(array_unique(array_column($pairs, 'product_id')));
-        if ($loaded !== null && array_diff($productIds, $loaded->keys()->all()) === []) {
-            $products = $loaded;
-            $tracked = $loaded->filter(fn (Product $product): bool => (bool) $product->branchProducts->firstWhere('branch_id', $branch->id)?->tracks_inventory)
-                ->keys()->flip();
-        } else {
-            $products = Product::query()->whereKey($productIds)->get(['id', 'no_recipe_needed'])->keyBy('id');
-            $tracked = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)
-                ->where('tracks_inventory', true)->pluck('product_id')->flip();
-        }
+        $configurations = $loaded !== null && array_diff($productIds, $loaded->keys()->all()) === []
+            ? $loaded->map(fn (Product $product): ?BranchProduct => $product->branchProducts->firstWhere('branch_id', $branch->id))
+            : BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->get()->keyBy('product_id');
+        $direct = $configurations->filter(fn (?BranchProduct $configuration): bool => $configuration !== null
+            && ($configuration->tracks_inventory || $configuration->no_recipe_needed))->keys()->flip();
         $plans = OperationPlanProduct::query()
             ->join('operation_plans', 'operation_plans.id', '=', 'operation_plan_products.operation_plan_id')
             ->whereNull('operation_plans.archived_at')
+            ->where('operation_plan_products.branch_id', $branch->id)
             ->whereIn('operation_plan_products.product_id', $productIds)
             ->pluck('operation_plan_products.operation_plan_id', 'operation_plan_products.product_id');
         /** @var Collection<string, Recipe> $recipes */
-        $recipes = Recipe::query()->whereIn('product_id', $productIds)->with('lines.ingredient')->get()
+        $recipes = Recipe::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->with('lines.ingredient')->get()
             ->keyBy(fn (Recipe $recipe): string => $recipe->product_id.'|'.$recipe->size_key);
         $recipeBacked = $recipes->map(fn (Recipe $recipe): string => $recipe->product_id)->flip();
         $conflicts = $recipeBacked->isEmpty() ? [] : $this->sizes->conflicts($recipeBacked->keys()->all());
@@ -375,7 +377,7 @@ class RecordOrderIngredientUsage
             $key = $pair['product_id'].'|'.$pair['size_key'];
             $recipe = $recipes->get($key);
             $state = match (true) {
-                $tracked->has($pair['product_id']), (bool) $products->get($pair['product_id'])?->no_recipe_needed => RecipeState::NotNeeded,
+                $direct->has($pair['product_id']) => RecipeState::NotNeeded,
                 $recipe?->lines->isNotEmpty() === true => RecipeState::Recipe,
                 default => RecipeState::Missing,
             };
@@ -441,6 +443,7 @@ class RecordOrderIngredientUsage
             return;
         }
         $effects = ProductModifierEffect::query()
+            ->where('branch_id', $snapshots->first()?->branch_id)
             ->whereIn('product_id', array_values(array_unique(array_map(fn (string $key): string => $snapshots[$key]->product_id, array_keys($needed)))))
             ->whereIn('modifier_option_id', array_values(array_unique(array_merge(...array_map('array_keys', array_values($needed))))))
             ->with('lines.ingredient')->get()

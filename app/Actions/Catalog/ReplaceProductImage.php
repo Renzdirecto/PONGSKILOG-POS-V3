@@ -22,7 +22,7 @@ class ReplaceProductImage
 
     public function execute(User $user, Product $product, UploadedFile $upload): Product
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
         $product = Product::query()->whereKey($product->getKey())->firstOrFail();
         $variants = $this->processor->process($upload);
         $directory = 'catalog/products/'.$product->getKey().'/'.Str::uuid();

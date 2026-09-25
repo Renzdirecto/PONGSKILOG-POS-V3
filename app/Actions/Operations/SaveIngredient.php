@@ -11,8 +11,10 @@ use App\Models\BranchIngredientStock;
 use App\Models\Ingredient;
 use App\Models\OperationPlan;
 use App\Models\OperationPlanIngredient;
+use App\Models\ProductModifierEffectLine;
 use App\Models\RecipeLine;
 use App\Models\User;
+use App\Support\BranchConfiguration;
 use App\Support\CatalogRealtime;
 use App\Support\ExactMoney;
 use App\Support\ExactQuantity;
@@ -23,8 +25,9 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Creates or updates an Ingredient definition and its Plan memberships. Initial stock is written only as an
- * opening-balance movement for the one selected Branch; later stock changes must be explicit movements (purchase,
+ * Creates or updates an Ingredient of the selected Branch and its memberships in that Branch's Plans. Another Branch's
+ * Ingredient of the same name (its cost, unit, target, rule) is independent and never changes. Initial stock is written
+ * only as an opening-balance movement for that Branch; later stock changes must be explicit movements (purchase,
  * wastage, count correction), never a direct balance edit. The base unit locks once stock history or a recipe uses it.
  * Changing target, purchase unit, cost or rule never rewrites past movements or snapshotted costs.
  */
@@ -62,6 +65,10 @@ class SaveIngredient
     public function execute(User $actor, ?Ingredient $ingredient, array $input): Ingredient
     {
         $actor = $this->access->authorize($actor);
+        $configured = $this->access->configurationBranch($actor);
+        if ($ingredient !== null) {
+            $this->access->ownedBy($ingredient, $configured);
+        }
         foreach (['name', 'purchase_unit_name'] as $field) {
             $input[$field] = is_string($input[$field] ?? null) && trim($input[$field]) !== '' ? trim($input[$field]) : ($field === 'name' ? ($input[$field] ?? null) : null);
         }
@@ -80,35 +87,36 @@ class SaveIngredient
         $planIds = array_values(array_unique(array_map('strtolower', $data['plan_ids'])));
         sort($planIds);
 
-        $saved = DB::transaction(function () use ($actor, $ingredient, $data, $values, $initial, $branch, $planIds): Ingredient {
+        $saved = DB::transaction(function () use ($actor, $configured, $ingredient, $data, $values, $initial, $branch, $planIds): Ingredient {
+            $configured = BranchConfiguration::lock($configured);
             if ($ingredient !== null) {
                 /** FOR NO KEY UPDATE serializes edits without blocking sales' foreign-key KEY SHARE checks. */
                 $ingredient = Ingredient::query()->whereKey($ingredient->id)->lock('for no key update')->firstOrFail();
                 if ($ingredient->archived_at !== null) {
                     throw ValidationException::withMessages(['ingredient' => 'Restore this ingredient before editing it.']);
                 }
-                if ($ingredient->base_unit !== $data['base_unit'] && $this->unitLocked($ingredient)) {
+                if ($ingredient->base_unit !== $data['base_unit'] && self::unitLocked($ingredient)) {
                     throw ValidationException::withMessages(['base_unit' => 'The base unit is locked because stock history or a recipe already counts in '.$ingredient->base_unit.'.']);
                 }
             }
-            $duplicate = Ingredient::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
+            $duplicate = Ingredient::query()->where('branch_id', $configured->id)->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
                 ->when($ingredient !== null, fn ($query) => $query->whereKeyNot($ingredient?->id))->exists();
             if ($duplicate) {
-                throw ValidationException::withMessages(['name' => 'Another ingredient already uses this name. Restore or rename it instead.']);
+                throw ValidationException::withMessages(['name' => 'Another ingredient of '.$configured->code.' already uses this name. Restore or rename it instead.']);
             }
-            $plans = OperationPlan::query()->whereNull('archived_at')->whereKey($planIds)->pluck('id')->all();
+            $plans = OperationPlan::query()->where('branch_id', $configured->id)->whereNull('archived_at')->whereKey($planIds)->pluck('id')->all();
             if (count($plans) !== count($planIds)) {
-                throw ValidationException::withMessages(['plan_ids' => 'Choose only active Plans.']);
+                throw ValidationException::withMessages(['plan_ids' => 'Choose only active Plans of '.$configured->code.'.']);
             }
 
             $before = $ingredient === null ? null : $this->snapshot($ingredient);
-            $ingredient ??= new Ingredient(['created_by_user_id' => $actor->id]);
+            $ingredient ??= new Ingredient(['branch_id' => $configured->id, 'created_by_user_id' => $actor->id]);
             $ingredient->fill([...$values, 'updated_by_user_id' => $actor->id])->save();
 
             $current = OperationPlanIngredient::query()->where('ingredient_id', $ingredient->id)->lockForUpdate()->get();
             $current->reject(fn (OperationPlanIngredient $row): bool => in_array($row->operation_plan_id, $planIds, true))->each->delete();
             foreach (array_diff($planIds, $current->pluck('operation_plan_id')->all()) as $planId) {
-                OperationPlanIngredient::query()->create(['operation_plan_id' => $planId, 'ingredient_id' => $ingredient->id]);
+                OperationPlanIngredient::query()->create(['branch_id' => $configured->id, 'operation_plan_id' => $planId, 'ingredient_id' => $ingredient->id]);
             }
 
             $opening = null;
@@ -123,7 +131,7 @@ class SaveIngredient
             }
 
             $this->audit->record(
-                branch: $branch,
+                branch: $configured,
                 actor: $actor,
                 module: 'operations',
                 action: $before === null ? 'ingredient.created' : 'ingredient.updated',
@@ -133,6 +141,7 @@ class SaveIngredient
                 after: $this->snapshot($ingredient),
                 metadata: $opening === null ? null : ['opening_movement_id' => $opening->id, 'opening_quantity' => ExactQuantity::display($initial)],
             );
+            $this->realtime->branchConfigurationChanged($configured, $before === null ? 'ingredient_created' : 'ingredient_updated');
 
             return $ingredient;
         });
@@ -189,11 +198,13 @@ class SaveIngredient
         ];
     }
 
-    private function unitLocked(Ingredient $ingredient): bool
+    /** Whether stock history, a recipe or an Add-on effect already counts in this Ingredient's base unit (it can no longer change). */
+    public static function unitLocked(Ingredient $ingredient): bool
     {
         /** Every movement bumps its balance version; a snapshot line always comes with a sale movement. */
         return BranchIngredientStock::query()->where('ingredient_id', $ingredient->id)->where('version', '>', 0)->exists()
-            || RecipeLine::query()->where('ingredient_id', $ingredient->id)->exists();
+            || RecipeLine::query()->where('ingredient_id', $ingredient->id)->exists()
+            || ProductModifierEffectLine::query()->where('ingredient_id', $ingredient->id)->exists();
     }
 
     /** @return array<string, mixed> */

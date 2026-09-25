@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
@@ -20,6 +21,10 @@ class AdjustInventory
     public function execute(User $user, Branch $branch, Product $product, int $quantityDelta, string $reason): InventoryMovement
     {
         Gate::forUser($user)->authorize('inventory.manage');
+        /** Branch-scoped Inventory managers adjust only their assigned Branches. */
+        if (! $user->canAccessBranch($branch)) {
+            throw new AuthorizationException('This account may not adjust stock at this Branch.');
+        }
 
         $reason = trim($reason);
 

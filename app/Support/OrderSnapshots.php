@@ -69,6 +69,10 @@ class OrderSnapshots
             if (! $preserveSnapshot && ! $state['is_available']) {
                 throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
             }
+            /** A retained line of a Product removed from this Branch may stay or shrink, never sell more units. */
+            if ($preserveSnapshot && $state['availability_reason'] === 'not_in_branch' && $line['quantity'] > $existing->quantity) {
+                throw ValidationException::withMessages(["items.$index.quantity" => $product->name.' is no longer sold at this Branch. Keep or reduce its quantity.']);
+            }
             $itemId = (string) Str::uuid();
             $base = ExactMoney::cents($preserveSnapshot ? $existing->unit_price : $state['effective_price']);
             $unit = $base;

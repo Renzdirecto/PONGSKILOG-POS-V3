@@ -21,7 +21,7 @@ test('operational sidebar unlocks Dashboard for POS staff', () => {
     );
     assert.match(
         layout,
-        /const isOperational = isPos \|\| isKitchen \|\| isHistory \|\| isDashboard;/,
+        /const isOperational =\s+isPos \|\| isKitchen \|\| isHistory \|\| isDashboard \|\| isBranchReports;/,
     );
 });
 

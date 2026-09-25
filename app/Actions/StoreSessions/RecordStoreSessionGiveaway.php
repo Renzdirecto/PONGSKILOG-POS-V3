@@ -285,6 +285,7 @@ class RecordStoreSessionGiveaway
         $planId = OperationPlanProduct::query()
             ->join('operation_plans', 'operation_plans.id', '=', 'operation_plan_products.operation_plan_id')
             ->whereNull('operation_plans.archived_at')
+            ->where('operation_plan_products.branch_id', $branch->id)
             ->where('operation_plan_products.product_id', $giveaway->product_id)
             ->value('operation_plan_products.operation_plan_id');
 

@@ -7,6 +7,7 @@ use App\Events\CustomerCatalogChanged;
 use App\Events\IngredientStockChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
@@ -51,12 +52,44 @@ class CatalogRealtime
         }
     }
 
+    /**
+     * Several Products changed their configuration at one Branch (bulk assortment add or copy): one Customer QR catalog
+     * invalidation plus the compact per-Product Branch events, resolved with one catalog load. Never another Branch.
+     *
+     * @param  list<string>  $productIds
+     */
+    public function branchProductsChanged(Branch $branch, array $productIds): void
+    {
+        if ($productIds === []) {
+            return;
+        }
+        $version = (int) now()->format('Uu');
+        CustomerCatalogChanged::dispatch($branch->id);
+
+        foreach ($this->catalog->productsForOrder($branch, $productIds) as $product) {
+            $state = $this->catalog->resolveLoaded($product);
+            ProductBranchConfigurationChanged::dispatch($branch->id, $product->id, $state['is_available'], $state['effective_price'], $version);
+            ProductAvailabilityChanged::dispatch($branch->id, $product->id, $state['is_available'], $state['effective_price'], $version);
+        }
+    }
+
     /** @param iterable<Product> $products */
     public function productsChanged(iterable $products, bool $availabilityChanged = false): void
     {
         foreach ($products as $product) {
             $this->productChanged($product, availabilityChanged: $availabilityChanged);
         }
+    }
+
+    /**
+     * One Branch's configuration changed (assortment, recipe mode, Recipes, Add-on effects, Ingredients, Plans or a setup
+     * copy): that Branch's POS and Customer QR catalogs and its open Operations pages refetch their authoritative state
+     * (compact invalidation only, after commit). Another Branch is never signalled.
+     */
+    public function branchConfigurationChanged(Branch $branch, string $reason): void
+    {
+        $this->ingredientsChanged($branch, $reason);
+        ReportsChanged::dispatch((string) $branch->id, $reason);
     }
 
     /**

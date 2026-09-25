@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Staff\CreateStaffAccount;
+use App\Actions\Staff\ResetStaffPassword;
+use App\Actions\Staff\UpdateStaffAccount;
 use App\Enums\BranchStatus;
+use App\Http\Requests\ResetStaffPasswordRequest;
 use App\Http\Requests\StaffIndexRequest;
 use App\Http\Requests\StoreStaffRequest;
+use App\Http\Requests\UpdateStaffRequest;
 use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
@@ -22,7 +26,9 @@ class StaffController extends Controller
 {
     /**
      * List login accounts with their role, Branch access and status. Credentials are never projected. Super Admin sees
-     * every account; the Owner sees operational Staff only (Cashier, Kitchen Staff, Cashier + Kitchen).
+     * every account; the Owner sees operational Staff only (Cashier, Kitchen Staff, Cashier + Kitchen). A Branch-scoped
+     * Staff manager sees only other accounts with an active assignment at one of its own Branches, and never the names
+     * of the other Branches such an account also works at (only their count).
      */
     public function index(StaffIndexRequest $request): Response
     {
@@ -30,23 +36,31 @@ class StaffController extends Controller
         abort_unless($actor instanceof User, 401);
         $surface = $this->surface($request);
         $manageable = StaffRoles::manageableBy($actor);
-        $fullAccess = $manageable === StaffRoles::names();
+        $fullAccess = StaffRoles::managesEveryAccount($actor);
+        $branchScope = StaffRoles::branchScope($actor);
         $filters = $request->safe()->only(['search', 'role', 'status']);
         $staff = User::query()
-            ->select(['id', 'employee_id', 'name', 'email', 'is_active', 'avatar_path', 'created_at'])
+            ->select(['id', 'employee_id', 'name', 'email', 'position', 'is_active', 'avatar_path', 'created_at'])
             ->with([
-                'roles:id,name',
+                'roles:id,name,label,is_system,scope,archived_at',
                 'branches' => fn ($query) => $query
                     ->select(['branches.id', 'branches.name', 'branches.code'])
                     ->wherePivot('is_active', true)
                     ->orderBy('branches.name'),
             ])
+            ->withCount('permissionOverrides')
             ->when(! $fullAccess, fn (Builder $query) => $this->scopeToManageable($query, $manageable))
+            ->when($branchScope !== null, fn (Builder $query) => $query
+                ->whereKeyNot($actor->id)
+                ->whereHas('branches', fn (Builder $branches) => $branches
+                    ->whereIn('branches.id', $branchScope)
+                    ->where('user_branch_assignments.is_active', true)))
             ->when($filters['search'] ?? null, function (Builder $query, string $search): void {
                 $term = '%'.mb_strtolower(trim($search)).'%';
                 $query->where(fn (Builder $query) => $query
                     ->whereRaw('LOWER(name) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(email) LIKE ?', [$term])
+                    ->orWhereRaw('LOWER(position) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(employee_id) LIKE ?', [$term]));
             })
             ->when($filters['role'] ?? null, fn (Builder $query, string $role) => $query
@@ -57,46 +71,51 @@ class StaffController extends Controller
             ->orderBy('id')
             ->paginate(25)
             ->withQueryString()
-            ->through(function (User $user) use ($surface): array {
-                $roleNames = $user->roles->pluck('name')->all();
+            ->through(function (User $user) use ($surface, $actor, $branchScope): array {
+                $visibleBranches = $branchScope === null
+                    ? $user->branches
+                    : $user->branches->filter(fn (Branch $branch): bool => in_array((string) $branch->id, $branchScope, true));
 
                 return [
                     'id' => $user->id,
                     'employee_id' => $user->employee_id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'position' => $user->position,
                     'avatar_url' => $user->avatar_path === null
                         ? null
                         : route($surface === 'owner' ? 'staff.avatar' : 'super-admin.staff.avatar', $user, false).'?v='.substr(md5($user->avatar_path), 0, 12),
                     'is_active' => $user->is_active,
-                    'roles' => array_map(fn (string $role): array => [
-                        'name' => $role,
-                        'label' => StaffRoles::label($role),
-                    ], $roleNames),
-                    'business_wide' => array_intersect($roleNames, StaffRoles::BUSINESS_WIDE) !== [],
-                    'branches' => $user->branches
+                    'roles' => $user->roles->map(fn (Role $role): array => [
+                        'name' => $role->name,
+                        'label' => $role->displayLabel(),
+                        'custom' => $role->isCustom(),
+                    ])->values()->all(),
+                    'business_wide' => $user->roles->contains(fn (Role $role): bool => $role->isBusinessWide()),
+                    'branches' => $visibleBranches
                         ->map(fn (Branch $branch): array => $branch->only(['id', 'name', 'code']))
                         ->values()
                         ->all(),
+                    /** Active assignments outside the viewer's Branch scope: counted, never named, never editable here. */
+                    'other_branch_count' => $user->branches->count() - $visibleBranches->count(),
                     'created_at' => $user->created_at?->toIso8601String(),
+                    'is_self' => $user->is($actor),
+                    'custom_access_count' => $surface === 'owner' ? 0 : (int) $user->permission_overrides_count,
                 ];
             });
-
-        $seededRoles = Role::query()->whereIn('name', StaffRoles::names())->pluck('name')->all();
 
         return Inertia::render('super-admin/staff', [
             'staff' => $staff,
             'filters' => $filters,
             'surface' => $surface,
-            'roles' => array_values(array_filter(
-                StaffRoles::options($manageable),
-                fn (array $role): bool => in_array($role['name'], $seededRoles, true),
-            )),
+            'roles' => StaffRoles::options($manageable),
             'branches' => Branch::query()
                 ->where('status', BranchStatus::Active)
+                ->when($branchScope !== null, fn (Builder $query) => $query->whereKey($branchScope))
                 ->orderBy('name')
                 ->orderBy('code')
                 ->get(['id', 'name', 'code']),
+            'branchScoped' => $branchScope !== null,
         ]);
     }
 
@@ -105,13 +124,49 @@ class StaffController extends Controller
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
 
-        /** @var array{employee_id: string, name: string, email: string, password: string, role: string, branch_ids?: list<string>, is_active?: bool} $data */
-        $data = $request->safe()->only(['employee_id', 'name', 'email', 'password', 'role', 'branch_ids', 'is_active']);
+        /** @var array{employee_id: string, name: string, email: string, position?: string|null, password: string, role: string, branch_ids?: list<string>, is_active?: bool} $data */
+        $data = $request->safe()->only(['employee_id', 'name', 'email', 'position', 'password', 'role', 'branch_ids', 'is_active']);
         $createStaffAccount->execute($actor, [...$data, 'avatar' => $request->file('avatar')]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Staff account created.']);
 
         return to_route($this->surface($request) === 'owner' ? 'staff.index' : 'super-admin.staff.index');
+    }
+
+    /**
+     * Save an existing account (details, Role, Branch access, status, picture). The Employee ID never changes.
+     */
+    public function update(UpdateStaffRequest $request, User $user, UpdateStaffAccount $updateStaffAccount): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+
+        /** @var array{name: string, email: string, position?: string|null, role: string, branch_ids?: list<string>, is_active: bool, remove_avatar?: bool} $data */
+        $data = $request->safe()->only(['name', 'email', 'position', 'role', 'branch_ids', 'is_active', 'remove_avatar']);
+        $actions = $updateStaffAccount->execute($actor, $user, [
+            ...$data,
+            'is_active' => $request->boolean('is_active'),
+            'remove_avatar' => $request->boolean('remove_avatar'),
+            'avatar' => $request->file('avatar'),
+        ]);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $actions === [] ? 'No changes to save.' : 'Staff account saved.']);
+
+        return to_route($this->surface($request) === 'owner' ? 'staff.index' : 'super-admin.staff.index', $request->query());
+    }
+
+    /**
+     * Super Admin administrative password reset. The new temporary password is never returned or shown again.
+     */
+    public function password(ResetStaffPasswordRequest $request, User $user, ResetStaffPassword $resetStaffPassword): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
+        $resetStaffPassword->execute($actor, $user, (string) $request->validated('password'));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Temporary password set. '.$user->name.' was signed out of other sessions.']);
+
+        return to_route('super-admin.staff.index', $request->query());
     }
 
     /**

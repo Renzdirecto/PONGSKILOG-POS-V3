@@ -2,12 +2,18 @@ export type User = {
     id: number;
     name: string;
     email: string;
+    /** Business/job title shown to people (display only; access always comes from the Role). */
+    position?: string | null;
     avatar?: string;
+    /** Same-app URL of the account's own profile picture (versioned), or null. */
+    avatarUrl?: string | null;
 };
 
 export type Auth = {
     user: User | null;
     roles: string[];
+    /** Display name of the account's role(s), System or Custom; never a machine key. */
+    roleLabel?: string | null;
     permissions: string[];
 };
 

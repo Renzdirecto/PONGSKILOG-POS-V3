@@ -31,9 +31,17 @@ class ReportsChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, S
         ];
     }
 
-    public function broadcastOn(): PrivateChannel
+    /**
+     * The business-wide channel for Owner/Super Admin, plus the Branch channel for Branch-scoped Reports access.
+     *
+     * @return list<PrivateChannel>
+     */
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('reports');
+        return [
+            new PrivateChannel('reports'),
+            new PrivateChannel('branch.'.$this->payload['branch_id'].'.reports'),
+        ];
     }
 
     public function broadcastAs(): string

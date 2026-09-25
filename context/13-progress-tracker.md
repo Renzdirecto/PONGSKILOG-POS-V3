@@ -912,6 +912,14 @@ Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of
 
 ## Phase 17 — Stock Transfers
 
+**Status: DEFERRED**
+
+Reason: Pongskilog currently operates with only one real active branch, so branch-to-branch stock transfer workflows are not needed yet.
+
+Revisit Phase 17 when Pongskilog has a second real operating branch that actually transfers stock between locations. The original scope below is kept for that future work; none of it is implemented.
+
+Original scope (deferred):
+
 - [ ] Create transfer
 - [ ] Source branch
 - [ ] Destination branch
@@ -942,13 +950,76 @@ Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency c
 - Not complete: the Access Control matrix, Notifications service, Owner Reports, Super Admin analytics, editing or deactivating existing staff, and profile settings. Final visual and device acceptance is **USER MANUAL QA**. No checkbox below is marked by this slice.
 - Final QA — 2026-09-24: **USER MANUAL QA: PASSED BY USER**. Engineering fixes: a Staff unique-index race now reports the actually violated field (email vs Employee ID) from the parsed constraint instead of the SQL message; staff avatars fall back to initials if the image fails to load; the avatar Remove control is named. Added regressions for avatar denial (Cashier, Kitchen, Cashier + Kitchen, guest, inactive Super Admin), spoofed-content uploads, duplicate races, and Super Admin Store expense, Store inventory adjustment, and `store-session` channel parity. Complete suite **1,513 tests / 10,127 assertions**, frontend **114 passed**; Pint, PHPStan, lint, TypeScript, build, and `git diff --check` passed. Disposable-schema PostgreSQL verified the two additive migrations (fresh, rollback, reapply, existing rows) and atomic Staff creation; the Void, Close Store, and Pay Now PostgreSQL harnesses passed. The normal local development database was not reset.
 
-- [ ] Dashboard
-- [ ] Audit Trail
-- [ ] Void Orders
-- [ ] Access Control
-- [ ] Settings / system controls
-- [ ] Cross-branch visibility
-- [ ] Protected Super Admin authorization
+### Phase 18 — Access Control, Staff administration & Notifications — 2026-09-25
+
+Branch `feature/access-admin-cleanup` (0 behind / 1 ahead of `origin/dev` at `c60e8e0` at start; the roadmap commit `7b97482` is preserved). No dependency change. Two additive migrations: `2026_09_24_165603_create_user_permission_overrides_table`, `2026_09_24_165604_create_notifications_table`. Rules: `07-security-rbac.md` "Phase 18"; schema `05`; realtime `06`; UI `08`/`09`; deploy `12` §27.
+
+- **Access Control (real):** Role = baseline, account = optional ALLOW/DENY exception. One resolver (`EffectivePermissions`) behind `User::hasPermission()`, middleware, requests, channels and the shared `auth.permissions`, so navigation and backend always agree and revocation applies on the next request. One `PermissionCatalog` (labels, categories, scope, defaults, grant envelope, lock reasons). Super Admin locked full access (no overrides, baseline not editable). Cashier + Kitchen derived as the union of Cashier and Kitchen Staff inside the same transaction. Audit, Void Orders and Access Control never leave Super Admin; Products, Inventory, Staff and Settings stay business-wide (locked for Branch roles).
+- **Custom Reports for Branch staff:** a Cashier/Kitchen account with Reports ALLOW reads only its selected assigned Branch (never All Branches; forged Branch/session rejected or ignored; CSV follows the same scope; Owner Dashboard stays business-wide), inside the operational shell with a Reports nav item and a Branch-scoped realtime channel.
+- **RbacSeeder** no longer resets live configuration: defaults only for newly created Roles/Permissions; Super Admin completed; Cashier + Kitchen re-derived.
+- **Staff administration (existing Staff page):** Manage sheet (name, email, Role, Branch access, Active/Inactive, photo replace/remove; Employee ID read-only), Super Admin password reset; Owner limited to operational Staff. Last active Super Admin protected (row locks; crossing two-admin race leaves exactly one), no self-demotion/self-deactivation, Role change resets custom access, deactivation/password reset end sessions (remember token, database sessions, `AuthenticateSession`). Audit `staff.*` / `access.*` actions without credentials.
+- **Notifications (real):** persisted in-app notifications for Super Admins (access/Staff security changes by another Super Admin; Product or Ingredient out-of-stock transitions, deduplicated by the locked stock transition), unread badge, mark read / mark all read, pagination, private per-user realtime signal. No email/SMS/push.
+- Verification: new `AccessControlTest`, `StaffAdministrationTest`, `AdminNotificationsTest`, `BranchScopedReportsTest`; focused regression 682 + 699 tests passed; frontend 195 passed; Pint, PHPStan (0 errors), lint, TypeScript, production build and `git diff --check` clean. PostgreSQL: new `tests/verify-access-admin-postgres.php` (cases A–H incl. real crossing Super Admin deactivate/demote races and concurrent sell-out alert dedupe) plus the inventory and operations harnesses passed on disposable schemas (dropped). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- ~~**Status: IMPLEMENTED — READY FOR USER MANUAL QA.**~~ Superseded by the final pass below.
+
+### Phase 18 — Final refinements + FINAL AUTOMATED QA — 2026-09-25
+
+Same branch (`feature/access-admin-cleanup`, 0 behind / 2 ahead of `origin/dev` `c60e8e0` at start; `7b97482` and `240adb4` preserved). No dependency change. One additive migration: `2026_09_25_052453_add_custom_role_metadata_to_roles_table`. Rules: `07-security-rbac.md` "Phase 18 final"; schema `05`; realtime `06`; UI `08`/`09`; deploy `12` §28; `.ai/rules` access-control, super-admin, reports, jscomponents.
+
+- **Custom Roles (approved refinement #1):** System Role (five canonical, protected) vs Custom Role (Super Admin-created reusable package, stable `custom_{id}` key, editable unique name) vs user override (unchanged ALLOW/DENY exception). Explicit Branch or Business-wide scope; scope decides WHERE (`Role::scopeBusinessWide()` / `scopeCashierOperations()`, used by `User::hasBusinessWideScope()` / `hasCashierOperationsRole()`), permissions decide WHAT. Scope-based grant envelope (`PermissionCatalog::CUSTOM_GRANTABLE`); Control permissions never grantable. Builder (Name → Scope → Access → Review), rename, scope change only while unassigned, archive only while unassigned, archived roles never assignable. Staff create/edit offer active Custom Roles to Super Admin only; Owner unchanged (operational roles only). Role changes (System ↔ Custom, Custom → Custom) reset overrides. RbacSeeder never touches Custom Roles. Audits `access.custom_role_created|updated|permissions_updated|archived`; notifications to other Super Admins only. Shells show the real role label; operational chrome keys off permissions, not role names.
+- **Executive Overview (approved refinement #2):** `SuperAdminDashboardController` replaces the static route. Money from the Owner Dashboard's own `SalesAnalytics::for()` call (no second calculation); live state from `BusinessSnapshot`; Store status, Ingredients at zero, Staff counts, unread count and payload-free recent Audit from `ExecutiveSnapshot`. Attention Needed, KPI row + money-movement tiles, Sales trend with compare, Payment mix donut (Reports Split semantics), Operations health, Top products, categories, Branch performance (honest single-Branch note), latest Store Session, People & security, Quick admin actions. Lazy memoized props; realtime reuses `reports.changed` and the viewer's `notifications.changed` (no new channel).
+- **Defect found and fixed:** the new PostgreSQL archive-vs-assign race reproduced a real deadlock (`UpdateStaffAccount` locked accounts, then the Role; archive held the Role, then key-shared the actor through its audit insert). Staff writers now lock the Role first. Also fixed: Owner shell no longer links Dashboard/Reports without `reports.view`; landing for Owner/business roles picks the first allowed page instead of a 403.
+- **Automated gates:** complete Laravel suite **1,981 tests / 13,780 assertions, 0 failures, 0 skipped** (one run); new `CustomRolesTest` (56) and `SuperAdminExecutiveDashboardTest` (13); frontend **203 passed**; Pint, PHPStan (0 errors), `vp check` lint (0 warnings), TypeScript, production build, `git diff --check` clean. PostgreSQL (disposable schemas, all dropped): `verify-access-admin-postgres.php` cases A–M (incl. pre-Phase-18 rows forward + backfill, rollback/reapply, name/scope constraints, racing same-name create, concurrent Custom Role saves = one complete baseline, archive vs assign, seeder rerun) run 3×, plus close-store, inventory, kitchen, operations, owner-reports, pay-later, pay-now, POS, QR, store-expenses, store-session, transaction-history and void-audit harnesses — all passed. Isolated SQLite migrate → rollback → reapply verified. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL QA: PENDING. READY FOR FINAL MANUAL SPOT-CHECK / PR.** Not merged; no PR opened.
+
+### Phase 18 — Manual QA refinement pass #1 — 2026-09-25
+
+Same branch, on top of `5f35c3d` (0 behind `origin/dev`). No dependency change. Two additive migrations: `2026_09_25_082318_add_position_to_users_table`, `2026_09_25_082319_split_operations_from_inventory_permission`. Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #1"; schema `05`; UI `09`; `.ai/rules` access-control, operations, layoutscomponentspages, jscomponents, js-pages, super-admin.
+
+- Management sidebar: permission-filtered registry (`lib/management-navigation.ts`), sections Overview / Store Operations / Sales / Catalog / Operations / Administration, inaccessible pages hidden (also in the POS shell), collapsible desktop rail with a remembered per-device preference, stronger section headings.
+- Staff Position (display only, never access) in Staff create/edit/list, sidebar footer and Audit Trail actor.
+- `operations.manage` split from `inventory.manage` (Owner keeps both; existing grants and overrides copied forward).
+- Business Transactions are view-only while the selected Store is closed; Custom Roles with POS get the existing Store status and ready-order flow.
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 18 — Manual QA refinement pass #2 — Branch-scoped management + realtime access — 2026-09-25
+
+Same branch, on top of `058c5b6` (0 behind `origin/dev`). No dependency change. **No migrations** (Branch assortment uses the existing `branch_products` unique `(branch_id, product_id)`). Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #2"; realtime `06`; `.ai/rules` access-control, operations, super-admin, hooks, jscomponents, layoutscomponentspages.
+
+- Branch Custom Roles may hold Products, Inventory, Operations, Staff and Settings (Control never), each with a Branch-safe meaning on the selected assigned Branch only; Dashboard and business Transactions open for Branch roles on their Branch only.
+- Products: Branch assortment/configuration only; "Add products to this Branch" and "Copy from another Branch" (authorized source + destination, skip existing by default, never stock).
+- Operations: Branch stock/list/purchases; shared Ingredients/Recipes/Plans read-only for Branch roles. Staff: own-Branch accounts only, no escalation, hidden assignments preserved. Settings: "Branch Settings — MAIN" (contact, QR, receipt; no create/rename/status).
+- Realtime: `user.context_changed` (identity/access/branches/status) revalidates open sessions (sidebar, Position, picture, Branch selector, safe redirect on revocation); `access_control.changed` and `staff.changed` refresh other admins' pages; reconnect revalidates; no polling. Super Admin sidebar section renamed "Store Operations".
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 18 — Manual QA refinement pass #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Same branch on top of `32e2500` (0 behind `origin/dev`). No dependency change. One forward migration `2026_09_25_112126_make_branch_catalog_and_operations_independent` (applied to the local development DB forward-only; never reset). Rules: `02` / `04` / `05` / `06` / `07` / `09` / `11` sections "pass #2.1"; `.ai/rules` operations, access-control, hooks, seeders.
+
+- Explicit Branch assortment (no row = not sold; unavailable ≠ removed; Remove keeps stock/history); new Branch and new Product start with no memberships.
+- Plans, Ingredients, Recipes, Add-on effects and recipe mode are Branch-owned; existing Branches received independent copies at cutover with history re-pointed and quantities unchanged.
+- Copy Products (+ optional Operations setup) and Operations › Copy setup: configuration only, clone once, skip by default, explicit replace, reviewed; never stock or history.
+- Removal-vs-sale and recipe-edit-vs-sale serialize on the Branch configuration lock (PostgreSQL verified, no deadlock).
+- Focused automated checks only (not Final QA). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED. **Status: READY FOR USER MANUAL QA.** Phase 18 Final QA is **not** passed.
+
+### Phase 18 — FINAL AUTOMATED QA — 2026-09-25
+
+Same branch (`feature/access-admin-cleanup`) on top of `25a15df`, 0 behind / 7 ahead of `origin/dev` `c60e8e0` at start. No dependency change, **no migration**; the normal local development DB was not reset. Rules: `07-security-rbac.md` / `06-realtime-contracts.md` / `11-testing-qa.md` "Phase 18 Final QA"; `.ai/rules` orders, operations, hooks, super-admin, layoutscomponentspages.
+
+- Fixed: Product with zero Groups (multipart drops the empty list; absent = empty, malformed rejected); each server error shown once in catalog forms; committed edit keeps each Product's committed stock path after a Branch mode change; Confirm Pamamalengke lock order Branch → Plan (real PostgreSQL deadlock reproduced and fixed, harness case G-E); self-service account deletion removed; staff sign-in email changes Super Admin only; case-insensitive profile email; staff creation locks the Role first and notifies Super Admins; Ingredient unit locked by Add-on effects; Operations live refresh for Operations-only accounts, complete partial reloads and tracking-change signal; background refresh never shows a raw 403; Dashboard stock attention one grouped query for All Branches; Super Admin footer Position; Audit filter bar at tablet widths; Owner placeholder bell removed; required-field standard in Staff and copy dialogs; lint warnings cleared.
+- Gates: complete Laravel suite 2066 passed (14800 assertions, 0 failed, 0 skipped); frontend 245/245; 16/16 PostgreSQL harnesses (0 new deadlocks, no leftover schema); Pint, PHPStan 0, lint 0 errors / 0 warnings, TypeScript, production build, `git diff --check`.
+- Deferred to Phase 19: `audit_logs (created_at, id)` index; Product copy with Replace skipping (instead of aborting on) a conflicting destination recipe.
+- **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL SPOT-CHECK: PENDING. READY FOR PR** (not opened, not merged). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED.
+
+- [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
+- [x] Audit Trail (real register, filters, detail, realtime)
+- [x] Void Orders (protected history, detail, global Void approval PIN)
+- [x] Access Control incl. Custom Roles (Phase 18 final — pending USER FINAL MANUAL QA)
+- [x] Settings / system controls (Branch Management, QR, receipt settings)
+- [x] Cross-branch visibility (business-wide scope + BranchSwitcher + selected-Branch operational parity)
+- [x] Protected Super Admin authorization
+- [x] Staff administration (create + edit/role/Branch/status/photo/password reset — Phase 18, pending USER MANUAL QA)
+- [x] Notifications (Phase 18, pending USER MANUAL QA)
 
 ---
 
@@ -964,6 +1035,50 @@ Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency c
 - [ ] Product image optimization verification
 - [ ] Owner all-branch query optimization
 - [ ] POS performance verification
+
+---
+
+## Phase 19.5 — PWA / Installable Web App
+
+**Status: PLANNED / NOT STARTED**
+
+**PWA is NOT implemented yet.** There is no web manifest, service worker, install prompt or offline cache. Detailed plan and branding asset registry: `12-deployment-operations.md` §26.
+
+Direction:
+
+- Convert the existing web app into an installable PWA.
+- Internet/WiFi-first architecture.
+- Do NOT design this as a full offline transactional POS.
+
+Offline/degraded behavior:
+
+- Safe read-only/degraded mode.
+- Show `Last synced` where appropriate.
+- Cached app shell/assets.
+- Selected read-only snapshots may be available offline.
+
+Potential offline-readable areas:
+
+- Catalog/product browsing
+- Selected Owner dashboard/report snapshots
+- Transaction/history snapshots where safe
+- Operations/Pamamalengke reference data where safe
+
+Never allow offline writes for: Pay Now, Pay Later, settlement, Void, Edit Transaction, Store Open / Close, expenses/purchases, inventory adjustments, ingredient movements, giveaway, Kitchen status mutations, and any other financial/stock/security-sensitive writes.
+
+Planned technical scope:
+
+- [ ] Web app manifest
+- [ ] Final launcher/icon assets
+- [ ] Service worker
+- [ ] Installability
+- [ ] Cached static/app-shell assets
+- [ ] Safe cache strategy
+- [ ] Offline/degraded UI
+- [ ] Reconnect detection
+- [ ] Authoritative backend refresh/revalidation after reconnect
+- [ ] Realtime reconnection
+- [ ] Update/version handling
 
 ---
 

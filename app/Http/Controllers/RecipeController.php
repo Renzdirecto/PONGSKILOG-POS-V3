@@ -40,10 +40,10 @@ class RecipeController extends Controller
     public function mode(Request $request, Product $product, SetProductRecipeMode $mode): RedirectResponse
     {
         $request->validate(['no_recipe_needed' => ['required', 'boolean']]);
-        $product = $mode->execute($request->user(), $product, $request->boolean('no_recipe_needed'));
+        $configuration = $mode->execute($request->user(), $product, $request->boolean('no_recipe_needed'));
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => $product->no_recipe_needed
+            'message' => $configuration->no_recipe_needed
                 ? $product->name.' marked as No recipe needed. It keeps using Product stock.'
                 : $product->name.' now uses an ingredient recipe. Set up its recipe below.',
         ]);

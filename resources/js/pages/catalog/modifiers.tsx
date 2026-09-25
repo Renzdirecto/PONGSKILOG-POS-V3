@@ -322,7 +322,9 @@ function GroupForm({
                     </select>
                 </div>
                 {form.errors.name && (
-                    <p className="text-xs text-red-700">{form.errors.name}</p>
+                    <p role="alert" className="text-xs text-red-700">
+                        {form.errors.name}
+                    </p>
                 )}
                 <p
                     id="group-semantic-role-help"
@@ -462,7 +464,10 @@ function GroupForm({
                                 <Trash2 className="size-4" />
                             </button>
                             {form.errors[`options.${index}.name`] && (
-                                <p className="col-span-full text-xs text-red-700">
+                                <p
+                                    role="alert"
+                                    className="col-span-full text-xs text-red-700"
+                                >
                                     {form.errors[`options.${index}.name`]}
                                 </p>
                             )}
@@ -490,7 +495,16 @@ function GroupForm({
                     </Button>
                 </div>
             </fieldset>
-            <FormErrors errors={form.errors} />
+            <FormErrors
+                errors={form.errors}
+                inline={[
+                    'name',
+                    'semantic_role',
+                    'min_select',
+                    'max_select',
+                    /^options\.\d+\.name$/,
+                ]}
+            />
             <SaveButton
                 processing={form.processing}
                 label={group ? 'Save changes' : 'Add Group'}

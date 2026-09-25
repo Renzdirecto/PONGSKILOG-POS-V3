@@ -1,7 +1,9 @@
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     Camera,
     ChevronLeft,
+    KeyRound,
+    Pencil,
     ChevronRight,
     Globe2,
     LayoutGrid,
@@ -24,6 +26,11 @@ import {
 } from '@/components/owner-ui';
 import PasswordInput from '@/components/password-input';
 import {
+    EditStaffForm,
+    ResetStaffPasswordForm,
+    StaffRoleSelectOptions,
+} from '@/components/staff-account-dialogs';
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -33,27 +40,41 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { InvalidationRefresh } from '@/hooks/use-invalidation-refresh';
 import { restoredOwnerViewMode } from '@/lib/owner-view-preference';
+import { isBlank } from '@/lib/required-field';
 import type { OwnerViewMode } from '@/lib/owner-view-preference';
+import { STAFF_POSITION_HINT, staffPositionLabel } from '@/lib/staff-admin';
+import { staffChannelFor } from '@/lib/user-context';
 import {
     index as ownerStaffIndex,
     store as ownerStaffStore,
 } from '@/routes/staff';
 import { index as staffIndex, store } from '@/routes/super-admin/staff';
-import type { BranchSummary } from '@/types';
+import type { BranchContext, BranchSummary } from '@/types';
 
-type StaffRole = { name: string; label: string; business_wide: boolean };
+type StaffRole = {
+    name: string;
+    label: string;
+    business_wide: boolean;
+    custom?: boolean;
+};
 type StaffMember = {
     id: number;
     employee_id: string | null;
     avatar_url: string | null;
     name: string;
     email: string;
+    /** Business/job title for display only; access comes from the Role. */
+    position: string | null;
     is_active: boolean;
     roles: { name: string; label: string }[];
     business_wide: boolean;
     branches: BranchSummary[];
     created_at: string | null;
+    is_self: boolean;
+    custom_access_count: number;
+    other_branch_count: number;
 };
 type Filters = { search?: string; role?: string; status?: string };
 type Props = {
@@ -73,6 +94,8 @@ type Props = {
      * decides which roles and accounts each surface may reach; this only picks the matching routes.
      */
     surface?: 'owner' | 'super_admin';
+    /** A Branch-scoped Staff manager: only its own Branches' accounts, never other Branches' names. */
+    branchScoped?: boolean;
 };
 
 type StaffSurface = NonNullable<Props['surface']>;
@@ -82,7 +105,7 @@ const STAFF_ROUTES = {
     super_admin: { index: staffIndex, store },
 } as const;
 
-const selectClass = `${ownerControlClass} w-full`;
+const selectClass = `${ownerControlClass} w-full aria-invalid:border-[#b91c1c]`;
 
 function applyFilters(surface: StaffSurface, filters: Filters): void {
     router.get(
@@ -118,6 +141,8 @@ function BranchAccess({ member }: { member: StaffMember }) {
     return (
         <span className="text-[12px] text-[#444]">
             {member.branches.map((branch) => branch.name).join(', ')}
+            {member.other_branch_count > 0 &&
+                ` · +${member.other_branch_count} other ${member.other_branch_count === 1 ? 'Branch' : 'Branches'}`}
         </span>
     );
 }
@@ -163,13 +188,23 @@ function StaffAvatar({
     );
 }
 
-/** Name first, with the Employee ID directly underneath it. */
+/** Name first, then the Position (when it adds more than the Role label) and the Employee ID. */
 function StaffIdentity({ member }: { member: StaffMember }) {
+    const position = staffPositionLabel(
+        member.position,
+        member.roles.map((role) => role.label),
+    );
+
     return (
         <span className="flex min-w-0 flex-1 flex-col">
             <span className="text-[13.5px] font-semibold wrap-break-word">
                 {member.name}
             </span>
+            {position !== null && (
+                <span className="text-[12px] font-medium wrap-break-word text-[#444]">
+                    {position}
+                </span>
+            )}
             <span className="font-mono text-[11.5px] text-[#767676]">
                 {member.employee_id ?? 'No Employee ID'}
             </span>
@@ -191,10 +226,19 @@ export default function Staff({
     roles,
     branches,
     surface = 'super_admin',
+    branchScoped = false,
 }: Props) {
     const ownerSurface = surface === 'owner';
+    const { branchContext } = usePage<{ branchContext: BranchContext }>().props;
+    /** Another administrator's change refreshes this list (invalidation only; the server re-scopes the reload). */
+    const realtimeChannel = staffChannelFor(
+        branchScoped,
+        branchContext.current?.id ?? null,
+    );
     const [search, setSearch] = useState(filters.search ?? '');
     const [adding, setAdding] = useState(false);
+    const [managing, setManaging] = useState<StaffMember | null>(null);
+    const [resetting, setResetting] = useState<StaffMember | null>(null);
     /** Tiled is the default; the viewer's last choice is remembered on this device only. */
     const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
     const searchTimer = useRef<number | undefined>(undefined);
@@ -263,7 +307,7 @@ export default function Staff({
                 >
                     <label className="relative block">
                         <span className="sr-only">
-                            Search by name, email, or Employee ID
+                            Search by name, email, Position, or Employee ID
                         </span>
                         <Search
                             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#999]"
@@ -275,7 +319,7 @@ export default function Staff({
                             onChange={(event) =>
                                 changeSearch(event.target.value)
                             }
-                            placeholder="Search name, email, or ID"
+                            placeholder="Search name, email, position, or ID"
                             maxLength={150}
                             className={`${ownerControlClass} w-full pl-9`}
                         />
@@ -429,6 +473,14 @@ export default function Staff({
                                         <div className="border-t border-[#eeeeee] pt-2.5">
                                             <BranchAccess member={member} />
                                         </div>
+                                        <StaffActions
+                                            member={member}
+                                            ownerSurface={ownerSurface}
+                                            onManage={() => setManaging(member)}
+                                            onResetPassword={() =>
+                                                setResetting(member)
+                                            }
+                                        />
                                     </li>
                                 ))}
                             </ul>
@@ -458,7 +510,10 @@ export default function Staff({
                                             >
                                                 Role
                                             </th>
-                                            <th scope="col" className="px-4 py-3">
+                                            <th
+                                                scope="col"
+                                                className="px-4 py-3"
+                                            >
                                                 Branch access
                                             </th>
                                             <th
@@ -466,6 +521,14 @@ export default function Staff({
                                                 className="w-[110px] px-4 py-3"
                                             >
                                                 Status
+                                            </th>
+                                            <th
+                                                scope="col"
+                                                className="w-[150px] px-4 py-3"
+                                            >
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
                                             </th>
                                         </tr>
                                     </thead>
@@ -493,8 +556,12 @@ export default function Staff({
                                                 </td>
                                                 <td className="px-4 py-3 text-[12.5px]">
                                                     {member.roles
-                                                        .map((role) => role.label)
-                                                        .join(', ') || 'No role'}
+                                                        .map(
+                                                            (role) =>
+                                                                role.label,
+                                                        )
+                                                        .join(', ') ||
+                                                        'No role'}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <BranchAccess
@@ -506,6 +573,21 @@ export default function Staff({
                                                         active={
                                                             member.is_active
                                                         }
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <StaffActions
+                                                        member={member}
+                                                        ownerSurface={
+                                                            ownerSurface
+                                                        }
+                                                        onManage={() =>
+                                                            setManaging(member)
+                                                        }
+                                                        onResetPassword={() =>
+                                                            setResetting(member)
+                                                        }
+                                                        compact
                                                     />
                                                 </td>
                                             </tr>
@@ -524,7 +606,9 @@ export default function Staff({
                                                     url={member.avatar_url}
                                                     size="size-11"
                                                 />
-                                                <StaffIdentity member={member} />
+                                                <StaffIdentity
+                                                    member={member}
+                                                />
                                                 <StatusBadge
                                                     active={member.is_active}
                                                 />
@@ -538,6 +622,16 @@ export default function Staff({
                                                     .join(', ') || 'No role'}
                                             </p>
                                             <BranchAccess member={member} />
+                                            <StaffActions
+                                                member={member}
+                                                ownerSurface={ownerSurface}
+                                                onManage={() =>
+                                                    setManaging(member)
+                                                }
+                                                onResetPassword={() =>
+                                                    setResetting(member)
+                                                }
+                                            />
                                         </li>
                                     ))}
                                 </ul>
@@ -580,6 +674,13 @@ export default function Staff({
                 )}
             </OwnerPage>
 
+            {realtimeChannel && (
+                <InvalidationRefresh
+                    channel={realtimeChannel}
+                    event=".staff.changed"
+                    only={['staff', 'roles', 'branches']}
+                />
+            )}
             <Dialog open={adding} onOpenChange={setAdding}>
                 <DialogContent className="owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center">
                     <DialogHeader>
@@ -601,14 +702,135 @@ export default function Staff({
                     )}
                 </DialogContent>
             </Dialog>
+
+            <Dialog
+                open={managing !== null}
+                onOpenChange={(open) => !open && setManaging(null)}
+            >
+                <DialogContent className={sheetClass}>
+                    <DialogHeader>
+                        <DialogTitle className="text-[16px] font-semibold">
+                            Manage {managing?.name}
+                        </DialogTitle>
+                        <DialogDescription className="text-[12.5px] text-neutral-600">
+                            Update details, role, Branch access and status.
+                            Changes are recorded in the Audit Trail.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {managing && (
+                        <EditStaffForm
+                            key={managing.id}
+                            member={managing}
+                            roles={roles}
+                            branches={branches}
+                            surface={surface}
+                            onSaved={() => setManaging(null)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {!ownerSurface && (
+                <Dialog
+                    open={resetting !== null}
+                    onOpenChange={(open) => !open && setResetting(null)}
+                >
+                    <DialogContent className={sheetClass}>
+                        <DialogHeader>
+                            <DialogTitle className="text-[16px] font-semibold">
+                                Reset password for {resetting?.name}
+                            </DialogTitle>
+                            <DialogDescription className="text-[12.5px] text-neutral-600">
+                                Set a new temporary password. It is never shown
+                                again and is not recorded anywhere.
+                            </DialogDescription>
+                        </DialogHeader>
+                        {resetting && (
+                            <ResetStaffPasswordForm
+                                key={resetting.id}
+                                member={resetting}
+                                onDone={() => setResetting(null)}
+                            />
+                        )}
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
     );
 }
 
-function FieldError({ id, message }: { id: string; message?: string }) {
-    return message ? (
-        <p id={id} role="alert" className="text-xs text-red-700">
-            {message}
+const sheetClass =
+    'owner-surface top-auto bottom-0 max-h-[92dvh] w-full max-w-none translate-y-0 overflow-y-auto rounded-t-[20px] rounded-b-none border-[#e5e5e5] bg-white text-neutral-950 sm:top-1/2 sm:bottom-auto sm:max-w-lg sm:-translate-y-1/2 sm:rounded-[18px] [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center';
+
+/** Manage opens the edit sheet; the administrative password reset is Super Admin only and never for oneself. */
+function StaffActions({
+    member,
+    ownerSurface,
+    onManage,
+    onResetPassword,
+    compact = false,
+}: {
+    member: StaffMember;
+    ownerSurface: boolean;
+    onManage: () => void;
+    onResetPassword: () => void;
+    compact?: boolean;
+}) {
+    return (
+        <div className={`flex flex-wrap gap-2 ${compact ? '' : 'pt-1'}`}>
+            <button
+                type="button"
+                onClick={onManage}
+                aria-label={`Manage ${member.name}`}
+                className={`${ownerSecondaryActionClass} inline-flex items-center gap-1.5`}
+            >
+                <Pencil className="size-3.5" aria-hidden="true" />
+                Manage
+            </button>
+            {!ownerSurface && !member.is_self && (
+                <button
+                    type="button"
+                    onClick={onResetPassword}
+                    aria-label={`Reset password for ${member.name}`}
+                    title="Reset password"
+                    className={`${ownerSecondaryActionClass} inline-flex items-center gap-1.5`}
+                >
+                    <KeyRound className="size-3.5" aria-hidden="true" />
+                    {compact ? null : 'Reset password'}
+                </button>
+            )}
+            {!ownerSurface && member.custom_access_count > 0 && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 text-[10px] font-semibold text-blue-800">
+                    {member.custom_access_count} custom access
+                </span>
+            )}
+        </div>
+    );
+}
+
+/** A server error, or readable "Required" text while a required value is still missing (never color alone). */
+function FieldError({
+    id,
+    message,
+    missing = false,
+    requiredText = 'Required',
+}: {
+    id: string;
+    message?: string;
+    missing?: boolean;
+    requiredText?: string;
+}) {
+    if (message) {
+        return (
+            <p id={id} role="alert" className="text-xs text-red-700">
+                {message}
+            </p>
+        );
+    }
+
+    return missing ? (
+        <p id={id} className="text-xs text-red-700">
+            {requiredText}
         </p>
     ) : null;
 }
@@ -628,6 +850,7 @@ function AddStaffForm({
         employee_id: '',
         name: '',
         email: '',
+        position: '',
         password: '',
         password_confirmation: '',
         role: '',
@@ -662,6 +885,19 @@ function AddStaffForm({
         Object.entries(form.errors).find(([key]) =>
             key.startsWith('branch_ids.'),
         )?.[1];
+    /** Required values still missing: red outline plus "Required" until valid (optional fields never turn red). */
+    const missing = {
+        employee_id: isBlank(form.data.employee_id),
+        name: isBlank(form.data.name),
+        email: isBlank(form.data.email),
+        password: form.data.password === '',
+        password_confirmation: form.data.password_confirmation === '',
+        role: form.data.role === '',
+        branch_ids:
+            requiresBranch &&
+            branches.length > 0 &&
+            form.data.branch_ids.length === 0,
+    };
 
     function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -786,7 +1022,9 @@ function AddStaffForm({
                         }
                         required
                         maxLength={8}
-                        aria-invalid={!!form.errors.employee_id}
+                        aria-invalid={
+                            !!form.errors.employee_id || missing.employee_id
+                        }
                         aria-describedby="staff-employee_id-hint staff-employee_id-error"
                         className={`${ownerControlClass} w-full font-mono`}
                     />
@@ -800,6 +1038,7 @@ function AddStaffForm({
                     <FieldError
                         id="staff-employee_id-error"
                         message={form.errors.employee_id}
+                        missing={missing.employee_id}
                     />
                 </div>
                 <div className="space-y-2">
@@ -814,13 +1053,14 @@ function AddStaffForm({
                         }
                         required
                         maxLength={255}
-                        aria-invalid={!!form.errors.name}
+                        aria-invalid={!!form.errors.name || missing.name}
                         aria-describedby="staff-name-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-name-error"
                         message={form.errors.name}
+                        missing={missing.name}
                     />
                 </div>
                 <div className="space-y-2">
@@ -836,13 +1076,41 @@ function AddStaffForm({
                         }
                         required
                         maxLength={255}
-                        aria-invalid={!!form.errors.email}
+                        aria-invalid={!!form.errors.email || missing.email}
                         aria-describedby="staff-email-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-email-error"
                         message={form.errors.email}
+                        missing={missing.email}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="staff-position">Position</Label>
+                    <Input
+                        id="staff-position"
+                        name="position"
+                        autoComplete="off"
+                        placeholder="Area Manager"
+                        value={form.data.position}
+                        onChange={(event) =>
+                            form.setData('position', event.target.value)
+                        }
+                        maxLength={100}
+                        aria-invalid={!!form.errors.position}
+                        aria-describedby="staff-position-hint staff-position-error"
+                        className={`${ownerControlClass} w-full`}
+                    />
+                    <p
+                        id="staff-position-hint"
+                        className="text-xs text-neutral-500"
+                    >
+                        {STAFF_POSITION_HINT}
+                    </p>
+                    <FieldError
+                        id="staff-position-error"
+                        message={form.errors.position}
                     />
                 </div>
             </fieldset>
@@ -865,7 +1133,9 @@ function AddStaffForm({
                             form.setData('password', event.target.value)
                         }
                         required
-                        aria-invalid={!!form.errors.password}
+                        aria-invalid={
+                            !!form.errors.password || missing.password
+                        }
                         aria-describedby="staff-password-hint staff-password-error"
                         className={`${ownerControlClass} w-full`}
                     />
@@ -879,6 +1149,7 @@ function AddStaffForm({
                     <FieldError
                         id="staff-password-error"
                         message={form.errors.password}
+                        missing={missing.password}
                     />
                 </div>
                 <div className="space-y-2">
@@ -897,13 +1168,17 @@ function AddStaffForm({
                             )
                         }
                         required
-                        aria-invalid={!!form.errors.password_confirmation}
+                        aria-invalid={
+                            !!form.errors.password_confirmation ||
+                            missing.password_confirmation
+                        }
                         aria-describedby="staff-password_confirmation-error"
                         className={`${ownerControlClass} w-full`}
                     />
                     <FieldError
                         id="staff-password_confirmation-error"
                         message={form.errors.password_confirmation}
+                        missing={missing.password_confirmation}
                     />
                 </div>
             </fieldset>
@@ -934,22 +1209,19 @@ function AddStaffForm({
                             }));
                         }}
                         required
-                        aria-invalid={!!form.errors.role}
+                        aria-invalid={!!form.errors.role || missing.role}
                         aria-describedby="staff-role-error"
                         className={selectClass}
                     >
                         <option value="" disabled>
                             Choose a role
                         </option>
-                        {roles.map((role) => (
-                            <option key={role.name} value={role.name}>
-                                {role.label}
-                            </option>
-                        ))}
+                        <StaffRoleSelectOptions roles={roles} />
                     </select>
                     <FieldError
                         id="staff-role-error"
                         message={form.errors.role}
+                        missing={missing.role}
                     />
                 </div>
 
@@ -1004,12 +1276,13 @@ function AddStaffForm({
                             tabIndex={-1}
                             aria-labelledby="staff-branch-label"
                             aria-describedby="staff-branch-error"
+                            aria-invalid={!!branchError || missing.branch_ids}
                             className="grid gap-1.5 outline-none"
                         >
                             {branches.map((branch) => (
                                 <label
                                     key={branch.id}
-                                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border border-[#e5e5e5] px-3 text-[13px] has-checked:border-[#111]"
+                                    className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-[11px] border px-3 text-[13px] has-checked:border-[#111] ${missing.branch_ids ? 'border-[#b91c1c]' : 'border-[#e5e5e5]'}`}
                                 >
                                     <input
                                         type="checkbox"
@@ -1034,7 +1307,12 @@ function AddStaffForm({
                             ))}
                         </div>
                     )}
-                    <FieldError id="staff-branch-error" message={branchError} />
+                    <FieldError
+                        id="staff-branch-error"
+                        message={branchError}
+                        missing={missing.branch_ids}
+                        requiredText="Required · choose at least one Branch."
+                    />
                 </div>
 
                 <div className="space-y-2">

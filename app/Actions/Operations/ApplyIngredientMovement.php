@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\BranchIngredientStock;
 use App\Models\IngredientMovement;
 use App\Support\ExactQuantity;
+use App\Support\StockAlerts;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -84,13 +85,14 @@ class ApplyIngredientMovement
             $stock = ($locked !== null && $locked->branch_id === $branch->id && $locked->ingredient_id === $ingredientId ? $locked : null)
                 ?? $this->lock($branch, [$ingredientId])->get($ingredientId)
                 ?? throw new \LogicException('The Ingredient balance could not be locked.');
-            $balance = ExactQuantity::add(ExactQuantity::parse($stock->on_hand), $delta);
+            $balanceBefore = ExactQuantity::parse($stock->on_hand);
+            $balance = ExactQuantity::add($balanceBefore, $delta);
             $stock->update([
                 'on_hand' => ExactQuantity::decimal($balance),
                 'version' => $stock->version + 1,
             ]);
 
-            return IngredientMovement::query()->create([
+            $movement = IngredientMovement::query()->create([
                 ...$attributes,
                 'branch_id' => $branch->id,
                 'ingredient_id' => $ingredientId,
@@ -98,6 +100,13 @@ class ApplyIngredientMovement
                 'quantity_delta' => ExactQuantity::decimal($delta),
                 'balance_after' => ExactQuantity::decimal($balance),
             ]);
+
+            /** Only the movement that empties a stocked balance alerts; it holds the balance row lock. */
+            if ($balanceBefore > 0 && $balance <= 0) {
+                StockAlerts::ingredientOutOfStock($branch, $ingredientId);
+            }
+
+            return $movement;
         });
     }
 }

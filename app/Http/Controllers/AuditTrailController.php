@@ -17,7 +17,7 @@ class AuditTrailController extends Controller
     {
         $filters = $request->safe()->only(['branch_id', 'user_id', 'module', 'action', 'search', 'date']);
         $logs = AuditLog::query()
-            ->with(['branch:id,name,code', 'user:id,name,email'])
+            ->with(['branch:id,name,code', 'user:id,name,email,position'])
             ->when($filters['branch_id'] ?? null, fn (Builder $query, string $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['user_id'] ?? null, fn (Builder $query, int $userId) => $query->where('user_id', $userId))
             ->when($filters['module'] ?? null, fn (Builder $query, string $module) => $query->where('module', $module))
@@ -45,7 +45,8 @@ class AuditTrailController extends Controller
                 'id' => $log->id,
                 'created_at' => $log->created_at->toIso8601String(),
                 'branch' => $log->branch?->only(['id', 'name', 'code']),
-                'actor' => $log->user?->only(['id', 'name', 'email']),
+                /** Position is the actor's current Staff title (display only), not a historical snapshot. */
+                'actor' => $log->user?->only(['id', 'name', 'email', 'position']),
                 'module' => $log->module,
                 'action' => $log->action,
                 'auditable_type' => class_basename($log->auditable_type),

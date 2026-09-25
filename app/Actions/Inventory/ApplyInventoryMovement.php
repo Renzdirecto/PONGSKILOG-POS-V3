@@ -12,6 +12,7 @@ use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\InventoryState;
+use App\Support\StockAlerts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -88,6 +89,7 @@ class ApplyInventoryMovement
                 throw ValidationException::withMessages(['quantity_delta' => 'The inventory balance or version would exceed the supported integer range.']);
             }
 
+            $onHandBefore = $balance->on_hand;
             $balance->update([
                 'on_hand' => $balance->on_hand + $quantityDelta,
                 'version' => $balance->version + 1,
@@ -116,6 +118,11 @@ class ApplyInventoryMovement
             );
 
             CustomerCatalogChanged::dispatch($branch->id);
+
+            /** Only the movement that empties a stocked balance alerts; it holds the balance row lock. */
+            if ($onHandBefore > 0 && $balance->on_hand <= 0) {
+                StockAlerts::productOutOfStock($branch, $product);
+            }
 
             return $movement;
         });

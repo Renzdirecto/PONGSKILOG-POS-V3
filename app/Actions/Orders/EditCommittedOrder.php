@@ -17,10 +17,12 @@ use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
+use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\OrderAdjustment;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
+use App\Models\OrderRecipeSnapshot;
 use App\Models\Product;
 use App\Models\StoreSession;
 use App\Models\User;
@@ -107,15 +109,31 @@ class EditCommittedOrder
             $products = Product::query()->whereKey($productIds)->orderBy('id')->get()->keyBy('id');
             $configurations = BranchProduct::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->orderBy('product_id')->lockForUpdate()->get()->keyBy('product_id');
             $balances = BranchInventory::query()->where('branch_id', $branch->id)->whereIn('product_id', $productIds)->orderBy('product_id')->lockForUpdate()->get()->keyBy('product_id');
+            /**
+             * A Product already on this Order keeps the stock path it was committed with, exactly like its Ingredient
+             * snapshot does: it moves Product stock only if the Order already moved Product stock for it. Today's
+             * tracking setting applies only to Products new to the Order, so a mode change between commit and edit can
+             * never move both Product and Ingredient stock (or neither) for one line.
+             */
+            $stockHistory = InventoryMovement::query()->where('order_id', $order->id)
+                ->whereIn('movement_type', [InventoryMovementType::Sale, InventoryMovementType::PayLaterCommit, InventoryMovementType::OrderEditDelta])
+                ->distinct()->pluck('product_id')->flip();
+            $committedProducts = OrderRecipeSnapshot::query()->where('order_id', $order->id)->distinct()->pluck('product_id')
+                ->merge($beforeQuantities->keys())->merge($stockHistory->keys())->flip();
             $deltas = [];
             foreach ($productIds as $productId) {
                 $delta = (int) ($beforeQuantities[$productId] ?? 0) - (int) ($afterQuantities[$productId] ?? 0);
                 if ($delta === 0) {
                     continue;
                 }
-                $tracked = (bool) ($configurations[$productId]?->tracks_inventory);
+                $tracked = $committedProducts->has($productId)
+                    ? $stockHistory->has($productId)
+                    : (bool) ($configurations[$productId]?->tracks_inventory);
                 if (! $tracked) {
                     continue;
+                }
+                if (! $configurations[$productId]?->tracks_inventory) {
+                    throw ValidationException::withMessages(['items' => ($products[$productId]->name ?? 'A product').' was sold from Product stock, which this Branch no longer tracks. Turn its stock tracking back on to change its quantity.']);
                 }
                 $balance = $balances->get($productId);
                 $onHand = $balance instanceof BranchInventory ? $balance->on_hand : 0;

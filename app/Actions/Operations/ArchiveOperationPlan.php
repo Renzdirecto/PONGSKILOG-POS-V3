@@ -7,23 +7,28 @@ use App\Models\OperationPlan;
 use App\Models\OperationPlanProduct;
 use App\Models\PamamalengkeListEntry;
 use App\Models\User;
+use App\Support\BranchConfiguration;
+use App\Support\CatalogRealtime;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Archives a Plan instead of deleting it: its historical snapshots, movements, purchases and audit stay readable. Its
+ * Archives a Plan of the selected Branch instead of deleting it: its historical snapshots, movements, purchases and audit stay readable. Its
  * Products are released so they can join another Plan (future sales only), and its unconfirmed working list is cleared.
  * Ingredient stock is untouched because a Plan never owned any.
  */
 class ArchiveOperationPlan
 {
-    public function __construct(private OperationsAccess $access, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     public function execute(User $actor, OperationPlan $plan): OperationPlan
     {
         $actor = $this->access->authorize($actor);
+        $branch = $this->access->configurationBranch($actor);
+        $this->access->ownedBy($plan, $branch);
 
-        return DB::transaction(function () use ($actor, $plan): OperationPlan {
+        return DB::transaction(function () use ($actor, $branch, $plan): OperationPlan {
+            $branch = BranchConfiguration::lock($branch);
             $plan = OperationPlan::query()->whereKey($plan->id)->lockForUpdate()->firstOrFail();
             if ($plan->archived_at !== null) {
                 return $plan;
@@ -35,15 +40,16 @@ class ArchiveOperationPlan
             $plan->update(['archived_at' => $archivedAt]);
 
             $this->audit->record(
-                branch: null,
+                branch: $branch,
                 actor: $actor,
                 module: 'operations',
                 action: 'operation_plan.archived',
                 auditableType: OperationPlan::class,
                 auditableId: $plan->id,
-                before: ['name' => $plan->name, 'product_ids' => $products->pluck('product_id')->all()],
+                before: ['branch_code' => $branch->code, 'name' => $plan->name, 'product_ids' => $products->pluck('product_id')->all()],
                 after: ['archived_at' => $archivedAt->toIso8601String()],
             );
+            $this->realtime->branchConfigurationChanged($branch, 'plan_archived');
 
             return $plan;
         });

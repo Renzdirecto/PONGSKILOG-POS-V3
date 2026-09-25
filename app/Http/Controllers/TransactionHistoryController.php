@@ -17,6 +17,7 @@ use App\Support\TransactionHistory;
 use App\Support\TransactionProjection;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -43,15 +44,20 @@ class TransactionHistoryController extends Controller
     }
 
     /**
-     * The same Transaction History page for a business-wide viewer across All Branches or the selected Branch. It is
-     * read-only unless the viewer also holds POS access to the selected Branch (Super Admin), in which case the usual
-     * POS rules decide each Order's Edit, Settle and Void capability.
+     * The same Transaction History page in the management shell: All Branches or the selected Branch for a business-wide
+     * viewer, the selected assigned Branch only for a Branch-scoped viewer. It is
+     * read-only unless the viewer also holds POS access to the selected Branch (Super Admin, a business-wide Custom Role
+     * with POS) and that Branch's Store is OPEN, in which case the usual POS rules decide each Order's Edit, Settle and
+     * Void capability. A closed Store is historical, view-only reading; the write endpoints re-authorize regardless.
      */
-    public function business(BusinessTransactionHistoryRequest $request, ActiveBranchContext $context, PosAccess $access, TransactionHistory $history, BranchCatalog $catalog): Response
+    public function business(BusinessTransactionHistoryRequest $request, ActiveBranchContext $context, PosAccess $access, TransactionHistory $history, BranchCatalog $catalog): Response|RedirectResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
-        $branch = $context->current($user);
+        $branch = $context->managementBranch($user);
+        if ($branch === false) {
+            return to_route('workspace');
+        }
         $operational = $this->operationalBranch($user, $branch, $access);
 
         return Inertia::render('workspaces/transaction-history', [
@@ -77,14 +83,15 @@ class TransactionHistoryController extends Controller
     }
 
     /**
-     * Transaction detail for a business-wide viewer, limited to the selected Branch when one is chosen.
+     * Transaction detail in the management shell, limited to the selected Branch when one is chosen. A Branch-scoped
+     * viewer always reads through its selected assigned Branch, so a foreign Order is not found.
      */
     public function businessShow(Request $request, Order $order, ActiveBranchContext $context, PosAccess $access, TransactionProjection $projection, PosReceipt $receipt): JsonResponse
     {
         $user = $request->user();
-        abort_unless($user instanceof User && $user->is_active
-            && $user->hasPermission('transactions.view') && $user->hasBusinessWideScope(), 403);
-        $branch = $context->current($user);
+        abort_unless($user instanceof User && $user->is_active && $user->hasPermission('transactions.view'), 403);
+        $branch = $context->managementBranch($user);
+        abort_if($branch === false, 403);
         $operational = $this->operationalBranch($user, $branch, $access);
 
         return $this->detail($this->visibleOrder($order, $branch), $operational, $projection, $receipt);
@@ -137,11 +144,13 @@ class TransactionHistoryController extends Controller
     }
 
     /**
-     * The selected Branch when the viewer may also operate its POS (Super Admin); Owner scope never qualifies.
+     * The selected Branch when the viewer may also operate its POS (Super Admin, business-wide Custom Role with POS) and
+     * its Store Session is OPEN; Owner scope never qualifies.
      */
     private function operationalBranch(User $user, ?Branch $branch, PosAccess $access): ?Branch
     {
-        if ($branch === null || ! $user->hasCashierOperationsRole()) {
+        if ($branch === null || ! $user->hasCashierOperationsRole()
+            || ! $branch->storeSessions()->where('status', StoreSessionStatus::Open)->exists()) {
             return null;
         }
 

@@ -26,6 +26,7 @@ const source = (path: string): string =>
 const dashboard = source('pages/workspaces/owner-dashboard.tsx');
 const components = source('components/owner-analytics.tsx');
 const ownerShell = source('components/owner-workspace-shell.tsx');
+const managementNavigation = source('lib/management-navigation.ts');
 const layout = source('layouts/workspace-layout.tsx');
 const history = source('pages/workspaces/transaction-history.tsx');
 const staff = source('pages/super-admin/staff.tsx');
@@ -256,9 +257,12 @@ test('charts expose keyboard points and text alternatives', () => {
 });
 
 test('the owner shell now links every owner destination', () => {
-    assert.match(ownerShell, /href: canTransactions \? transactions\(\) : undefined/);
-    assert.match(ownerShell, /href: canStaff \? staffIndex\(\) : undefined/);
-    assert.match(ownerShell, /const isDashboard = page\.component === 'workspaces\/owner-dashboard';/);
+    assert.match(ownerShell, /case 'transactions':\s+return transactions\(\);/);
+    assert.match(ownerShell, /case 'staff':\s+return staffIndex\(\);/);
+    assert.match(
+        managementNavigation,
+        /component === 'workspaces\/owner-dashboard'\) \{\s+return 'dashboard';/,
+    );
     assert.doesNotMatch(ownerShell, /Phase 12|outside this refinement scope/);
     assert.doesNotMatch(ownerShell, /auditTrail|voidOrders|accessControl/);
 });
@@ -287,7 +291,7 @@ test('staff lists name first with the employee id beneath it and defaults to til
     assert.match(staff, /aria-pressed=\{viewMode === mode\}/);
     assert.match(
         staff,
-        /\{member\.name\}\s*<\/span>\s*<span className="font-mono[^"]*">\s*\{member\.employee_id \?\? 'No Employee ID'\}/,
+        /\{member\.name\}\s*<\/span>\s*\{position !== null && \([\s\S]*?\)\}\s*<span className="font-mono[^"]*">\s*\{member\.employee_id \?\? 'No Employee ID'\}/,
     );
     assert.doesNotMatch(staff, />\s*Employee ID\s*<\/th>/);
 });

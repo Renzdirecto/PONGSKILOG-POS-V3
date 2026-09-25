@@ -28,6 +28,7 @@ import {
     opsPrimaryClass,
     operationsHref,
 } from '@/components/operations-ui';
+import { OperationsSetupCopyButton } from '@/components/operations-setup-copy-dialog';
 import { formatPeso } from '@/lib/operations';
 import operationsRoutes from '@/routes/operations';
 import type {
@@ -86,6 +87,8 @@ export default function OperationsPlans({
     products,
 }: Props) {
     const [editing, setEditing] = useState<OperationsPlan | 'new' | null>(null);
+    /** Plans belong to the selected Branch; its Operations manager configures them. */
+    const canEdit = operations.can_configure;
     const planName = (id: string) =>
         operations.plans.find((plan) => plan.id === id)?.name ?? 'Plan';
     const business = summary.business;
@@ -94,15 +97,20 @@ export default function OperationsPlans({
         <OperationsShell
             operations={operations}
             title="Pamalengke Plans"
-            description="Plans group products, recipes, ingredients and market planning. Ingredient stock stays shared per branch."
+            description={`Plans of ${operations.branch?.code ?? 'this Branch'} group its products, recipes, ingredients and market planning. Other Branches keep their own plans.`}
             action={
-                <button
-                    type="button"
-                    className={opsPrimaryClass}
-                    onClick={() => setEditing('new')}
-                >
-                    <Plus className="size-4" /> Add plan
-                </button>
+                canEdit ? (
+                    <div className="flex flex-wrap gap-2">
+                        <OperationsSetupCopyButton operations={operations} />
+                        <button
+                            type="button"
+                            className={opsPrimaryClass}
+                            onClick={() => setEditing('new')}
+                        >
+                            <Plus className="size-4" /> Add plan
+                        </button>
+                    </div>
+                ) : undefined
             }
         >
             <section className={opsCardClass} aria-labelledby="plan-holds">
@@ -136,16 +144,24 @@ export default function OperationsPlans({
 
             {operations.plans.length === 0 ? (
                 <EmptyState
-                    title="No plans yet"
-                    body="Create a plan for a product family, such as Drinks or Silog. Then attach recipes to its existing Catalog products and add the ingredients they use."
+                    title="No Pamalengke Plans yet."
+                    body={`${operations.branch?.code ?? 'This Branch'} has no Operations setup yet (${operations.setup.ingredients} ingredients, ${operations.setup.recipes} recipes). Create a plan for a product family, such as Drinks or Silog, or copy the setup from another Branch. Stock is never copied.`}
                     action={
-                        <button
-                            type="button"
-                            className={opsPrimaryClass}
-                            onClick={() => setEditing('new')}
-                        >
-                            <Plus className="size-4" /> Add the first plan
-                        </button>
+                        canEdit ? (
+                            <div className="flex flex-wrap justify-center gap-2">
+                                <button
+                                    type="button"
+                                    className={opsButtonClass}
+                                    onClick={() => setEditing('new')}
+                                >
+                                    <Plus className="size-4" /> Create manually
+                                </button>
+                                <OperationsSetupCopyButton
+                                    operations={operations}
+                                    primary
+                                />
+                            </div>
+                        ) : undefined
                     }
                 />
             ) : (
@@ -180,14 +196,16 @@ export default function OperationsPlans({
                                                 `Ingredients, recipes and market planning for ${plan.name}.`}
                                         </span>
                                     </span>
-                                    <button
-                                        type="button"
-                                        aria-label={`Edit ${plan.name} plan`}
-                                        className={`${opsButtonClass} w-11 px-0`}
-                                        onClick={() => setEditing(plan)}
-                                    >
-                                        <Pencil className="size-4" />
-                                    </button>
+                                    {canEdit && (
+                                        <button
+                                            type="button"
+                                            aria-label={`Edit ${plan.name} plan`}
+                                            className={`${opsButtonClass} w-11 px-0`}
+                                            onClick={() => setEditing(plan)}
+                                        >
+                                            <Pencil className="size-4" />
+                                        </button>
+                                    )}
                                 </div>
                                 <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#efefef] bg-[#efefef]">
                                     <Stat
@@ -269,6 +287,7 @@ export default function OperationsPlans({
                     })}
                     <button
                         type="button"
+                        hidden={!canEdit}
                         onClick={() => setEditing('new')}
                         className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-2xl border-[1.5px] border-dashed border-[#c9c9c9] bg-[#fafafa] p-4 text-center hover:border-[#111] hover:bg-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none"
                     >

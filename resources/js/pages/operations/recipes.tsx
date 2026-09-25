@@ -31,7 +31,7 @@ import {
     recipeNavNote,
     recipeSetupState,
 } from '@/lib/operations';
-import ActiveBranchController from '@/actions/App/Http/Controllers/ActiveBranchController';
+import { OperationsSetupCopyButton } from '@/components/operations-setup-copy-dialog';
 import { requiredOutline } from '@/lib/required-field';
 import operationsRoutes from '@/routes/operations';
 import type {
@@ -100,15 +100,25 @@ export default function OperationsRecipes({
                 description="What each existing product consumes from ingredient stock when it sells."
             >
                 <EmptyState
-                    title="This plan has no products yet."
-                    body="Recipes attach to existing products from Catalog › Products. Add products to the plan from Pamalengke Plans."
+                    title={
+                        operations.setup.recipes === 0
+                            ? 'No Recipes configured for this Branch.'
+                            : 'This plan has no products yet.'
+                    }
+                    body={`Recipes attach to products of the ${operations.branch?.code ?? 'selected'} assortment and use only its ingredients. Add products to the plan from Pamalengke Plans, or copy the setup from another Branch.`}
                     action={
-                        <Link
-                            href={operationsHref('plans')}
-                            className={opsButtonClass}
-                        >
-                            Open Pamalengke Plans
-                        </Link>
+                        <div className="flex flex-wrap justify-center gap-2">
+                            <Link
+                                href={operationsHref('plans')}
+                                className={opsButtonClass}
+                            >
+                                Open Pamalengke Plans
+                            </Link>
+                            <OperationsSetupCopyButton
+                                operations={operations}
+                                primary
+                            />
+                        </div>
                     }
                 />
             </OperationsShell>
@@ -146,14 +156,9 @@ export default function OperationsRecipes({
         (item) => item.key !== size?.key && item.lines?.length,
     );
     const anyRecipe = product.sizes.some((item) => item.lines?.length);
-    const blockingBranches = product.tracked_branches
-        .map((branch) => `${branch.code} (${branch.name})`)
-        .join(', ');
-    /** Switch to the blocking Branch through the existing Branch context, then open that Product's Branch settings. */
-    const openBranchSettings = (branchId: string) =>
-        router.put(ActiveBranchController.update.url(branchId), {
-            redirect: `${product.settings_url}&section=branch`,
-        });
+    const branchCode = operations.branch?.code ?? 'this Branch';
+    /** Recipes, Add-on effects and the recipe mode belong to the selected Branch only. */
+    const canEdit = operations.can_configure;
 
     const save = () => {
         const bad = rows.find((row) => !(parseQuantity(row.quantity) ?? 0));
@@ -315,6 +320,16 @@ export default function OperationsRecipes({
                     className={opsCardClass}
                     aria-labelledby="recipe-product"
                 >
+                    {!canEdit && (
+                        <p
+                            role="note"
+                            className="rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-3 text-[12.5px] leading-5 text-[#555]"
+                        >
+                            Recipes of this Branch are read-only here. Choose
+                            one Branch in the header to configure its own
+                            recipes.
+                        </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                         <ProductThumb product={product} large />
                         <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-0.5">
@@ -353,22 +368,16 @@ export default function OperationsRecipes({
                         <StatePanel
                             icon={<Box className="size-6" aria-hidden="true" />}
                             title="Uses Product stock"
-                            body={`Ingredient recipes cannot be enabled while ${product.name} tracks direct Product stock in: ${blockingBranches}. Recipes are shared by every Branch, so Product stock tracking must be turned off in ${product.tracked_branches.length > 1 ? 'each Branch listed' : 'that Branch'} to prevent double inventory deduction.`}
-                            note="Nothing changes automatically: existing Product stock is kept until you decide. Selling prices can still differ by Branch."
+                            body={`${product.name} tracks direct Product stock at ${branchCode}, so an Ingredient recipe cannot be enabled here (one sale never deducts both). Other Branches are configured on their own and may use a recipe for this product.`}
+                            note="Nothing changes automatically: existing Product stock is kept until you decide."
                         >
-                            {product.tracked_branches.map((branch) => (
-                                <button
-                                    key={branch.id}
-                                    type="button"
-                                    className={opsPrimaryClass}
-                                    onClick={() =>
-                                        openBranchSettings(branch.id)
-                                    }
-                                >
-                                    <Settings2 className="size-4" /> Open{' '}
-                                    {branch.code} product settings
-                                </button>
-                            ))}
+                            <Link
+                                href={`${product.settings_url}&section=branch`}
+                                className={opsPrimaryClass}
+                            >
+                                <Settings2 className="size-4" /> Open{' '}
+                                {branchCode} product settings
+                            </Link>
                         </StatePanel>
                     ) : setup === 'no_recipe_needed' ? (
                         <StatePanel
@@ -385,7 +394,7 @@ export default function OperationsRecipes({
                             <button
                                 type="button"
                                 className={opsPrimaryClass}
-                                disabled={busy}
+                                disabled={busy || !canEdit}
                                 onClick={() => setMode(false)}
                             >
                                 <Plus className="size-4" /> Use ingredient
@@ -472,180 +481,208 @@ export default function OperationsRecipes({
                                     </div>
                                 </div>
 
-                                {editing ? (
-                                    <div className="flex flex-col gap-3">
-                                        <IngredientLinesEditor
-                                            rows={rows}
-                                            onChange={setRows}
-                                            ingredients={ingredients}
-                                            planId={plan.id}
-                                            costs={costs}
-                                            quantityLabel="Quantity per sale of"
-                                        />
-                                        <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
-                                            <div className="flex flex-col gap-1 rounded-xl border border-[#111] p-3">
-                                                <span className={opsLabelClass}>
-                                                    Est. ingredient cost
-                                                </span>
-                                                <span className="text-[19px] font-bold tabular-nums">
-                                                    {formatPeso(total)}
-                                                </span>
-                                                <span className="text-[11px] text-[#767676]">
-                                                    {unknown
-                                                        ? 'Some costs unknown · incomplete · '
-                                                        : ''}
-                                                    per {sizeLabel}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
-                                                <span className={opsLabelClass}>
-                                                    Selling price
-                                                </span>
-                                                <span className="text-[19px] font-bold tabular-nums">
-                                                    {formatPeso(
-                                                        size.price_cents,
-                                                    )}
-                                                </span>
-                                                <span className="text-[11px] text-[#767676]">
-                                                    From Catalog › Products
-                                                    {operations.branch
-                                                        ? ` · ${operations.branch.code}`
-                                                        : ''}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
-                                                <span className={opsLabelClass}>
-                                                    Est. gross margin
-                                                </span>
-                                                <span className="text-[19px] font-bold tabular-nums">
-                                                    {unknown
-                                                        ? '—'
-                                                        : formatPeso(
-                                                              size.price_cents -
-                                                                  total,
-                                                          )}
-                                                </span>
-                                                <span className="text-[11px] text-[#767676]">
-                                                    {unknown
-                                                        ? 'Needs every ingredient cost'
-                                                        : size.price_cents > 0
-                                                          ? `${Math.round(((size.price_cents - total) / size.price_cents) * 100)}% of price`
-                                                          : 'No selling price'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <p className="text-xs leading-5 text-[#666]">
-                                            Each {sizeLabel} sold subtracts
-                                            exactly these quantities from branch
-                                            ingredient stock, and can only be
-                                            sold while that stock covers it.
-                                            Recipe changes apply to future
-                                            sales; past sales keep the recipe
-                                            and cost they were sold with.
-                                        </p>
-                                        {Object.values(errors).length > 0 && (
-                                            <p
-                                                role="alert"
-                                                className="text-xs font-semibold text-[#b91c1c]"
-                                            >
-                                                {Object.values(errors)[0]}
-                                            </p>
-                                        )}
-                                        {dirty && (
-                                            <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-[#111] bg-white p-2.5 shadow-lg">
-                                                <span className="mr-auto text-xs font-semibold text-[#b45309]">
-                                                    Unsaved changes
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    className={opsButtonClass}
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        setDraft(null)
-                                                    }
-                                                >
-                                                    Discard
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className={opsPrimaryClass}
-                                                    disabled={busy}
-                                                    onClick={save}
-                                                >
-                                                    <Check className="size-4" />{' '}
-                                                    {rows.length
-                                                        ? 'Save recipe'
-                                                        : 'Remove recipe'}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <StatePanel
-                                        tone="error"
-                                        icon={
-                                            <CircleAlert
-                                                className="size-6 text-[#b91c1c]"
-                                                aria-hidden="true"
+                                <fieldset
+                                    disabled={!canEdit}
+                                    className="contents"
+                                >
+                                    {editing ? (
+                                        <div className="flex flex-col gap-3">
+                                            <IngredientLinesEditor
+                                                rows={rows}
+                                                onChange={setRows}
+                                                ingredients={ingredients}
+                                                planId={plan.id}
+                                                costs={costs}
+                                                quantityLabel="Quantity per sale of"
                                             />
-                                        }
-                                        title={`Recipe required for ${sizeLabel}`}
-                                        body={
-                                            anyRecipe
-                                                ? `Other sizes of ${product.name} use ingredient recipes, so ${sizeLabel} cannot be sold until its recipe is set.`
-                                                : 'Set up the recipe, or mark the product No recipe needed. Until then, sales still work but no ingredient stock moves and the cost is missing from estimated COGS.'
-                                        }
-                                        error={Object.values(errors)[0]}
-                                    >
-                                        {other && (
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                onClick={() =>
-                                                    setRows(
-                                                        other.lines!.map(
-                                                            (row) => ({
-                                                                ...row,
-                                                            }),
-                                                        ),
-                                                    )
-                                                }
-                                            >
-                                                Copy from {other.name}
-                                            </button>
-                                        )}
-                                        {!anyRecipe &&
-                                            !product.add_ons.some(
-                                                (addOn) => addOn.lines,
-                                            ) && (
+                                            <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
+                                                <div className="flex flex-col gap-1 rounded-xl border border-[#111] p-3">
+                                                    <span
+                                                        className={
+                                                            opsLabelClass
+                                                        }
+                                                    >
+                                                        Est. ingredient cost
+                                                    </span>
+                                                    <span className="text-[19px] font-bold tabular-nums">
+                                                        {formatPeso(total)}
+                                                    </span>
+                                                    <span className="text-[11px] text-[#767676]">
+                                                        {unknown
+                                                            ? 'Some costs unknown · incomplete · '
+                                                            : ''}
+                                                        per {sizeLabel}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
+                                                    <span
+                                                        className={
+                                                            opsLabelClass
+                                                        }
+                                                    >
+                                                        Selling price
+                                                    </span>
+                                                    <span className="text-[19px] font-bold tabular-nums">
+                                                        {formatPeso(
+                                                            size.price_cents,
+                                                        )}
+                                                    </span>
+                                                    <span className="text-[11px] text-[#767676]">
+                                                        From Catalog › Products
+                                                        {operations.branch
+                                                            ? ` · ${operations.branch.code}`
+                                                            : ''}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col gap-1 rounded-xl bg-[#f7f7f7] p-3">
+                                                    <span
+                                                        className={
+                                                            opsLabelClass
+                                                        }
+                                                    >
+                                                        Est. gross margin
+                                                    </span>
+                                                    <span className="text-[19px] font-bold tabular-nums">
+                                                        {unknown
+                                                            ? '—'
+                                                            : formatPeso(
+                                                                  size.price_cents -
+                                                                      total,
+                                                              )}
+                                                    </span>
+                                                    <span className="text-[11px] text-[#767676]">
+                                                        {unknown
+                                                            ? 'Needs every ingredient cost'
+                                                            : size.price_cents >
+                                                                0
+                                                              ? `${Math.round(((size.price_cents - total) / size.price_cents) * 100)}% of price`
+                                                              : 'No selling price'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <p className="text-xs leading-5 text-[#666]">
+                                                Each {sizeLabel} sold subtracts
+                                                exactly these quantities from
+                                                branch ingredient stock, and can
+                                                only be sold while that stock
+                                                covers it. Recipe changes apply
+                                                to future sales; past sales keep
+                                                the recipe and cost they were
+                                                sold with.
+                                            </p>
+                                            {Object.values(errors).length >
+                                                0 && (
+                                                <p
+                                                    role="alert"
+                                                    className="text-xs font-semibold text-[#b91c1c]"
+                                                >
+                                                    {Object.values(errors)[0]}
+                                                </p>
+                                            )}
+                                            {dirty && (
+                                                <div className="sticky bottom-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-[#111] bg-white p-2.5 shadow-lg">
+                                                    <span className="mr-auto text-xs font-semibold text-[#b45309]">
+                                                        Unsaved changes
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className={
+                                                            opsButtonClass
+                                                        }
+                                                        disabled={busy}
+                                                        onClick={() =>
+                                                            setDraft(null)
+                                                        }
+                                                    >
+                                                        Discard
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={
+                                                            opsPrimaryClass
+                                                        }
+                                                        disabled={busy}
+                                                        onClick={save}
+                                                    >
+                                                        <Check className="size-4" />{' '}
+                                                        {rows.length
+                                                            ? 'Save recipe'
+                                                            : 'Remove recipe'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <StatePanel
+                                            tone="error"
+                                            icon={
+                                                <CircleAlert
+                                                    className="size-6 text-[#b91c1c]"
+                                                    aria-hidden="true"
+                                                />
+                                            }
+                                            title={`Recipe required for ${sizeLabel}`}
+                                            body={
+                                                anyRecipe
+                                                    ? `Other sizes of ${product.name} use ingredient recipes, so ${sizeLabel} cannot be sold until its recipe is set.`
+                                                    : 'Set up the recipe, or mark the product No recipe needed. Until then, sales still work but no ingredient stock moves and the cost is missing from estimated COGS.'
+                                            }
+                                            error={Object.values(errors)[0]}
+                                        >
+                                            {other && (
                                                 <button
                                                     type="button"
                                                     className={opsButtonClass}
-                                                    disabled={busy}
                                                     onClick={() =>
-                                                        setMode(true)
+                                                        setRows(
+                                                            other.lines!.map(
+                                                                (row) => ({
+                                                                    ...row,
+                                                                }),
+                                                            ),
+                                                        )
                                                     }
                                                 >
-                                                    No recipe needed
+                                                    Copy from {other.name}
                                                 </button>
                                             )}
-                                        <button
-                                            type="button"
-                                            className={opsPrimaryClass}
-                                            onClick={() => setRows([])}
-                                        >
-                                            <Plus className="size-4" /> Set up
-                                            recipe
-                                        </button>
-                                    </StatePanel>
-                                )}
+                                            {!anyRecipe &&
+                                                !product.add_ons.some(
+                                                    (addOn) => addOn.lines,
+                                                ) && (
+                                                    <button
+                                                        type="button"
+                                                        className={
+                                                            opsButtonClass
+                                                        }
+                                                        disabled={busy}
+                                                        onClick={() =>
+                                                            setMode(true)
+                                                        }
+                                                    >
+                                                        No recipe needed
+                                                    </button>
+                                                )}
+                                            <button
+                                                type="button"
+                                                className={opsPrimaryClass}
+                                                onClick={() => setRows([])}
+                                            >
+                                                <Plus className="size-4" /> Set
+                                                up recipe
+                                            </button>
+                                        </StatePanel>
+                                    )}
+                                </fieldset>
                             </div>
 
-                            <AddOnEffects
-                                product={product}
-                                ingredients={ingredients}
-                                planId={plan.id}
-                            />
+                            <fieldset disabled={!canEdit} className="contents">
+                                <AddOnEffects
+                                    product={product}
+                                    ingredients={ingredients}
+                                    planId={plan.id}
+                                />
+                            </fieldset>
                         </div>
                     )}
                 </section>

@@ -7,8 +7,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Which Plans show an Ingredient. An Ingredient may belong to several Plans and still has one stock per Branch. */
-#[Fillable(['operation_plan_id', 'ingredient_id'])]
+/** Which Plans of a Branch show one of its Ingredients. An Ingredient may belong to several Plans of its Branch. */
+#[Fillable(['branch_id', 'operation_plan_id', 'ingredient_id'])]
 class OperationPlanIngredient extends Model
 {
     use HasUuids;

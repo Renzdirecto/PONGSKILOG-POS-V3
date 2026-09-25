@@ -9,12 +9,14 @@ use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
 use App\Models\User;
+use App\Support\ActiveBranchContext;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -22,11 +24,22 @@ use Inertia\Response;
 
 class BranchController extends Controller
 {
-    public function index(): Response
+    /**
+     * Business-wide Settings manages every Branch. A Branch-scoped Settings role sees only its selected assigned
+     * Branch ("Branch Settings — MAIN"), never the list of other Branches.
+     */
+    public function index(Request $request, ActiveBranchContext $context): Response|RedirectResponse
     {
         Gate::authorize('viewAny', Branch::class);
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+        $scopeBranch = $user->hasBusinessWideScope() ? null : $context->managementBranch($user);
+        if ($scopeBranch === false) {
+            return to_route('workspace');
+        }
 
         $branches = Branch::query()
+            ->when($scopeBranch !== null, fn (Builder $query) => $query->whereKey($scopeBranch?->id))
             ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])
             ->withExists(['storeSessions as store_is_open' => fn (Builder $query) => $query->where('status', StoreSessionStatus::Open)])
             ->orderBy('name')->orderBy('code')->get();
@@ -38,7 +51,12 @@ class BranchController extends Controller
             ));
 
             return [...$branch->toArray(), 'receipt_logo_url' => $branch->receipt_logo_path ? route('branches.receipt-logo', $branch, false).'?v='.md5($branch->receipt_logo_path) : '/images/branding/logo.png', 'qr_url' => $url, 'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url))];
-        })]);
+        }), 'scope' => [
+            'mode' => $scopeBranch === null ? 'business' : 'branch',
+            'can_create' => $user->can('create', Branch::class),
+            'can_edit_identity' => $scopeBranch === null && $user->can('create', Branch::class),
+            'branch' => $scopeBranch?->only(['id', 'name', 'code']),
+        ]]);
     }
 
     public function store(StoreBranchRequest $request, AuditRecorder $audit): RedirectResponse

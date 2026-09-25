@@ -13,7 +13,9 @@ class OwnerDashboardRequest extends FormRequest
     public const PERIODS = ['today', 'last_7_days', 'last_30_days'];
 
     /**
-     * The business Dashboard is read-only business-wide reporting: Owner and Super Admin only.
+     * The Dashboard is read-only reporting for every account with Reports access. Business-wide accounts read All
+     * Branches or the selected Branch; a Branch-scoped account reads only its selected assigned Branch (the controller
+     * sends it to pick one first and never shows All Branches).
      */
     public function authorize(): bool
     {
@@ -21,8 +23,7 @@ class OwnerDashboardRequest extends FormRequest
 
         return $user instanceof User
             && $user->is_active
-            && $user->hasPermission('reports.view')
-            && $user->hasBusinessWideScope();
+            && $user->hasPermission('reports.view');
     }
 
     /**

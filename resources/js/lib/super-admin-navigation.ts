@@ -62,7 +62,7 @@ export type SuperAdminPageState = {
 
 export const superAdminSections: readonly SuperAdminSection[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'operations', label: 'Cashier + Kitchen' },
+    { id: 'operations', label: 'Store Operations' },
     { id: 'owner', label: 'Owner' },
     { id: 'owner-operations', label: 'Operations' },
     { id: 'control', label: 'Control' },
@@ -86,7 +86,7 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         section: 'overview',
         routeName: 'super-admin.notifications',
         permission: 'access_control.manage',
-        availability: 'planned',
+        availability: 'live',
         requiresBranch: false,
     },
     {
@@ -225,7 +225,7 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         shortLabel,
         section: 'owner-operations',
         routeName,
-        permission: 'inventory.manage',
+        permission: 'operations.manage',
         availability: 'live',
         requiresBranch: false,
     })),
@@ -266,7 +266,7 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         section: 'control',
         routeName: 'super-admin.access-control',
         permission: 'access_control.manage',
-        availability: 'planned',
+        availability: 'live',
         requiresBranch: false,
     },
     {
@@ -309,14 +309,11 @@ export function activeSuperAdminDestination(
     if (component === 'super-admin/dashboard') {
         return 'dashboard';
     }
-    if (component === 'super-admin/placeholder') {
-        return superAdminDestinations.some(
-            (destination) =>
-                destination.id === page.destination &&
-                destination.availability === 'planned',
-        )
-            ? (page.destination as SuperAdminDestinationId)
-            : null;
+    if (component === 'super-admin/notifications') {
+        return 'notifications';
+    }
+    if (component === 'super-admin/access-control') {
+        return 'access-control';
     }
     if (component === 'workspaces/reports') {
         return 'reports';

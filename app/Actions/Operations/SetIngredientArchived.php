@@ -8,24 +8,29 @@ use App\Models\PamamalengkeListEntry;
 use App\Models\ProductModifierEffectLine;
 use App\Models\RecipeLine;
 use App\Models\User;
+use App\Support\BranchConfiguration;
+use App\Support\CatalogRealtime;
 use App\Support\OperationsAccess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Archives or restores an Ingredient. Nothing is deleted: its balances, movements, purchase history and snapshotted
+ * Archives or restores an Ingredient of the selected Branch. Nothing is deleted: its balances, movements, purchase history and snapshotted
  * costs stay readable. An Ingredient still used by a current recipe cannot be archived, so no future sale can reference
  * an archived Ingredient.
  */
 class SetIngredientArchived
 {
-    public function __construct(private OperationsAccess $access, private AuditRecorder $audit) {}
+    public function __construct(private OperationsAccess $access, private AuditRecorder $audit, private CatalogRealtime $realtime) {}
 
     public function execute(User $actor, Ingredient $ingredient, bool $archived): Ingredient
     {
         $actor = $this->access->authorize($actor);
+        $branch = $this->access->configurationBranch($actor);
+        $this->access->ownedBy($ingredient, $branch);
 
-        return DB::transaction(function () use ($actor, $ingredient, $archived): Ingredient {
+        return DB::transaction(function () use ($actor, $branch, $ingredient, $archived): Ingredient {
+            $branch = BranchConfiguration::lock($branch);
             $ingredient = Ingredient::query()->whereKey($ingredient->id)->lock('for no key update')->firstOrFail();
             if (($ingredient->archived_at !== null) === $archived) {
                 return $ingredient;
@@ -42,7 +47,7 @@ class SetIngredientArchived
             $ingredient->update(['archived_at' => $archived ? now() : null, 'updated_by_user_id' => $actor->id]);
 
             $this->audit->record(
-                branch: null,
+                branch: $branch,
                 actor: $actor,
                 module: 'operations',
                 action: $archived ? 'ingredient.archived' : 'ingredient.restored',
@@ -50,6 +55,7 @@ class SetIngredientArchived
                 auditableId: $ingredient->id,
                 after: ['name' => $ingredient->name, 'archived' => $archived],
             );
+            $this->realtime->branchConfigurationChanged($branch, $archived ? 'ingredient_archived' : 'ingredient_restored');
 
             return $ingredient;
         });

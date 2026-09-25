@@ -16,6 +16,11 @@ import {
     controlClass,
     money,
 } from '@/components/catalog-ui';
+import {
+    AddProductsDialog,
+    CopyFromBranchDialog,
+    RemoveFromBranchDialog,
+} from '@/components/branch-assortment-dialogs';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { ProductEditorForm } from '@/components/product-editor-form';
 import { Button } from '@/components/ui/button';
@@ -23,7 +28,12 @@ import {
     restoredOwnerViewMode,
     type OwnerViewMode,
 } from '@/lib/owner-view-preference';
+import type {
+    AssortmentCandidate,
+    ProductScope,
+} from '@/lib/branch-assortment';
 import { index, update } from '@/routes/products';
+import { update as updateBranchProduct } from '@/routes/products/branches';
 import type { BranchContext } from '@/types';
 import type {
     BranchConfiguration,
@@ -45,6 +55,8 @@ type Props = {
     modifierGroups: ModifierGroup[];
     branchConfigurations: BranchConfiguration[];
     filters: Filters;
+    scope: ProductScope;
+    assortmentCandidates?: AssortmentCandidate[];
 };
 
 export default function Products({
@@ -53,6 +65,8 @@ export default function Products({
     modifierGroups,
     branchConfigurations,
     filters,
+    scope,
+    assortmentCandidates,
 }: Props) {
     const page = usePage<{ branchContext: BranchContext }>();
     const { branchContext } = page.props;
@@ -66,7 +80,21 @@ export default function Products({
             : (products.data.find((product) => product.id === editRequested) ??
                   undefined),
     );
+    const [editingSection, setEditingSection] = useState<'product' | 'branch'>(
+        requested.get('section') === 'branch' ? 'branch' : 'product',
+    );
     const [viewMode, setViewMode] = useState<OwnerViewMode>('tile');
+    const [assortmentDialog, setAssortmentDialog] = useState<
+        'add' | 'copy' | null
+    >(null);
+    const [removing, setRemoving] = useState<CatalogProduct | null>(null);
+    /** Branch-scoped Product management edits only the selected Branch's configuration, never the shared definition. */
+    const branchOnly = !scope.can_edit_definitions;
+    /** A selected Branch shows its own assortment; All Branches shows the global catalog with membership per Branch. */
+    const assortment = scope.branch;
+    const filtered = Boolean(
+        filters.search || filters.category || filters.status,
+    );
 
     useEffect(() => {
         setViewMode(
@@ -85,20 +113,56 @@ export default function Products({
             window.localStorage.setItem('owner-products-view', viewMode);
         }
     }, [viewMode]);
-    const openEditor = (product: CatalogProduct | null) => {
+    const openEditor = (
+        product: CatalogProduct | null,
+        section: 'product' | 'branch' = 'product',
+    ) => {
+        setEditingSection(section);
         setEditing(product);
     };
 
     return (
         <CatalogPage
             tab="Products"
+            definitions={scope.can_edit_definitions}
+            branchLabel={scope.branch?.code}
             counts={{
                 Products: products.total,
                 Categories: categories.length,
                 Groups: modifierGroups.length,
             }}
         >
-            {categories.length === 0 && (
+            {assortment && (
+                <div className="flex flex-wrap items-center gap-2 rounded-[11px] border border-[#e5e5e5] bg-white p-2.5">
+                    <p className="min-w-0 flex-1 basis-56 px-1 text-[12.5px] leading-5 text-[#555]">
+                        <span className="block text-[14px] font-bold text-[#111]">
+                            Products — {assortment.code}
+                        </span>
+                        Only products in the {assortment.name} assortment are
+                        listed and sold here. Add shared products or copy them
+                        from another Branch. Stock is never copied.
+                    </p>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className={actionClass}
+                        onClick={() => setAssortmentDialog('add')}
+                    >
+                        Add products to {assortment.code}
+                    </Button>
+                    {scope.copy_sources.length > 0 && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className={actionClass}
+                            onClick={() => setAssortmentDialog('copy')}
+                        >
+                            Copy from another Branch
+                        </Button>
+                    )}
+                </div>
+            )}
+            {scope.can_edit_definitions && categories.length === 0 && (
                 <div className="rounded-[11px] border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900">
                     Create a category before adding a product.
                 </div>
@@ -144,7 +208,39 @@ export default function Products({
                     </div>
                 </div>
             </div>
-            {products.data.length === 0 ? (
+            {products.data.length === 0 && assortment && !filtered ? (
+                <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
+                    <span className="mx-auto flex size-[52px] items-center justify-center rounded-[14px] bg-[#f2f2f2] text-[#767676]">
+                        <SlidersHorizontal className="size-6" />
+                    </span>
+                    <h2 className="mt-3 text-[15px] font-semibold">
+                        No products in {assortment.code} yet.
+                    </h2>
+                    <p className="mx-auto mt-2 max-w-[46ch] text-[12.5px] leading-5 text-[#767676]">
+                        {assortment.name} sells nothing until products are
+                        added. POS and Customer QR stay empty until then.
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        <Button
+                            type="button"
+                            className={actionClass}
+                            onClick={() => setAssortmentDialog('add')}
+                        >
+                            Add products
+                        </Button>
+                        {scope.copy_sources.length > 0 && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className={actionClass}
+                                onClick={() => setAssortmentDialog('copy')}
+                            >
+                                Copy from another Branch
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            ) : products.data.length === 0 ? (
                 <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
                     <span className="mx-auto flex size-[52px] items-center justify-center rounded-[14px] bg-[#f2f2f2] text-[#767676]">
                         <SlidersHorizontal className="size-6" />
@@ -161,23 +257,40 @@ export default function Products({
                 <ul
                     className={`grid gap-2.5 ${viewMode === 'tile' ? 'sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1'}`}
                 >
-                    {products.data.map((product) => (
-                        <ProductCard
-                            key={JSON.stringify([
-                                product.id,
-                                product.name,
-                                product.description,
-                                product.category_id,
-                                product.default_price,
-                                product.is_active,
-                                product.modifier_group_ids,
-                            ])}
-                            product={product}
-                            hasInventoryScope={branchContext.current !== null}
-                            list={viewMode === 'list'}
-                            onEdit={() => openEditor(product)}
-                        />
-                    ))}
+                    {products.data.map((product) =>
+                        assortment ? (
+                            <BranchProductCard
+                                key={product.id}
+                                product={product}
+                                list={viewMode === 'list'}
+                                onEdit={() => openEditor(product, 'branch')}
+                                onEditProduct={
+                                    branchOnly
+                                        ? undefined
+                                        : () => openEditor(product, 'product')
+                                }
+                                onRemove={() => setRemoving(product)}
+                            />
+                        ) : (
+                            <ProductCard
+                                key={JSON.stringify([
+                                    product.id,
+                                    product.name,
+                                    product.description,
+                                    product.category_id,
+                                    product.default_price,
+                                    product.is_active,
+                                    product.modifier_group_ids,
+                                ])}
+                                product={product}
+                                hasInventoryScope={
+                                    branchContext.current !== null
+                                }
+                                list={viewMode === 'list'}
+                                onEdit={() => openEditor(product)}
+                            />
+                        ),
+                    )}
                 </ul>
             )}
             {products.last_page > 1 && (
@@ -225,31 +338,57 @@ export default function Products({
                 </nav>
             )}
             <CatalogDialog
-                open={editing !== undefined}
+                open={
+                    editing !== undefined && (!branchOnly || editing !== null)
+                }
                 onClose={() => setEditing(undefined)}
                 title={editing ? editing.name : 'Add product'}
-                description={editing ? 'Edit product' : 'Add product'}
+                description={
+                    branchOnly
+                        ? `${scope.branch?.code ?? 'Branch'} settings`
+                        : editing
+                          ? 'Edit product'
+                          : 'Add product'
+                }
                 wide
                 standalone
             >
-                {editing !== undefined && (
+                {editing !== undefined && (!branchOnly || editing !== null) && (
                     <ProductEditorForm
                         key={editing?.id ?? 'new'}
                         product={editing}
                         categories={categories}
                         groups={modifierGroups}
                         branches={branchConfigurations}
-                        initialSection={
-                            editing?.id === editRequested &&
-                            requested.get('section') === 'branch'
-                                ? 'branch'
-                                : 'product'
-                        }
+                        branchOnly={branchOnly}
+                        initialSection={editingSection}
                         onSaved={() => setEditing(undefined)}
                         onCancel={() => setEditing(undefined)}
                     />
                 )}
             </CatalogDialog>
+            {scope.branch && (
+                <>
+                    <AddProductsDialog
+                        open={assortmentDialog === 'add'}
+                        onClose={() => setAssortmentDialog(null)}
+                        branch={scope.branch}
+                        candidates={assortmentCandidates}
+                    />
+                    <CopyFromBranchDialog
+                        open={assortmentDialog === 'copy'}
+                        onClose={() => setAssortmentDialog(null)}
+                        branch={scope.branch}
+                        sources={scope.copy_sources}
+                        canCopyOperations={scope.can_copy_operations}
+                    />
+                    <RemoveFromBranchDialog
+                        product={removing}
+                        branch={scope.branch}
+                        onClose={() => setRemoving(null)}
+                    />
+                </>
+            )}
         </CatalogPage>
     );
 }
@@ -275,6 +414,9 @@ function ProductCard({
     });
     const submitting = useRef(false);
     const inventory = product.inventory;
+    const membership = product.branch_prices
+        .filter((price) => price.in_assortment)
+        .map((price) => price.code);
 
     return (
         <li
@@ -292,6 +434,11 @@ function ProductCard({
                     </p>
                     <p className="mt-1 text-base font-bold tracking-[-0.01em] tabular-nums">
                         {money(product.default_price)}
+                    </p>
+                    <p className="mt-1 text-[11.5px] text-[#555]">
+                        {membership.length > 0
+                            ? `Sold at ${membership.join(', ')}`
+                            : 'Not sold at any Branch yet'}
                     </p>
                 </div>
             </div>
@@ -357,6 +504,137 @@ function ProductCard({
                         : product.is_active
                           ? 'Disable'
                           : 'Enable'}
+                </Button>
+            </div>
+        </li>
+    );
+}
+
+/**
+ * A Product of the selected Branch assortment: its price, availability and stock at that Branch. Actions are Branch
+ * settings, Available / Unavailable (still in the assortment, temporarily not sellable) and Remove from the Branch (ends
+ * membership). A business-wide manager may also open the shared definition; a Branch-scoped one never can.
+ */
+function BranchProductCard({
+    product,
+    list,
+    onEdit,
+    onEditProduct,
+    onRemove,
+}: {
+    product: CatalogProduct;
+    list: boolean;
+    onEdit: () => void;
+    onEditProduct?: () => void;
+    onRemove: () => void;
+}) {
+    const config = product.branch_prices[0];
+    const [saving, setSaving] = useState(false);
+    const inventory = product.inventory;
+    if (!config) {
+        return null;
+    }
+    const available = config.is_available;
+
+    return (
+        <li
+            className={`${ownerPanelClass} min-w-0 gap-3 p-3.5 ${list ? 'grid sm:grid-cols-[minmax(240px,1fr)_auto_minmax(190px,280px)] sm:items-center' : 'flex flex-col'} ${available ? '' : 'bg-[#fafafa]'}`}
+        >
+            <div className="flex items-start gap-3">
+                <ProductThumbnail product={product} />
+                <div className="min-w-0 flex-1">
+                    <h2 className="text-sm leading-[1.3] font-semibold break-words">
+                        {product.name}
+                    </h2>
+                    <p className="mt-1 text-[11.5px] text-[#767676]">
+                        {product.category_name}
+                    </p>
+                    <p className="mt-1 text-base font-bold tracking-[-0.01em] tabular-nums">
+                        {money(config.effective_price)}
+                    </p>
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <OwnerStatusBadge tone={available ? 'green' : 'amber'}>
+                    {available
+                        ? `Available at ${config.code}`
+                        : `Unavailable at ${config.code}`}
+                </OwnerStatusBadge>
+                {!product.is_active && (
+                    <OwnerStatusBadge tone="red">
+                        Disabled for every Branch
+                    </OwnerStatusBadge>
+                )}
+                {inventory && inventory.status !== 'not_tracked' && (
+                    <InventoryChip status={inventory.status}>
+                        {inventory.status === 'out_of_stock'
+                            ? 'Out of stock'
+                            : `${inventory.on_hand?.toLocaleString()} ${inventory.status === 'low_stock' ? 'left' : 'in stock'}`}
+                    </InventoryChip>
+                )}
+            </div>
+            <div className="mt-auto grid grid-cols-2 gap-1.5">
+                <Button
+                    variant="outline"
+                    className={actionClass}
+                    onClick={onEdit}
+                >
+                    <Pencil className="size-3.5" /> Branch settings
+                </Button>
+                <Button
+                    variant="outline"
+                    disabled={saving}
+                    className={actionClass}
+                    onClick={() =>
+                        router.put(
+                            updateBranchProduct.url({
+                                product: product.id,
+                                branch: config.branch_id,
+                            }),
+                            {
+                                price_override: config.price_override,
+                                is_available: !available,
+                                tracks_inventory: config.tracks_inventory,
+                                low_stock_threshold: config.low_stock_threshold,
+                            },
+                            {
+                                preserveScroll: true,
+                                onStart: () => setSaving(true),
+                                onFinish: () => setSaving(false),
+                                onSuccess: () =>
+                                    toast.success(
+                                        `${product.name} is ${available ? 'unavailable' : 'available'} at ${config.code}`,
+                                    ),
+                                onError: (errors) =>
+                                    toast.error(
+                                        Object.values(errors)[0] ??
+                                            `Unable to update ${product.name}`,
+                                    ),
+                            },
+                        )
+                    }
+                >
+                    {saving
+                        ? 'Saving…'
+                        : available
+                          ? 'Mark unavailable'
+                          : 'Mark available'}
+                </Button>
+                {onEditProduct && (
+                    <Button
+                        variant="outline"
+                        className={actionClass}
+                        onClick={onEditProduct}
+                    >
+                        Edit product
+                    </Button>
+                )}
+                <Button
+                    variant="outline"
+                    className={`${actionClass} text-red-700 hover:text-red-800 ${onEditProduct ? '' : 'col-span-2'}`}
+                    onClick={onRemove}
+                >
+                    Remove from {config.code}
                 </Button>
             </div>
         </li>

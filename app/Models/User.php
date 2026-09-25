@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\EffectivePermissions;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,6 +20,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property int $id
  * @property string|null $employee_id
  * @property string|null $avatar_path
+ * @property string|null $position Business/job title for display only; access always comes from the Role.
  * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at
@@ -66,36 +68,51 @@ class User extends Authenticatable
             ->exists();
     }
 
+    /**
+     * The account's effective permission: Role baseline plus explicit per-user overrides (Super Admin is locked full).
+     */
     public function hasPermission(string $permission): bool
     {
-        return $this->roles()
-            ->whereHas('permissions', function (Builder $query) use ($permission): void {
-                $query->where('permissions.name', $permission);
-            })
-            ->exists();
+        return EffectivePermissions::has($this, $permission);
     }
 
-    public function hasBusinessWideScope(): bool
+    /** @return HasMany<UserPermissionOverride, $this> */
+    public function permissionOverrides(): HasMany
     {
-        return $this->roles()
-            ->whereIn('roles.name', ['super_admin', 'owner'])
-            ->exists();
+        return $this->hasMany(UserPermissionOverride::class);
     }
 
     /**
-     * Cashier operational surfaces belong to assigned Cashiers and to Super Admin, whose full-access role
-     * covers every operational workspace. Owner business-wide scope alone never grants Cashier operations.
+     * Business-wide scope comes from role semantics (Owner, Super Admin, or an active business-wide Custom Role), never
+     * from a Branch assignment or a page permission. See Role::scopeBusinessWide().
+     */
+    public function hasBusinessWideScope(): bool
+    {
+        return $this->roles()->businessWide()->exists();
+    }
+
+    /**
+     * Cashier operational surfaces belong to assigned Cashiers, Custom Roles (Branch or business-wide) and Super Admin,
+     * whose full-access role covers every operational workspace. Owner scope never grants Cashier operations. See
+     * Role::scopeCashierOperations().
      */
     public function hasCashierOperationsRole(): bool
     {
-        return $this->roles()
-            ->whereIn('roles.name', ['cashier', 'cashier_kitchen', 'super_admin'])
-            ->exists();
+        return $this->roles()->cashierOperations()->exists();
     }
 
     /**
-     * Operational Branch access requires an active assignment, except for business-wide Super Admin,
-     * which is never given fabricated Branch assignments.
+     * Whether the account operates at any selected Branch without assignments (Super Admin and business-wide Custom
+     * Roles). See Role::scopeOperatesEveryBranch().
+     */
+    public function operatesEveryBranch(): bool
+    {
+        return $this->roles()->operatesEveryBranch()->exists();
+    }
+
+    /**
+     * Operational Branch access requires an active assignment, except for Super Admin and business-wide Custom Roles,
+     * which are never given fabricated Branch assignments and operate at the one Branch they select.
      */
     public function hasOperationalBranchAccess(Branch $branch): bool
     {
@@ -103,7 +120,7 @@ class User extends Authenticatable
             ->whereKey($this->getKey())
             ->where(function (Builder $query) use ($branch): void {
                 $query->whereHas('roles', function (Builder $roles): void {
-                    $roles->where('roles.name', 'super_admin');
+                    $roles->whereIn('roles.id', Role::query()->operatesEveryBranch()->select('roles.id'));
                 })->orWhereHas('branches', function (Builder $branches) use ($branch): void {
                     $branches->whereKey($branch->getKey())
                         ->where('user_branch_assignments.is_active', true);

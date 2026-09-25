@@ -320,6 +320,8 @@ export function OperationsShell({
     useReportsRealtimeRefresh(
         ['operations', ...liveProps[operations.page]],
         branch?.id ?? null,
+        undefined,
+        OPERATIONS_IGNORED_REASONS,
     );
     const heading = branch ? `${title} · ${branch.code}` : title;
 
@@ -478,6 +480,9 @@ export function OperationsShell({
  * Props each page partially reloads when a `reports.changed` signal arrives for its Branch scope: every prop a sale,
  * purchase, recipe, Add-on effect, recipe mode or assortment change can alter (see OperationsWorkspace).
  */
+/** Kitchen status never moves Ingredients, purchases or Plans, so its signals never reload an Operations page. */
+const OPERATIONS_IGNORED_REASONS = ['kitchen.status_changed'] as const;
+
 const liveProps: Record<OperationsPageKey, string[]> = {
     plans: ['cards', 'summary', 'shared', 'outside', 'products'],
     overview: [

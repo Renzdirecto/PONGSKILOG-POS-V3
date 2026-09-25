@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\InventoryMovementType;
 use App\Http\Requests\VoidOrdersRequest;
 use App\Models\AuditLog;
 use App\Models\Branch;
@@ -12,6 +13,7 @@ use App\Models\VoidAuthorizationSetting;
 use App\Support\TransactionProjection;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -37,6 +39,9 @@ class VoidOrdersController extends Controller
                 'order.branchTable',
                 'order.voidRecord.initiatedBy',
                 'order.voidRecord.authorizedBy',
+                'order.inventoryMovements' => fn (Relation $movements) => $movements
+                    ->where('movement_type', InventoryMovementType::VoidRestore)
+                    ->with('product:id,name'),
                 'initiatedBy:id,name,email',
                 'authorizedBy:id,name,email',
             ])
@@ -102,8 +107,9 @@ class VoidOrdersController extends Controller
         return Inertia::render('super-admin/void-orders', [
             'voids' => $voids,
             'filters' => $filters,
-            'branches' => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
-            'users' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
+            /** Closures: the realtime partial reload (`voids`, `pinStatus`) never runs the filter option queries. */
+            'branches' => fn () => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
+            'users' => fn () => User::query()->orderBy('name')->get(['id', 'name', 'email']),
             'pinStatus' => $pinSetting === null ? null : [
                 'configured_at' => $pinSetting->configured_at->toIso8601String(),
                 'configured_by' => $pinSetting->configuredBy?->only(['id', 'name', 'email']),

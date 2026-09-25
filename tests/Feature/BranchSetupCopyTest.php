@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Operations\AdjustIngredientStock;
+use App\Actions\Operations\SaveRecipe;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\PayNowOrder;
 use App\Actions\Orders\SubmitCustomerQrOrder;
@@ -10,6 +11,7 @@ use App\Events\ReportsChanged;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
+use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Category;
 use App\Models\CustomerQrSession;
@@ -309,4 +311,85 @@ test('setup copies, recipe edits and removals signal only the changed branch', f
     }
     /** Invalidation only: ids, reason and time, never recipe lines, prices or stock. */
     Event::assertDispatched(ReportsChanged::class, fn (ReportsChanged $event): bool => array_keys($event->broadcastWith()) === ['event_id', 'event_type', 'branch_id', 'reason', 'occurred_at']);
+});
+
+/** TEST sells Coke from an Ingredient recipe while MAIN sells it from Product stock: the two configurations conflict. */
+function giveTestCokeARecipe(object $test): Recipe
+{
+    copyFromMain($test)->assertRedirect()->assertSessionHasNoErrors();
+    onBranch($test, $test->ops->owner, $test->test)->post(route('products.branch-assortment.store'), ['product_ids' => [$test->ops->coke->id]])
+        ->assertSessionHasNoErrors();
+    $test->ops->actAsOwnerOn($test->test);
+    app(SaveRecipe::class)->execute($test->ops->owner, $test->ops->coke, [
+        'size_option_id' => null,
+        'lines' => [['ingredient_id' => Ingredient::query()->where('branch_id', $test->test->id)->where('name', 'Purified Water')->value('id'), 'quantity' => '330']],
+    ]);
+
+    return Recipe::query()->where('branch_id', $test->test->id)->where('product_id', $test->ops->coke->id)->sole();
+}
+
+test('replace skips a product whose destination recipe conflicts, reports why and still copies the others', function () {
+    $recipe = giveTestCokeARecipe($this);
+    BranchProduct::query()->where('branch_id', $this->ops->branch->id)->where('product_id', $this->ops->lemonYakult->id)->update(['price_override' => '70.00']);
+    $testCoke = fn (): BranchProduct => BranchProduct::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->coke->id)->sole();
+    $cokeBefore = $testCoke()->only(['price_override', 'is_available', 'tracks_inventory', 'low_stock_threshold', 'no_recipe_needed']);
+
+    copyFromMain($this, ['product_ids' => [$this->ops->coke->id, $this->ops->lemonYakult->id], 'overwrite' => true])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast.type', 'warning')
+        ->assertInertiaFlash('assortmentCopy.overwritten', 1)
+        ->assertInertiaFlash('assortmentCopy.conflicts.0.product_id', $this->ops->coke->id)
+        ->assertInertiaFlash('assortmentCopy.conflicts.0.name', 'Coke Mismo')
+        ->assertInertiaFlash('assortmentCopy.conflicts.0.reason', 'Coke Mismo has an ingredient recipe or add-on ingredient effects at TEST in Operations. Remove them there before tracking Product stock at TEST.');
+
+    /** The valid Product was replaced; the conflicting one and its recipe are exactly as they were; nothing was deleted. */
+    expect(BranchProduct::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->lemonYakult->id)->value('price_override'))->toBe('70.00')
+        ->and($testCoke()->only(array_keys($cokeBefore)))->toBe($cokeBefore)
+        ->and($recipe->fresh())->not->toBeNull()
+        ->and($recipe->lines()->count())->toBe(1)
+        ->and(BranchInventory::query()->where('branch_id', $this->test->id)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'branch_products.copied')->latest('created_at')->latest('id')->first()->metadata['conflicts'])->toBe(['Coke Mismo']);
+});
+
+test('a skipped conflict never creates a membership and leaves the dormant recipe, even without replace', function () {
+    $recipe = giveTestCokeARecipe($this);
+    onBranch($this, $this->ops->owner, $this->test)->delete(route('products.branch-assortment.destroy'), ['product_ids' => [$this->ops->coke->id]])
+        ->assertSessionHasNoErrors();
+
+    $response = copyFromMain($this, ['product_ids' => [$this->ops->coke->id], 'overwrite' => false])->assertRedirect()->assertSessionHasNoErrors()
+        ->assertInertiaFlash('assortmentCopy.copied', 0)
+        ->assertInertiaFlash('assortmentCopy.conflicts.0.name', 'Coke Mismo');
+
+    expect(BranchProduct::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->coke->id)->exists())->toBeFalse()
+        ->and($recipe->fresh())->not->toBeNull()
+        /** Nothing changed, so nothing is audited as a copy and no Branch signal is sent. */
+        ->and(AuditLog::query()->where('action', 'branch_products.copied')->count())->toBe(1);
+    expect($response->getSession()->get('errors'))->toBeNull();
+});
+
+test('a conflicting product is left out of the operations part of the copy', function () {
+    giveTestCokeARecipe($this);
+    $plan = fn (): ?string => OperationPlanProduct::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->coke->id)->value('operation_plan_id');
+    $planBefore = $plan();
+
+    copyFromMain($this, ['product_ids' => [$this->ops->coke->id, $this->ops->tapsilog->id], 'overwrite' => true, 'copy_operations' => true])
+        ->assertRedirect()->assertSessionHasNoErrors()
+        ->assertInertiaFlash('assortmentCopy.overwritten', 1)
+        ->assertInertiaFlash('assortmentCopy.conflicts.0.name', 'Coke Mismo');
+
+    expect($plan())->toBe($planBefore)
+        ->and(Recipe::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->coke->id)->count())->toBe(1)
+        ->and(Recipe::query()->where('branch_id', $this->test->id)->where('product_id', $this->ops->tapsilog->id)->count())->toBe(1);
+});
+
+test('forged product and source ids on a copy fail safely without writing anything', function () {
+    $before = BranchProduct::query()->where('branch_id', $this->test->id)->count();
+
+    copyFromMain($this, ['product_ids' => [(string) Str::uuid()]])->assertSessionHasErrors('product_ids');
+    copyFromMain($this, ['product_ids' => ['not-a-uuid']])->assertSessionHasErrors('product_ids');
+    copyFromMain($this, ['source_branch_id' => (string) Str::uuid()])->assertForbidden();
+    copyFromMain($this, ['source_branch_id' => $this->test->id])->assertSessionHasErrors('source_branch_id');
+
+    expect(BranchProduct::query()->where('branch_id', $this->test->id)->count())->toBe($before);
 });

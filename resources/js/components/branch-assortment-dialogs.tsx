@@ -11,11 +11,13 @@ import {
 import { OwnerStatusBadge } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
 import {
+    copyResultNeedsReview,
     copySummary,
     matchesSearch,
     newAtDestination,
     operationsCopySummary,
     type AssortmentCandidate,
+    type AssortmentCopyResult,
     type CopyPreview,
 } from '@/lib/branch-assortment';
 import { NEVER_COPIED } from '@/lib/operations-setup-copy';
@@ -234,6 +236,7 @@ export function CopyFromBranchDialog({
     const [search, setSearch] = useState('');
     const [reviewing, setReviewing] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [result, setResult] = useState<AssortmentCopyResult | null>(null);
     const rows = preview?.products ?? [];
     const summary = copySummary(rows, selected, overwrite);
     const operations =
@@ -251,6 +254,7 @@ export function CopyFromBranchDialog({
         setWithOperations(false);
         setSearch('');
         setReviewing(false);
+        setResult(null);
         onClose();
     };
     const load = (id: string) => {
@@ -266,9 +270,9 @@ export function CopyFromBranchDialog({
             .get(copyPreview.url({ query: { source_branch_id: id } }), {
                 headers: { Accept: 'application/json' },
             })
-            .then((result) => {
-                setPreview(result);
-                setSelected(new Set(newAtDestination(result.products)));
+            .then((loaded) => {
+                setPreview(loaded);
+                setSelected(new Set(newAtDestination(loaded.products)));
             })
             .catch(() =>
                 setLoadError(
@@ -276,6 +280,81 @@ export function CopyFromBranchDialog({
                 ),
             );
     };
+
+    if (result !== null) {
+        const changed = result.copied + result.overwritten;
+
+        return (
+            <CatalogDialog
+                open={open}
+                onClose={close}
+                wide
+                title={`Copy into ${branch.code} finished with skipped items`}
+                description="Everything else was copied. Skipped products keep their current settings here; nothing was deleted."
+            >
+                <div
+                    role="status"
+                    className="space-y-3 rounded-xl bg-[#f5f5f5] p-4 text-[13px] leading-6"
+                >
+                    <ul className="list-disc pl-5">
+                        <li>
+                            {changed} {changed === 1 ? 'product' : 'products'}{' '}
+                            copied
+                            {result.overwritten > 0 &&
+                                ` (${result.overwritten} replaced)`}
+                        </li>
+                        {result.kept > 0 && (
+                            <li>
+                                {result.kept} already in {branch.code}, kept as
+                                is
+                            </li>
+                        )}
+                        {result.conflicts.length > 0 && (
+                            <li className="font-semibold text-amber-800">
+                                {result.conflicts.length} skipped for a conflict
+                            </li>
+                        )}
+                    </ul>
+                    {result.conflicts.length > 0 && (
+                        <div>
+                            <p className="font-semibold">Skipped products</p>
+                            <ul className="max-h-[35dvh] space-y-2 overflow-y-auto">
+                                {result.conflicts.map((conflict) => (
+                                    <li
+                                        key={conflict.product_id}
+                                        className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12.5px] wrap-break-word text-amber-900"
+                                    >
+                                        <span className="block font-semibold">
+                                            Skipped · {conflict.name}
+                                        </span>
+                                        {conflict.reason}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {result.operations_skipped.length > 0 && (
+                        <div>
+                            <p className="font-semibold">
+                                Operations setup not copied
+                            </p>
+                            <ul className="list-disc pl-5 text-[12.5px] wrap-break-word text-[#555]">
+                                {result.operations_skipped.map((line) => (
+                                    <li key={line}>{line}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    <p className="text-[12.5px] text-[#555]">
+                        Stock was not copied.
+                    </p>
+                </div>
+                <Button className={primaryActionClass} onClick={close}>
+                    Done
+                </Button>
+            </CatalogDialog>
+        );
+    }
 
     return (
         <CatalogDialog
@@ -545,7 +624,18 @@ export function CopyFromBranchDialog({
                                     preserveScroll: true,
                                     onStart: () => setProcessing(true),
                                     onFinish: () => setProcessing(false),
-                                    onSuccess: close,
+                                    onSuccess: (page) => {
+                                        const outcome = (
+                                            page.flash as {
+                                                assortmentCopy?: AssortmentCopyResult;
+                                            }
+                                        ).assortmentCopy;
+                                        if (copyResultNeedsReview(outcome)) {
+                                            setResult(outcome);
+                                        } else {
+                                            close();
+                                        }
+                                    },
                                     onError: (errors) =>
                                         toast.error(
                                             Object.values(errors)[0] ??

@@ -37,3 +37,9 @@ A `branch_products` row IS membership: no row = not sold at that Branch (POS, QR
 
 ## Access and identity changes are signalled after commit
 Writers that change an account's identity, Role, Role baseline, overrides, Branch assignments or status call `AccessRealtime` (`usersChanged`, `rolesChanged`, `staffChanged`, `accessControlChanged`) inside their transaction; the events are `ShouldDispatchAfterCommit` + rescued and carry ids/type/time only. A new writer of those facts must signal too, or open sessions keep stale navigation until the next visit (the backend still denies immediately).
+
+## Branch context is deterministic; shared props are lazy (Phase 19)
+`ActiveBranchContext::current()` re-authorizes the selection on every call; a stale or forged id is cleared and the account continues as if nothing was selected (a single active assignment is re-selected, business-wide → All Branches, several → picker) on that same call. Never rely on another caller (e.g. shared props) having cleared it first. `HandleInertiaRequests` shares `auth`, `branchContext`, `storeContext` and `notificationCenter` as closures (Branch resolved once per response), so JSON endpoints and partial reloads never pay for them.
+
+## Copy skips a conflicting Product instead of aborting (Phase 19)
+`ConfigureBranchAssortment::copy()` writes each Product in its own savepoint: a `ValidationException` from the canonical writer (`UpsertBranchProduct`, e.g. source tracks Product stock while the destination has a Recipe/Add-on effect) rolls back only that Product, which is reported in `conflicts` (name + reason), audited by name, left out of the Operations part and never has destination setup deleted to fit. Database errors still abort the whole copy. The controller flashes `assortmentCopy`; the dialog stays open on a result with skipped items.

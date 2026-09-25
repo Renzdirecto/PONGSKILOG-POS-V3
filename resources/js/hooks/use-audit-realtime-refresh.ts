@@ -1,6 +1,7 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import {
     createRealtimeRefresh,
     getAuditRealtimeFallbackAction,
@@ -15,7 +16,12 @@ export function useAuditRealtimeRefresh(only: string[]): void {
     const refresh = useMemo(
         () =>
             createRealtimeRefresh((onFinish) => {
-                router.reload({ only: onlyRef.current, onFinish });
+                router.reload({
+                    only: onlyRef.current,
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
+                    onFinish,
+                });
             }, 200),
         [],
     );
@@ -30,7 +36,11 @@ export function useAuditRealtimeRefresh(only: string[]): void {
 
     const { start, stop } = usePoll(
         10_000,
-        () => ({ only: onlyRef.current }),
+        () => ({
+            only: onlyRef.current,
+            onHttpException: handleRevalidationException,
+            onNetworkError: () => false,
+        }),
         { autoStart: false },
     );
 

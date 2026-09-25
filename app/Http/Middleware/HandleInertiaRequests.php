@@ -53,14 +53,25 @@ class HandleInertiaRequests extends Middleware
 
         $authenticatedUser = $request->user();
         $user = $authenticatedUser instanceof User ? $authenticatedUser : null;
-        $currentBranch = $user === null ? null : $this->activeBranchContext->current($user);
+        /**
+         * Every shared prop is lazy: JSON endpoints, image streams and partial reloads that do not ask for them never run
+         * their queries. The selected Branch is resolved at most once per response.
+         */
+        $resolved = [];
+        $currentBranch = function () use ($user, &$resolved): ?Branch {
+            if (! array_key_exists('branch', $resolved)) {
+                $resolved['branch'] = $user === null ? null : $this->activeBranchContext->current($user);
+            }
+
+            return $resolved['branch'];
+        };
 
         return [
             ...parent::share($request),
             'name' => config('app.name'),
-            'auth' => $this->authProps($user),
-            'branchContext' => $this->branchContextProps($user, $currentBranch),
-            'storeContext' => fn (): array => $this->storeContextProps($currentBranch),
+            'auth' => fn (): array => $this->authProps($user),
+            'branchContext' => fn (): array => $this->branchContextProps($user, $currentBranch()),
+            'storeContext' => fn (): array => $this->storeContextProps($currentBranch()),
             'notificationCenter' => fn (): ?array => $this->notificationCenterProps($user),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

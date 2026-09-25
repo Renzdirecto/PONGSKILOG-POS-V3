@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+    copyResultNeedsReview,
     copySummary,
     matchesSearch,
     newAtDestination,
@@ -97,4 +98,41 @@ test('operations setup is configured per selected branch, never as one shared se
         assert.match(text, /const canEdit = operations\.can_configure;/);
         assert.doesNotMatch(text, /can_manage_definitions/);
     }
+});
+
+test('a copy result with skipped products stays on screen with each reason', () => {
+    const base = {
+        copied: 2,
+        overwritten: 0,
+        kept: 0,
+        conflicts: [],
+        operations_skipped: [],
+    };
+
+    assert.equal(copyResultNeedsReview(undefined), false);
+    assert.equal(copyResultNeedsReview(base), false);
+    assert.equal(
+        copyResultNeedsReview({
+            ...base,
+            conflicts: [
+                { product_id: 'c', name: 'Coke', reason: 'Recipe at TEST' },
+            ],
+        }),
+        true,
+    );
+    assert.equal(
+        copyResultNeedsReview({
+            ...base,
+            operations_skipped: ['Lemon uses another unit'],
+        }),
+        true,
+    );
+
+    const dialog = source('components/branch-assortment-dialogs.tsx');
+    assert.match(
+        dialog,
+        /if \(copyResultNeedsReview\(outcome\)\) \{\s+setResult\(outcome\);/,
+    );
+    assert.match(dialog, /Skipped · \{conflict\.name\}/);
+    assert.match(dialog, /role="status"/);
 });

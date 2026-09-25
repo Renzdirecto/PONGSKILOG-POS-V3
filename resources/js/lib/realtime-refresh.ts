@@ -119,15 +119,24 @@ export function createBranchEventGuard(branchId: string) {
 
 /**
  * Accepts a business-wide `reports.changed` signal once: every Branch for All Branches (null), otherwise only the
- * selected Branch.
+ * selected Branch. A page may ignore reasons that can never change what it shows (e.g. Operations and Kitchen status).
  */
-export function createReportsEventGuard(branchId: string | null) {
+export function createReportsEventGuard(
+    branchId: string | null,
+    ignoredReasons: readonly string[] = [],
+) {
     const seen = new Set<string>();
     return (event: Record<string, unknown>) => {
         if (typeof event.branch_id !== 'string') {
             return false;
         }
         if (branchId !== null && event.branch_id !== branchId) {
+            return false;
+        }
+        if (
+            typeof event.reason === 'string' &&
+            ignoredReasons.includes(event.reason)
+        ) {
             return false;
         }
         if (typeof event.event_id === 'string') {

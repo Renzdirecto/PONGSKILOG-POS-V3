@@ -232,3 +232,43 @@ test('branch guards ignore duplicate events and foreign branches; reconnect stil
     );
     refresh.dispose();
 });
+
+test('a page can ignore report reasons that never change it, and operations ignores kitchen status', () => {
+    const operations = createReportsEventGuard('main', ['kitchen.status_changed']);
+
+    assert.equal(operations({ event_id: 'k', branch_id: 'main', reason: 'kitchen.status_changed' }), false);
+    assert.equal(operations({ event_id: 'o', branch_id: 'main', reason: 'order.committed' }), true);
+    assert.match(
+        jsSource('components/operations-ui.tsx'),
+        /OPERATIONS_IGNORED_REASONS = \['kitchen\.status_changed'\]/,
+    );
+});
+
+test('background reloads send a revoked session to the workspace instead of a raw error dialog', () => {
+    for (const hook of ['use-branch-realtime-refresh', 'use-audit-realtime-refresh', 'use-pos-qr-realtime']) {
+        const source = jsSource(`hooks/${hook}.ts`);
+        assert.match(source, /onHttpException: handleRevalidationException/, hook);
+        assert.match(source, /onNetworkError: \(\) => false/, hook);
+    }
+});
+
+test('the POS QR state is not refetched right after the server rendered it, only after a reconnect', () => {
+    const hook = jsSource('hooks/use-pos-qr-realtime.ts');
+
+    assert.match(hook, /shouldRefetchCatalogAfterConnectionChange\(/);
+    assert.doesNotMatch(hook, /if \(connection === 'connected'\) refresh\.schedule\(0\)/);
+});
+
+test('business transactions listen to reports signals and poll only for accounts that cannot hear them', () => {
+    const page = jsSource('pages/workspaces/transaction-history.tsx');
+
+    assert.match(page, /canHearReports \? \(\s*<BusinessHistoryRealtime/);
+    assert.match(page, /useReportsRealtimeRefresh\(HISTORY_PROPS, branchId\)/);
+});
+
+test('the audit register refreshes only its entries on each new audit record', () => {
+    assert.match(
+        jsSource('pages/super-admin/audit-trail.tsx'),
+        /const realtimeProps = useMemo\(\(\) => \['logs'\], \[\]\)/,
+    );
+});

@@ -563,3 +563,9 @@ Deploying the Final QA corrections adds one forward migration, `2026_09_24_13432
 - One additive migration: `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (`php artisan migrate --force`); it backfills the five System roles. Rollback is safe (drops the partial unique index, then the four columns).
 - `RbacSeeder` remains safe to rerun and never touches Custom Roles.
 - No dependency, queue, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 29. Phase 19 deployment note — performance indexes (2026-09-25)
+
+- One additive migration: `2026_09_25_150406_add_reporting_performance_indexes` (`php artisan migrate --force`). It only creates five btree indexes; rollback drops exactly those.
+- `CREATE INDEX` (non-concurrent) briefly blocks writes to `audit_logs`, `orders`, `notifications` and the two Pamamalengke tables while each index builds. At current volumes this is seconds; on a much larger production dataset run it outside trading hours.
+- No dependency, queue, cache, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).

@@ -260,12 +260,19 @@ test('void orders load every inventory restoration for the page without a query 
     };
     $voidSome(2);
     [$baseline] = countedRequest(fn () => test()->actingAs($superAdmin)->get(route('workspaces.void-orders')));
+    [$reloadBaseline] = partialReload($superAdmin, route('workspaces.void-orders'), 'super-admin/void-orders', 'voids,pinStatus');
     $voidSome(8);
     [$count, $response] = countedRequest(fn () => test()->actingAs($superAdmin)->get(route('workspaces.void-orders')));
+    /** The realtime refresh asks for the register only: flat as voids grow, and no Branch / user option list query. */
+    [$reloadQueries, $reload] = partialReload($superAdmin, route('workspaces.void-orders'), 'super-admin/void-orders', 'voids,pinStatus');
 
     expect($count)->toBe($baseline)
         ->and(collect($response->inertiaProps('voids.data'))->map(fn (array $void): int => $void['order']['inventory_restorations'][0]['quantity_restored'])->sort()->values()->all())
-        ->toBe([1, 1, 2, 2, 3, 4, 5, 6, 7, 8]);
+        ->toBe([1, 1, 2, 2, 3, 4, 5, 6, 7, 8])
+        ->and(count($reloadQueries))->toBe(count($reloadBaseline))
+        ->and(array_keys($reload->json('props')))->toContain('voids')->not->toContain('branches')->not->toContain('users')
+        ->and($reload->json('props.voids.total'))->toBe(10)
+        ->and(collect($reloadQueries)->contains(fn (string $query): bool => str_contains($query, 'order by "name" asc')))->toBeFalse();
 });
 
 test('shared props run no queries for json endpoints and a selected branch loads only its own product rows', function () {

@@ -12,6 +12,10 @@
  *    backwards instead of sorting the table (EXPLAIN of the exact SQL the application builds);
  * C. SalesAnalytics (PostgreSQL SQL paths) returns the exact Net Sales of thousands of Orders with the same query count
  *    as a small day. No timing is asserted.
+ *
+ * Every row is written relative to one pinned moment (midday of the current Manila day, stored as UTC like the
+ * application), so the result never depends on the wall clock (e.g. just after Manila midnight) or on the PostgreSQL
+ * server's time zone.
  */
 
 use App\Models\AuditLog;
@@ -20,6 +24,8 @@ use App\Models\Order;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\SalesAnalytics;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -59,6 +65,11 @@ config([
 ]);
 DB::purge('pgsql');
 $observer = DB::connection('perf_observer');
+$anchor = CarbonImmutable::now('Asia/Manila')->setTime(12, 0)->utc();
+Carbon::setTestNow($anchor);
+CarbonImmutable::setTestNow($anchor);
+/** Raw SQL uses the pinned UTC moment instead of PostgreSQL's own clock and session time zone. */
+$pinned = fn (string $sql): string => str_replace('now()', "'".$anchor->format('Y-m-d H:i:s')."'::timestamp", $sql);
 $identity = $observer->selectOne('SELECT host(inet_server_addr()) AS host');
 perfVerify(in_array($identity->host, ['127.0.0.1', '::1'], true), 'PostgreSQL server is not loopback.');
 
@@ -130,42 +141,42 @@ try {
     $admin = User::factory()->create();
     $mainSession = StoreSession::factory()->for($main)->create(['opened_by_user_id' => $cashier->id, 'opened_at' => now()->subHours(3)]);
     $qaveSession = StoreSession::factory()->for($qave)->create(['opened_by_user_id' => $cashier->id, 'opened_at' => now()->subHours(3)]);
-    DB::insert(<<<'SQL'
+    DB::insert($pinned(<<<'SQL'
         INSERT INTO audit_logs (id, branch_id, user_id, module, action, auditable_type, auditable_id, after, metadata, created_at)
         SELECT md5('audit' || g)::uuid, CASE WHEN g % 2 = 0 THEN ?::uuid ELSE ?::uuid END, ?::bigint, 'transactions', 'order.paid', 'App\Models\Order',
                g::text, '{}', '{}', now() - (g || ' seconds')::interval
         FROM generate_series(1, 60000) AS g
-        SQL, [$main->id, $qave->id, $admin->id]);
+        SQL), [$main->id, $qave->id, $admin->id]);
     /** A small first day for the query-count baseline (C), then the rest of the volume. */
-    $orders = function (int $from, int $to) use ($main, $qave, $mainSession, $qaveSession, $cashier): void {
-        DB::insert(<<<'SQL'
+    $orders = function (int $from, int $to) use ($pinned, $main, $qave, $mainSession, $qaveSession, $cashier): void {
+        DB::insert($pinned(<<<'SQL'
             INSERT INTO orders (id, branch_id, store_session_id, order_number, source, order_type, customer_label, commercial_status,
                 payment_status, payment_term, kitchen_status, subtotal, total, created_by_user_id, committed_at, completed_at, version, created_at, updated_at)
             SELECT md5('order' || g)::uuid, CASE WHEN g % 3 = 0 THEN ?::uuid ELSE ?::uuid END, CASE WHEN g % 3 = 0 THEN ?::uuid ELSE ?::uuid END, 'PERF-' || g, 'pos',
                    'take_out', 'Perf', 'completed', 'paid', 'immediate', 'done', 50 + (g % 7) * 10, 50 + (g % 7) * 10, ?::bigint,
                    now() - ((g % 10000) || ' seconds')::interval, now(), 1, now(), now()
             FROM generate_series(?::int, ?::int) AS g
-            SQL, [$qave->id, $main->id, $qaveSession->id, $mainSession->id, $cashier->id, $from, $to]);
-        DB::insert(<<<'SQL'
+            SQL), [$qave->id, $main->id, $qaveSession->id, $mainSession->id, $cashier->id, $from, $to]);
+        DB::insert($pinned(<<<'SQL'
             INSERT INTO order_items (id, order_id, product_id, product_name_snapshot, unit_price, quantity, line_total, created_at, updated_at)
             SELECT md5('item' || o.id)::uuid, o.id, NULL, 'Tapsilog', o.total, 1, o.total, now(), now()
             FROM orders o WHERE o.order_number LIKE 'PERF-%' AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id)
-            SQL);
-        DB::insert(<<<'SQL'
+            SQL));
+        DB::insert($pinned(<<<'SQL'
             INSERT INTO payments (id, branch_id, store_session_id, order_id, method, amount, amount_received, change_amount,
                 created_by_user_id, idempotency_key, payment_context, paid_at, created_at, updated_at)
             SELECT md5('payment' || o.id)::uuid, o.branch_id, o.store_session_id, o.id, 'cash', o.total, o.total, 0, ?::bigint, o.id::text || ':cash',
                    'initial', o.committed_at, now(), now()
             FROM orders o WHERE o.order_number LIKE 'PERF-%' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id)
-            SQL, [$cashier->id]);
+            SQL), [$cashier->id]);
     };
     $orders(1, 90);
-    DB::insert(<<<'SQL'
+    DB::insert($pinned(<<<'SQL'
         INSERT INTO notifications (id, type, notifiable_type, notifiable_id, data, read_at, created_at, updated_at)
         SELECT md5('notification' || g)::uuid, 'App\Notifications\AdminAlert', 'App\Models\User', CASE WHEN g % 4 = 0 THEN ?::bigint ELSE ?::bigint END,
                '{}', NULL, now() - (g || ' seconds')::interval, now()
         FROM generate_series(1, 40000) AS g
-        SQL, [$admin->id, $cashier->id]);
+        SQL), [$admin->id, $cashier->id]);
     DB::statement('ANALYZE');
 
     $analytics = app(SalesAnalytics::class);
@@ -204,6 +215,8 @@ try {
         .'     '.implode(PHP_EOL.'     ', $plans).PHP_EOL
         .'  C. SalesAnalytics All Branches today: Net Sales '.$expected.' over 30,000 Orders equals the SQL sum; '.$largeCount.' queries at 90 and at 30,000 Orders'.PHP_EOL;
 } finally {
+    Carbon::setTestNow();
+    CarbonImmutable::setTestNow();
     DB::disconnect('pgsql');
     if ($createdSchema) {
         $observer->statement('DROP SCHEMA "'.$schema.'" CASCADE');

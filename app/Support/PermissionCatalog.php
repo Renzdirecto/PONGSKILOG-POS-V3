@@ -187,15 +187,19 @@ class PermissionCatalog
 
     /**
      * The grant envelope of a Custom Role, by its scope. A Branch Custom Role runs the same Branch-scoped surfaces as
-     * Cashier staff (the backend keeps each inside the assigned Branches, Reports included); a business-wide Custom Role
-     * gets the Owner management surfaces, whose backend already requires business-wide scope. Control stays with the
-     * Super Admin and QR Orders follows POS, so neither is ever listed.
+     * Cashier staff (the backend keeps each inside the assigned Branches, Reports included). A business-wide Custom Role
+     * may combine every operational and management permission across all Branches: Branch operations still run at one
+     * selected active Branch (see User::hasOperationalBranchAccess()), management and Reports may read All Branches.
+     * Control stays with the Super Admin and QR Orders follows POS, so neither is ever listed.
      *
      * @var array<'branch'|'business', list<string>>
      */
     public const CUSTOM_GRANTABLE = [
         'branch' => ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'],
-        'business' => ['transactions.view', 'reports.view', 'products.manage', 'inventory.manage', 'staff.manage', 'settings.manage'],
+        'business' => [
+            'pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch',
+            'reports.view', 'products.manage', 'inventory.manage', 'staff.manage', 'settings.manage',
+        ],
     ];
 
     /** @return list<string> */
@@ -291,11 +295,8 @@ class PermissionCatalog
         if (in_array($permission, self::CUSTOM_GRANTABLE[$scope], true)) {
             return null;
         }
-        $label = self::PERMISSIONS[$permission]['label'];
 
-        return $scope === 'branch'
-            ? $label.' is business-wide and cannot be limited to one Branch. Use a Business-wide role for it.'
-            : $label.' runs inside one Branch. Use a Branch role for it.';
+        return self::PERMISSIONS[$permission]['label'].' is business-wide and cannot be limited to one Branch. Use a Business-wide role for it.';
     }
 
     /**

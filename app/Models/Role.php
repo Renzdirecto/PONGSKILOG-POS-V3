@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PermissionCatalog;
 use App\Support\StaffRoles;
 use Database\Factories\RoleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -129,8 +130,9 @@ class Role extends Model
 
     /**
      * Roles that run Cashier operations at a Branch (POS, Store Session, Transaction History): Cashier, Cashier +
-     * Kitchen, Super Admin and active Branch Custom Roles. The permission itself (for example `pos.access`) is still
-     * required separately; this only says the role's scope supports Cashier operations.
+     * Kitchen, Super Admin and every active Custom Role (Branch or business-wide). The permission itself (for example
+     * `pos.access`) is still required separately; this only says the role's scope supports Cashier operations. Owner
+     * never runs Cashier operations.
      *
      * @param  Builder<Role>  $query
      */
@@ -138,7 +140,21 @@ class Role extends Model
     {
         $query->where(fn (Builder $roles) => $roles
             ->whereIn('roles.name', StaffRoles::CASHIER_OPERATIONS)
-            ->orWhere(fn (Builder $custom) => $this->customWithScope($custom, self::SCOPE_BRANCH)));
+            ->orWhere(fn (Builder $custom) => $this->customWithScope($custom, self::SCOPE_BRANCH))
+            ->orWhere(fn (Builder $custom) => $this->customWithScope($custom, self::SCOPE_BUSINESS)));
+    }
+
+    /**
+     * Roles that may operate at any selected Branch without Branch assignments: Super Admin by canonical name and
+     * active business-wide Custom Roles by metadata. Every action stays bound to the one concrete Branch selected.
+     *
+     * @param  Builder<Role>  $query
+     */
+    public function scopeOperatesEveryBranch(Builder $query): void
+    {
+        $query->where(fn (Builder $roles) => $roles
+            ->where('roles.name', PermissionCatalog::SUPER_ADMIN)
+            ->orWhere(fn (Builder $custom) => $this->customWithScope($custom, self::SCOPE_BUSINESS)));
     }
 
     /**

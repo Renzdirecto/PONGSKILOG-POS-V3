@@ -311,3 +311,27 @@ test('operational layout and history rely on permissions, not role names, for cu
         ),
     );
 });
+
+test('business-wide custom roles reach branch operations through permissions and a concrete branch', () => {
+    const shell = source('components/owner-workspace-shell.tsx');
+    assert.match(
+        shell,
+        /\.filter\(\(\[permission\]\) => auth\.permissions\.includes\(permission\)\)/,
+    );
+    assert.match(
+        shell,
+        /branchContext\.current\s*\? route\s*: selectBranch\(\{ query: \{ redirect: route\.url \} \}\)/,
+    );
+    const layout = source('layouts/workspace-layout.tsx');
+    assert.match(
+        layout,
+        /!isSuperAdmin &&\s*branchContext\.businessWide &&\s*MANAGEMENT_PERMISSIONS\.some/,
+    );
+    const builder = source('components/custom-role-dialogs.tsx');
+    assert.ok(builder.includes('Access is limited to assigned Branches.'));
+    assert.ok(
+        builder.includes(
+            'Access can span all Branches. Branch operations still require selecting a specific Branch.',
+        ),
+    );
+});

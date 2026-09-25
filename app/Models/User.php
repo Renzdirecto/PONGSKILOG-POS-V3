@@ -91,9 +91,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Cashier operational surfaces belong to assigned Cashiers (and Branch Custom Roles) and to Super Admin, whose
-     * full-access role covers every operational workspace. Owner or business-wide Custom Role scope alone never grants
-     * Cashier operations. See Role::scopeCashierOperations().
+     * Cashier operational surfaces belong to assigned Cashiers, Custom Roles (Branch or business-wide) and Super Admin,
+     * whose full-access role covers every operational workspace. Owner scope never grants Cashier operations. See
+     * Role::scopeCashierOperations().
      */
     public function hasCashierOperationsRole(): bool
     {
@@ -101,8 +101,17 @@ class User extends Authenticatable
     }
 
     /**
-     * Operational Branch access requires an active assignment, except for business-wide Super Admin,
-     * which is never given fabricated Branch assignments.
+     * Whether the account operates at any selected Branch without assignments (Super Admin and business-wide Custom
+     * Roles). See Role::scopeOperatesEveryBranch().
+     */
+    public function operatesEveryBranch(): bool
+    {
+        return $this->roles()->operatesEveryBranch()->exists();
+    }
+
+    /**
+     * Operational Branch access requires an active assignment, except for Super Admin and business-wide Custom Roles,
+     * which are never given fabricated Branch assignments and operate at the one Branch they select.
      */
     public function hasOperationalBranchAccess(Branch $branch): bool
     {
@@ -110,7 +119,7 @@ class User extends Authenticatable
             ->whereKey($this->getKey())
             ->where(function (Builder $query) use ($branch): void {
                 $query->whereHas('roles', function (Builder $roles): void {
-                    $roles->where('roles.name', 'super_admin');
+                    $roles->whereIn('roles.id', Role::query()->operatesEveryBranch()->select('roles.id'));
                 })->orWhereHas('branches', function (Builder $branches) use ($branch): void {
                     $branches->whereKey($branch->getKey())
                         ->where('user_branch_assignments.is_active', true);

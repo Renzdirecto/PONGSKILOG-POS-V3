@@ -44,11 +44,11 @@ export type CustomRoleBuilderContext = {
 const SCOPE_HELP: Record<RoleScope, { icon: typeof Store; text: string }> = {
     branch: {
         icon: Store,
-        text: 'Works only at the Branches assigned to each account. Reports stay on those Branches; never All Branches.',
+        text: 'Access is limited to assigned Branches. Branch operations and Reports only; never All Branches.',
     },
     business: {
         icon: Globe2,
-        text: 'Reaches every Branch without assignments, for management pages. Never includes POS, Kitchen or Control.',
+        text: 'Access can span all Branches. Branch operations still require selecting a specific Branch. Never includes Control.',
     },
 };
 

@@ -18,11 +18,11 @@ class WorkspaceController extends Controller
         abort_unless($user instanceof User, 401);
 
         if ($user->hasBusinessWideScope()) {
-            return $this->redirectToRoleWorkspace($user);
+            return $this->redirectToRoleWorkspace($user, $activeBranchContext);
         }
 
         if ($activeBranchContext->current($user) !== null) {
-            return $this->redirectToRoleWorkspace($user);
+            return $this->redirectToRoleWorkspace($user, $activeBranchContext);
         }
 
         $activeAssignmentCount = $user->branches()
@@ -36,7 +36,7 @@ class WorkspaceController extends Controller
         return Inertia::render('branches/unassigned');
     }
 
-    private function redirectToRoleWorkspace(User $user): RedirectResponse
+    private function redirectToRoleWorkspace(User $user, ActiveBranchContext $activeBranchContext): RedirectResponse
     {
         $routeName = match (true) {
             $user->hasRole('super_admin') => 'workspaces.super-admin',
@@ -47,7 +47,7 @@ class WorkspaceController extends Controller
                 'inventory.manage' => 'inventory.index',
                 'staff.manage' => 'staff.index',
                 'settings.manage' => 'branches.index',
-            ]),
+            ]) ?? $this->businessWideOperationsWorkspace($user, $activeBranchContext),
             $user->roles()->exists() => $this->branchStaffWorkspace($user, ! $user->hasCashierOperationsRole()),
             default => null,
         };
@@ -73,6 +73,20 @@ class WorkspaceController extends Controller
             'reports.view' => 'workspaces.reports',
             'customer_display.launch' => 'workspaces.customer-display',
         ]);
+    }
+
+    /**
+     * A business-wide account without a management page (for example a Custom Role granted only POS or Kitchen) runs
+     * Branch operations at one concrete Branch: it chooses a Branch first, then lands on its operational workspace.
+     */
+    private function businessWideOperationsWorkspace(User $user, ActiveBranchContext $activeBranchContext): ?string
+    {
+        if (! $user->operatesEveryBranch()) {
+            return null;
+        }
+        $workspace = $this->branchStaffWorkspace($user, ! $user->hasPermission('pos.access'));
+
+        return $workspace !== null && $activeBranchContext->current($user) === null ? 'branches.select' : $workspace;
     }
 
     /**

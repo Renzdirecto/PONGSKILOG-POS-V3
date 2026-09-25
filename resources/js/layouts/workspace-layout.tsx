@@ -5,6 +5,7 @@ import {
     LayoutDashboard,
     LogOut,
     MonitorUp,
+    LayoutGrid,
     QrCode,
     ReceiptText,
     ShieldCheck,
@@ -28,7 +29,7 @@ import {
     superAdmin,
     transactionHistory,
 } from '@/routes/workspaces';
-import { logout } from '@/routes';
+import { logout, workspace } from '@/routes';
 import { current as currentStoreSession } from '@/routes/store-sessions';
 import { canOpenCustomerDisplay } from '@/lib/kitchen';
 import {
@@ -57,6 +58,16 @@ type SharedProps = {
     qrWaitingCount?: number;
     surface?: string;
 };
+
+/** Business-wide pages the WorkspaceController lands on before Branch operations. */
+const MANAGEMENT_PERMISSIONS = [
+    'reports.view',
+    'transactions.view',
+    'products.manage',
+    'inventory.manage',
+    'staff.manage',
+    'settings.manage',
+] as const;
 
 function StoreClosedListener({
     branchId,
@@ -102,6 +113,13 @@ export default function WorkspaceLayout({
     /** The closing cashier keeps their success summary; other clients leave the stale session surface. */
     const ownClosedSessionId = useRef<string | null>(null);
     const isSuperAdmin = auth.roles.includes('super_admin');
+    /** A business-wide Custom Role running Branch operations can return to its management pages. */
+    const canOpenManagement =
+        !isSuperAdmin &&
+        branchContext.businessWide &&
+        MANAGEMENT_PERMISSIONS.some((permission) =>
+            auth.permissions.includes(permission),
+        );
     /** The server renders the POS only for accounts it authorized (Cashier roles, Branch custom roles, Super Admin). */
     const isPos =
         page.component === 'workspaces/order-summary' ||
@@ -370,6 +388,19 @@ export default function WorkspaceLayout({
                                 <ShieldCheck className="size-4" />
                                 <span className="hidden min-[1180px]:inline">
                                     Control Center
+                                </span>
+                            </Link>
+                        )}
+                        {canOpenManagement && (
+                            <Link
+                                href={workspace()}
+                                aria-label="Back to management"
+                                title="Management"
+                                className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-white text-[12px] font-semibold text-neutral-700 hover:border-neutral-400 focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:outline-none min-[1180px]:w-auto min-[1180px]:px-3"
+                            >
+                                <LayoutGrid className="size-4" />
+                                <span className="hidden min-[1180px]:inline">
+                                    Management
                                 </span>
                             </Link>
                         )}

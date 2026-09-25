@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\BranchStatus;
 use App\Enums\PermissionOverrideEffect;
 use App\Models\AuditLog;
 use App\Models\Branch;
@@ -158,23 +159,27 @@ test('control permissions can never be granted to a custom role', function (stri
     expect(Role::query()->where('label', 'Escalator')->exists())->toBeFalse();
 })->with(['branch', 'business'])->with(PermissionCatalog::SUPER_ADMIN_ONLY);
 
-test('a branch custom role cannot hold business-wide permissions and a business role cannot hold branch operations', function (string $scope, string $permission) {
+test('a branch custom role cannot hold business-wide management permissions', function (string $permission) {
     $this->actingAs($this->superAdmin)
-        ->post(route('super-admin.access-control.custom-roles.store'), ['label' => 'Mixed', 'scope' => $scope, 'permissions' => [$permission]])
+        ->post(route('super-admin.access-control.custom-roles.store'), ['label' => 'Mixed', 'scope' => 'branch', 'permissions' => [$permission]])
         ->assertInvalid(['permissions']);
 
     expect(Role::query()->where('label', 'Mixed')->exists())->toBeFalse();
-})->with([
-    'branch + products' => ['branch', 'products.manage'],
-    'branch + inventory' => ['branch', 'inventory.manage'],
-    'branch + staff' => ['branch', 'staff.manage'],
-    'branch + settings' => ['branch', 'settings.manage'],
-    'business + pos' => ['business', 'pos.access'],
-    'business + kitchen' => ['business', 'kitchen.access'],
-    'business + store' => ['business', 'store.open_close'],
-    'business + expenses' => ['business', 'store_expenses.manage'],
-    'business + display' => ['business', 'customer_display.launch'],
-]);
+})->with(['products.manage', 'inventory.manage', 'staff.manage', 'settings.manage']);
+
+test('the branch envelope is branch operations plus reports and the business envelope adds management, never control', function () {
+    $operations = ['pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access', 'customer_display.launch', 'reports.view'];
+    $management = ['products.manage', 'inventory.manage', 'staff.manage', 'settings.manage'];
+
+    $branch = createCustomRole($this->superAdmin, 'Shift Lead', 'branch', $operations);
+    $business = createCustomRole($this->superAdmin, 'Regional Lead', 'business', [...$operations, ...$management]);
+
+    expect(PermissionCatalog::grantableFor($branch))->toBe(PermissionCatalog::ordered($operations))
+        ->and(PermissionCatalog::grantableFor($business))->toBe(PermissionCatalog::ordered([...$operations, ...$management]))
+        ->and(customRoleBaseline($branch))->toBe(PermissionCatalog::withQrFollowingPos($operations))
+        ->and(customRoleBaseline($business))->toBe(PermissionCatalog::withQrFollowingPos([...$operations, ...$management]))
+        ->and(array_intersect(customRoleBaseline($business), PermissionCatalog::SUPER_ADMIN_ONLY))->toBe([]);
+});
 
 test('forged scopes and permission names are rejected, never ignored', function (array $payload, string $field) {
     $this->actingAs($this->superAdmin)
@@ -493,14 +498,14 @@ test('a branch custom role with pos runs the pos only at its assigned branch', f
         ->assertOk();
 });
 
-test('a business-wide custom role reads every branch but never gains cashier operations or control', function () {
+test('a business-wide custom role reads every branch but gains no operation or control it was not granted', function () {
     StoreSession::factory()->for($this->main)->create();
     StoreSession::factory()->for($this->qave)->create();
     $role = createCustomRole($this->superAdmin, 'Area Manager', 'business', ['reports.view', 'staff.manage']);
     $manager = customRoleUser($role->name);
 
     expect($manager->hasBusinessWideScope())->toBeTrue()
-        ->and($manager->hasCashierOperationsRole())->toBeFalse();
+        ->and($manager->hasPermission('pos.access'))->toBeFalse();
 
     $this->actingAs($manager)->get(route('workspace'))->assertRedirectToRoute('workspaces.owner');
     $this->actingAs($manager)->get(route('workspaces.reports'))
@@ -515,6 +520,107 @@ test('a business-wide custom role reads every branch but never gains cashier ope
     $this->actingAs($manager)->get(route('workspaces.super-admin'))->assertForbidden();
 });
 
+test('an area manager style business-wide role runs operations at any selected active branch and management across all', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $role = createCustomRole($this->superAdmin, 'Area Manager', 'business', [
+        'pos.access', 'transactions.view', 'store.open_close', 'store_expenses.manage', 'kitchen.access',
+        'reports.view', 'products.manage', 'inventory.manage', 'settings.manage',
+    ]);
+    $manager = customRoleUser($role->name);
+    $closed = Branch::factory()->create(['name' => 'Closed', 'code' => 'CLSD', 'status' => BranchStatus::Inactive]);
+
+    expect($manager->branches()->exists())->toBeFalse()
+        ->and($manager->hasCashierOperationsRole())->toBeTrue()
+        ->and($manager->operatesEveryBranch())->toBeTrue()
+        ->and($manager->hasOperationalBranchAccess($this->main))->toBeTrue()
+        ->and($manager->hasOperationalBranchAccess($this->qave))->toBeTrue();
+
+    $this->actingAs($manager)->get(route('workspace'))->assertRedirectToRoute('workspaces.owner');
+    $this->actingAs($manager)->get(route('workspaces.reports'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('report.scope', null)
+            ->where('branchContext.businessWide', true)
+            ->where('auth.permissions', fn ($permissions): bool => in_array('pos.access', $permissions->all(), true)
+                && in_array('qr_orders.access', $permissions->all(), true)
+                && ! in_array('staff.manage', $permissions->all(), true)
+                && array_intersect($permissions->all(), PermissionCatalog::SUPER_ADMIN_ONLY) === []));
+    $this->actingAs($manager)->get(route('inventory.index'))->assertOk();
+    $this->actingAs($manager)->get(route('products.index'))->assertOk();
+
+    $this->actingAs($manager)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])->get(route('workspaces.cashier'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('branchContext.current.code', 'QAVE')->where('store.canOpen', true));
+    $this->actingAs($manager)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])->get(route('workspaces.kitchen'))->assertOk();
+    $this->actingAs($manager)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
+        ->post(route('store-sessions.open'), ['opening_cash_amount' => '0', 'opening_cashless_amount' => '0'])
+        ->assertSessionHasNoErrors();
+    expect(StoreSession::query()->where('branch_id', $this->qave->id)->where('status', 'open')->where('opened_by_user_id', $manager->id)->exists())->toBeTrue()
+        ->and($manager->branches()->exists())->toBeFalse();
+
+    $this->actingAs($manager)->withSession([ActiveBranchContext::SESSION_KEY => $closed->id])
+        ->post(route('store-sessions.open'), ['opening_cash_amount' => '0', 'opening_cashless_amount' => '0']);
+    expect(StoreSession::query()->where('branch_id', $closed->id)->exists())->toBeFalse();
+
+    $this->actingAs($manager)->get(route('staff.index'))->assertForbidden();
+    $this->actingAs($manager)->get(route('super-admin.access-control'))->assertForbidden();
+    $this->actingAs($manager)->get(route('workspaces.audit-trail'))->assertForbidden();
+    $this->actingAs($manager)->get(route('workspaces.void-orders'))->assertForbidden();
+    $this->actingAs($manager)->get(route('workspaces.super-admin'))->assertForbidden();
+});
+
+test('a business-wide operations-only role chooses one active branch before its workspace', function () {
+    $role = createCustomRole($this->superAdmin, 'Floating Cashier', 'business', ['pos.access', 'kitchen.access']);
+    $floater = customRoleUser($role->name);
+    Branch::factory()->create(['name' => 'Closed', 'code' => 'CLSD', 'status' => BranchStatus::Inactive]);
+
+    $this->actingAs($floater)->get(route('workspace'))->assertRedirectToRoute('branches.select');
+    $this->actingAs($floater)->get(route('workspaces.cashier'))->assertRedirectToRoute('workspace');
+    $this->actingAs($floater)->get(route('branches.select'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('branches/select')
+            ->where('branches', fn ($branches): bool => collect($branches)->pluck('code')->all() === ['MAIN', 'QAVE']));
+
+    $this->actingAs($floater)
+        ->put(route('branch-context.update', $this->qave), ['redirect' => '/workspaces/cashier'])
+        ->assertRedirect('/workspaces/cashier')
+        ->assertSessionHas(ActiveBranchContext::SESSION_KEY, $this->qave->id);
+    $this->actingAs($floater)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
+        ->get(route('workspace'))->assertRedirectToRoute('workspaces.cashier');
+    $this->actingAs($floater)->withSession([ActiveBranchContext::SESSION_KEY => $this->qave->id])
+        ->get(route('workspaces.reports'))->assertForbidden();
+});
+
+test('business-wide custom access may allow any operation or management permission but never control', function () {
+    $role = createCustomRole($this->superAdmin, 'Area Manager', 'business', ['reports.view', 'inventory.manage']);
+    $manager = customRoleUser($role->name);
+
+    $this->actingAs($this->superAdmin)
+        ->put(route('super-admin.access-control.users.update', $manager), ['overrides' => ['pos.access' => 'allow', 'staff.manage' => 'allow', 'inventory.manage' => 'deny']])
+        ->assertSessionHasNoErrors();
+    expect($manager->hasPermission('pos.access'))->toBeTrue()
+        ->and($manager->hasPermission('staff.manage'))->toBeTrue()
+        ->and($manager->hasPermission('inventory.manage'))->toBeFalse();
+
+    foreach (PermissionCatalog::SUPER_ADMIN_ONLY as $permission) {
+        $this->actingAs($this->superAdmin)
+            ->put(route('super-admin.access-control.users.update', $manager), ['overrides' => [$permission => 'allow']])
+            ->assertInvalid(['overrides.'.$permission]);
+        expect($manager->hasPermission($permission))->toBeFalse();
+    }
+});
+
+test('the owner keeps its management-only envelope and never operates a branch', function () {
+    $owner = customRoleUser('owner');
+
+    expect(PermissionCatalog::isGrantable('owner', 'pos.access'))->toBeFalse()
+        ->and($owner->hasCashierOperationsRole())->toBeFalse()
+        ->and($owner->operatesEveryBranch())->toBeFalse()
+        ->and($owner->hasOperationalBranchAccess($this->main))->toBeFalse();
+    $this->actingAs($owner)->get(route('branches.select'))->assertRedirectToRoute('workspace');
+});
+
 test('stored metadata never widens a system role and an archived business role gives no scope', function () {
     Role::query()->where('name', 'cashier')->update(['scope' => 'business', 'is_system' => false]);
     $cashier = customRoleUser('cashier', [$this->main]);
@@ -523,7 +629,9 @@ test('stored metadata never widens a system role and an archived business role g
     $role = createCustomRole($this->superAdmin, 'Area Manager', 'business', ['reports.view']);
     $manager = customRoleUser($role->name);
     DB::table('roles')->where('id', $role->id)->update(['archived_at' => now()]);
-    expect($manager->hasBusinessWideScope())->toBeFalse();
+    expect($manager->hasBusinessWideScope())->toBeFalse()
+        ->and($manager->operatesEveryBranch())->toBeFalse()
+        ->and($manager->hasOperationalBranchAccess($this->main))->toBeFalse();
 });
 
 test('access control lists custom roles with their scope, assigned count and members', function () {
@@ -538,7 +646,9 @@ test('access control lists custom roles with their scope, assigned count and mem
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.role', $role->name)
             ->where('scopeLocks', fn ($locks): bool => str_contains((string) $locks['branch']['products.manage'], 'business-wide')
-                && str_contains((string) $locks['business']['pos.access'], 'Branch')
+                && $locks['business']['pos.access'] === null
+                && $locks['business']['products.manage'] === null
+                && $locks['business']['audit.view'] === 'Super Admin only.'
                 && $locks['branch']['reports.view'] === null)
             ->where('roles', function ($roles) use ($role, $archived): bool {
                 $roles = collect($roles);

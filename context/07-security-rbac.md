@@ -627,7 +627,8 @@ QR Orders has no route of its own (it is enforced through POS) and always follow
 ### Scope (WHERE) is separate from permissions (WHAT)
 
 - **Branch role**: every account needs ≥ 1 active Branch; everything stays inside its assigned Branches (Reports: selected assigned Branch only, never All Branches; `branch.{branch}.reports` channel only). A Branch Custom Role runs Cashier operations like a Cashier (`Role::scopeCashierOperations()`), still gated by each permission (e.g. POS needs `pos.access`).
-- **Business-wide role**: no Branch assignments (fabricated ones are rejected); reaches every Branch through `User::hasBusinessWideScope()`, which is now metadata-driven (`Role::scopeBusinessWide()`: Owner/Super Admin by name, plus active business-wide Custom Roles). It never gains Cashier operations or Control permissions.
+- **Business-wide role**: no Branch assignments (fabricated ones are rejected); reaches every Branch through `User::hasBusinessWideScope()`, which is now metadata-driven (`Role::scopeBusinessWide()`: Owner/Super Admin by name, plus active business-wide Custom Roles). It never gains Control permissions.
+- **Business-wide operations (Manual QA refinement, 2026-09-25)**: a business-wide Custom Role may combine operational and management permissions. Like Super Admin it operates at any selected **active** Branch without assignments (`Role::scopeOperatesEveryBranch()` = Super Admin by name + active business-wide Custom Roles, used by `User::hasOperationalBranchAccess()`; `Role::scopeCashierOperations()` includes every active Custom Role). Each operational action stays bound to the one selected Branch; business-wide is never one combined operational Branch, and Store Session, payment and inventory rules are unchanged. Without a management landing page it goes to the Branch picker (active Branches only) and then its operational workspace. Owner is unchanged (no Cashier operations).
 - Scope can change only while **no** account holds the role (checked under the Role row lock that Staff assignment also takes); otherwise reassign Staff first or create a new role.
 
 ### Grant envelope (PermissionCatalog::CUSTOM_GRANTABLE)
@@ -635,7 +636,7 @@ QR Orders has no route of its own (it is enforced through POS) and always follow
 | Scope | May hold (baseline or user ALLOW) | Locked |
 | --- | --- | --- |
 | Branch | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display, Reports (own Branch) | Products, Inventory, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control |
-| Business-wide | Transactions, Reports, Products, Inventory, Staff (operational Staff only, like the Owner), Settings | POS, QR, Store Open / Close, Expenses, Kitchen, Customer Display (Branch operations); Audit Trail, Void Orders, Access Control |
+| Business-wide | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display (each at one selected active Branch), Reports (All Branches or selected Branch), Products, Inventory, Staff (operational Staff only, like the Owner), Settings | Audit Trail, Void Orders, Access Control (Super Admin only) |
 
 Every business permission's backend was checked: business Transactions, Owner Dashboard, Operations, Branch settings and Staff management already require business-wide scope; Inventory/Products are gated by permission and stay business-wide. A per-user ALLOW is limited by the same envelope (`PermissionCatalog::lockReason(Role, …)`), so it can never escape the role's scope or reach Control.
 

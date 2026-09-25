@@ -3,12 +3,14 @@ import {
     BarChart3,
     Bell,
     Boxes,
+    ChefHat,
     Layers,
     LayoutDashboard,
     LayoutGrid,
     Leaf,
     ListChecks,
     Menu,
+    MonitorUp,
     PackageSearch,
     ReceiptText,
     Settings,
@@ -16,6 +18,7 @@ import {
     ShoppingCart,
     UserRound,
     Users,
+    UtensilsCrossed,
 } from 'lucide-react';
 import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
@@ -35,14 +38,24 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { index as branchesIndex } from '@/routes/branches';
+import {
+    index as branchesIndex,
+    select as selectBranch,
+} from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
 import { logout, workspace } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
 import { index as productsIndex } from '@/routes/products';
 import { index as staffIndex } from '@/routes/staff';
 import operationsRoutes from '@/routes/operations';
-import { owner, reports, transactions } from '@/routes/workspaces';
+import {
+    cashier,
+    customerDisplay,
+    kitchen,
+    owner,
+    reports,
+    transactions,
+} from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
 type SharedProps = {
@@ -160,6 +173,35 @@ export function OwnerWorkspaceShell({
     const canSettings =
         branchContext.businessWide &&
         auth.permissions.includes('settings.manage');
+    /**
+     * Business-wide Custom Roles may also hold Branch operations. Those always run at one concrete Branch: with a
+     * Branch selected the link opens it, otherwise the Branch picker comes first and then continues to the workspace.
+     */
+    const branchOperation = (route: ReturnType<typeof owner>) =>
+        branchContext.current
+            ? route
+            : selectBranch({ query: { redirect: route.url } });
+    const branchOperations: NavigationItem[] = (
+        [
+            ['pos.access', 'POS', 'POS', UtensilsCrossed, cashier()],
+            ['kitchen.access', 'Kitchen', 'Kitchen', ChefHat, kitchen()],
+            [
+                'customer_display.launch',
+                'Customer Display',
+                'Display',
+                MonitorUp,
+                customerDisplay(),
+            ],
+        ] as const
+    )
+        .filter(([permission]) => auth.permissions.includes(permission))
+        .map(([, label, shortLabel, icon, route]) => ({
+            label,
+            shortLabel,
+            icon,
+            href: branchOperation(route),
+            active: false,
+        }));
     const navigation: { label: string; items: NavigationItem[] }[] = [
         {
             label: 'Overview',
@@ -174,6 +216,9 @@ export function OwnerWorkspaceShell({
                 },
             ],
         },
+        ...(branchOperations.length > 0
+            ? [{ label: 'Branch operations', items: branchOperations }]
+            : []),
         {
             label: 'Sales',
             items: [

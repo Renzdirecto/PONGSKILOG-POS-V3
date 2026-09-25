@@ -218,7 +218,11 @@ test('operational sidebar stays visible on iPad Mini and floating navigation is 
 
     assert.match(workspaceLayout, /w-\[94px\][^"\n]*md:flex/);
     assert.match(workspaceLayout, /shadow-xl md:hidden/);
-    assert.match(workspaceLayout, /pb-\[76px\] md:pb-0/);
+    /** 76px clears the floating nav; on phones with a home indicator the safe-area inset replaces its 12px offset. */
+    assert.match(
+        workspaceLayout,
+        /pb-\[calc\(max\(12px,env\(safe-area-inset-bottom\)\)\+64px\)\] md:pb-0/,
+    );
     assert.match(kitchenPage, /grid-cols-1 md:grid-cols-2 min-\[1180px\]:grid-cols-3/);
     assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });

@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { ArrowLeft, Clock3, Store } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PwaStatus } from '@/components/pwa-status';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import { DISPLAY_REALTIME_EVENTS } from '@/lib/kitchen';
 import { kitchen } from '@/routes/workspaces';
@@ -36,7 +37,7 @@ export default function CustomerDisplay({
     return (
         <>
             <Head title="Order status board" />
-            <div className="flex min-h-dvh flex-col bg-[#101111] text-white">
+            <div className="flex min-h-dvh flex-col bg-[#101111] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-white">
                 <header className="grid min-h-[82px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-white/10 px-4 py-4 sm:flex sm:flex-wrap sm:gap-4 sm:px-7">
                     <div className="col-span-2 flex min-w-0 items-center gap-3 sm:col-auto">
                         <img
@@ -63,6 +64,7 @@ export default function CustomerDisplay({
                             minute: '2-digit',
                         })}
                     </div>
+                    <PwaStatus tone="dark" />
                     <Link
                         href={kitchen()}
                         className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-bold transition hover:bg-white/10"

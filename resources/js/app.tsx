@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import { PwaRuntime } from '@/components/pwa-runtime';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
@@ -7,11 +8,14 @@ import AuthLayout from '@/layouts/auth-layout';
 import LoginLayout from '@/layouts/auth/login-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import WorkspaceLayout from '@/layouts/workspace-layout';
+import { captureInstallPrompt } from '@/lib/pwa-runtime';
 import { configureEcho } from '@laravel/echo-react';
 
 configureEcho({
     broadcaster: 'reverb',
 });
+
+captureInstallPrompt();
 
 const appName = import.meta.env.VITE_APP_NAME || 'Pongskilog';
 
@@ -42,11 +46,17 @@ void createInertiaApp({
         }
     },
     strictMode: true,
-    withApp(app) {
+    withApp(app, { page }) {
+        const auth = (page.props as { auth?: { user?: unknown } }).auth;
+
         return (
             <TooltipProvider delayDuration={0}>
                 {app}
                 <Toaster />
+                <PwaRuntime
+                    component={page.component}
+                    signedIn={Boolean(auth?.user)}
+                />
             </TooltipProvider>
         );
     },

@@ -498,7 +498,7 @@ Before production launch:
 
 ## 26. POST-PHASE-16 PLANNED PWA SLICE (accepted plan, NOT implemented)
 
-**Status: PLANNED, NOT IMPLEMENTED.** Accepted by the user on 2026-09-24 during Phase 16 Final QA. There is currently **no service worker, no web manifest, no install prompt, no offline cache and no manifest-driven PWA release**. Phase 16 only prepared branding assets. The PWA needs its own dedicated implementation slice with its own tests and QA; it is tracked as **Phase 19.5 — PWA / Installable Web App** (PLANNED / NOT STARTED) in `13-progress-tracker.md` and must not be marked complete until that slice ships.
+**Status: PWA Phase 1 IMPLEMENTED (Phase 19.5, 2026-09-26) — READY FOR USER MANUAL QA** (not merged, not deployed; deployment notes in §30). Accepted by the user on 2026-09-24 during Phase 16 Final QA. Phase 1 ships the manifest, service worker, install flow, connectivity state, offline write guard, Web Push and safe updates below; it has **no offline cache of business data and no offline writes**. Offline-first POS stays **PWA Phase 2 — future only**. The plan text below is kept as accepted; where it mentions offline snapshots of the catalog or reports, Phase 1 deliberately keeps only the currently rendered screen (no device cache of business data).
 
 ### Mental model
 
@@ -541,7 +541,7 @@ Network returns → Reverb/Echo reconnects → the client performs an authoritat
 | Header / sidebar | Existing approved Pongskilog wordmark treatment (sidebars and rails keep the wordmark only) | — |
 | Phone top bar / auth identity | Round emblem `public/images/branding/pongskilog-emblem.png` | `public/images/branding/source/pongskilog-round-emblem.jpg` |
 
-The 192/512 and maskable icons are ready for a future manifest but are not yet referenced by one.
+Since Phase 19.5 the 192/512 any + maskable icons are referenced by `public/manifest.webmanifest`; the icons, the emblem and `offline.html` are precached by the service worker.
 
 ### Phase 16E note (2026-09-24)
 
@@ -569,3 +569,32 @@ Deploying the Final QA corrections adds one forward migration, `2026_09_24_13432
 - One additive migration: `2026_09_25_150406_add_reporting_performance_indexes` (`php artisan migrate --force`). It only creates five btree indexes; rollback drops exactly those.
 - `CREATE INDEX` (non-concurrent) briefly blocks writes to `audit_logs`, `orders`, `notifications` and the two Pamamalengke tables while each index builds. At current volumes this is seconds; on a much larger production dataset run it outside trading hours.
 - No dependency, queue, cache, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 30. Phase 19.5 deployment note — PWA Phase 1 (2026-09-26)
+
+Documentation only: no Railway or Cloudflare setting was changed.
+
+- **Migration:** one additive migration `2026_09_25_182423_create_push_subscriptions_table` (`php artisan migrate --force`); rollback drops only that table.
+- **Dependencies:** Composer `minishlink/web-push` ^11 (brings php-http/discovery, php-http/httplug, php-http/promise, spomky-labs/base64url, symfony/polyfill-php83, web-token/jwt-library; uses the existing Guzzle as its PSR-18 client; needs ext-openssl, ext-curl, ext-mbstring). npm: `vite-plugin-pwa` (dev, build only) and `workbox-core`, `workbox-precaching`, `workbox-routing`, `workbox-strategies` (bundled into the service worker).
+- **Build:** `npm run build` produces `public/build/sw.js` next to the Vite assets. Without a build `/sw.js` answers 404 and the app is a normal web app.
+- **HTTPS:** the service worker, install and push need a secure context, so production must be https. Behind Railway / Cloudflare set `TRUSTED_PROXIES=*` (`config/trustedproxy.php`, new) so Laravel sees the forwarded https scheme; otherwise it builds `http://` asset and redirect URLs an https page cannot load. LAN `http://` links keep working as a plain web app without PWA features.
+- **VAPID:** generate a separate production pair on a trusted machine with `php artisan pwa:vapid-keys --show` and set `VAPID_SUBJECT` (a real, monitored `mailto:` or https contact), `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` as Railway secrets. Never reuse the local pair; never commit, log or share the private key. Rotating the pair invalidates existing subscriptions (the push service rejects them and the server removes them; staff enable notifications again). Push stays off until all three are set.
+- **Queue worker:** required (already needed for queued broadcasts). It delivers `SendPushNotification`; transient push failures retry per subscription after 30 s and 120 s, three attempts at most. Keep a real queue in production: with `QUEUE_CONNECTION=sync` pushes would be sent inside the request (still rescued, but slower).
+- **Service worker path/scope:** `/sw.js`, scope `/`, served by Laravel (`ServiceWorkerController`, outside the web middleware: no session or cookies) with `Cache-Control: no-cache, no-store, must-revalidate` and `Service-Worker-Allowed: /`; registered with `updateViaCache: 'none'`. Open app windows also check for a new version hourly while visible.
+- **Cloudflare:** never edge-cache `/sw.js` (the origin sends `no-store`, which Cloudflare respects by default; if a "Cache Everything" rule exists, add a Cache Rule *URI Path equals `/sw.js` → Bypass cache*). Keep `/manifest.webmanifest` refreshable (bypass or a short edge TTL). `/build/assets/*` are fingerprinted and may be cached long / immutable. Never cache HTML or authenticated responses.
+- **Update behavior:** a deploy is detected by the service worker (and by Inertia's asset version). Open apps show "PONGSKILOG update available" and wait for Update now; a POS order in progress, or a write still being saved, holds the reload until it is safe. Deploying during service therefore never reloads a cashier's screen by itself.
+- **Push is best effort, never authoritative:** Reverb stays the realtime authority; invalid subscriptions are removed automatically; notification permission is per browser and device; iPhone/iPad receive Web Push only in the Home Screen app (iOS/iPadOS 16.4+), and every feature is detected elsewhere. Phase 1 still needs internet for every write.
+- **Windows development PHP:** PHP for Windows can create the P-256 keys that VAPID generation and push payload encryption need only when `OPENSSL_CONF` points at its bundled `extras\ssl\openssl.cnf` (for example `C:\php\extras\ssl\openssl.cnf`) in the shell running `php artisan pwa:vapid-keys`, `php artisan queue:work` or `php artisan serve`. Linux production is unaffected; the two tests that need these keys skip themselves where they cannot be created.
+
+### 30.1 Local phone PWA testing (HTTPS)
+
+`localhost` is a secure context only on the PC itself. A phone on `http://192.168.x.x` gets the normal web app but no service worker, install or push, so full testing needs an HTTPS URL:
+
+1. `npm run build` (only a production build has the service worker). Stop `npm run dev` so `public/hot` is gone.
+2. In `.env` set `TRUSTED_PROXIES=127.0.0.1` (the tunnel connects from this PC), then `php artisan config:clear`.
+3. PowerShell in the project: `$env:OPENSSL_CONF = "C:\php\extras\ssl\openssl.cnf"; php artisan serve --host=127.0.0.1 --port=8000`, and in a second window with the same `OPENSSL_CONF`: `php artisan queue:work` (push delivery). Start Reverb as usual if realtime is needed.
+4. Expose it over HTTPS with a tunnel. No tunnel tool is installed on the development PC; with the owner's approval install Cloudflare's (`winget install --id Cloudflare.cloudflared`) and run `cloudflared tunnel --url http://127.0.0.1:8000`. It prints a temporary `https://….trycloudflare.com` URL — never commit it.
+5. Open that URL on the phone (any network) and sign in. Android Chrome: App & notifications › Install PONGSKILOG (or the browser's Install app). iPhone/iPad: Safari › Share › Add to Home Screen, then open it from the Home Screen (required for iOS push).
+6. Realtime over the tunnel also needs Reverb over wss: a second tunnel `cloudflared tunnel --url http://127.0.0.1:8080` and a rebuild with `VITE_REVERB_HOST=<that tunnel host>`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`. Without it everything else works and live screens show their disconnected state.
+7. Update test: change a frontend file, run `npm run build` again (new `sw.js` and assets), then return to the open app (reopen it, or wait for the hourly check).
+8. Afterwards remove `TRUSTED_PROXIES` from `.env` (keep it only while tunnelling locally).

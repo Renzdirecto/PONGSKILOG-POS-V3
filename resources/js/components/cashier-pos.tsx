@@ -50,6 +50,9 @@ import {
 } from '@/lib/pos-money';
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
+import { useUpdateBlocker } from '@/hooks/use-pwa';
+import { isOfflineWriteBlock } from '@/lib/pwa-mutation-guard';
+import { serverWritesAllowed } from '@/lib/pwa-runtime';
 import { savedItemName } from '@/lib/pos-item-name';
 import { otherCartLines } from '@/lib/recipe-availability';
 import { recipeCapacity } from '@/routes/pos';
@@ -200,6 +203,18 @@ export function CashierPos({
               (product) => product.id === editing.product.id,
           ) ?? editing.product)
         : null;
+    /** An app update or notification tap never reloads over an order in progress (its state lives only here). */
+    useUpdateBlocker(
+        lines.length > 0 ||
+            saved !== null ||
+            attempt !== null ||
+            payLaterAttempt !== null ||
+            payment.processing ||
+            payLater.processing ||
+            editing !== null ||
+            (dialog !== null && dialog !== 'type'),
+        'Finish or clear the current order first.',
+    );
 
     useEffect(() => {
         if (
@@ -275,7 +290,7 @@ export function CashierPos({
             );
             return;
         }
-        if (!navigator.onLine) {
+        if (!serverWritesAllowed()) {
             setPaymentError(
                 'You are offline. Reconnect before confirming payment.',
             );
@@ -340,7 +355,13 @@ export function CashierPos({
                           };
                       })
                     : null;
-            if (
+            if (isOfflineWriteBlock(error)) {
+                /** Refused before sending: nothing reached the server, so no result needs recovering. */
+                setAttempt(null);
+                setPaymentError(
+                    'You are offline. Reconnect before confirming payment.',
+                );
+            } else if (
                 response &&
                 [401, 403, 404, 409, 419, 422].includes(response.status)
             ) {
@@ -379,7 +400,7 @@ export function CashierPos({
             );
             return;
         }
-        if (!navigator.onLine) {
+        if (!serverWritesAllowed()) {
             setPayLaterError(
                 'You are offline. Reconnect before saving this Pay Later order.',
             );
@@ -442,7 +463,13 @@ export function CashierPos({
                           };
                       })
                     : null;
-            if (
+            if (isOfflineWriteBlock(error)) {
+                /** Refused before sending: nothing reached the server, so no result needs recovering. */
+                setPayLaterAttempt(null);
+                setPayLaterError(
+                    'You are offline. Reconnect before saving this Pay Later order.',
+                );
+            } else if (
                 response &&
                 [401, 403, 404, 409, 419, 422].includes(response.status)
             ) {
@@ -642,7 +669,7 @@ export function CashierPos({
                     {cart}
                 </aside>
             </div>
-            <div className="fixed right-3 bottom-[88px] left-3 z-30 md:hidden">
+            <div className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[calc(max(12px,env(safe-area-inset-bottom))+76px)] left-[max(12px,env(safe-area-inset-left))] z-30 md:hidden">
                 <Button
                     className="h-12 w-full justify-between rounded-xl bg-neutral-950 px-4 text-white shadow-lg hover:bg-black"
                     onClick={() => setDialog('cart')}

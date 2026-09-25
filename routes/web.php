@@ -39,6 +39,7 @@ use App\Http\Controllers\PosPaymentController;
 use App\Http\Controllers\PosRecipeCapacityController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductImageController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\ReportsController;
@@ -289,6 +290,13 @@ Route::middleware(['auth'])->group(function () {
     Route::get('workspaces/customer-display', CustomerDisplayController::class)
         ->middleware(['permission:customer_display.launch', 'branch'])
         ->name('workspaces.customer-display');
+
+    /** This browser's Web Push subscription for the signed-in, active account (PWA Phase 1). */
+    Route::prefix('pwa/push-subscription')->name('pwa.push-subscription.')->middleware('throttle:30,1')->group(function (): void {
+        Route::get('/', [PushSubscriptionController::class, 'show'])->name('show');
+        Route::post('/', [PushSubscriptionController::class, 'store'])->name('store');
+        Route::delete('/', [PushSubscriptionController::class, 'destroy'])->name('destroy');
+    });
 });
 
 require __DIR__.'/settings.php';

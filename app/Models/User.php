@@ -169,4 +169,10 @@ class User extends Authenticatable
         return $this->belongsToMany(Branch::class, 'user_branch_assignments')
             ->withPivot('is_active');
     }
+
+    /** @return HasMany<PushSubscription, $this> */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
 }

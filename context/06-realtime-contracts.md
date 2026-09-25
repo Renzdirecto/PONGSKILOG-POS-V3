@@ -794,3 +794,11 @@ No new channel, event or payload field.
 - `useBranchRealtimeRefresh`, `useAuditRealtimeRefresh` (and its disconnected poll) and `usePosQrRealtime` pass `handleRevalidationException` + `onNetworkError: () => false`, like the reports / invalidation / user-context hooks.
 - `usePosQrRealtime` no longer refetches `qrWaitingCount` / `loadedQr` right after the server rendered them; it refetches on a reconnect (`shouldRefetchCatalogAfterConnectionChange`), on `online`, and on QR events.
 - Unchanged by design: `qr.catalog_changed` may fire once per stock movement of one sale (invalidation only; clients debounce), and the paying POS terminal still reloads its catalog explicitly so stock stays fresh while realtime is down.
+
+## Phase 19.5 — PWA Phase 1 connectivity and Web Push — 2026-09-26
+
+No new channel, event or payload field; Reverb/Echo remain the only live-update transport and the authority for invalidation.
+
+- **Connectivity:** one app state (`lib/pwa-connectivity.ts`). Browser `offline` → Offline; `online` (or a request that got no response) → Reconnecting → `/up` answers → one authoritative `router.reload()` (session, Branch context and page props; 401/419 → login, 403/404 → workspace via `handleRevalidationException`) → Online. Bounded backoff (0, 2, 5, 10, 20, then 30 s), paused while the page is hidden, no timer at all once Online. "Last synced" = the last server response, for messaging only.
+- **Realtime hooks are unchanged:** they keep their own Echo-reconnect and event refetches (pusher-js reconnects on `online` by itself). No duplicate subscriptions, no second client, no new polling.
+- **Web Push complements, never replaces, realtime:** New Kitchen Order (`kitchen.ticket_created` event), Order Ready (`kitchen.status_changed` to `ready`, not from `done`) and Important Alert (each stored `AdminAlert`) are pushed to devices of the accounts allowed at delivery time — the `branch.{id}.kitchen` / `branch.{id}.pos` channel rule (`BranchSignalAccess`) and `AdminNotifier::receivesAlerts()`. Payload: `v`, `type`, `tag` (`kitchen-new-order:{order}`, `order-ready:{order}`, `admin-alert:{notification}`), allowlisted path, Branch name. A focused PONGSKILOG window already handling the event gets a silent notification (its own realtime view and sounds remain the cue).

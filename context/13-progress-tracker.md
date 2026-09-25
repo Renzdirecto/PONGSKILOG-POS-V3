@@ -1066,8 +1066,8 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 ## Remaining Roadmap Order
 
 1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
-2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **PLANNED / NOT STARTED** (branch `feature/pwa-phase-1`)
-3. Phase 20 — Final Production Hardening
+2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **IMPLEMENTED — READY FOR USER MANUAL QA** (branch `feature/pwa-phase-1`; USER MANUAL QA pending, Final QA not run, no PR, not merged)
+3. Phase 20 — Final Production Hardening: **NOT STARTED**
 4. Deployment
 5. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5)
 
@@ -1077,9 +1077,7 @@ Phase 17 Stock Transfers remains **DEFERRED**.
 
 ## Phase 19.5 — PWA Phase 1 (Installable Web App)
 
-**Status: PLANNED / NOT STARTED** — scope frozen 2026-09-26.
-
-**PWA is NOT implemented yet.** There is no web manifest, service worker, install prompt or offline cache. Detailed plan and branding asset registry: `12-deployment-operations.md` §26.
+**Status: IMPLEMENTED — READY FOR USER MANUAL QA** (2026-09-26, branch `feature/pwa-phase-1`). USER MANUAL QA: PENDING. PHASE 19.5 FINAL QA: NOT RUN. No PR, not merged, not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
 
 **Goal:** Make PONGSKILOG POS V3 installable and app-like while remaining **INTERNET-FIRST** for actual critical operations.
 
@@ -1087,40 +1085,40 @@ Phase 17 Stock Transfers remains **DEFERRED**.
 
 **Phase 1 does NOT include offline transactional writes.** Offline must NOT allow: Pay Now, Pay Later, settlement, Void, committed Order Edit, Store Open / Close, expenses, purchases, inventory adjustments, Ingredient stock/movements, Pamamalengke confirmation, Giveaway, Kitchen status mutations, Staff / permission / security mutations, or any other financial/stock/security-sensitive write.
 
-Installable app experience:
+Installable app experience (implemented; device behavior pending USER MANUAL QA):
 
-- [ ] Installable on Android, iPhone/iPad, Windows and Mac
-- [ ] Proper PONGSKILOG app name and branding
-- [ ] Launcher/app icons (final assets)
-- [ ] Splash/loading experience
-- [ ] Standalone/fullscreen app mode
-- [ ] Web app manifest
-- [ ] Install button / Add to Home Screen guidance
-- [ ] Proper mobile/tablet/desktop PWA behavior
+- [x] Installable on Android, iPhone/iPad, Windows and Mac (manifest + service worker + Install / Add to Home Screen / Add to Dock flows)
+- [x] Proper PONGSKILOG app name and branding (PONGSKILOG POS / PONGSKILOG)
+- [x] Launcher/app icons (final assets: approved any + maskable 192/512, 180 Apple touch)
+- [x] Splash/loading experience (manifest colors + standalone-only startup screen)
+- [x] Standalone/fullscreen app mode
+- [x] Web app manifest
+- [x] Install button / Add to Home Screen guidance
+- [x] Proper mobile/tablet/desktop PWA behavior (safe areas, dvh; responsive QA pending)
 
 Service worker, caching and connectivity:
 
-- [ ] Service worker
-- [ ] Cached basic app shell/static assets (safe cache strategy)
-- [ ] Faster startup where safe
-- [ ] Online / Offline / Reconnecting indicator
-- [ ] Safe degraded/read-only offline state where appropriate
-- [ ] Authoritative backend refetch after reconnect
-- [ ] Realtime reconnection
-- [ ] Realtime continues for POS, KDS, Customer Display and Owner / Manager screens
+- [x] Service worker
+- [x] Cached basic app shell/static assets (safe cache strategy: fingerprinted build, icons, offline page only)
+- [x] Faster startup where safe
+- [x] Online / Offline / Reconnecting indicator
+- [x] Safe degraded/read-only offline state where appropriate (current screen only; every server write blocked)
+- [x] Authoritative backend refetch after reconnect
+- [x] Realtime reconnection (existing Echo hooks unchanged, no second client)
+- [x] Realtime continues for POS, KDS, Customer Display and Owner / Manager screens
 
 Notifications:
 
-- [ ] Push notifications for new Kitchen order, Order ready and important alerts
-- [ ] Notification sound/vibration where the device/browser supports it
+- [x] Push notifications for new Kitchen order, Order ready and important alerts
+- [x] Notification sound/vibration where the device/browser supports it (OS/browser behavior; not universal)
 
 Updates and recovery:
 
-- [ ] App version/update detection
-- [ ] Safe update prompt — never unexpectedly refresh/destroy an ongoing transaction
-- [ ] Basic current page/session recovery after refresh/reopen where safe
+- [x] App version/update detection
+- [x] Safe update prompt — never unexpectedly refresh/destroy an ongoing transaction
+- [x] Basic current page/session recovery after refresh/reopen where safe
 
-QA:
+QA (USER MANUAL QA — pending):
 
 - [ ] Android
 - [ ] iPhone/iPad
@@ -1129,6 +1127,20 @@ QA:
 - [ ] Offline/reconnect
 - [ ] Notifications
 - [ ] Update flow
+
+### Phase 19.5 implementation — 2026-09-26
+
+Branch `feature/pwa-phase-1` on `e2d6737` (1 ahead / 0 behind `origin/dev` `b928b63` at start). One additive migration `2026_09_25_182423_create_push_subscriptions_table`, applied forward to the local development DB (never reset). Dependencies: `minishlink/web-push` ^11 (Composer); `vite-plugin-pwa` (dev) and `workbox-core/-precaching/-routing/-strategies` (npm).
+
+- **Install:** `public/manifest.webmanifest` (PONGSKILOG POS / PONGSKILOG, id `/`, start `/workspace`, scope `/`, standalone, `#111111`, en-PH, business/productivity/food, approved any + maskable icons, no forced orientation), linked only on staff and sign-in pages; `viewport-fit=cover`, Apple standalone meta, a standalone-only startup screen. Install PONGSKILOG uses the captured Chromium prompt (never automatic); iPhone/iPad and Mac Safari get their real manual steps; insecure (LAN http) contexts are explained.
+- **Service worker:** custom `resources/js/service-worker/sw.ts` (Workbox precaching/routing via `vite-plugin-pwa` injectManifest), served at `/sw.js` by Laravel with no-store. Precache: fingerprinted build assets, brand icons, `offline.html`. Navigations network-only with the branded offline page; nothing else intercepted — no HTML/JSON/private caching, no Background Sync, no write queue.
+- **Connectivity + write guard:** one Online / Reconnecting / Offline state (`/up` probe, bounded backoff, paused while hidden, no polling once online, one authoritative reload before writes resume); the wrapped Inertia HTTP client refuses every server write while not online with "You're offline. Reconnect to continue this operation."; status pills in every shell, the Kitchen full screen and the Customer Display; Last synced.
+- **Updates:** a new version waits; Update now / Later; the POS order in progress and writes in flight block the reload (also Inertia asset-version reloads); one reload, only in the window that asked.
+- **Web Push:** subscriptions per browser (encrypted, unique endpoint hash, SSRF-safe host allowlist, device cookie for server-side logout cleanup, removed on password reset / deactivation); New Kitchen Order, Order Ready and Important Alert queued after commit and delivered to the accounts allowed at send time (Branch channel rule, AdminNotifier rule); generic fixed texts; per-event tags; expired/rejected subscriptions removed; transient failures retried 3× max; a failed push never fails the business action. VAPID keys per environment (`php artisan pwa:vapid-keys`); the local development pair lives only in the untracked `.env`.
+- **Recovery:** refresh/deep links keep their URL; an installed app launched through its start URL returns to the last top-level screen (Kitchen, Customer Display, POS …) — no transaction, cart or dialog state is persisted.
+- **Also:** `config/trustedproxy.php` (`TRUSTED_PROXIES`, opt-in) so https proxies/tunnels produce https URLs.
+- **Verification (focused, not Final QA):** Pest 653 passed / 4,913 assertions (new PWA suites + every suite touching changed code; 2 EC-key tests need `OPENSSL_CONF` on Windows PHP, else they skip); frontend 300/300; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); SQLite migration round-trip; lint, TypeScript, PHPStan, Pint, production build, `git diff --check` clean. Details: `11-testing-qa.md`.
+- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. PHASE 19.5 FINAL QA: NOT RUN. PWA Phase 2 remains FUTURE UPDATE ONLY; Phase 20 NOT STARTED; Phase 17 Stock Transfers DEFERRED.
 
 ---
 

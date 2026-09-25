@@ -13,26 +13,23 @@ class ActiveBranchContext
 
     public function __construct(private Session $session) {}
 
+    /**
+     * The selected Branch, re-authorized on every call. A stale or forged selection is dropped and the account continues
+     * as if it had none selected (a single assigned Branch is chosen again), so the answer never depends on how many
+     * times it was asked within one request.
+     */
     public function current(User $user): ?Branch
     {
         $branchId = $this->session->get(self::SESSION_KEY);
 
         if ($branchId !== null) {
-            if (! is_string($branchId)) {
-                $this->clear();
+            $branch = is_string($branchId) ? Branch::query()->find($branchId) : null;
 
-                return null;
+            if ($branch !== null && Gate::forUser($user)->allows('select', $branch)) {
+                return $branch;
             }
 
-            $branch = Branch::query()->find($branchId);
-
-            if ($branch === null || Gate::forUser($user)->denies('select', $branch)) {
-                $this->clear();
-
-                return null;
-            }
-
-            return $branch;
+            $this->clear();
         }
 
         if (! $user->is_active || $user->hasBusinessWideScope()) {

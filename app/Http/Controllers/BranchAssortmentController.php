@@ -86,14 +86,24 @@ class BranchAssortmentController extends Controller
         );
         $changed = $result['copied'] + $result['overwritten'];
         $operations = $result['operations'];
+        $conflicts = $result['conflicts'];
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $changed.' '.($changed === 1 ? 'product' : 'products').' copied'
+        Inertia::flash('toast', ['type' => $conflicts === [] ? 'success' : 'warning', 'message' => $changed.' '.($changed === 1 ? 'product' : 'products').' copied'
             .($result['skipped'] > 0 ? ' · '.$result['skipped'].' already in this Branch and kept' : '')
+            .($conflicts === [] ? '' : ' · '.count($conflicts).' skipped for a conflict')
             .($operations === null ? '' : ' · Operations setup: '.$operations['recipes']['products'].' configured, '
                 .($operations['ingredients']['new'] + $operations['ingredients']['replaced']).' ingredients, '
                 .($operations['plans']['new'] + $operations['plans']['replaced']).' plans'
                 .($operations['skipped'] === [] ? '' : ' ('.count($operations['skipped']).' skipped)'))
             .'. Stock was not copied.']);
+        /** The copy dialog stays open on this result when anything was skipped, so each reason can be read. */
+        Inertia::flash('assortmentCopy', [
+            'copied' => $result['copied'],
+            'overwritten' => $result['overwritten'],
+            'kept' => $result['skipped'],
+            'conflicts' => $conflicts,
+            'operations_skipped' => $operations['skipped'] ?? [],
+        ]);
 
         return back();
     }

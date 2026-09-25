@@ -126,11 +126,14 @@ class TransactionProjection
                 'created_at' => $adjustment->created_at?->toIso8601String(),
                 'created_by' => $adjustment->createdBy?->name,
             ])->values()->all(),
+            /** A list page (Void Orders) eager-loads the restorations for every row; a single detail queries them. */
             'inventory_restorations' => $order->commercial_status === CommercialStatus::Voided
-                ? $order->inventoryMovements()
-                    ->where('movement_type', InventoryMovementType::VoidRestore)
-                    ->with('product:id,name')
-                    ->get()
+                ? ($order->relationLoaded('inventoryMovements')
+                    ? $order->inventoryMovements->where('movement_type', InventoryMovementType::VoidRestore)
+                    : $order->inventoryMovements()
+                        ->where('movement_type', InventoryMovementType::VoidRestore)
+                        ->with('product:id,name')
+                        ->get())
                     ->map(fn ($movement): array => [
                         'product_name' => $movement->product?->name,
                         'quantity_restored' => $movement->quantity_delta,

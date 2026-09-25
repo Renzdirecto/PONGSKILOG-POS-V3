@@ -17,3 +17,6 @@ A Group with semantic_role=instruction is optional/multiple, has min_select=0, a
 
 ## Add Group creates; Assign Group reuses
 Add Group creates a new reusable Modifier Group and its Options. Assign Group only syncs existing Group IDs onto a Product through product_modifier_groups; it supports multiple selections and unassignment and must never duplicate Groups, Options, or pivot rows.
+
+## PostgreSQL harnesses pin their clock (Phase 19 Final QA)
+A `tests/verify-*-postgres.php` harness that asserts date-scoped figures ("today", a business date, Store Session windows) pins one Manila moment with `Carbon::setTestNow` / `CarbonImmutable::setTestNow` (reset in `finally`) and never writes PostgreSQL `now()` into `timestamp without time zone` columns: the local server session zone is +08 while the application stores UTC, and "N hours ago" crosses the Manila business date shortly after midnight. Bind or substitute the pinned UTC value instead.

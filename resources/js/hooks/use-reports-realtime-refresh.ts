@@ -11,6 +11,7 @@ import {
 import type { BranchContext } from '@/types';
 
 const REPORTS_FALLBACK_POLL_MS = 30_000;
+const NO_IGNORED_REASONS: readonly string[] = [];
 
 /**
  * Keeps the Owner/Super Admin Dashboard and Reports live: the business-wide `reports.changed` signal (never carrying
@@ -24,6 +25,7 @@ export function useReportsRealtimeRefresh(
     only: string[],
     branchId: string | null,
     debounceMs = 1200,
+    ignoredReasons: readonly string[] = NO_IGNORED_REASONS,
 ): void {
     const { branchContext } = usePage<{ branchContext: BranchContext }>().props;
     const channel = reportsChannelFor(branchContext.businessWide, branchId);
@@ -53,8 +55,8 @@ export function useReportsRealtimeRefresh(
     );
     const scheduleRefresh = refresh.schedule;
     const acceptEvent = useMemo(
-        () => createReportsEventGuard(branchId),
-        [branchId],
+        () => createReportsEventGuard(branchId, ignoredReasons),
+        [branchId, ignoredReasons],
     );
 
     useEcho<Record<string, unknown>>(

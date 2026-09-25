@@ -488,6 +488,8 @@ No fake local success.
 - Heavy analytics/export work in queue
 - Avoid loading All Branches data for branch staff
 
+Phase 19 (2026-09-25) applied these without new infrastructure (no cache, no queue): Inertia props that are not needed on every visit are closures (lazy, memoized when shared), so partial reloads and JSON endpoints run only their own queries; newest-first registers have matching `(created_at|committed_at, id)` indexes; list pages eager-load what their projection reads. `ActiveBranchContext::current()` gives the same answer however often it is called in a request (a forged selection is dropped and the account continues as if none were selected).
+
 ---
 
 ## 18. Deployment Shape

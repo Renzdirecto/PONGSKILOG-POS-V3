@@ -217,7 +217,8 @@ export default function AuditTrail({
 }: Props) {
     const [selected, setSelected] = useState<AuditLog | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
-    const realtimeProps = useMemo(() => ['logs', 'modules', 'actions'], []);
+    /** New entries refresh the register only; the filter option lists refresh with the next filter change. */
+    const realtimeProps = useMemo(() => ['logs'], []);
     const activeFilterCount = Object.values(filters).filter(Boolean).length;
     const visibleActors = new Set(
         logs.data.map((log) => log.actor?.id).filter(Boolean),

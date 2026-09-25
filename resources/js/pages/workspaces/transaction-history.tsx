@@ -41,6 +41,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
+import { useReportsRealtimeRefresh } from '@/hooks/use-reports-realtime-refresh';
 import { createClientUuid } from '@/lib/client-uuid';
 import { canTransitionKitchenStatus } from '@/lib/kitchen';
 import { cents, lineCents, pesos } from '@/lib/pos-money';
@@ -272,6 +273,10 @@ export default function TransactionHistory({
     const [searchText, setSearchText] = useState(filters.search ?? '');
     /** Mirrors TransitionKitchenOrder: Kitchen access moves orders through every Kitchen status. */
     const canManageKitchen = auth.permissions.includes('kitchen.access');
+    /** The `reports.changed` signal (commit, edit, settle, void, Kitchen) reaches Reports or Operations accounts. */
+    const canHearReports =
+        auth.permissions.includes('reports.view') ||
+        auth.permissions.includes('operations.manage');
     const filtersActive = Object.values(filters).some((value) => value !== '');
 
     function apply(next: Record<string, string | undefined>) {
@@ -413,7 +418,11 @@ export default function TransactionHistory({
         <div className="pos-surface min-h-full bg-[#fafafa] p-3 text-[#111] md:p-4">
             <Head title={business ? 'Transactions' : 'Transaction history'} />
             {business ? (
-                <HistoryPolling />
+                canHearReports ? (
+                    <BusinessHistoryRealtime branchId={scope?.id ?? null} />
+                ) : (
+                    <HistoryPolling />
+                )
             ) : (
                 branch && (
                     <HistoryRealtime
@@ -3082,6 +3091,8 @@ function selectedModifierDetails(line: EditLine) {
     };
 }
 
+const HISTORY_PROPS = ['transactions', 'history_total', 'metrics'];
+
 function HistoryRealtime({
     branchId,
     onEvent,
@@ -3101,7 +3112,20 @@ function HistoryRealtime({
     return null;
 }
 
-/** The business surface is not subscribed to a POS channel, so it refreshes its page on an interval instead. */
+/**
+ * The business surface listens to the invalidation-only `reports.changed` signal every list change already sends, and
+ * polls only while realtime is disconnected (useReportsRealtimeRefresh).
+ */
+function BusinessHistoryRealtime({ branchId }: { branchId: string | null }) {
+    useReportsRealtimeRefresh(HISTORY_PROPS, branchId);
+
+    return null;
+}
+
+/**
+ * A Transactions-only account cannot subscribe to the reports channel (it needs Reports or Operations access), so it
+ * keeps refreshing its page on an interval.
+ */
 function HistoryPolling() {
     usePoll(30_000, { only: ['transactions', 'history_total', 'metrics'] });
 

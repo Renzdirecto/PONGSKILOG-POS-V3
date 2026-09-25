@@ -135,8 +135,14 @@ class ConfigureBranchAssortment
      * destination is kept unless $overwrite was explicitly confirmed. Physical stock is never copied: a tracked Product
      * starts with the destination's own (possibly empty) stock.
      *
+     * The copy is partially successful by design: each Product is written inside its own savepoint, so a Product whose
+     * destination state conflicts with the source configuration (e.g. the source tracks Product stock while the
+     * destination has an Ingredient recipe or Add-on effect for it) is rolled back alone, reported under `conflicts`
+     * with the canonical reason, and every other Product is still copied. Nothing of the destination is deleted to make
+     * a conflicting Product fit. Database errors still abort the whole copy.
+     *
      * @param  array<int, mixed>  $productIds
-     * @return array{copied: int, overwritten: int, skipped: int, not_sold: int, operations: array<string, mixed>|null}
+     * @return array{copied: int, overwritten: int, skipped: int, not_sold: int, conflicts: list<array{product_id: string, name: string, reason: string}>, operations: array<string, mixed>|null}
      */
     public function copy(User $actor, Branch $source, Branch $destination, array $productIds, bool $overwrite, bool $withOperations = false): array
     {
@@ -154,6 +160,7 @@ class ConfigureBranchAssortment
                 ->get()->keyBy('product_id');
             $copied = [];
             $overwritten = [];
+            $conflicts = [];
             $skipped = 0;
             $notSold = 0;
             foreach ($products as $product) {
@@ -164,23 +171,31 @@ class ConfigureBranchAssortment
 
                     continue;
                 }
-                $inserted = $this->insertDefault($destination, $product);
-                if (! $inserted && ! $overwrite) {
-                    $skipped++;
+                try {
+                    $outcome = DB::transaction(function () use ($actor, $destination, $product, $sourceRow, $overwrite): string {
+                        $inserted = $this->insertDefault($destination, $product);
+                        if (! $inserted && ! $overwrite) {
+                            return 'skipped';
+                        }
+                        $this->upsert->execute($actor, $destination, $product, [
+                            'price_override' => $sourceRow->price_override,
+                            'is_available' => $sourceRow->is_available,
+                            'tracks_inventory' => $sourceRow->tracks_inventory,
+                            'low_stock_threshold' => $sourceRow->low_stock_threshold,
+                        ]);
+
+                        return $inserted ? 'copied' : 'overwritten';
+                    });
+                } catch (ValidationException $exception) {
+                    $conflicts[] = ['product_id' => $product->id, 'name' => $product->name, 'reason' => (string) collect($exception->errors())->flatten()->first()];
 
                     continue;
                 }
-                $this->upsert->execute($actor, $destination, $product, [
-                    'price_override' => $sourceRow->price_override,
-                    'is_available' => $sourceRow->is_available,
-                    'tracks_inventory' => $sourceRow->tracks_inventory,
-                    'low_stock_threshold' => $sourceRow->low_stock_threshold,
-                ]);
-                if ($inserted) {
-                    $copied[] = $product;
-                } else {
-                    $overwritten[] = $product;
-                }
+                match ($outcome) {
+                    'copied' => $copied[] = $product,
+                    'overwritten' => $overwritten[] = $product,
+                    default => $skipped++,
+                };
             }
 
             $changed = [...$copied, ...$overwritten];
@@ -198,17 +213,24 @@ class ConfigureBranchAssortment
                         'destination_branch_code' => $destination->code,
                         'product_ids' => $changedIds,
                     ],
-                    metadata: ['copied' => count($copied), 'overwritten' => count($overwritten), 'skipped' => $skipped, 'overwrite' => $overwrite, 'operations' => $withOperations],
+                    metadata: [
+                        'copied' => count($copied), 'overwritten' => count($overwritten), 'skipped' => $skipped, 'overwrite' => $overwrite, 'operations' => $withOperations,
+                        'conflicts' => array_map(fn (array $conflict): string => $conflict['name'], $conflicts),
+                    ],
                 );
                 $this->realtime->branchProductsChanged($destination, $changedIds);
                 ReportsChanged::dispatch((string) $destination->id, 'branch_products.copied');
             }
-            /** Operations setup follows every selected Product now in the destination (new, overwritten or kept). */
+            /**
+             * Operations setup follows every selected Product now in the destination (new, overwritten or kept), except a
+             * Product skipped for a conflict: its destination setup is left exactly as it was.
+             */
+            $conflictIds = array_column($conflicts, 'product_id');
             $operations = $withOperations
-                ? $this->operations->copyForProducts($actor, $source, $destination, array_values(array_map('strval', $sourceRows->keys()->all())), $overwrite)
+                ? $this->operations->copyForProducts($actor, $source, $destination, array_values(array_diff(array_map('strval', $sourceRows->keys()->all()), $conflictIds)), $overwrite)
                 : null;
 
-            return ['copied' => count($copied), 'overwritten' => count($overwritten), 'skipped' => $skipped, 'not_sold' => $notSold, 'operations' => $operations];
+            return ['copied' => count($copied), 'overwritten' => count($overwritten), 'skipped' => $skipped, 'not_sold' => $notSold, 'conflicts' => $conflicts, 'operations' => $operations];
         });
     }
 

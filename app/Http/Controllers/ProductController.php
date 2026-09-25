@@ -57,7 +57,8 @@ class ProductController extends Controller
         $productsQuery = Product::query()->select('products.*')->with([
             'category',
             'modifierGroups',
-            'branchProducts',
+            /** A selected Branch shows only its own configuration row; All Branches shows every Branch. */
+            'branchProducts' => fn ($query) => $query->when($inventoryBranch !== null, fn ($query) => $query->where('branch_id', $inventoryBranch?->id)),
             'inventoryBalances' => fn ($query) => $query->where('branch_id', $inventoryBranch?->id)
                 ->select(['id', 'product_id', 'on_hand', 'updated_at']),
         ])

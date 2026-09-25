@@ -56,13 +56,14 @@ class AuditTrailController extends Controller
                 'metadata' => $log->metadata,
             ]);
 
+        /** Closures: a realtime partial reload (`logs`) never runs the filter option queries. */
         return Inertia::render('super-admin/audit-trail', [
             'logs' => $logs,
             'filters' => $filters,
-            'branches' => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
-            'users' => User::query()->orderBy('name')->get(['id', 'name', 'email']),
-            'modules' => AuditLog::query()->distinct()->orderBy('module')->pluck('module'),
-            'actions' => AuditLog::query()->distinct()->orderBy('action')->pluck('action'),
+            'branches' => fn () => Branch::query()->orderBy('name')->get(['id', 'name', 'code']),
+            'users' => fn () => User::query()->orderBy('name')->get(['id', 'name', 'email']),
+            'modules' => fn () => AuditLog::query()->distinct()->orderBy('module')->pluck('module'),
+            'actions' => fn () => AuditLog::query()->distinct()->orderBy('action')->pluck('action'),
         ]);
     }
 }

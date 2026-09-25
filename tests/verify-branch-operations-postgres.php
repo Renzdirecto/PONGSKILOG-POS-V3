@@ -11,7 +11,8 @@
  * B/C. racing Product + Operations setup copies (same and opposite directions) leave exactly one configuration, never
  *    copy stock and never deadlock;
  * D. Pay Now vs Remove from Branch: the sale commits entirely before the removal or fails cleanly after it;
- * E. Pay Now vs Recipe edit: the Order snapshot holds one coherent recipe version, never a mix.
+ * E. Pay Now vs Recipe edit: the Order snapshot holds one coherent recipe version, never a mix;
+ * F. (Phase 19) Copy with Replace vs a Recipe save on a conflicting Product: serialized, skipped and reported, never both.
  */
 
 use App\Actions\Catalog\ConfigureBranchAssortment;
@@ -21,6 +22,7 @@ use App\Actions\Operations\SaveRecipe;
 use App\Actions\Orders\PayNowOrder;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
+use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Ingredient;
 use App\Models\IngredientMovement;
@@ -176,7 +178,9 @@ try {
      * Branch-owned setup exists; legacy data is then seeded and only the cutover runs forward on it.
      */
     bopsVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Fresh migration failed.');
-    bopsVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0, 'The cutover did not roll back on an empty schema.');
+    /** Relative to the cutover, so later migrations (Phase 19 indexes, ...) roll back first and never shift this step. */
+    $cutoverSteps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_25_112126'));
+    bopsVerify(Artisan::call('migrate:rollback', ['--step' => $cutoverSteps, '--force' => true, '--no-interaction' => true]) === 0, 'The cutover did not roll back on an empty schema.');
     bopsVerify(DB::getSchemaBuilder()->hasColumn('products', 'no_recipe_needed') && ! DB::getSchemaBuilder()->hasColumn('ingredients', 'branch_id'), 'The rollback did not restore the legacy schema.');
     $now = now();
     $legacyOwner = User::factory()->create();
@@ -334,11 +338,51 @@ try {
     }
     $recipeEdit = '4 rounds Pay Now vs Recipe edit: '.implode(', ', $recipeOutcomes).'; snapshots were whole versions';
 
+    /**
+     * F. Phase 19: Copy with Replace vs a Recipe save on the Product it conflicts on. MAIN sells Coke from Product stock;
+     * TEST is given a Coke recipe concurrently. Whichever commits first wins: the copy tracks Coke at TEST (the later
+     * recipe is rejected) or the recipe exists (the copy skips Coke and reports it). TEST never ends with both, and the
+     * other selected Product is copied every time.
+     */
+    $testWater = Ingredient::query()->where('branch_id', $test->id)->where('name', 'Purified Water')->value('id');
+    $testCoke = fn (): ?BranchProduct => BranchProduct::query()->where('branch_id', $test->id)->where('product_id', $ops->coke->id)->first();
+    $cokeRecipes = fn (): int => Recipe::query()->where('branch_id', $test->id)->where('product_id', $ops->coke->id)->count();
+    $conflictOutcomes = [];
+    foreach ([['copy', 'recipe'], ['recipe', 'copy'], ['copy', 'recipe'], ['recipe', 'copy']] as $order) {
+        Recipe::query()->where('branch_id', $test->id)->where('product_id', $ops->coke->id)->delete();
+        if ($testCoke() === null) {
+            app(ConfigureBranchAssortment::class)->add($ops->owner, $test, [$ops->coke->id]);
+        }
+        $testCoke()?->update(['tracks_inventory' => false]);
+        $jobs = array_map(fn (string $kind): array => $kind === 'copy'
+            ? ['--copy-products', ['actor' => $ops->owner->id, 'source' => $ops->branch->id, 'destination' => $test->id,
+                'products' => [$ops->coke->id, $ops->lemonYakult->id], 'overwrite' => true]]
+            : ['--recipe', ['actor' => $ops->owner->id, 'session_branch' => $test->id, 'product' => $ops->coke->id, 'size' => null,
+                'lines' => [['ingredient_id' => $testWater, 'quantity' => '330']]]], $order);
+        $results = array_combine($order, bopsRace($observer, $schema, $environment, $test, $jobs));
+        bopsVerify($results['copy']['ok'], 'The copy always finishes (a conflict is skipped, never an abort): '.json_encode($results['copy']));
+        $copyResult = $results['copy']['result'];
+        $tracks = (bool) $testCoke()?->tracks_inventory;
+        bopsVerify(! ($tracks && $cokeRecipes() > 0), 'TEST must never track Coke stock and have a Coke recipe at once.');
+        if ($order[0] === 'copy') {
+            bopsVerify($tracks && $cokeRecipes() === 0 && ! $results['recipe']['ok'] && $copyResult['conflicts'] === [], 'Copy first: Coke tracks stock and the later recipe is rejected: '.json_encode($results));
+            $conflictOutcomes[] = 'copy-first:recipe-rejected';
+        } else {
+            bopsVerify($results['recipe']['ok'] && ! $tracks && $cokeRecipes() === 1
+                && array_column($copyResult['conflicts'], 'product_id') === [$ops->coke->id], 'Recipe first: the copy skips Coke and reports it: '.json_encode($results));
+            $conflictOutcomes[] = 'recipe-first:coke-skipped';
+        }
+        bopsVerify(2 - count($copyResult['conflicts']) === $copyResult['copied'] + $copyResult['overwritten'], 'Every non-conflicting Product is copied.');
+        bopsVerify(BranchInventory::query()->where('branch_id', $test->id)->doesntExist(), 'The copy never creates Product stock.');
+    }
+    $conflict = '4 rounds Replace copy vs Recipe save: '.implode(', ', $conflictOutcomes).'; never both Product stock and a recipe';
+
     echo 'Branch operations PostgreSQL verification passed:'.PHP_EOL
         .'  A. '.$cutover.PHP_EOL
         .'  B/C. '.$copy.PHP_EOL
         .'  D. '.$remove.PHP_EOL
         .'  E. '.$recipeEdit.PHP_EOL
+        .'  F. '.$conflict.PHP_EOL
         .'  No deadlock in any race.'.PHP_EOL;
 } finally {
     DB::disconnect('pgsql');

@@ -69,6 +69,28 @@ export type CopyPreview = {
 };
 
 /**
+ * The server's outcome of a confirmed copy (flashed as `assortmentCopy`). The copy is partially successful by design: a
+ * Product whose destination setup conflicts is skipped alone with its reason, the others are still copied.
+ */
+export type AssortmentCopyResult = {
+    copied: number;
+    overwritten: number;
+    kept: number;
+    conflicts: { product_id: string; name: string; reason: string }[];
+    operations_skipped: string[];
+};
+
+/** A result with skipped Products or skipped Operations setup stays on screen so every reason can be read. */
+export function copyResultNeedsReview(
+    result: AssortmentCopyResult | null | undefined,
+): result is AssortmentCopyResult {
+    return (
+        result != null &&
+        (result.conflicts.length > 0 || result.operations_skipped.length > 0)
+    );
+}
+
+/**
  * What "Copy Operations setup for selected Products" brings to the destination, deduplicated across the selection:
  * Plans and Ingredients already there are reused (kept), recipe setup already there is kept unless overwrite was
  * chosen. Stock and history are never part of it.

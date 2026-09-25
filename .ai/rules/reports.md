@@ -18,3 +18,6 @@ The Reports Payment method donut uses `analytics.payment_mix`, shares of paid sa
 
 ## The Executive Dashboard never recalculates money
 `SuperAdminDashboardController` calls `SalesAnalytics::for()` exactly like the Owner Dashboard and only trims sections (Top products to 5); Expenses/voids/sessions come from the same report summary. Non-financial state comes from `BusinessSnapshot` and `ExecutiveSnapshot` (bounded aggregate queries, payload-free audit rows). Props are lazy + memoized so realtime partial reloads compute only what they request; refresh reuses `useReportsRealtimeRefresh` and the viewer's own `notifications.changed` signal (no new channel). Attention items are real state only; red means something cannot be sold.
+
+## Dashboard props are lazy (Phase 19)
+`OwnerDashboardController` builds every prop as a closure and runs `SalesAnalytics::for()` at most once per response (like `SuperAdminDashboardController`): a period switch (`period, analytics, report`) never runs the Kitchen / inventory / recent-transaction queries and a live reload never recomputes analytics. Keep new Dashboard/Reports props lazy; never compute a figure eagerly just to have it discarded by `only`. Structural query-count tests (`PerformanceHardeningTest`, PostgreSQL `verify-reporting-performance-postgres.php`) must stay flat as Orders and Branches grow.

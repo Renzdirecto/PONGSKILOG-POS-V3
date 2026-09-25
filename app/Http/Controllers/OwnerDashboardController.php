@@ -29,22 +29,29 @@ class OwnerDashboardController extends Controller
             return to_route('workspace');
         }
         $period = $request->validated('period') ?? 'today';
-        $result = $analytics->for($branch, ['date' => $period]);
-        $report = $result['report'];
+        /** Lazy and computed once: a period switch or a realtime partial reload runs only the queries its props need. */
+        $sales = null;
+        $result = function () use (&$sales, $analytics, $branch, $period): array {
+            return $sales ??= $analytics->for($branch, ['date' => $period]);
+        };
 
         return Inertia::render('workspaces/owner-dashboard', [
             'period' => $period,
-            'analytics' => $result['analytics'],
-            'report' => [
-                'period' => $report['period'],
-                'scope' => $report['scope'],
-                'summary' => $report['summary'],
-                'sessions' => array_slice(array_reverse($report['sessions']), 0, self::SESSION_LIMIT),
-                'sessions_total' => $report['sessions_listed']['total'],
-            ],
-            'kitchen' => $snapshot->kitchen($branch),
-            'inventory' => $user->hasPermission('inventory.manage') ? $snapshot->inventoryAttention($branch) : null,
-            'recentTransactions' => $user->hasPermission('transactions.view') ? $snapshot->recentTransactions($branch) : [],
+            'analytics' => fn (): array => $result()['analytics'],
+            'report' => function () use ($result): array {
+                $report = $result()['report'];
+
+                return [
+                    'period' => $report['period'],
+                    'scope' => $report['scope'],
+                    'summary' => $report['summary'],
+                    'sessions' => array_slice(array_reverse($report['sessions']), 0, self::SESSION_LIMIT),
+                    'sessions_total' => $report['sessions_listed']['total'],
+                ];
+            },
+            'kitchen' => fn (): array => $snapshot->kitchen($branch),
+            'inventory' => fn (): ?array => $user->hasPermission('inventory.manage') ? $snapshot->inventoryAttention($branch) : null,
+            'recentTransactions' => fn (): array => $user->hasPermission('transactions.view') ? $snapshot->recentTransactions($branch) : [],
         ]);
     }
 }

@@ -783,3 +783,14 @@ Supersedes "Custom Roles add no realtime contract" above. Backend authorization 
 - `UpsertBranchProduct` dispatches `ReportsChanged` for its Branch only when a membership is created or `tracks_inventory` changes (it is part of the Branch recipe mode).
 - Operations partial reloads now include every prop those signals can change (Plans: `outside`, `products`; Overview: `recipes`, `business_date`; Recipes: `products`; Pamamalengke: `manual`).
 - `useInvalidationRefresh` and `useReportsRealtimeRefresh` share `handleRevalidationException` with `useUserContextRealtime`: a background reload refused with 403/404 goes to the workspace, 401/419 to login, never a raw error modal.
+
+## Phase 19 — realtime hardening — 2026-09-25
+
+No new channel, event or payload field.
+
+- Business Transactions (`workspaces.transactions`) refreshes through `useReportsRealtimeRefresh` on `reports.changed` (commit, edit, settle, allocation, void, Kitchen) with the 30s fallback only while disconnected. An account holding `transactions.view` without Reports or Operations cannot subscribe to the reports channels and keeps the 30s page poll.
+- `createReportsEventGuard` / `useReportsRealtimeRefresh` accept ignored reasons: Operations pages ignore `kitchen.status_changed` (Kitchen status never moves Ingredients, purchases or Plans), so an Order's Kitchen transitions no longer reload them.
+- Audit Trail realtime reloads request `logs` only (filter option lists refresh with the next filter change); the server builds its option lists lazily. Void Orders' option lists are lazy too.
+- `useBranchRealtimeRefresh`, `useAuditRealtimeRefresh` (and its disconnected poll) and `usePosQrRealtime` pass `handleRevalidationException` + `onNetworkError: () => false`, like the reports / invalidation / user-context hooks.
+- `usePosQrRealtime` no longer refetches `qrWaitingCount` / `loadedQr` right after the server rendered them; it refetches on a reconnect (`shouldRefetchCatalogAfterConnectionChange`), on `online`, and on QR events.
+- Unchanged by design: `qr.catalog_changed` may fire once per stock movement of one sale (invalidation only; clients debounce), and the paying POS terminal still reloads its catalog explicitly so stock stays fresh while realtime is down.

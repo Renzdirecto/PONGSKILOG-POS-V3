@@ -1025,16 +1025,41 @@ Same branch (`feature/access-admin-cleanup`) on top of `25a15df`, 0 behind / 7 a
 
 ## Phase 19 — Reporting & Performance Hardening
 
-- [ ] Query/index review
-- [ ] Pagination
-- [ ] Report aggregation
-- [ ] Cache safe read-heavy data
-- [ ] Queue heavy exports
-- [ ] Eliminate N+1 issues
-- [ ] Realtime payload optimization
-- [ ] Product image optimization verification
-- [ ] Owner all-branch query optimization
-- [ ] POS performance verification
+**Status: PHASE 19 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR** (branch `feature/reporting-performance-hardening`, 2026-09-26; PR not opened, not merged, not deployed). Phase 17 Stock Transfers remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED.
+
+- [x] Query/index review (one additive migration, five indexes backing real query shapes)
+- [x] Pagination (Audit Trail, Void Orders, Transactions, notifications stay paginated newest-first on their indexes)
+- [x] Report aggregation (verified SQL aggregation; no per-Order/item rows in PHP; exact totals at 30,000 Orders on PostgreSQL)
+- [x] Cache safe read-heavy data — intentionally none: no measured need; lazy props remove the wasted work instead
+- [x] Queue heavy exports — intentionally none: the CSV re-serializes already-bounded report arrays (≤100 sessions, ≤31 buckets)
+- [x] Eliminate N+1 issues (Void Orders restorations)
+- [x] Realtime payload optimization (payloads were already ids/time only; refresh work reduced instead)
+- [ ] Product image optimization verification (unchanged; presigned variants already bounded per page)
+- [x] Owner all-branch query optimization (`orders (committed_at, id)`, lazy dashboard props)
+- [x] POS performance verification (catalog/QR/Kitchen queries fixed-count per page; QR state not refetched after render)
+
+### Phase 19 implementation — 2026-09-25
+
+Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/dev`). No dependency change. One additive migration `2026_09_25_150406_add_reporting_performance_indexes` (applied forward to the local development DB; never reset).
+
+- Audit Trail newest-first: `audit_logs (created_at, id)` (Audit Trail + Executive recent audit read it backwards; filters keep their own indexes). Filter option lists are lazy props; realtime reloads request `logs` only.
+- Product copy with Replace: each Product copies inside its own savepoint; a destination conflict (e.g. source tracks Product stock, destination has a Recipe/Add-on effect) is skipped with the canonical reason, reported (`conflicts`), audited by name, excluded from the Operations part, and never deletes destination setup. The copy dialog stays open on a result with skipped items.
+- Other indexes: `orders (committed_at, id)` (All Branches Transactions / recent transactions), `notifications (notifiable_type, notifiable_id, created_at, id)`, `pamamalengke_purchase_items (pamamalengke_purchase_id)`, `pamamalengke_purchases (store_session_id)`.
+- Query work: Owner Dashboard props lazy + memoized (period switch 38 → 24 queries; the realtime live reload requests all five live props and costs 34 — the earlier "13" counted Kitchen / inventory / recent transactions without analytics and report); shared `auth` / `branchContext` props lazy (JSON unread count 8 → 3); Void Orders eager-loads restorations (10 voids 50 → 32, constant per page); Products page loads only the selected Branch's rows.
+- Branch context: `ActiveBranchContext::current()` drops a stale/forged selection and continues (single assigned Branch re-selected) on the same call — the answer no longer depended on shared props calling it first.
+- Realtime: business Transactions refresh on `reports.changed` (poll only for Transactions-only accounts); Operations pages ignore `kitchen.status_changed`; Branch/Audit/POS-QR background reloads use `handleRevalidationException`; POS QR state is refetched only after a reconnect.
+- Intentionally unchanged: per-movement `qr.catalog_changed` (clients coalesce; a server dedupe needs transaction-scoped state), Cashier Dashboard's second reload per sale and the paying terminal's explicit catalog reload (stock freshness while disconnected), Transaction History full-history counts, correction rows in filtered reports (rare), CSV export (bounded).
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 19 Final QA — 2026-09-26
+
+- User Manual QA: PASSED (by the user, before Final QA).
+- Audit of the whole Phase 19 diff against source: Product copy savepoints (validation conflict rolls back only its Product, no destination delete, conflicts excluded from the Operations part), lazy dashboard/shared/filter props, Void Orders eager load, Products page rows, `ActiveBranchContext` fallback, realtime guards and the five indexes (column order matches the real `WHERE`/`ORDER BY`; no duplicate of an existing index). No application defect found; no code change to `app/` or `resources/js/`.
+- Defect fixed (harness): `verify-reporting-performance-postgres.php` failed between 00:00 and ~03:00 Manila (its Store Sessions opened "3 hours ago" = yesterday) and wrote PostgreSQL `now()` into `timestamp without time zone` columns under the server's +08 session zone. It now pins one Manila-midday UTC moment for Carbon and the raw SQL.
+- Regression coverage: Void Orders realtime reload (`voids,pinStatus`) keeps a flat query count as voids grow and runs no Branch/user option query.
+- Measured query counts (SQLite test DB, identical at 40 and 4,340 Orders over 3 Branches / 2 and 10 voids): Reports 34, Owner Dashboard 41 (period switch 24, live reload 34), Executive Dashboard 43, All Branches Transactions 24, Void Orders 32 (realtime 23), Audit Trail 18 (realtime 7), unread count 3. PostgreSQL: SalesAnalytics 19 queries at 90 and 30,000 Orders; newest-first Audit / Transactions / notifications read their index backwards with no Sort.
+- All 17 PostgreSQL harnesses, complete frontend suite, Pint, PHPStan, lint, TypeScript, production build and the complete Laravel suite passed (details in `11-testing-qa.md`). Normal local development DB was not reset.
+- **Status: PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR** (not opened, not merged).
 
 ---
 

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
+import { PwaStatus } from '@/components/pwa-status';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import {
@@ -268,7 +269,7 @@ export default function WorkspaceLayout({
                 : []),
         ].filter((item) => item.available);
         return (
-            <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111]">
+            <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111]">
                 {userContextRealtime}
                 <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
@@ -329,6 +330,7 @@ export default function WorkspaceLayout({
                                 {branchContext.current?.name}
                             </p>
                         </div>
+                        <PwaStatus />
                         {page.props.storeContext?.isOpen &&
                         (isPos || isDashboard) ? (
                             <button
@@ -441,7 +443,7 @@ export default function WorkspaceLayout({
                             onClosed={handleStoreClosed}
                         />
                     )}
-                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[76px] md:pb-0">
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[calc(max(12px,env(safe-area-inset-bottom))+64px)] md:pb-0">
                         <StoreSessionDetailsContext.Provider
                             value={
                                 page.props.storeContext?.isOpen
@@ -457,7 +459,7 @@ export default function WorkspaceLayout({
                         style={{
                             gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
                         }}
-                        className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
                             ({ label, icon: Icon, href, active }) => (
@@ -521,6 +523,7 @@ export default function WorkspaceLayout({
                         <BranchSwitcher branchContext={branchContext} />
                     </div>
 
+                    <PwaStatus />
                     {auth.user && (
                         <div className="ml-auto flex items-center gap-2 sm:ml-0">
                             <div className="hidden text-right md:block">

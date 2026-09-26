@@ -21,6 +21,8 @@ const ACTION_LABELS: Record<string, string> = {
     'access.custom_role_updated': 'Custom role renamed or rescoped',
     'access.custom_role_permissions_updated': 'Custom role permissions changed',
     'access.custom_role_archived': 'Custom role archived',
+    'notifications.push_enabled': 'Device notifications enabled',
+    'notifications.push_disabled': 'Device notifications disabled',
 };
 
 export function titleCase(value: string): string {

@@ -7,6 +7,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PersonAvatar } from '@/components/person-avatar';
+import { PwaAppMenuItem } from '@/components/pwa-app-dialog';
 import { logout } from '@/routes';
 import { identitySubtitle } from '@/lib/management-navigation';
 import type { Auth } from '@/types';
@@ -66,6 +67,7 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
                         </div>
                     </div>
                     <div className="p-2">
+                        <PwaAppMenuItem className="flex h-11 w-full items-center gap-2 rounded-lg px-3 text-[13px] font-semibold" />
                         <DropdownMenuItem asChild>
                             <Link
                                 href={logout()}

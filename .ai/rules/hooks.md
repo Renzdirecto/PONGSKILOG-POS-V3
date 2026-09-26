@@ -22,3 +22,6 @@ Every workspace shell mounts `UserContextRealtime` (own `App.Models.User.{id}` c
 
 ## Server-rendered state is not refetched on the first connection (Phase 19)
 A realtime hook refetches after a *re*connect (`shouldRefetchCatalogAfterConnectionChange` with a `hasConnected` ref), on `online`, and on its events, never on the first connect after a page load: the server just rendered that state. Keep the debouncer's activate/dispose effect separate from the connection-status effect so a status change never disposes pending refreshes.
+
+## The PWA connectivity state owns the browser reconnect (Phase 19.5)
+After the browser network returns, `lib/pwa-runtime.ts` verifies `/up` and runs one authoritative `router.reload()` before writes resume (Online / Reconnecting / Offline, `usePwaConnectivity`). Realtime hooks keep only their own Echo-reconnect and event refetches: never add another `online` reload, connectivity poll or status indicator in a hook. See `.ai/rules/pwa.md`.

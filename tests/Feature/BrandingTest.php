@@ -15,7 +15,8 @@ test('every page head carries the Pongskilog icons and link preview instead of L
         ->toContain('<meta name="twitter:card" content="summary_large_image">')
         ->toContain('<meta property="og:site_name" content="'.e(config('app.name')).'">')
         ->not->toContain('favicon.svg')
-        ->not->toContain('<link rel="manifest"')
+        /** PWA Phase 1: installable; the service worker is registered by the app bundle, never inline. */
+        ->toContain('<link rel="manifest" href="/manifest.webmanifest">')
         ->not->toContain('serviceWorker');
     expect(file_get_contents(config_path('app.php')))->toContain("env('APP_NAME', 'Pongskilog')");
 });

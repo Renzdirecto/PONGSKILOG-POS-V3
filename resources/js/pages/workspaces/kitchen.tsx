@@ -22,6 +22,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { toast } from 'sonner';
+import { PwaStatus } from '@/components/pwa-status';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import {
     canTransitionKitchenStatus,
@@ -259,7 +260,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
             <Head title="Kitchen display" />
             <div
                 ref={surface}
-                className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto' : ''}`}
+                className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]' : ''}`}
             >
                 <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
                     <div className="flex flex-wrap items-center gap-2 overflow-hidden px-3 py-2.5 sm:flex-nowrap md:px-4">
@@ -320,6 +321,12 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                             </span>
                         </button>
                     </div>
+                    {/* The shell header is hidden in full screen: the connection / update status moves here. */}
+                    {fullscreen && (
+                        <div className="flex justify-end px-3 not-empty:pb-2.5 md:px-4">
+                            <PwaStatus />
+                        </div>
+                    )}
                 </header>
 
                 {!kitchenBoard.is_open ? (

@@ -28,6 +28,8 @@ import { useEffect, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { PersonAvatar } from '@/components/person-avatar';
+import { PwaAppMenuItem } from '@/components/pwa-app-dialog';
+import { PwaStatus } from '@/components/pwa-status';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -287,7 +289,7 @@ export function OwnerWorkspaceShell({
     }
 
     return (
-        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
+        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white print:p-0">
             <aside
                 data-collapsed={collapsed}
                 className={`hidden shrink-0 flex-col overflow-hidden bg-[#111111] transition-[width] duration-200 ease-out motion-reduce:transition-none min-[1180px]:flex print:hidden! ${collapsed ? 'w-[76px]' : 'w-[248px]'}`}
@@ -533,6 +535,7 @@ export function OwnerWorkspaceShell({
                             {workspaceLabel} · {currentScope}
                         </p>
                     </div>
+                    <PwaStatus />
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button
@@ -577,6 +580,7 @@ export function OwnerWorkspaceShell({
                                     </Link>
                                 </DropdownMenuItem>
                             )}
+                            <PwaAppMenuItem />
                             <DropdownMenuSeparator />
                             <DropdownMenuItem asChild variant="destructive">
                                 <Link
@@ -601,7 +605,7 @@ export function OwnerWorkspaceShell({
                 style={{
                     gridTemplateColumns: `repeat(${pinned.length + 1}, minmax(0, 1fr))`,
                 }}
-                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
+                className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-40 mx-auto grid h-[68px] max-w-[430px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {pinned.map((destination) => (
                     <NavigationControl

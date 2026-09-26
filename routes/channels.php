@@ -2,6 +2,7 @@
 
 use App\Models\Branch;
 use App\Models\User;
+use App\Support\BranchSignalAccess;
 use Illuminate\Support\Facades\Broadcast;
 
 /** A user's own private channel (notification signals): only the same, still-active account. */
@@ -9,13 +10,14 @@ Broadcast::channel('App.Models.User.{id}', function (User $user, $id): bool {
     return $user->is_active && (int) $user->id === (int) $id;
 });
 
+/** Branch operational signals; the same rule selects the recipients of the Kitchen and Order Ready Web Push. */
 foreach ([
     'pos' => 'pos.access',
     'kitchen' => 'kitchen.access',
     'customer-display' => 'customer_display.launch',
 ] as $channel => $permission) {
     Broadcast::channel('branch.{branch}.'.$channel, function (User $user, Branch $branch) use ($permission): bool {
-        return $user->is_active && $user->hasPermission($permission) && $user->canAccessBranch($branch);
+        return BranchSignalAccess::allows($user, $branch, $permission);
     });
 }
 

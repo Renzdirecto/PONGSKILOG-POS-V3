@@ -29,6 +29,8 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { PersonAvatar } from '@/components/person-avatar';
+import { PwaAppMenuItem } from '@/components/pwa-app-dialog';
+import { PwaStatus } from '@/components/pwa-status';
 import { identitySubtitle } from '@/lib/management-navigation';
 import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
@@ -401,7 +403,7 @@ function SuperAdminShellFrame({
             : `flex min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] text-[10px] font-semibold focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${!activeIsPinned && activeId !== null ? 'bg-white text-[#111111]' : 'text-white/70'}`;
 
     return (
-        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white">
+        <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white print:p-0">
             <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
                 <Link
                     href={superAdmin()}
@@ -559,6 +561,7 @@ function SuperAdminShellFrame({
                             · {currentScope}
                         </p>
                     </div>
+                    <PwaStatus />
                     <Link
                         href={notifications()}
                         aria-label={notificationBellLabel(unread)}
@@ -617,6 +620,7 @@ function SuperAdminShellFrame({
                                     profile
                                 </Link>
                             </DropdownMenuItem>
+                            <PwaAppMenuItem />
                             <DropdownMenuSeparator />
                             <DropdownMenuItem asChild variant="destructive">
                                 <Link
@@ -638,7 +642,7 @@ function SuperAdminShellFrame({
 
             <nav
                 aria-label="Mobile Super Admin navigation"
-                className="fixed right-3 bottom-[max(12px,env(safe-area-inset-bottom))] left-3 z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
+                className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {pinned.map((destination) => (
                     <DestinationControl

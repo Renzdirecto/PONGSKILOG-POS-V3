@@ -29,6 +29,7 @@ class AdminNotifier
                 if ($alert === null) {
                     return;
                 }
+                /** The query form of receivesAlerts(). */
                 $recipients = User::query()
                     ->where('is_active', true)
                     ->whereHas('roles', fn (Builder $roles) => $roles->where('roles.name', PermissionCatalog::SUPER_ADMIN))
@@ -46,5 +47,14 @@ class AdminNotifier
                 report($exception);
             }
         });
+    }
+
+    /**
+     * Whether an account receives Control Center alerts now: active and a Super Admin. The same rule decides whether a
+     * queued alert push is still delivered, so an account deactivated or demoted in the meantime receives nothing.
+     */
+    public static function receivesAlerts(User $user): bool
+    {
+        return $user->is_active && $user->hasRole(PermissionCatalog::SUPER_ADMIN);
     }
 }

@@ -1066,7 +1066,7 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 ## Remaining Roadmap Order
 
 1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
-2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **IMPLEMENTED — READY FOR USER MANUAL QA** (branch `feature/pwa-phase-1`; USER MANUAL QA pending, Final QA not run, no PR, not merged)
+2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **IMPLEMENTATION COMPLETE · USER MANUAL QA: PASSED · FINAL AUTOMATED QA: PASSED · READY FOR PR** (branch `feature/pwa-phase-1`; PR not opened, not merged, not deployed)
 3. Phase 20 — Final Production Hardening: **NOT STARTED**
 4. Deployment
 5. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5)
@@ -1077,7 +1077,7 @@ Phase 17 Stock Transfers remains **DEFERRED**.
 
 ## Phase 19.5 — PWA Phase 1 (Installable Web App)
 
-**Status: IMPLEMENTED — READY FOR USER MANUAL QA** (2026-09-26, branch `feature/pwa-phase-1`). USER MANUAL QA: PENDING. PHASE 19.5 FINAL QA: NOT RUN. No PR, not merged, not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
+**Status: PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR** (2026-09-26, branch `feature/pwa-phase-1`). PR not opened, not merged, not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
 
 **Goal:** Make PONGSKILOG POS V3 installable and app-like while remaining **INTERNET-FIRST** for actual critical operations.
 
@@ -1085,7 +1085,7 @@ Phase 17 Stock Transfers remains **DEFERRED**.
 
 **Phase 1 does NOT include offline transactional writes.** Offline must NOT allow: Pay Now, Pay Later, settlement, Void, committed Order Edit, Store Open / Close, expenses, purchases, inventory adjustments, Ingredient stock/movements, Pamamalengke confirmation, Giveaway, Kitchen status mutations, Staff / permission / security mutations, or any other financial/stock/security-sensitive write.
 
-Installable app experience (implemented; device behavior pending USER MANUAL QA):
+Installable app experience (implemented; device behavior accepted in USER MANUAL QA):
 
 - [x] Installable on Android, iPhone/iPad, Windows and Mac (manifest + service worker + Install / Add to Home Screen / Add to Dock flows)
 - [x] Proper PONGSKILOG app name and branding (PONGSKILOG POS / PONGSKILOG)
@@ -1094,7 +1094,7 @@ Installable app experience (implemented; device behavior pending USER MANUAL QA)
 - [x] Standalone/fullscreen app mode
 - [x] Web app manifest
 - [x] Install button / Add to Home Screen guidance
-- [x] Proper mobile/tablet/desktop PWA behavior (safe areas, dvh; responsive QA pending)
+- [x] Proper mobile/tablet/desktop PWA behavior (safe areas, dvh; responsive checks passed in USER MANUAL QA)
 
 Service worker, caching and connectivity:
 
@@ -1118,15 +1118,15 @@ Updates and recovery:
 - [x] Safe update prompt — never unexpectedly refresh/destroy an ongoing transaction
 - [x] Basic current page/session recovery after refresh/reopen where safe
 
-QA (USER MANUAL QA — pending):
+QA (USER MANUAL QA — PASSED, reported by the user; phone testing over an HTTPS tunnel):
 
-- [ ] Android
-- [ ] iPhone/iPad
-- [ ] Windows/Mac
-- [ ] Install/uninstall
-- [ ] Offline/reconnect
-- [ ] Notifications
-- [ ] Update flow
+- [x] Android / phone
+- [x] iPhone/iPad (Home Screen app, as reported)
+- [x] Windows/Mac (desktop install)
+- [x] Install/uninstall
+- [x] Offline/reconnect
+- [x] Notifications (incl. Super Admin excluded from routine Kitchen / Order Ready pushes)
+- [x] Update flow
 
 ### Phase 19.5 implementation — 2026-09-26
 
@@ -1140,7 +1140,17 @@ Branch `feature/pwa-phase-1` on `e2d6737` (1 ahead / 0 behind `origin/dev` `b928
 - **Recovery:** refresh/deep links keep their URL; an installed app launched through its start URL returns to the last top-level screen (Kitchen, Customer Display, POS …) — no transaction, cart or dialog state is persisted.
 - **Also:** `config/trustedproxy.php` (`TRUSTED_PROXIES`, opt-in) so https proxies/tunnels produce https URLs.
 - **Verification (focused, not Final QA):** Pest 653 passed / 4,913 assertions (new PWA suites + every suite touching changed code; 2 EC-key tests need `OPENSSL_CONF` on Windows PHP, else they skip); frontend 300/300; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); SQLite migration round-trip; lint, TypeScript, PHPStan, Pint, production build, `git diff --check` clean. Details: `11-testing-qa.md`.
-- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. PHASE 19.5 FINAL QA: NOT RUN. PWA Phase 2 remains FUTURE UPDATE ONLY; Phase 20 NOT STARTED; Phase 17 Stock Transfers DEFERRED.
+- ~~**Status: IMPLEMENTED — READY FOR USER MANUAL QA.**~~ Superseded: USER MANUAL QA passed (reported by the user) and Final QA below.
+
+### Phase 19.5 Final QA — 2026-09-26
+
+Complete audit of `origin/dev...feature/pwa-phase-1` (starting HEAD `aa278de`, 3 ahead / 0 behind `origin/dev` `b928b63`) from source, the built service worker and the dependency tree.
+
+- **Security fixes (with regression tests):** trusted proxies now supply only `X-Forwarded-For` / `X-Forwarded-Proto` — with `TRUSTED_PROXIES` set a forged `X-Forwarded-Host`/`-Port`/`-Prefix` produced `https://attacker.example:8443/phish/...` links (password-reset email poisoning); another account signing in on a browser now unbinds the previous account's push subscription there (`ForgetPushDeviceOfOtherAccountsOnLogin`; covers sessions that expired without logout on shared stations); `WebPushGateway` sends with bounded Guzzle timeouts (10 s / 5 s connect) and the app logger, so a stalled push service or a missing optional PHP extension can no longer hang or abort the push job.
+- **Test fixes:** `PwaShellTest` no longer depends on a local `.env` `TRUSTED_PROXIES`; the public receipt page is now asserted outside the installable app (`ReceiptShareTest`), beside the kiosk page.
+- **Audited unchanged:** manifest/icons, service worker (precache only; navigations NetworkOnly + static offline page; no runtime cache, Background Sync, queue or `clients.claim`; public QR / kiosk / receipt navigations are never cached), write guard (all writes go through the wrapped Inertia client; no raw fetch/axios writes), connectivity/revalidation, Reverb (no second client), install UX, update flow and POS blockers, local storage (last route + window flag only), recipient rules, after-commit dispatch, retry/cleanup, notification-tap allowlist, logout / reset / deactivation cleanup, VAPID handling, dependency resolution (Babel 8.0.0-rc.4 → 7.29.x stable, peer range `^7.29 || ^8.0.0-rc.1`; lockfile valid, composer additions only).
+- **Verification:** complete Laravel suite **2,134 passed / 15,223 assertions, 0 failed, 0 skipped** (`OPENSSL_CONF` set, 202 s); focused PWA/business Pest 454 passed; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); frontend 300/300; lint 0/0; TypeScript app + service worker; PHPStan 0; Pint; production build (144 precache entries) and built-artifact/secret scan clean; SQLite migration fresh / rollback / reapply; `git diff --check` clean. Normal local development DB was not reset.
+- **Status: PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR.** PR not opened, not merged, not deployed. Phase 17 Stock Transfers: DEFERRED. Phase 20: NOT STARTED. PWA Phase 2 — Offline-First POS: FUTURE UPDATE ONLY / NOT PART OF PHASE 19.5.
 
 ---
 

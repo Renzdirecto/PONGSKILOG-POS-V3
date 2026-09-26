@@ -9,6 +9,8 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use Minishlink\WebPush\VAPID;
+use Minishlink\WebPush\WebPush;
+use Psr\Log\LoggerInterface;
 
 /** Windows PHP builds need OPENSSL_CONF pointing at PHP's openssl.cnf before OpenSSL can create P-256 keys. */
 function ellipticCurveKeysAvailable(): bool
@@ -41,6 +43,21 @@ test('sends an encrypted, VAPID-signed message through the push service and repo
         ->and($request->getHeaderLine('Authorization'))->toContain('k='.$vapid['publicKey'])
         ->and((string) $request->getBody())->not->toContain('kitchen.new_order')
         ->and($request->getHeaderLine('Authorization'))->not->toContain($vapid['privateKey']);
+})->skip(fn (): bool => ! ellipticCurveKeysAvailable(), 'PHP cannot create P-256 keys here (on Windows set OPENSSL_CONF to PHP\'s extras\ssl\openssl.cnf).');
+
+test('a stalled push service cannot hold the queue worker, and library requirement warnings are logged, never thrown', function () {
+    $vapid = VAPID::createVapidKeys();
+    config(['services.webpush' => ['subject' => 'mailto:push@example.com', 'public_key' => $vapid['publicKey'], 'private_key' => $vapid['privateKey']]]);
+
+    /** @var WebPush $webPush */
+    $webPush = (fn () => $this->webPush)->call(app(WebPushGateway::class));
+    $client = (fn () => $this->client)->call($webPush);
+    $logger = (fn () => $this->logger)->call($webPush);
+
+    expect($client)->toBeInstanceOf(Client::class)
+        ->and($client->getConfig('timeout'))->toBe(WebPushGateway::TIMEOUT_SECONDS)
+        ->and($client->getConfig('connect_timeout'))->toBe(WebPushGateway::CONNECT_TIMEOUT_SECONDS)
+        ->and($logger)->toBeInstanceOf(LoggerInterface::class);
 })->skip(fn (): bool => ! ellipticCurveKeysAvailable(), 'PHP cannot create P-256 keys here (on Windows set OPENSSL_CONF to PHP\'s extras\ssl\openssl.cnf).');
 
 test('a message topic is a stable, push-service safe replacement key', function () {

@@ -40,16 +40,35 @@ test('there is no service worker without a production build or while the Vite de
 });
 
 test('behind a trusted HTTPS proxy the app builds https URLs; an untrusted forwarded scheme is ignored', function () {
+    /** Independent of a local .env that trusts a tunnel. */
+    config(['trustedproxy.proxies' => null]);
     $forwarded = fn () => $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
-        ->withHeaders(['X-Forwarded-Proto' => 'https', 'X-Forwarded-Host' => 'pos.pongskilog.test'])
-        ->get(route('login'));
+        ->withHeaders(['X-Forwarded-Proto' => 'https'])
+        ->get('http://pos.pongskilog.test/login');
 
-    $forwarded()->assertSee('content="http://', false)->assertDontSee('pos.pongskilog.test', false);
+    $forwarded()->assertSee('content="http://pos.pongskilog.test/', false)->assertDontSee('content="https://', false);
 
     config(['trustedproxy.proxies' => '127.0.0.1']);
 
     $forwarded()->assertSee('content="https://pos.pongskilog.test/images/branding/og-image.jpg"', false);
 });
+
+test('even the trusted proxy cannot choose the host or path prefix of generated links (password reset poisoning)', function (string $proxies) {
+    config(['trustedproxy.proxies' => $proxies]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+        ->withHeaders([
+            'X-Forwarded-Proto' => 'https',
+            'X-Forwarded-Host' => 'attacker.example',
+            'X-Forwarded-Port' => '8443',
+            'X-Forwarded-Prefix' => '/phish',
+        ])
+        ->get('http://pos.pongskilog.test/login')
+        ->assertSee('content="https://pos.pongskilog.test/images/branding/og-image.jpg"', false)
+        ->assertDontSee('attacker.example', false)
+        ->assertDontSee('8443', false)
+        ->assertDontSee('/phish', false);
+})->with(['one proxy address' => '127.0.0.1', 'a platform proxy (*)' => '*']);
 
 test('staff pages are installable; public Customer QR pages are not part of the app', function () {
     $this->get(route('login'))

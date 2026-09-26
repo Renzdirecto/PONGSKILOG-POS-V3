@@ -114,6 +114,17 @@ test('receipt lifetime never extends on reopening and backend expiry overrides a
     $this->getJson($shorter)->assertGone();
 });
 
+test('the public receipt page is not part of the installable staff app', function () {
+    [$order, $user] = receiptShareFixture();
+    $path = $this->actingAs($user)->postJson(route('pos.orders.receipt-share', $order))->json('url');
+    auth()->forgetGuards();
+
+    $this->get($path)->assertOk()
+        ->assertDontSee('rel="manifest"', false)
+        ->assertDontSee('apple-mobile-web-app-capable', false)
+        ->assertDontSee('id="pwa-boot"', false);
+});
+
 test('signed public receipt still rejects an order that is no longer paid', function () {
     [$order, $user] = receiptShareFixture();
     $path = $this->actingAs($user)->postJson(route('pos.orders.receipt-share', $order))->json('url');

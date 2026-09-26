@@ -234,6 +234,35 @@ test('logging out removes this browser subscription on the server and keeps the 
     $this->assertGuest();
 });
 
+test('another account signing in on this browser (the previous session expired without logout) unbinds the previous account from it', function () {
+    $previous = pushAccount();
+    $next = pushAccount();
+    $deviceId = $this->actingAs($previous)->postJson(route('pwa.push-subscription.store'), browserSubscription())
+        ->getCookie(PushDevice::COOKIE)?->getValue();
+    $previousOtherDevice = PushSubscription::factory()->for($previous)->create();
+    auth()->forgetGuards();
+
+    $this->withCredentials()->withCookie(PushDevice::COOKIE, (string) $deviceId)
+        ->post(route('login.store'), ['email' => $next->email, 'password' => 'password'])
+        ->assertRedirect();
+
+    $this->assertAuthenticatedAs($next);
+    expect(PushSubscription::query()->pluck('id')->all())->toBe([$previousOtherDevice->id]);
+});
+
+test('signing in again as the same account keeps this browser subscription', function () {
+    $user = pushAccount();
+    $deviceId = $this->actingAs($user)->postJson(route('pwa.push-subscription.store'), browserSubscription())
+        ->getCookie(PushDevice::COOKIE)?->getValue();
+    auth()->forgetGuards();
+
+    $this->withCredentials()->withCookie(PushDevice::COOKIE, (string) $deviceId)
+        ->post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
+        ->assertRedirect();
+
+    expect(PushSubscription::query()->sole()->user_id)->toBe($user->id);
+});
+
 test('ending an account sessions (password reset, deactivation) removes its push subscriptions', function () {
     $user = pushAccount();
     $other = PushSubscription::factory()->create();

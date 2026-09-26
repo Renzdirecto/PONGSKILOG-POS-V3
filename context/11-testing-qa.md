@@ -656,9 +656,9 @@ Focused automated checks only (not Final QA; the complete Laravel suite is reser
 - PostgreSQL: new `tests/verify-push-subscriptions-postgres.php` (random `pwa_*` schema, dropped): A migration fresh / rollback / reapply; B unique `endpoint_hash`, encoding CHECK, user FK and indexes; C two independent processes enabling one endpoint behind an uncommitted conflicting row → both succeed, one row (the `updateOrCreate` savepoint absorbs the unique violation); D disable vs a key-rotation re-enable behind a held row lock → both succeed, consistent, no deadlock.
 - Results: focused Pest 653 passed / 4,913 assertions (new PWA files + every suite touching changed shared code; with `OPENSSL_CONF` set — without it the two EC-key tests skip: 651 passed, 2 skipped). Frontend 300/300. Lint 0/0 (203 files), TypeScript (app + service worker), PHPStan 0 errors, Pint, production build (`public/build/sw.js`, 144 precache entries ≈ 2.2 MB), SQLite migration fresh / rollback / reapply, `git diff --check` clean.
 
-### Phase 19.5 USER MANUAL QA checklist (pending)
+### Phase 19.5 USER MANUAL QA checklist (PASSED — reported by the user)
 
-Use the HTTPS workflow in `12-deployment-operations.md` §30.1 for phones. Nothing below is claimed as passed.
+Use the HTTPS workflow in `12-deployment-operations.md` §30.1 for phones. The user reported every item below as passed (desktop, phone over an HTTPS tunnel, offline, reconnect, push incl. Super Admin exclusion, update, responsive).
 
 - **Desktop (Windows/Mac):** open over https (or localhost) → App & notifications › Install PONGSKILOG (Mac Safari: File › Add to Dock) → icon/name → standalone window → close/reopen → uninstall/reinstall.
 - **Phone:** Android install or iPhone/iPad Add to Home Screen → icon, name, dark startup screen → standalone → safe areas (notch, home indicator, landscape) on POS, Kitchen, Customer Display, Owner and Super Admin.
@@ -667,3 +667,10 @@ Use the HTTPS workflow in `12-deployment-operations.md` §30.1 for phones. Nothi
 - **Push:** Enable Notifications from the button (never on page load) → background or close the app → New Kitchen Order, Order Ready and one Important Alert arrive → tap opens/focuses PONGSKILOG on the right page; a focused Kitchen screen keeps its own sound; denied permission is explained; logout stops notifications on that device.
 - **Update:** build a newer version → "PONGSKILOG update available" appears, no automatic reload → with a non-empty POS cart Update now waits with the reason → clear or finish the order → Update now → one reload to the new version.
 - **Responsive:** 360, 390, 430 px, tablet, desktop — no overflow, pills never cover controls, 44 px targets.
+
+### Phase 19.5 Final QA verification — PWA Phase 1 (2026-09-26)
+
+- New / updated regression tests: `PwaShellTest` (hermetic against a local `TRUSTED_PROXIES`; a trusted proxy — one address or `*` — can set the https scheme but never the host, port or path prefix of generated links), `PushSubscriptionTest` (another account signing in on this browser unbinds the previous account; the same account signing in keeps its subscription), `WebPushGatewayTest` (bounded Guzzle timeouts and a PSR-3 logger for the library), `ReceiptShareTest` (public receipt has no manifest, Apple standalone meta or startup screen).
+- Complete Laravel suite: **2,134 passed / 15,223 assertions, 0 failed, 0 skipped**, 202 s, with `OPENSSL_CONF=C:\php\extras\ssl\openssl.cnf` set for this Windows process only (Linux CI needs nothing).
+- Focused: 454 passed / 2,874 assertions (PWA, receipt, admin notifications, Kitchen, Pay Now / Pay Later / settlement, Access Control, Staff, Auth). PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed. Frontend 300/300 (built-worker contract executed against a fresh build). Lint 0/0, TypeScript (app + service worker), PHPStan 0, Pint, production build, SQLite migration fresh / rollback / reapply (disposable file), `git diff --check`.
+- Built artifacts: `public/build/sw.js` routes only precache + navigation; 144 precache entries — `/build/assets/*.{js,css,woff2}`, 6 brand images and `/offline.html`; no runtime cache, Background Sync or `clients.claim`; no VAPID private key, Reverb secret, APP_KEY, DB password, tunnel host, LAN IP or local path in the build (built with neutral `VITE_REVERB_*`).

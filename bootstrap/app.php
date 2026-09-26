@@ -29,6 +29,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         /**
+         * From the proxies in `config/trustedproxy.php` only the client address and the https scheme are trusted. The
+         * host always comes from the Host header the proxy routed on: a forwarded host, port or prefix could otherwise
+         * point generated links (password reset emails) at another site.
+         */
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO);
+
+        /**
          * AuthenticateSession ends a session whose stored password hash no longer matches (an administrative password
          * reset); EnsureUserIsActive ends the session of a deactivated account on its next request.
          */

@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 /** Records deliveries instead of calling a push service; answers with scripted statuses per subscription. */
 class PushGatewayDouble implements PushGateway
@@ -89,6 +90,18 @@ function pushUser(string $role, ?Branch $branch = null, bool $active = true, boo
     return $user;
 }
 
+/** An active business-wide Custom Role account (not Super Admin) holding the given permissions. */
+function pushBusinessWideUser(array $permissions): User
+{
+    $role = Role::query()->forceCreate(['name' => 'custom_push_'.Str::random(6), 'label' => 'Area Lead '.Str::random(4), 'is_system' => false, 'scope' => Role::SCOPE_BUSINESS]);
+    $role->permissions()->sync(Permission::query()->whereIn('name', $permissions)->pluck('id'));
+    $user = User::factory()->create();
+    $user->roles()->attach($role);
+    PushSubscription::factory()->for($user)->create();
+
+    return $user;
+}
+
 function pushKitchenOrder(Branch $branch, KitchenStatus $status = KitchenStatus::Kitchen): Order
 {
     $session = StoreSession::factory()->for($branch)->create();
@@ -113,7 +126,8 @@ function newKitchenTicket(Order $order): void
 test('a new Kitchen order is pushed to the accounts that may see that Branch Kitchen, with a minimal payload', function () {
     $kitchen = pushUser('kitchen_staff', $this->main);
     $both = pushUser('cashier_kitchen', $this->main);
-    $superAdmin = pushUser('super_admin');
+    $businessWide = pushBusinessWideUser(['kitchen.access']);
+    pushUser('super_admin');
     pushUser('kitchen_staff', $this->qave);
     pushUser('cashier', $this->main);
     pushUser('owner');
@@ -123,7 +137,7 @@ test('a new Kitchen order is pushed to the accounts that may see that Branch Kit
 
     newKitchenTicket($order);
 
-    expect($this->gateway->recipients())->toEqualCanonicalizing([$kitchen->id, $both->id, $superAdmin->id])
+    expect($this->gateway->recipients())->toEqualCanonicalizing([$kitchen->id, $both->id, $businessWide->id])
         ->and($this->gateway->deliveries[0]['payload'])->toBe([
             'v' => 1,
             'type' => 'kitchen.new_order',
@@ -135,8 +149,11 @@ test('a new Kitchen order is pushed to the accounts that may see that Branch Kit
 
 test('Order Ready is pushed to the Branch POS accounts, and undoing a served order does not push again', function () {
     $cashier = pushUser('cashier', $this->main);
+    $businessWide = pushBusinessWideUser(['pos.access']);
+    pushUser('super_admin');
     pushUser('kitchen_staff', $this->main);
     pushUser('cashier', $this->qave);
+    pushUser('cashier', $this->main, active: false);
     $order = pushKitchenOrder($this->main, KitchenStatus::Preparing);
     $cook = pushUser('kitchen_staff', $this->main, subscribed: false);
 
@@ -144,8 +161,8 @@ test('Order Ready is pushed to the Branch POS accounts, and undoing a served ord
     $this->actingAs($cook)->patchJson(route('orders.kitchen-status.update', $order), ['status' => 'done'])->assertOk();
     $this->actingAs($cook)->patchJson(route('orders.kitchen-status.update', $order), ['status' => 'ready'])->assertOk();
 
-    expect($this->gateway->deliveries)->toHaveCount(1)
-        ->and($this->gateway->recipients())->toBe([$cashier->id])
+    expect($this->gateway->deliveries)->toHaveCount(2)
+        ->and($this->gateway->recipients())->toEqualCanonicalizing([$cashier->id, $businessWide->id])
         ->and($this->gateway->deliveries[0]['payload'])->toMatchArray([
             'type' => 'order.ready',
             'tag' => 'order-ready:'.$order->id,

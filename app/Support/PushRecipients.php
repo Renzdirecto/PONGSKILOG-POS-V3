@@ -18,8 +18,10 @@ use Illuminate\Database\Eloquent\Collection;
  * - Order Ready: the `branch.{id}.pos` channel rule (`pos.access`) — the POS serves ready orders.
  * - Important alert: `AdminNotifier`'s recipient rule, for the one account the Control Center notification was sent to.
  *
- * Business-wide accounts (for example Super Admin) hold every Branch, so they receive a Branch's signals when they
- * hold the permission and enabled notifications on a device, exactly like its realtime channels.
+ * Business-wide accounts hold every Branch, so they receive a Branch's signals when they hold the permission and
+ * enabled notifications on a device, exactly like its realtime channels. The canonical Super Admin role is the one
+ * exception for the routine Kitchen / Order Ready pushes: full access is not a station at a Branch, and it would
+ * receive every order of every Branch. Super Admin keeps its Important Alert pushes.
  */
 class PushRecipients
 {
@@ -57,10 +59,16 @@ class PushRecipients
     public function allows(User $user, PushMessage $message, ?Branch $branch): bool
     {
         return match ($message->type) {
-            PushMessageType::KitchenNewOrder => $branch !== null && BranchSignalAccess::allows($user, $branch, 'kitchen.access'),
-            PushMessageType::OrderReady => $branch !== null && BranchSignalAccess::allows($user, $branch, 'pos.access'),
+            PushMessageType::KitchenNewOrder => $branch !== null && ! $this->isSuperAdmin($user) && BranchSignalAccess::allows($user, $branch, 'kitchen.access'),
+            PushMessageType::OrderReady => $branch !== null && ! $this->isSuperAdmin($user) && BranchSignalAccess::allows($user, $branch, 'pos.access'),
             PushMessageType::AdminAlert => (int) $user->getKey() === $message->userId && AdminNotifier::receivesAlerts($user),
         };
+    }
+
+    /** Routine operational pushes skip the canonical Super Admin role (by role name, never by user id). */
+    private function isSuperAdmin(User $user): bool
+    {
+        return $user->hasRole(PermissionCatalog::SUPER_ADMIN);
     }
 
     /**

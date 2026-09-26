@@ -598,3 +598,14 @@ Documentation only: no Railway or Cloudflare setting was changed.
 6. Realtime over the tunnel also needs Reverb over wss: a second tunnel `cloudflared tunnel --url http://127.0.0.1:8080` and a rebuild with `VITE_REVERB_HOST=<that tunnel host>`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`. Without it everything else works and live screens show their disconnected state.
 7. Update test: change a frontend file, run `npm run build` again (new `sw.js` and assets), then return to the open app (reopen it, or wait for the hourly check).
 8. Afterwards remove `TRUSTED_PROXIES` and the tunnel `VITE_REVERB_*` values from `.env` (keep them only while tunnelling locally) and rebuild.
+
+## 31. Phase 19.6 Customer Experience — deployment notes (not deployed)
+
+- **Migration:** `2026_09_26_174138_create_customer_experience_tables` (additive). Run `php artisan migrate --force` before switching traffic.
+- **Scheduler:** `model:prune` for `CustomerScreen` and `OrderPickupToken` runs daily from `routes/console.php` (the existing `schedule:run` cron covers it).
+- **Queue:** Buzz delivery is the queued `SendPickupBuzz` job — the existing queue worker must run (same as the Phase 19.5 pushes). Web Push needs the existing VAPID keys.
+- **Cache:** the Live Cart and takeover live in the cache store (Redis in production). Losing the cache only blanks a Live Cart until the POS's next change.
+- **Storage:** advertisement media on the existing private `s3` disk (`customer-screen/{branch}/…`), served by signed temporary URLs (60 min). Plan bucket size for up to 30 items × 50 MB per Branch at most.
+- **Static file:** `public/pickup-sw.js` (the customer pickup service worker, scope `/pickup/`) must be served from the site root with a JavaScript content type; it is not part of the Vite build or the staff precache.
+- **HTTPS:** customer notifications need a secure origin (service worker + Push); the pickup QR encodes the host that rendered the customer screen, so open the customer screen through the public HTTPS domain. iPhone customers only get notifications from Home Screen web apps; the page stays live without them.
+- **Customer screen devices:** open `https://<domain>/customer-screen` in a full-screen/kiosk browser window (or a second window of the POS PC), then pair it from the POS header control. It is a public page (no staff sign-in on the counter device).

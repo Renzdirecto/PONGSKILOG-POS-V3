@@ -105,6 +105,36 @@ class KitchenBoard
         ];
     }
 
+    /**
+     * An order's place in its own order type's preparation queue: 1 + the orders of the same type still waiting in the
+     * Customer Display "Preparing" column (Kitchen or Preparing) that were committed before it, in the board's own
+     * order (committed_at, id) within the OPEN Store Session. Dine In and Take Out never count against each other;
+     * Ready, Done, voided, archived, uncommitted and earlier-session orders are never ahead. Null once the order itself
+     * is no longer waiting (Ready, Done, voided) or its Store Session is not the open one.
+     */
+    public function queuePosition(Order $order): ?int
+    {
+        if ($order->committed_at === null
+            || ! in_array($order->kitchen_status, [KitchenStatus::Kitchen, KitchenStatus::Preparing], true)
+            || ! in_array($order->commercial_status, [CommercialStatus::Active, CommercialStatus::Completed], true)) {
+            return null;
+        }
+        $branch = $order->branch()->first();
+        $session = $branch === null ? null : $this->openSession($branch);
+        if ($branch === null || $session === null || $order->store_session_id !== $session->id) {
+            return null;
+        }
+        $committedAt = $order->committed_at;
+
+        return $this->ordersForSession($branch, $session)
+            ->where('order_type', $order->order_type)
+            ->whereIn('kitchen_status', [KitchenStatus::Kitchen, KitchenStatus::Preparing])
+            ->where(fn (Builder $ahead) => $ahead
+                ->where('committed_at', '<', $committedAt)
+                ->orWhere(fn (Builder $tie) => $tie->where('committed_at', $committedAt)->where('id', '<', $order->id)))
+            ->count() + 1;
+    }
+
     /** @return list<array<string, mixed>> */
     public function readyForPos(Branch $branch): array
     {
@@ -119,6 +149,9 @@ class KitchenBoard
             ->with([
                 ...$this->kitchenRelations(),
                 'payments:id,order_id,method',
+                'pickupToken' => fn ($query) => $query
+                    ->select(['id', 'order_id', 'expires_at', 'buzz_count', 'last_buzzed_at'])
+                    ->withExists('pushSubscription'),
             ])
             ->orderBy('committed_at')
             ->orderBy('id')
@@ -230,6 +263,11 @@ class KitchenBoard
                 ->values()
                 ->all(),
             'total' => $order->total,
+            'buzz' => app(PickupBuzzPolicy::class)->state(
+                $order,
+                $order->pickupToken,
+                (bool) $order->pickupToken?->getAttribute('push_subscription_exists'),
+            ),
         ];
     }
 

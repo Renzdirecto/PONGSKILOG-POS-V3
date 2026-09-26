@@ -95,7 +95,7 @@ test('the runtime registers the worker without HTTP caching and never in the Vit
 
     assert.match(runtime, /navigator\.serviceWorker\.register\(\s+serviceWorker\.url\(\),\s+\{ scope: '\/', updateViaCache: 'none' \}/);
     assert.match(runtime, /if \(import\.meta\.env\.DEV\) \{[\s\S]+?existing\.unregister\(\)/);
-    assert.match(runtime, /return component\.startsWith\('qr\/'\) \|\| component === 'public-receipt';/);
+    assert.match(runtime, /component\.startsWith\('qr\/'\) \|\|\s+component === 'public-receipt' \|\|\s+component === 'customer-screen' \|\|\s+component === 'pickup'/);
     assert.match(runtime, /if \(started \|\| isPublicCustomerSurface\(options\.component\)\)/);
 });
 
@@ -155,7 +155,7 @@ test('the HTML shell is installable, safe-area ready and keeps public customer p
     const blade = file('resources/views/app.blade.php');
 
     assert.match(blade, /content="width=device-width, initial-scale=1, viewport-fit=cover"/);
-    assert.match(blade, /@unless \(request\(\)->routeIs\('qr\.\*', 'kiosk\.\*', 'receipt\.\*'\)\)\s+<link rel="manifest" href="\/manifest\.webmanifest">/);
+    assert.match(blade, /@unless \(request\(\)->routeIs\('qr\.\*', 'kiosk\.\*', 'receipt\.\*', 'customer-screen\.\*', 'pickup\.\*'\)\)\s+<link rel="manifest" href="\/manifest\.webmanifest">/);
     assert.match(blade, /<meta name="apple-mobile-web-app-capable" content="yes">/);
     assert.match(blade, /<meta name="apple-mobile-web-app-status-bar-style" content="black">/);
     assert.match(blade, /@media \(display-mode: standalone\)[\s\S]+#pwa-boot \{/);

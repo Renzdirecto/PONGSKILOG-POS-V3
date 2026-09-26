@@ -46,11 +46,21 @@ export type CustomerDisplayData = {
     ready: string[];
 };
 
+/** Present only for a Ready Take Out order whose customer turned notifications on (Phase 19.6B). */
+export type PosReadyBuzz = {
+    count: number;
+    max: number;
+    remaining: number;
+    last_buzzed_at: string | null;
+    cooldown_until: string | null;
+};
+
 export type PosReadyOrder = KitchenTicket & {
     payment_status: 'unpaid' | 'partial' | 'paid';
     payment_term: 'immediate' | 'pay_later' | null;
     payment_methods: ('cash' | 'cashless')[];
     total: string;
+    buzz: PosReadyBuzz | null;
 };
 
 export type KitchenRealtimeEvent = {

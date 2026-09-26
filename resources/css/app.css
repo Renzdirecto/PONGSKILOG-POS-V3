@@ -254,3 +254,13 @@ body:has([data-slot='dialog-content'].pos-surface)
         box-shadow: none !important;
     }
 }
+
+/* Phase 19.6 customer screen: the takeover's remaining-time bar. */
+@keyframes customer-screen-countdown {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}

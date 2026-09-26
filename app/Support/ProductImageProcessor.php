@@ -13,8 +13,46 @@ class ProductImageProcessor
     /** @return array{extension: string, source: string, card: string, detail: string} */
     public function process(UploadedFile $upload): array
     {
+        $this->validate($upload, 8192);
+        [$source, $contents, $type] = $this->decode($upload);
+
+        try {
+            return [
+                'extension' => match ($type) {
+                    IMAGETYPE_JPEG => 'jpg',
+                    IMAGETYPE_PNG => 'png',
+                    IMAGETYPE_WEBP => 'webp',
+                    default => throw ValidationException::withMessages(['image' => 'The image format is not supported.']),
+                },
+                'source' => $contents,
+                'card' => $this->webp($source, 480),
+                'detail' => $this->webp($source, 1200),
+            ];
+        } finally {
+            unset($source);
+        }
+    }
+
+    /**
+     * One re-encoded WebP rendition bounded to `$bound` pixels (Customer screen advertisements). The same format,
+     * signature, dimension, memory and malformed-file checks as Product images; the original upload is never stored.
+     */
+    public function rendition(UploadedFile $upload, int $bound, int $maxKilobytes): string
+    {
+        $this->validate($upload, $maxKilobytes);
+        [$source] = $this->decode($upload);
+
+        try {
+            return $this->webp($source, $bound);
+        } finally {
+            unset($source);
+        }
+    }
+
+    private function validate(UploadedFile $upload, int $maxKilobytes): void
+    {
         Validator::make(['image' => $upload], [
-            'image' => ['bail', 'required', 'file', 'max:8192', 'mimes:jpg,jpeg,png,webp',
+            'image' => ['bail', 'required', 'file', 'max:'.$maxKilobytes, 'mimes:jpg,jpeg,png,webp',
                 'mimetypes:image/jpeg,image/png,image/webp', 'dimensions:max_width=6000,max_height=6000'],
         ])->validate();
 
@@ -22,7 +60,11 @@ class ProductImageProcessor
             || ! (imagetypes() & IMG_PNG) || ! (imagetypes() & IMG_WEBP)) {
             throw new RuntimeException('Product images require GD with JPEG, PNG and WebP support.');
         }
+    }
 
+    /** @return array{0: GdImage, 1: string, 2: int} the decoded image, the original bytes and the detected image type */
+    private function decode(UploadedFile $upload): array
+    {
         $contents = $upload->getContent();
         $dimensions = getimagesizefromstring($contents);
 
@@ -51,21 +93,7 @@ class ProductImageProcessor
             throw ValidationException::withMessages(['image' => 'The image is malformed or corrupted.']);
         }
 
-        try {
-            return [
-                'extension' => match ($dimensions[2]) {
-                    IMAGETYPE_JPEG => 'jpg',
-                    IMAGETYPE_PNG => 'png',
-                    IMAGETYPE_WEBP => 'webp',
-                    default => throw ValidationException::withMessages(['image' => 'The image format is not supported.']),
-                },
-                'source' => $contents,
-                'card' => $this->webp($source, 480),
-                'detail' => $this->webp($source, 1200),
-            ];
-        } finally {
-            unset($source);
-        }
+        return [$source, $contents, $dimensions[2]];
     }
 
     private function webp(GdImage $source, int $bound): string

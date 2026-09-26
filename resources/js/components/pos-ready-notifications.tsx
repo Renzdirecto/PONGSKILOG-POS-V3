@@ -16,6 +16,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { BuzzCustomerButton } from '@/components/pos-buzz-customer';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import {
     orderTypeLabel,
@@ -276,6 +277,10 @@ export function PosReadyNotifications({
                         </div>
 
                         <DialogFooter className="border-t border-neutral-200 p-4">
+                            <BuzzCustomerButton
+                                key={selected.id}
+                                order={selected}
+                            />
                             <button
                                 type="button"
                                 disabled={processing}

@@ -514,8 +514,11 @@ test('payment product and order item reads remain bounded as the cart grows', fu
     $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'));
     DB::disableQueryLog();
 
-    /** Phase 16E adds three constant reads (size modifiers, Plan membership, recipes) for the Ingredient snapshot. */
-    expect($reads->count())->toBeLessThanOrEqual(39)
+    /**
+     * Phase 16E adds three constant reads (size modifiers, Plan membership, recipes) for the Ingredient snapshot; Phase
+     * 19.6 adds two constant after-commit reads (the Take Out pickup token and the pickup-page invalidation).
+     */
+    expect($reads->count())->toBeLessThanOrEqual(41)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "products"'))->count())->toBeLessThanOrEqual(4)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "order_items"'))->count())->toBeLessThanOrEqual(2);
 })->with([1, 30, 100]);

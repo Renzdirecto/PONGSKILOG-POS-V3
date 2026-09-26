@@ -113,9 +113,17 @@ function createStore<T extends object>(initial: T): Store<T> {
     };
 }
 
-/** Public customer surfaces never get the staff app's service worker, install prompts, guard or status UI. */
+/**
+ * Public customer surfaces never get the staff app's service worker, install prompts, guard or status UI. The pickup
+ * page registers only its own `/pickup/` worker for the customer's Ready notification (Phase 19.6B).
+ */
 export function isPublicCustomerSurface(component: string): boolean {
-    return component.startsWith('qr/') || component === 'public-receipt';
+    return (
+        component.startsWith('qr/') ||
+        component === 'public-receipt' ||
+        component === 'customer-screen' ||
+        component === 'pickup'
+    );
 }
 
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;

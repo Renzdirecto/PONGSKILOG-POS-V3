@@ -815,3 +815,20 @@ Phase 19.6 extends the existing after-commit invalidation model; exact event/cla
 - Kitchen Ready remains the existing authoritative transition. Buzz is an explicit cashier action after Ready, delivered by queued Web Push only when the matching Take Out subscription remains valid at send time.
 - Buzz adds no polling. A 5-second server cooldown, replay/idempotency guard, and bounded attempts per Ready order apply even under concurrent requests; send failure never mutates order/Kitchen state.
 - Every customer screen and pickup page performs an authoritative refetch after reconnect before showing current state.
+
+## Phase 19.6 — Customer experience realtime (implemented 2026-09-27)
+
+All events are `ShouldBroadcastNow + ShouldDispatchAfterCommit + ShouldRescue` invalidations; every client refetches its own authoritative projection. No polling: the only timers renew a pairing code or signed media/Menu links shortly before they expire.
+
+| Event (`broadcastAs`) | Channel(s) | Payload | Emitted by | Client reaction |
+| --- | --- | --- | --- | --- |
+| `customer_screen.changed` | `private-customer-screen.{channel_key}` (one per screen; several screens in one event for Branch-wide ad changes) | `event_id`, `event_type`, `reason` (`pairing|mode|cart|takeover|ads`), `occurred_at` | pairing/unpair/reset, mode toggle, cart send that changed the stored cart, takeover, ad create/update/delete/reorder, sign-out cart cleanup | screen refetches `customer-screen/state` (and the playlist for `ads`/`pairing`) |
+| `qr.catalog_changed` (existing) | `private-qr-catalog.{branch}` | unchanged | existing catalog/stock writers | a paired screen in Menu mode refetches `customer-screen/menu` (debounced) |
+| `display.orders_changed` (existing) | `private-branch.{branch}.customer-display` | unchanged | commit, Kitchen transition, void, Store close | a paired screen in Customer Display mode refetches its state (board) |
+| `pickup.changed` | `private-pickup.{channel_key}` for every unexpired token of the Branch whose order is waiting or finished in the last 30 min (one event, channels batched) | `event_id`, `event_type`, `occurred_at` | `BroadcastPickupStatusChanged` on `DisplayOrdersChanged` | pickup page refetches `pickup/{token}/status` |
+| `pickup.notify_changed` | `private-branch.{branch}.pos` | `event_id`, `event_type`, `branch_id`, `order_id`, `occurred_at` | customer opt-in/out, accepted Buzz, rejected endpoint cleanup | POS reloads `readyOrders` / `kitchenStatus` (added to `POS_READY_REALTIME_EVENTS`) |
+
+- **Channel authorization:** the customer screen authorizes through `POST customer-screen/broadcasting/auth` with its device cookie: its own screen channel always; the paired Branch's `qr-catalog` and `customer-display` channels only while paired. The pickup page authorizes through `POST pickup/{token}/broadcasting/auth`: only its own `pickup.{channel_key}`. Both use their own public Reverb client (`lib/public-echo.ts`); the staff app's single Echo client is unchanged.
+- **Reconnect:** both public pages refetch everything on a *re*connect (not the first connect), on `online` and when the page becomes visible again; the screen shows "Reconnecting…" / "Live updates unavailable" and marks the Live Cart "May not be up to date" while disconnected.
+- **Ordering:** the screen's state refetch runs one request at a time with one trailing refresh (`createRealtimeRefresh`), so a slow response never lands over a newer one; POS cart sends are serialized and sequence-numbered (server keeps the newest per page instance).
+- **Web Push:** the Buzz is a queued `SendPickupBuzz` to the customer's own `pickup_push_subscriptions` row through `PickupPushGateway`; payload `v`, `type: pickup.ready`, `tag: pickup-ready:{token id}`, `order_number`, `url: /pickup/{token}` (E2E-encrypted to that browser only). Shown by `/pickup-sw.js` (scope `/pickup/`) with vibration; staff pushes and `/sw.js` are unchanged. Kitchen Ready never buzzes a customer by itself.

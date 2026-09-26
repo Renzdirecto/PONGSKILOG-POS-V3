@@ -889,3 +889,12 @@ Migration `2026_09_25_150406_add_reporting_performance_indexes` adds indexes onl
 - `orders (committed_at, id)` — All Branches Transactions and the Dashboard's recent transactions (`(branch_id, committed_at)` still serves one Branch).
 - `notifications (notifiable_type, notifiable_id, created_at, id)` — one recipient's notification list; the unread badge keeps `(notifiable_type, notifiable_id, read_at)`.
 - `pamamalengke_purchase_items (pamamalengke_purchase_id)` and `pamamalengke_purchases (store_session_id)` — previously unindexed foreign keys read by Operations › Purchases.
+
+## Phase 19.6 — Customer Experience Expansion (additive) — 2026-09-27
+
+Migration `2026_09_26_174138_create_customer_experience_tables` (forward-only additions; `down()` drops exactly these four tables):
+
+- `customer_screens` — `id` uuid; `token_hash` char(64) unique (SHA-256 of the device cookie); `channel_key` char(40) unique (private channel suffix); `pairing_code_hash` char(64) nullable unique + `pairing_code_expires_at`; `branch_id` nullable FK (null on delete); `station_hash` char(64) nullable; `paired_by_user_id` nullable FK; `paired_at`; `mode` varchar CHECK `ads|menu|customer_display` default `ads`; `last_seen_at`; timestamps. Unique `(branch_id, station_hash)` = one screen per POS station per Branch. The live cart and takeover are **not** stored here (cache only).
+- `customer_screen_media` — `id` uuid; `branch_id` FK (cascade); `media_type` CHECK `image|video`; `label` ≤ 80; `path` (server-generated `customer-screen/{branch}/{uuid}/display.webp|video.mp4`); `mime_type`; `size_bytes`; `duration_seconds` CHECK 1–120; `sort_order`; `is_active`; `created_by_user_id` nullable FK; timestamps. Index `(branch_id, is_active, sort_order)`. At most 30 per Branch (application rule).
+- `order_pickup_tokens` — `id` uuid; `order_id` FK unique (cascade) = exactly one per order; `branch_id` FK; `token_hash` char(64) unique (lookup); `token_ciphertext` text (`encrypted` cast; re-renders the QR); `channel_key` char(40) unique; `expires_at` (commit + 12 h) indexed alone and with `branch_id`; `buzz_count` smallint CHECK ≥ 0; `last_buzzed_at`; `last_buzz_key` uuid; timestamps. Only committed Take Out orders get a row.
+- `pickup_push_subscriptions` — `id`; `order_pickup_token_id` FK unique (cascade) = one customer endpoint per pickup token; `endpoint_hash` indexed; `endpoint` / `public_key` / `auth_token` encrypted; `content_encoding` CHECK `aes128gcm|aesgcm`; timestamps. Completely separate from staff `push_subscriptions`.

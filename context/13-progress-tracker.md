@@ -1067,8 +1067,8 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 
 1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
 2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **COMPLETE / MERGED** (PR #25, `4e3ab28`; not deployed)
-3. Phase 19.6 — Customer Experience Expansion: **FROZEN / NOT STARTED** (`19.6A` then `19.6B`)
-4. Phase 20 — Final Production Hardening: **NOT STARTED**
+3. Phase 19.6 — Customer Experience Expansion: **19.6A IMPLEMENTED · 19.6B IMPLEMENTED · FOCUSED AUTOMATED QA: PASSED · USER MANUAL QA: AWAITING USER** (branch `feature/customer-experience-expansion`; no PR opened, not merged, not deployed)
+4. Phase 20 — Final Production Hardening: **NOT STARTED** (next, after Phase 19.6 acceptance)
 5. Deployment
 6. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5 or Phase 19.6)
 
@@ -1157,69 +1157,90 @@ Complete audit of `origin/dev...feature/pwa-phase-1` (starting HEAD `aa278de`, 3
 
 ## Phase 19.6 — Customer Experience Expansion
 
-**Status: FROZEN / NOT STARTED.** Scope frozen 2026-09-27 on `feature/customer-experience-expansion` from `dev` baseline `4e3ab28`. This phase is implemented in two sequential tasks: **19.6A must complete before 19.6B begins.** No application code, migration, dependency, environment, or deployment behavior is changed by this planning commit.
+**Status: PHASE 19.6A + 19.6B IMPLEMENTATION: COMPLETE (2026-09-27). FOCUSED AUTOMATED QA: PASSED. USER MANUAL QA: NOT YET PASSED — AWAITING USER.** Branch `feature/customer-experience-expansion` (scope frozen 2026-09-27 from `dev` baseline `4e3ab28`). No PR opened, not merged, not deployed. Phase 20: NOT STARTED. On the user's explicit one-shot instruction both slices were implemented in one pass (A first, then B); the frozen "19.6A accepted before 19.6B starts" gate is therefore replaced by one combined manual acceptance of 19.6A + 19.6B.
+
+Architecture decisions (details in `04-architecture.md` §22, `06-realtime-contracts.md`, `07-security-rbac.md`, `05-database-data-model.md`):
+
+- **Display mode state machine:** `customer_screens.mode` ∈ `ads | menu | customer_display` (one column + CHECK, so "both on" cannot exist). The Store Operations header control presses MENU or CUSTOMER DISPLAY; `CustomerScreenMode::toggled()` decides under the screen row lock: pressing the other control switches, pressing the active one returns to `ads`. The mode belongs to the station's paired screen (the prompt's "controls only the paired customer screen"), not to the whole Branch.
+- **Station ↔ screen pairing:** the screen is a public kiosk page (`/customer-screen`) identified only by its own HttpOnly device cookie (SHA-256 stored). The POS station is a random UUID in the browser's local storage, sent as `X-POS-Station`; only its SHA-256 is stored with the Branch. The screen shows a one-time 6-character code (5 minutes, keyed hash at rest); a cashier with `PosAccess` at the selected Branch enters it. `(branch_id, station_hash)` is unique: pairing a new screen releases the previous one (a racing pairing retries once). Cashier changes keep the pairing; the screen can reset itself (hidden 3-second hold on its top-left corner) for a lost station.
+- **Ephemeral Live Cart:** the POS sends only ids/quantities (debounced 300 ms, one request at a time, numbered per page instance). `CustomerScreenCart` derives every name, Size, Add-on, Instruction and amount from `BranchCatalog` (no ids, no free-text notes). The projection lives only in cache (Redis) for 15 minutes: never an Order, no stock or payment effect. Older sends of the same instance are ignored; a takeover clears the cart and fences off sends that were already in flight; sign-out clears the carts that account sent.
+- **Success takeover timing:** after Pay Now / Pay Later succeeds the POS announces the order (best effort, after the payment result, never blocking it). The server keeps `{order, start, duration}` in cache: Dine In 3 s, Take Out 5 s; the screen shows it for the server's remaining time as an overlay, so the mode underneath (never modified) is exactly what returns.
+- **Queue position source of truth:** `KitchenBoard::queuePosition()` — 1 + same-type orders still in the Customer Display "Preparing" column (Kitchen/Preparing) committed earlier in the open Store Session, in the board's `(committed_at, id)` order. Ready, Done, voided, archived and other-type orders are never ahead.
+- **Pickup token security:** `IssuePickupToken` (after-commit listener on `OrderCommitted` / `OrderUpdated`, rescued) gives every committed Take Out order exactly one 32-byte URL-safe token (unique `order_id`), even if never scanned; Dine In never. Lookup is by SHA-256; the raw token is stored only encrypted (to re-render the QR on the paired screen); realtime uses a separate random `channel_key`. Expires 12 h after commit; pruned 7 days later (`model:prune`, daily). A raw order id, a hash or a guessed token opens nothing.
+- **Buzz eligibility / cooldown / max:** `PickupBuzzPolicy` — committed Take Out, Kitchen status Ready, unexpired link, stored customer subscription. `BuzzPickupCustomer` decides under the token row lock: same idempotency key → replay (nothing sent), 5-second cooldown (429), at most 5 accepted Buzzes per order (422). An accepted Buzz queues `SendPickupBuzz`, which re-validates at send time, deletes a rejected endpoint (404/410/400/401/403 → order no longer buzz-capable) and retries a transient failure once. Nothing touches order/Kitchen/payment state.
+- **Public Push separation:** customer endpoints live in `pickup_push_subscriptions` (one per pickup token, encrypted), are delivered only through `PickupPushGateway::deliverPickup()` and a separate service worker (`/pickup-sw.js`, scope `/pickup/`, push + click only, no caching). Staff `push_subscriptions`, `PushRecipients` and `/sw.js` are unchanged; neither side can reach the other.
 
 ### Phase 19.6A — Customer-Facing Screen V2
 
 Customer screen and pairing:
 
-- [ ] Add a dedicated customer-facing screen paired to exactly one POS station/device, not to a cashier account. Pairing is Branch-scoped and survives cashier sign-in changes without allowing cross-Branch or cross-station cart visibility.
-- [ ] Preserve server authority: pairing, selected mode, displayed cart, order takeover, availability, and queue position are never trusted from client-only state.
+- [x] Add a dedicated customer-facing screen paired to exactly one POS station/device, not to a cashier account. Pairing is Branch-scoped and survives cashier sign-in changes without allowing cross-Branch or cross-station cart visibility.
+- [x] Preserve server authority: pairing, selected mode, displayed cart, order takeover, availability, and queue position are never trusted from client-only state.
 
 Default advertising and management:
 
-- [ ] Default to an advertising slideshow when neither operating mode is selected.
-- [ ] Allow an authorized Owner, Super Admin, or role granted the applicable management permission to manage only the selected Branch's advertisement media.
-- [ ] Support images and videos with active/inactive state, explicit sequence, and per-item duration.
-- [ ] Apply safe file/content validation, bounded media size/duration, storage isolation, and non-blocking optimization suitable for the displayed media type.
+- [x] Default to an advertising slideshow when neither operating mode is selected (clean PONGSKILOG idle screen when a Branch has no media).
+- [x] Allow an authorized Owner, Super Admin, or role granted the applicable management permission to manage only the selected Branch's advertisement media (Settings › Customer Screen; `settings.manage` through `BranchPolicy::update`).
+- [x] Support images and videos with active/inactive state, explicit sequence, and per-item duration.
+- [x] Apply safe file/content validation, bounded media size/duration, storage isolation, and non-blocking optimization suitable for the displayed media type (images re-encoded to WebP ≤ 1920 px; MP4/H.264 ≤ 50 MB and ≤ 60 s, container duration read server-side; HEVC-only rejected; server-generated `s3` paths; at most 30 per Branch).
 
 Store Operations controls and modes:
 
-- [ ] Add two mutually exclusive Store Operations controls: `MENU` and `CUSTOMER DISPLAY`.
-- [ ] Permit zero or one active control. `MENU` on means Menu mode; `CUSTOMER DISPLAY` on means the order-status board; both off means the default advertisement slideshow. Enabling one disables the other atomically.
-- [ ] `MENU` is browse-only and shows the Branch's categories, products, prices, and authoritative current availability. It never exposes add-to-cart, quantity, modifier, edit, order, payment, or other mutation controls.
-- [ ] `CUSTOMER DISPLAY` preserves the safe Preparing/Ready board projection and exposes no financial or private data.
+- [x] Add two mutually exclusive Store Operations controls: `MENU` and `CUSTOMER DISPLAY` (shared operational header, every Store Operations page, `pos.access` accounts).
+- [x] Permit zero or one active control. `MENU` on means Menu mode; `CUSTOMER DISPLAY` on means the order-status board; both off means the default advertisement slideshow. Enabling one disables the other atomically.
+- [x] `MENU` is browse-only and shows the Branch's categories, products, prices, Size prices and authoritative current availability. It never exposes add-to-cart, quantity, modifier, edit, order, payment, or other mutation controls.
+- [x] `CUSTOMER DISPLAY` preserves the safe Preparing/Ready board projection (the existing `KitchenBoard::customerDisplay()` and the shared `CustomerOrderBoard` component) and exposes no financial or private data.
 
 Paired live cart and success takeover:
 
-- [ ] While the paired Cashier POS has an active cart, show a compact realtime **Live Cart** above a still-usable Menu, approximately 25–30% cart and 70–75% Menu.
-- [ ] Only the paired POS station's current cart may appear. The projection contains customer-safe line names, quantities, selected options, and prices only; no tender, payment, discount authority, customer identity, staff identity, internal ids, or mutation capability.
-- [ ] After a successful commitment, temporarily replace the screen with a large green order number, order type, and server-derived queue position among active orders of the same type.
-- [ ] Dine In takeover lasts 3 seconds. Take Out takeover lasts 5 seconds and also shows the Phase 19.6B pickup QR when available.
-- [ ] After the takeover, return to the previously selected operating mode; if neither mode is active, return to advertising.
-- [ ] Realtime changes use compact invalidations followed by authoritative refetch, coalesce bursts, recover after reconnect, and add no polling.
+- [x] While the paired Cashier POS has an active cart, show a compact realtime **Live Cart** above a still-usable Menu (≤ 30% of the height, own scroll; Menu keeps scrolling below).
+- [x] Only the paired POS station's current cart may appear. The projection contains customer-safe line names, quantities, selected options, and prices only; no tender, payment, discount authority, customer identity, staff identity, internal ids, or mutation capability.
+- [x] After a successful commitment, temporarily replace the screen with a large green order number, order type, and server-derived queue position among active orders of the same type.
+- [x] Dine In takeover lasts 3 seconds. Take Out takeover lasts 5 seconds and also shows the Phase 19.6B pickup QR.
+- [x] After the takeover, return to the previously selected operating mode; if neither mode is active, return to advertising.
+- [x] Realtime changes use compact invalidations followed by authoritative refetch, coalesce bursts, recover after reconnect, and add no polling (the only timers renew a pairing code or signed media/menu image links before expiry).
 
 ### Phase 19.6B — Takeout Pickup QR + Buzz
 
 Take Out token and public page:
 
-- [ ] Generate a secure, high-entropy pickup token after every successful Take Out commitment, even if the QR is never scanned. Dine In never receives one.
-- [ ] Show the pickup QR during the Take Out success takeover.
-- [ ] Scanning opens a public, no-login, read-only page limited to the order number, Preparing/Ready/Done state, and server-derived position in the active Take Out queue.
-- [ ] The public projection contains no payment/tender data, customer data, staff data, internal identifiers, notes, item details, or edit/cancel/pay action.
+- [x] Generate a secure, high-entropy pickup token after every successful Take Out commitment, even if the QR is never scanned. Dine In never receives one.
+- [x] Show the pickup QR during the Take Out success takeover.
+- [x] Scanning opens a public, no-login, read-only page (`/pickup/{token}`) limited to the order number, Take Out, Preparing/Ready/Done state, and server-derived position in the active Take Out queue.
+- [x] The public projection contains no payment/tender data, customer data, staff data, internal identifiers, notes, item details, or edit/cancel/pay action.
 
 Notification opt-in and Buzz:
 
-- [ ] The customer may explicitly enable notifications on the pickup page. A scan by itself never subscribes the device and never makes the order buzz-capable.
-- [ ] Associate a valid notification subscription only with the matching pickup token/order and revalidate it at send time. Expired or rejected subscriptions are not buzz-capable.
-- [ ] Kitchen continues to mark the order Ready through the existing authoritative Kitchen transition; the existing cashier/POS Ready notification and modal remain the serving authority.
-- [ ] Show `Buzz` in that Ready notification/modal only for a Ready Take Out order with a currently valid, opted-in subscription. It is absent for Dine In, never-scanned QR, declined notifications, invalid subscription, or any non-Ready state.
-- [ ] Buzz sends one event-driven Web Push notification and vibration where the platform supports it. Do not poll.
-- [ ] Enforce a 5-second cooldown server-side plus idempotency/repeat protection and a bounded maximum attempt count per Ready order; concurrent/replayed requests cannot bypass the limits.
-- [ ] Buzz failure never changes Kitchen/order state and never falsely reports delivery.
+- [x] The customer may explicitly enable notifications on the pickup page. A scan by itself never subscribes the device and never makes the order buzz-capable.
+- [x] Associate a valid notification subscription only with the matching pickup token/order and revalidate it at send time. Expired or rejected subscriptions are not buzz-capable.
+- [x] Kitchen continues to mark the order Ready through the existing authoritative Kitchen transition; the existing cashier/POS Ready notification and modal remain the serving authority.
+- [x] Show `Buzz Customer` in that Ready modal only for a Ready Take Out order with a currently valid, opted-in subscription. It is absent for Dine In, never-scanned QR, declined notifications, invalid subscription, or any non-Ready state.
+- [x] Buzz sends one event-driven Web Push notification ("Order #024 is ready for pickup.", vibration where supported; tapping opens that pickup page). No polling.
+- [x] Enforce a 5-second cooldown server-side plus idempotency/repeat protection and a maximum of 5 accepted Buzzes per order; concurrent/replayed requests cannot bypass the limits (PostgreSQL harness cases B–C).
+- [x] Buzz failure never changes Kitchen/order state and never falsely reports delivery (the cashier sees "Buzz sent", not "delivered").
 
 ### Phase 19.6 release boundary
 
-- [ ] Phase 19.6A accepted before Phase 19.6B implementation starts
-- [ ] Automated authorization, Branch isolation, station isolation, projection privacy, upload validation, queue-position, token, subscription, cooldown, repeat/concurrency, realtime, reconnect, and failure-path coverage
-- [ ] Manual customer-screen and phone QA at 360/390/430 px, tablet, desktop/display, and installed PWA where applicable
-- [ ] No offline transactional behavior; PWA Phase 2 remains future-only after Deployment
+- [ ] ~~Phase 19.6A accepted before Phase 19.6B implementation starts~~ — superseded by the user's one-shot instruction (A then B in one pass; combined manual acceptance below).
+- [x] Automated authorization, Branch isolation, station isolation, projection privacy, upload validation, queue-position, token, subscription, cooldown, repeat/concurrency, realtime, reconnect, and failure-path coverage
+- [ ] Manual customer-screen and phone QA at 360/390/430 px, tablet, desktop/display, and installed PWA where applicable — **AWAITING USER**
+- [x] No offline transactional behavior; PWA Phase 2 remains future-only after Deployment
+
+### Phase 19.6 implementation verification — 2026-09-27
+
+- Schema: one additive migration `2026_09_26_174138_create_customer_experience_tables` (`customer_screens`, `customer_screen_media`, `order_pickup_tokens`, `pickup_push_subscriptions`). **Forward `php artisan migrate` was run on the normal local development DB** (batch 19); nothing was reset, refreshed or wiped.
+- Pest (new): `CustomerScreenPairingTest` 11, `CustomerScreenLiveCartTest` 10, `CustomerScreenMenuMediaTest` 5, `OrderPickupTest` 10, `PickupBuzzTest` 9 — **45 passed**. Focused regression set (new tests + Customer Display, Kitchen, Pay Now/Later/settlement, committed edits, void, Customer QR, catalog, product images, Web Push, PWA shell, Settings, Access Control/Custom Roles/Branch-scoped management, realtime, performance, audit, auth): **830 passed / 6,472 assertions, 0 failed**.
+- PostgreSQL harness `tests/verify-customer-experience-postgres.php` A–D passed (isolated `cx_*` schema, dropped): migration rollback/reapply + indexes + mode CHECK; 4 concurrent Buzzes → 1 accepted, 3 cooldown; 3 concurrent replays of one key → 1 send; racing same-station pairing → retry releases the previous screen.
+- Frontend 316/316 (new `tests/customer-screen.test.ts`, `tests/pickup.test.ts`; updated contracts in `kitchen-ui` and `pwa-contracts`), lint 0/0, TypeScript (app + service worker), PHPStan 0 (level 7), Pint, production build (151 precache entries; staff worker unchanged), SQLite migration fresh / rollback / reapply on a disposable file, `git diff --check`.
+- Existing contracts deliberately updated: the Pay Now read budget 39 → 41 (two constant after-commit reads: token issue + pickup-page invalidation; still flat at 1/30/100 items); the POS Ready events add `.pickup.notify_changed`; the public-surface lists (Blade manifest guard, `isPublicCustomerSurface`, shared props) add `customer-screen.*` / `pickup.*`.
+- Found during implementation (pre-existing, not changed, for Phase 20): un-named `throttle:X,Y` middleware shares one counter per account/IP across every route, so frequent throttled calls (e.g. `pos/recipe-capacity` 240/min) can exhaust low limits elsewhere (Void 5/min, Close Store 10/min) within the same minute. Phase 19.6 routes use named limiters with their own counters and do not add to that shared budget.
+- **Manual QA: NOT YET PASSED — awaiting user.** Checklist: pairing; Ads default; Menu toggle; Customer Display toggle; both off → Ads; Live Cart + Menu together; Dine In 3-s takeover; Take Out 5-s takeover + QR; scan pickup QR; enable notifications (HTTPS origin required; iPhone needs Home Screen); Kitchen marks Ready; cashier Ready modal; Buzz visible only with a valid subscription; phone notification/vibration; 5-s Buzz cooldown; 5-Buzz maximum; realtime reconnect; 360/390/430 px, tablet and desktop layouts. Requires a running queue worker (as for the Phase 19.5 pushes) for Buzz delivery, and `npm run build` or `npm run dev` for the new pages.
 
 ---
 
 ## Phase 20 — Final Production Hardening
 
-**Status: NOT STARTED.** Phase 20 remains the final feature-frozen production hardening pass and must audit Phase 19.6 together with every earlier feature. No new product feature scope is admitted during Phase 20.
+**Status: NOT STARTED** (starts after the user accepts Phase 19.6). Phase 20 remains the final feature-frozen production hardening pass and must audit Phase 19.6 together with every earlier feature — including the pre-existing shared un-named `throttle` counter noted under Phase 19.6 verification. No new product feature scope is admitted during Phase 20.
 
 - [ ] Full RBAC review
 - [ ] Full branch-isolation test pass

@@ -522,7 +522,7 @@ Delivered an installable, internet-first PWA with safe connectivity state, Web P
 
 # Phase 19.6 — Customer Experience Expansion
 
-Implement sequentially. Phase 19.6A must be complete before Phase 19.6B begins.
+Status: **19.6A + 19.6B IMPLEMENTED (2026-09-27) · focused automated QA passed · manual QA awaiting the user · no PR.** Frozen as sequential slices; on the user's one-shot instruction both were implemented in one pass (A, then B) with one combined manual acceptance.
 
 ## Phase 19.6A — Customer-Facing Screen V2
 

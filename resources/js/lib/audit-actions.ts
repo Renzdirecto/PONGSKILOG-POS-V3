@@ -23,6 +23,13 @@ const ACTION_LABELS: Record<string, string> = {
     'access.custom_role_archived': 'Custom role archived',
     'notifications.push_enabled': 'Device notifications enabled',
     'notifications.push_disabled': 'Device notifications disabled',
+    'customer_screen.paired': 'Customer screen paired',
+    'customer_screen.unpaired': 'Customer screen unpaired',
+    'customer_screen.reset_on_screen': 'Customer screen reset on the screen',
+    'customer_screen_media.created': 'Customer screen ad added',
+    'customer_screen_media.updated': 'Customer screen ad changed',
+    'customer_screen_media.deleted': 'Customer screen ad deleted',
+    'customer_screen_media.reordered': 'Customer screen ads reordered',
 };
 
 export function titleCase(value: string): string {

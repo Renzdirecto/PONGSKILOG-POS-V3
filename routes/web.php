@@ -16,6 +16,8 @@ use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\CustomerQrOrderController;
+use App\Http\Controllers\CustomerScreenController;
+use App\Http\Controllers\CustomerScreenMediaController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
@@ -31,6 +33,9 @@ use App\Http\Controllers\OrderAdjustmentAllocationController;
 use App\Http\Controllers\OwnerDashboardController;
 use App\Http\Controllers\PamamalengkeController;
 use App\Http\Controllers\PaymentInvoiceProofController;
+use App\Http\Controllers\PickupBuzzController;
+use App\Http\Controllers\PickupController;
+use App\Http\Controllers\PosCustomerScreenController;
 use App\Http\Controllers\PosDraftOrderController;
 use App\Http\Controllers\PosOrderReservationController;
 use App\Http\Controllers\PosPayLaterController;
@@ -76,6 +81,29 @@ Route::prefix('qr/{branch}')->whereUuid('branch')->middleware('throttle:120,1')-
     Route::post('broadcasting/auth', [CustomerQrOrderController::class, 'authorizeChannel'])->name('qr.broadcasting.auth');
 });
 
+/**
+ * Phase 19.6A — the public customer-facing screen: no login; the device is identified only by its own HttpOnly cookie
+ * and reads only the projection of the Branch POS station it is paired with.
+ */
+Route::prefix('customer-screen')->name('customer-screen.')->middleware('throttle:customer-screen')->group(function (): void {
+    Route::get('/', [CustomerScreenController::class, 'show'])->name('show');
+    Route::get('state', [CustomerScreenController::class, 'state'])->name('state');
+    Route::post('pairing-code', [CustomerScreenController::class, 'pairingCode'])->middleware('throttle:customer-screen-pairing-code')->name('pairing-code');
+    Route::get('menu', [CustomerScreenController::class, 'menu'])->name('menu');
+    Route::get('media', [CustomerScreenController::class, 'media'])->name('media');
+    Route::post('reset', [CustomerScreenController::class, 'reset'])->middleware('throttle:customer-screen-pairing-code')->name('reset');
+    Route::post('broadcasting/auth', [CustomerScreenController::class, 'authorizeChannel'])->name('broadcasting.auth');
+});
+
+/** Phase 19.6B — the public Takeout pickup page: the unguessable token is the only capability (read-only + opt-in). */
+Route::prefix('pickup/{token}')->where(['token' => '[A-Za-z0-9_-]{43}'])->name('pickup.')->middleware('throttle:pickup')->group(function (): void {
+    Route::get('/', [PickupController::class, 'show'])->name('show');
+    Route::get('status', [PickupController::class, 'status'])->name('status');
+    Route::post('subscription', [PickupController::class, 'subscribe'])->middleware('throttle:pickup-subscription')->name('subscription.store');
+    Route::delete('subscription', [PickupController::class, 'unsubscribe'])->middleware('throttle:pickup-subscription')->name('subscription.destroy');
+    Route::post('broadcasting/auth', [PickupController::class, 'authorizeChannel'])->name('broadcasting.auth');
+});
+
 Route::middleware(['auth'])->group(function () {
     Route::get('workspace', WorkspaceController::class)->name('workspace');
     Route::redirect('dashboard', '/workspace')->name('dashboard');
@@ -83,6 +111,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('branches/select', BranchSelectionController::class)->name('branches.select');
     Route::put('branches/{branch}/qr-settings', [BranchQrSettingsController::class, 'update'])->name('branches.qr-settings.update');
     Route::get('branches/{branch}/qr-history', [BranchQrSettingsController::class, 'history'])->name('branches.qr-history');
+    /** Settings › Customer Screen advertisements: Branch-local settings (BranchPolicy::update), checked in the controller. */
+    Route::prefix('branches/{branch}/customer-screen-media')->whereUuid('branch')->name('branches.customer-screen-media.')->group(function (): void {
+        Route::get('/', [CustomerScreenMediaController::class, 'index'])->name('index');
+        Route::post('/', [CustomerScreenMediaController::class, 'store'])->middleware('throttle:customer-screen-media')->name('store');
+        Route::put('order', [CustomerScreenMediaController::class, 'reorder'])->middleware('throttle:customer-screen-media')->name('reorder');
+        Route::put('{media}', [CustomerScreenMediaController::class, 'update'])->whereUuid('media')->middleware('throttle:customer-screen-media')->name('update');
+        Route::delete('{media}', [CustomerScreenMediaController::class, 'destroy'])->whereUuid('media')->middleware('throttle:customer-screen-media')->name('destroy');
+    });
     Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
     Route::middleware('can:inventory.manage')->group(function () {
         Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
@@ -244,6 +280,17 @@ Route::middleware(['auth'])->group(function () {
         Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->name('pos.payments.invoice.store');
         Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
         Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->name('pos.payments.invoice.destroy');
+
+        /** Phase 19.6: this POS station's customer screen (X-POS-Station header) and Buzz Customer on Ready orders. */
+        Route::prefix('pos/customer-screen')->name('pos.customer-screen.')->middleware('throttle:pos-customer-screen')->group(function (): void {
+            Route::get('/', [PosCustomerScreenController::class, 'status'])->name('status');
+            Route::post('pairing', [PosCustomerScreenController::class, 'pair'])->middleware('throttle:pos-customer-screen-pairing')->name('pair');
+            Route::delete('pairing', [PosCustomerScreenController::class, 'unpair'])->middleware('throttle:pos-customer-screen-pairing')->name('unpair');
+            Route::put('mode', [PosCustomerScreenController::class, 'mode'])->name('mode');
+            Route::post('cart', [PosCustomerScreenController::class, 'cart'])->name('cart');
+            Route::post('takeover', [PosCustomerScreenController::class, 'takeover'])->name('takeover');
+        });
+        Route::post('pos/orders/{order}/buzz', PickupBuzzController::class)->whereUuid('order')->middleware('throttle:pickup-buzz')->name('pos.orders.buzz');
     });
 
     Route::patch('orders/{order}/kitchen-status', KitchenStatusController::class)

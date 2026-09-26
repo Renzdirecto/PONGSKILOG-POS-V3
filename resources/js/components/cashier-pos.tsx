@@ -51,6 +51,7 @@ import {
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { useUpdateBlocker } from '@/hooks/use-pwa';
+import { useCustomerScreenCart } from '@/hooks/use-customer-screen-cart';
 import { isOfflineWriteBlock } from '@/lib/pwa-mutation-guard';
 import { serverWritesAllowed } from '@/lib/pwa-runtime';
 import { savedItemName } from '@/lib/pos-item-name';
@@ -193,6 +194,12 @@ export function CashierPos({
         branch_table_id: loadedQr?.branch_table_id ?? '',
     });
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
+    /** The paired customer screen mirrors this cart and shows each committed order (best effort, never blocking). */
+    const announceOrder = useCustomerScreenCart({
+        lines,
+        orderType,
+        savedOrderId: saved?.id ?? null,
+    });
     const orderNumber =
         saved?.order_number ??
         saved?.qr_number ??
@@ -335,6 +342,7 @@ export function CashierPos({
             if (result.receipt?.payment_status !== 'paid')
                 throw new Error('Unconfirmed payment');
             setReceipt(result.receipt);
+            announceOrder(result.receipt.id);
             setAttempt(null);
             setLines([]);
             setSaved(null);
@@ -443,6 +451,7 @@ export function CashierPos({
                 throw new Error('Unconfirmed Pay Later result');
             }
             setPayLaterSuccess(result.order);
+            announceOrder(result.order.id);
             setPayLaterAttempt(null);
             setLines([]);
             setSaved(null);

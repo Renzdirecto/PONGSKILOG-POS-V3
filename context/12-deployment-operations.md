@@ -498,7 +498,7 @@ Before production launch:
 
 ## 26. POST-PHASE-16 PLANNED PWA SLICE (accepted plan, NOT implemented)
 
-**Status: PWA Phase 1 IMPLEMENTED (Phase 19.5, 2026-09-26) — USER MANUAL QA: PASSED · FINAL AUTOMATED QA: PASSED · READY FOR PR** (no PR opened, not merged, not deployed; deployment notes in §30). Accepted by the user on 2026-09-24 during Phase 16 Final QA. Phase 1 ships the manifest, service worker, install flow, connectivity state, offline write guard, Web Push and safe updates below; it has **no offline cache of business data and no offline writes**. Offline-first POS stays **PWA Phase 2 — future only**. The plan text below is kept as accepted; where it mentions offline snapshots of the catalog or reports, Phase 1 deliberately keeps only the currently rendered screen (no device cache of business data).
+**Status: PWA Phase 1 COMPLETE / MERGED (Phase 19.5, 2026-09-26)** — USER MANUAL QA: PASSED · FINAL AUTOMATED QA: PASSED · PR #25 MERGED to `dev` at `4e3ab28`; not deployed (deployment notes in §30). Accepted by the user on 2026-09-24 during Phase 16 Final QA. Phase 1 ships the manifest, service worker, install flow, connectivity state, offline write guard, Web Push and safe updates below; it has **no offline cache of business data and no offline writes**. Offline-first POS stays **PWA Phase 2 — future only, after Phase 19.6, Phase 20, and Deployment**. The plan text below is kept as accepted; where it mentions offline snapshots of the catalog or reports, Phase 1 deliberately keeps only the currently rendered screen (no device cache of business data).
 
 ### Mental model
 

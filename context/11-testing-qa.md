@@ -674,3 +674,28 @@ Use the HTTPS workflow in `12-deployment-operations.md` §30.1 for phones. The u
 - Complete Laravel suite: **2,134 passed / 15,223 assertions, 0 failed, 0 skipped**, 202 s, with `OPENSSL_CONF=C:\php\extras\ssl\openssl.cnf` set for this Windows process only (Linux CI needs nothing).
 - Focused: 454 passed / 2,874 assertions (PWA, receipt, admin notifications, Kitchen, Pay Now / Pay Later / settlement, Access Control, Staff, Auth). PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed. Frontend 300/300 (built-worker contract executed against a fresh build). Lint 0/0, TypeScript (app + service worker), PHPStan 0, Pint, production build, SQLite migration fresh / rollback / reapply (disposable file), `git diff --check`.
 - Built artifacts: `public/build/sw.js` routes only precache + navigation; 144 precache entries — `/build/assets/*.{js,css,woff2}`, 6 brand images and `/offline.html`; no runtime cache, Background Sync or `clients.claim`; no VAPID private key, Reverb secret, APP_KEY, DB password, tunnel host, LAN IP or local path in the build (built with neutral `VITE_REVERB_*`).
+
+## Phase 19.6 — Customer Experience Expansion QA (planned)
+
+Run Phase 19.6A acceptance before any Phase 19.6B implementation.
+
+Phase 19.6A must test:
+
+- Pair/unpair/re-pair of one customer screen to one Branch/POS station, cashier account changes, stale pairing, forged station/Branch identifiers, and strict cart isolation between simultaneous stations
+- Atomic `MENU` / `CUSTOMER DISPLAY` mutual exclusion, both-off advertisement fallback, reconnect recovery, and concurrent control changes
+- Browse-only Menu parity for categories/products/prices/availability, with every cart/order/payment mutation absent from the UI and rejected server-side
+- Live Cart customer-safe projection, rapid edits/removals, station disconnect, successful commitment takeover, Dine In 3-second and Take Out 5-second return behavior, and same-type server queue-position correctness
+- Branch advertisement authorization and isolation; image/video signature/type, size/duration, malformed/spoofed media, sequence, active state, optimization failure, missing media, and POS non-blocking behavior
+- Realtime burst coalescing, reconnect refetch, event-payload privacy, and no polling
+
+Phase 19.6B must test:
+
+- Pickup token creation exactly once for every successfully committed Take Out order, including an order whose QR is never scanned; no token/QR for Dine In and no token on rolled-back commitment
+- Unguessable/cross-order/cross-Branch/expired-or-ineligible token handling and the public projection's exact privacy allowlist
+- Preparing/Ready/Done plus same-type Take Out queue-position correctness across forward transition, one-step rollback, Done, void/other terminal behavior, and reconnect
+- Explicit notification opt-in only: scan without opt-in, denied permission, unsupported browser, invalid/expired subscription, re-subscription, and no cross-order subscription reuse
+- Buzz visibility only on the existing cashier Ready surface for eligible Take Out; absence in every other state/case
+- One push per accepted Buzz, supported vibration behavior, 5-second server cooldown, maximum attempts, replay/idempotency, concurrent clicks/workers, retry/failure cleanup, and no Kitchen/order-state mutation on delivery failure
+- Event-driven behavior with no polling and no sensitive token/subscription/order data in logs, push payloads, or realtime events
+
+Phase 20 repeats the full RBAC, Branch/station isolation, concurrency, realtime reconnect, responsive/device, staging, backup/restore, health-check, CI, and production-readiness gates with Phase 19.6 included.

@@ -512,7 +512,60 @@ Exit criteria:
 
 ---
 
-# Phase 20 — Final Hardening
+# Phase 19.5 — PWA Phase 1
+
+Status: **COMPLETE / MERGED** in PR #25 on 2026-09-26.
+
+Delivered an installable, internet-first PWA with safe connectivity state, Web Push, update handling, and no offline transactional writes. Offline-first POS remains a future post-deployment phase.
+
+---
+
+# Phase 19.6 — Customer Experience Expansion
+
+Implement sequentially. Phase 19.6A must be complete before Phase 19.6B begins.
+
+## Phase 19.6A — Customer-Facing Screen V2
+
+Build:
+
+- A dedicated customer-facing screen paired to one POS station/device, never to a cashier account
+- Branch-managed image/video advertising with active state, sequence, per-item duration, and safe validation/optimization
+- Store Operations controls for mutually exclusive `MENU` and `CUSTOMER DISPLAY` modes; zero or one may be active, and both off means advertising mode
+- A browse-only Menu mode using the Branch catalog, categories, prices, and current availability, with no add/edit/pay controls
+- A paired-POS live-cart composition: compact realtime cart above the still-usable Menu at approximately 25–30% / 70–75%
+- A successful-order takeover showing the large green order number, order type, server-derived same-type queue position, and a Take Out pickup QR; 3 seconds for Dine In and 5 seconds for Take Out, then return to the prior selected mode or default advertising
+
+Exit criteria:
+
+- Pairing and all display/control state are Branch-scoped and server-authoritative
+- Exactly zero or one operating mode is active and advertising is the deterministic fallback
+- Customer projections contain no payment, customer, staff, internal, or mutation capability
+- Realtime disconnect/reconnect returns to authoritative state without polling or exposing another POS station's cart
+- Authorized Owner/Super Admin management can safely upload, order, time, activate, and deactivate Branch media
+
+## Phase 19.6B — Takeout Pickup QR + Buzz
+
+Build only after Phase 19.6A:
+
+- A secure random pickup token for every successfully committed Take Out order, whether or not the QR is scanned
+- A public, read-only pickup page showing only order number, Preparing/Ready/Done, and server-derived Take Out queue position
+- Customer-controlled notification opt-in; scanning alone never creates a buzz-capable subscription
+- A `Buzz` action on the existing authoritative cashier Ready notification/modal only when the Ready Take Out order has a valid opted-in subscription
+- One event-driven push/vibration where supported, with a 5-second cooldown and server-enforced repeat protection plus a maximum-attempt limit per Ready order
+
+Exit criteria:
+
+- Dine In never receives a pickup token, pickup QR, public pickup page, or Buzz
+- Public lookup is unguessable, Branch/order scoped, read-only, and exposes no payment, customer, staff, or internal data
+- Ready remains owned by the existing Kitchen transition and existing cashier/POS Ready flow
+- Buzz is absent when the QR was never scanned, notifications were not enabled, or the subscription is no longer valid
+- No polling is introduced; realtime events are invalidations and the server remains authoritative
+
+---
+
+# Phase 20 — Final Production Hardening
+
+Phase 20 remains the final feature-frozen production hardening pass. It must audit Phase 19.6 together with all earlier features; no new product scope enters during this phase.
 
 Perform:
 

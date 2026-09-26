@@ -1066,10 +1066,11 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 ## Remaining Roadmap Order
 
 1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
-2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **IMPLEMENTATION COMPLETE · USER MANUAL QA: PASSED · FINAL AUTOMATED QA: PASSED · READY FOR PR** (branch `feature/pwa-phase-1`; PR not opened, not merged, not deployed)
-3. Phase 20 — Final Production Hardening: **NOT STARTED**
-4. Deployment
-5. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5)
+2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **COMPLETE / MERGED** (PR #25, `4e3ab28`; not deployed)
+3. Phase 19.6 — Customer Experience Expansion: **FROZEN / NOT STARTED** (`19.6A` then `19.6B`)
+4. Phase 20 — Final Production Hardening: **NOT STARTED**
+5. Deployment
+6. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5 or Phase 19.6)
 
 Phase 17 Stock Transfers remains **DEFERRED**.
 
@@ -1077,7 +1078,7 @@ Phase 17 Stock Transfers remains **DEFERRED**.
 
 ## Phase 19.5 — PWA Phase 1 (Installable Web App)
 
-**Status: PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR** (2026-09-26, branch `feature/pwa-phase-1`). PR not opened, not merged, not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
+**Status: PHASE 19.5 PWA PHASE 1 COMPLETE / MERGED.** Implementation: COMPLETE. USER MANUAL QA: PASSED. FINAL AUTOMATED QA: PASSED. PR #25 (`feature/pwa-phase-1`) MERGED to `dev` on 2026-09-26; merge commit / Phase 19.6 baseline `4e3ab28`. Not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
 
 **Goal:** Make PONGSKILOG POS V3 installable and app-like while remaining **INTERNET-FIRST** for actual critical operations.
 
@@ -1150,11 +1151,75 @@ Complete audit of `origin/dev...feature/pwa-phase-1` (starting HEAD `aa278de`, 3
 - **Test fixes:** `PwaShellTest` no longer depends on a local `.env` `TRUSTED_PROXIES`; the public receipt page is now asserted outside the installable app (`ReceiptShareTest`), beside the kiosk page.
 - **Audited unchanged:** manifest/icons, service worker (precache only; navigations NetworkOnly + static offline page; no runtime cache, Background Sync, queue or `clients.claim`; public QR / kiosk / receipt navigations are never cached), write guard (all writes go through the wrapped Inertia client; no raw fetch/axios writes), connectivity/revalidation, Reverb (no second client), install UX, update flow and POS blockers, local storage (last route + window flag only), recipient rules, after-commit dispatch, retry/cleanup, notification-tap allowlist, logout / reset / deactivation cleanup, VAPID handling, dependency resolution (Babel 8.0.0-rc.4 → 7.29.x stable, peer range `^7.29 || ^8.0.0-rc.1`; lockfile valid, composer additions only).
 - **Verification:** complete Laravel suite **2,134 passed / 15,223 assertions, 0 failed, 0 skipped** (`OPENSSL_CONF` set, 202 s); focused PWA/business Pest 454 passed; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); frontend 300/300; lint 0/0; TypeScript app + service worker; PHPStan 0; Pint; production build (144 precache entries) and built-artifact/secret scan clean; SQLite migration fresh / rollback / reapply; `git diff --check` clean. Normal local development DB was not reset.
-- **Status: PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR.** PR not opened, not merged, not deployed. Phase 17 Stock Transfers: DEFERRED. Phase 20: NOT STARTED. PWA Phase 2 — Offline-First POS: FUTURE UPDATE ONLY / NOT PART OF PHASE 19.5.
+- **Status (at Final QA): PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR.** Superseded: PR #25 was subsequently opened and MERGED to `dev` (merge commit `4e3ab28`) — Phase 19.5 is COMPLETE. Phase 17 Stock Transfers: DEFERRED. Phase 19.6: FROZEN / NOT STARTED. Phase 20: NOT STARTED. PWA Phase 2 — Offline-First POS: FUTURE UPDATE ONLY / NOT PART OF Phase 19.5 or Phase 19.6.
 
 ---
 
-## Phase 20 — Final Hardening
+## Phase 19.6 — Customer Experience Expansion
+
+**Status: FROZEN / NOT STARTED.** Scope frozen 2026-09-27 on `feature/customer-experience-expansion` from `dev` baseline `4e3ab28`. This phase is implemented in two sequential tasks: **19.6A must complete before 19.6B begins.** No application code, migration, dependency, environment, or deployment behavior is changed by this planning commit.
+
+### Phase 19.6A — Customer-Facing Screen V2
+
+Customer screen and pairing:
+
+- [ ] Add a dedicated customer-facing screen paired to exactly one POS station/device, not to a cashier account. Pairing is Branch-scoped and survives cashier sign-in changes without allowing cross-Branch or cross-station cart visibility.
+- [ ] Preserve server authority: pairing, selected mode, displayed cart, order takeover, availability, and queue position are never trusted from client-only state.
+
+Default advertising and management:
+
+- [ ] Default to an advertising slideshow when neither operating mode is selected.
+- [ ] Allow an authorized Owner, Super Admin, or role granted the applicable management permission to manage only the selected Branch's advertisement media.
+- [ ] Support images and videos with active/inactive state, explicit sequence, and per-item duration.
+- [ ] Apply safe file/content validation, bounded media size/duration, storage isolation, and non-blocking optimization suitable for the displayed media type.
+
+Store Operations controls and modes:
+
+- [ ] Add two mutually exclusive Store Operations controls: `MENU` and `CUSTOMER DISPLAY`.
+- [ ] Permit zero or one active control. `MENU` on means Menu mode; `CUSTOMER DISPLAY` on means the order-status board; both off means the default advertisement slideshow. Enabling one disables the other atomically.
+- [ ] `MENU` is browse-only and shows the Branch's categories, products, prices, and authoritative current availability. It never exposes add-to-cart, quantity, modifier, edit, order, payment, or other mutation controls.
+- [ ] `CUSTOMER DISPLAY` preserves the safe Preparing/Ready board projection and exposes no financial or private data.
+
+Paired live cart and success takeover:
+
+- [ ] While the paired Cashier POS has an active cart, show a compact realtime **Live Cart** above a still-usable Menu, approximately 25–30% cart and 70–75% Menu.
+- [ ] Only the paired POS station's current cart may appear. The projection contains customer-safe line names, quantities, selected options, and prices only; no tender, payment, discount authority, customer identity, staff identity, internal ids, or mutation capability.
+- [ ] After a successful commitment, temporarily replace the screen with a large green order number, order type, and server-derived queue position among active orders of the same type.
+- [ ] Dine In takeover lasts 3 seconds. Take Out takeover lasts 5 seconds and also shows the Phase 19.6B pickup QR when available.
+- [ ] After the takeover, return to the previously selected operating mode; if neither mode is active, return to advertising.
+- [ ] Realtime changes use compact invalidations followed by authoritative refetch, coalesce bursts, recover after reconnect, and add no polling.
+
+### Phase 19.6B — Takeout Pickup QR + Buzz
+
+Take Out token and public page:
+
+- [ ] Generate a secure, high-entropy pickup token after every successful Take Out commitment, even if the QR is never scanned. Dine In never receives one.
+- [ ] Show the pickup QR during the Take Out success takeover.
+- [ ] Scanning opens a public, no-login, read-only page limited to the order number, Preparing/Ready/Done state, and server-derived position in the active Take Out queue.
+- [ ] The public projection contains no payment/tender data, customer data, staff data, internal identifiers, notes, item details, or edit/cancel/pay action.
+
+Notification opt-in and Buzz:
+
+- [ ] The customer may explicitly enable notifications on the pickup page. A scan by itself never subscribes the device and never makes the order buzz-capable.
+- [ ] Associate a valid notification subscription only with the matching pickup token/order and revalidate it at send time. Expired or rejected subscriptions are not buzz-capable.
+- [ ] Kitchen continues to mark the order Ready through the existing authoritative Kitchen transition; the existing cashier/POS Ready notification and modal remain the serving authority.
+- [ ] Show `Buzz` in that Ready notification/modal only for a Ready Take Out order with a currently valid, opted-in subscription. It is absent for Dine In, never-scanned QR, declined notifications, invalid subscription, or any non-Ready state.
+- [ ] Buzz sends one event-driven Web Push notification and vibration where the platform supports it. Do not poll.
+- [ ] Enforce a 5-second cooldown server-side plus idempotency/repeat protection and a bounded maximum attempt count per Ready order; concurrent/replayed requests cannot bypass the limits.
+- [ ] Buzz failure never changes Kitchen/order state and never falsely reports delivery.
+
+### Phase 19.6 release boundary
+
+- [ ] Phase 19.6A accepted before Phase 19.6B implementation starts
+- [ ] Automated authorization, Branch isolation, station isolation, projection privacy, upload validation, queue-position, token, subscription, cooldown, repeat/concurrency, realtime, reconnect, and failure-path coverage
+- [ ] Manual customer-screen and phone QA at 360/390/430 px, tablet, desktop/display, and installed PWA where applicable
+- [ ] No offline transactional behavior; PWA Phase 2 remains future-only after Deployment
+
+---
+
+## Phase 20 — Final Production Hardening
+
+**Status: NOT STARTED.** Phase 20 remains the final feature-frozen production hardening pass and must audit Phase 19.6 together with every earlier feature. No new product feature scope is admitted during Phase 20.
 
 - [ ] Full RBAC review
 - [ ] Full branch-isolation test pass
@@ -1179,7 +1244,7 @@ Complete audit of `origin/dev...feature/pwa-phase-1` (starting HEAD `aa278de`, 3
 
 ## PWA Phase 2 — Offline-First POS (FUTURE UPDATE ONLY)
 
-**Status: FUTURE — NOT PLANNED FOR IMPLEMENTATION.** Not part of Phase 19.5; revisit after Phase 20 and Deployment.
+**Status: FUTURE — NOT PLANNED FOR IMPLEMENTATION.** Not part of Phase 19.5 or Phase 19.6; revisit only after Phase 20 and Deployment.
 
 **Goal:** Basic store operations continue on a trusted registered device when internet is unavailable, then safely sync when connectivity returns.
 

@@ -562,3 +562,16 @@ Phase 1 = a real installable app experience; the internet is still required for 
 - **Updates:** a new worker waits; Update now (only from the runtime) activates it and reloads that window once. `useUpdateBlocker` (POS order in progress) and writes in flight hold both the service-worker update and Inertia's asset-version reload.
 - **Web Push:** `minishlink/web-push` (VAPID + RFC 8291 encryption) behind `PushGateway`. `PushNotifications::queue()` → queued `SendPushNotification` → `PushRecipients` (current authority at send time) → `WebPushSender` (cleanup, bounded retry). Triggers: `KitchenTicketCreated` (New Kitchen Order), `KitchenStatusChanged` to Ready except Done → Ready (Order Ready), `NotificationSent` for `AdminAlert` (Important Alert). `push_subscriptions` (encrypted material, unique `endpoint_hash`, device cookie hash) managed by `pwa.push-subscription.{show,store,destroy}`.
 - **Unchanged authorities:** PostgreSQL for all state, Reverb/Echo for live invalidation (the PWA adds no realtime client), the server for every authorization decision.
+
+## 22. Customer Experience Expansion (Phase 19.6, frozen 2026-09-27)
+
+Phase 19.6 is planned in two sequential slices: Customer-Facing Screen V2 first, then Takeout Pickup QR + Buzz. This section defines boundaries, not an implemented schema or API.
+
+- **Display identity:** a customer-facing screen is paired to one Branch-scoped POS station/device installation, never to the cashier account using that station. Authentication and permission remain staff concerns; pairing determines which cart may be projected.
+- **Display state:** the server owns the Branch's selected display mode. `MENU` and `CUSTOMER DISPLAY` are mutually exclusive and may both be off; the deterministic fallback is Branch advertising. Menu is catalog-only and cannot create or mutate an order.
+- **Safe projections:** the paired live-cart projection is station-specific and customer-safe. The order-status board and public pickup page remain separate projections. None exposes tender/payment, customer/staff identity, internal identifiers, or mutation controls.
+- **Media:** advertisement images/videos are Branch-owned managed assets with explicit active state, sequence, and duration. Validation, storage isolation, and optimization are server-controlled and may not block POS operations.
+- **Order takeover:** a committed order triggers a temporary display projection: Dine In for 3 seconds; Take Out for 5 seconds. Both include order number/type and a server-derived same-type queue position; Take Out also includes its pickup QR.
+- **Pickup tracking:** every committed Take Out order receives an unguessable pickup token even if never scanned. The no-login page reads only order number, Preparing/Ready/Done, and Take Out queue position. Dine In has no pickup token or page.
+- **Buzz:** a QR scan does not subscribe. Only explicit customer notification opt-in creates a potentially buzz-capable subscription bound to that pickup order. Kitchen Ready and the existing cashier Ready surface remain authoritative; Buzz is conditional, rate/replay protected, bounded per Ready order, and has no effect on Kitchen/order state.
+- **Realtime:** compact after-commit invalidations trigger authoritative refetch and coalesce bursts. Reconnect refetches server truth. No polling or second realtime client is introduced.

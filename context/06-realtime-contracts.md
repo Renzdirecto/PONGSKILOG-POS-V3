@@ -802,3 +802,16 @@ No new channel, event or payload field; Reverb/Echo remain the only live-update 
 - **Connectivity:** one app state (`lib/pwa-connectivity.ts`). Browser `offline` → Offline; `online` (or a request that got no response) → Reconnecting → `/up` answers → one authoritative `router.reload()` (session, Branch context and page props; 401/419 → login, 403/404 → workspace via `handleRevalidationException`) → Online. Bounded backoff (0, 2, 5, 10, 20, then 30 s), paused while the page is hidden, no timer at all once Online. "Last synced" = the last server response, for messaging only.
 - **Realtime hooks are unchanged:** they keep their own Echo-reconnect and event refetches (pusher-js reconnects on `online` by itself). No duplicate subscriptions, no second client, no new polling.
 - **Web Push complements, never replaces, realtime:** New Kitchen Order (`kitchen.ticket_created` event), Order Ready (`kitchen.status_changed` to `ready`, not from `done`) and Important Alert (each stored `AdminAlert`) are pushed to devices of the accounts allowed at delivery time — the `branch.{id}.kitchen` / `branch.{id}.pos` channel rule (`BranchSignalAccess`) and `AdminNotifier::receivesAlerts()`. Payload: `v`, `type`, `tag` (`kitchen-new-order:{order}`, `order-ready:{order}`, `admin-alert:{notification}`), allowlisted path, Branch name. A focused PONGSKILOG window already handling the event gets a silent notification (its own realtime view and sounds remain the cue).
+
+## Phase 19.6 — Customer experience realtime contract (planned)
+
+Phase 19.6 extends the existing after-commit invalidation model; exact event/class names are chosen during implementation without changing these frozen boundaries.
+
+- Branch display-mode and advertisement changes invalidate only authorized screens for that Branch.
+- Live-cart invalidations are scoped to the paired POS station/device. A Branch-wide customer-display channel must never carry another station's cart contents.
+- Event payloads contain identifiers/version/time only; the customer screen refetches its safe authoritative projection. Cart lines, prices, pickup tokens, subscriptions, and private/order internals are never broadcast in invalidation payloads.
+- Successful order commitment invalidates the paired display's temporary takeover. Its order number, type, same-type queue position, and Take Out QR come from the server projection.
+- Public pickup tracking uses only a narrow high-entropy order token/channel, never broad Branch POS/Kitchen/customer-display channels. The public page refetches only its restricted status projection.
+- Kitchen Ready remains the existing authoritative transition. Buzz is an explicit cashier action after Ready, delivered by queued Web Push only when the matching Take Out subscription remains valid at send time.
+- Buzz adds no polling. A 5-second server cooldown, replay/idempotency guard, and bounded attempts per Ready order apply even under concurrent requests; send failure never mutates order/Kitchen state.
+- Every customer screen and pickup page performs an authoritative refetch after reconnect before showing current state.

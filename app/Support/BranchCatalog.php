@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\ModifierGroup;
 use App\Models\ModifierOption;
 use App\Models\Product;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -28,8 +29,10 @@ class BranchCatalog
      *     categories: list<array{id: string, name: string, icon_key: string}>,
      *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, availability_reason: string|null, stock_status: string, tracks_inventory: bool, on_hand: int|null, recipe: CatalogAvailability|null, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
      * }
+     *
+     * `$imageExpiresAt` lengthens the signed image URLs for long-lived screens (the customer Menu); default 5 minutes.
      */
-    public function browse(Branch $branch, bool $customization = false): array
+    public function browse(Branch $branch, bool $customization = false, ?DateTimeInterface $imageExpiresAt = null): array
     {
         $member = fn ($query) => $query->where('branch_id', $branch->getKey());
         $categories = Category::query()
@@ -86,7 +89,7 @@ class BranchCatalog
                     'tracks_inventory' => $state['tracked'],
                     'on_hand' => $state['tracked'] ? $state['on_hand'] : null,
                     'recipe' => $recipe,
-                    'image_url' => $this->images->safeCardUrl($product),
+                    'image_url' => $this->images->safeCardUrl($product, $imageExpiresAt),
                     'has_modifiers' => (bool) $product->getAttribute('has_modifiers'),
                     ...($customization ? ['modifier_groups' => $this->modifiers($product)] : []),
                 ];

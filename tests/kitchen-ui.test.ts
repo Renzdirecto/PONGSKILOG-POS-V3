@@ -114,10 +114,11 @@ test('kitchen item labels keep size in the name and compact standard groups', ()
     );
 });
 
-test('POS refreshes both ready orders and kitchen status for ticket lifecycle events', () => {
+test('POS refreshes both ready orders and kitchen status for ticket lifecycle and Buzz state events', () => {
     assert.deepEqual(POS_READY_REALTIME_EVENTS, [
         '.kitchen.ticket_created',
         '.kitchen.status_changed',
+        '.pickup.notify_changed',
     ]);
 });
 

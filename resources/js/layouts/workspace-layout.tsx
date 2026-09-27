@@ -11,6 +11,7 @@ import {
     ShieldCheck,
     UtensilsCrossed,
 } from 'lucide-react';
+import { CustomerScreenControl } from '@/components/customer-screen-control';
 import { PosProfileControls } from '@/components/pos-profile-controls';
 import { PosReadyNotifications } from '@/components/pos-ready-notifications';
 import { PwaStatus } from '@/components/pwa-status';
@@ -369,6 +370,13 @@ export default function WorkspaceLayout({
                                 compact
                             />
                         )}
+                        {/* This POS station's customer screen: the same control on every Store Operations page. */}
+                        {auth.permissions.includes('pos.access') &&
+                            branchContext.current && (
+                                <CustomerScreenControl
+                                    branchId={branchContext.current.id}
+                                />
+                            )}
                         {isPos && branchContext.current && (
                             <PosReadyNotifications
                                 branchId={branchContext.current.id}

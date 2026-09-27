@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\PickupPushSubscription;
 use App\Models\PushSubscription;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
@@ -19,8 +20,11 @@ use RuntimeException;
  * whole instead of looking like a problem with individual browser subscriptions. The library's environment checks
  * (for example a missing optional math extension) go to the application log instead of being raised as errors.
  */
-class WebPushGateway implements PushGateway
+class WebPushGateway implements PickupPushGateway, PushGateway
 {
+    /** Seconds a push service keeps an undelivered pickup Buzz: after a few minutes the customer is at the counter. */
+    public const PICKUP_TTL_SECONDS = 300;
+
     public const TIMEOUT_SECONDS = 10;
 
     public const CONNECT_TIMEOUT_SECONDS = 5;
@@ -51,6 +55,17 @@ class WebPushGateway implements PushGateway
                 'urgency' => $message->type->urgency(),
                 'topic' => $message->topic(),
             ],
+        );
+
+        return $report->getResponse()?->getStatusCode();
+    }
+
+    public function deliverPickup(PickupPushSubscription $subscription, string $payload, string $topic): ?int
+    {
+        $report = $this->webPush->sendOneNotification(
+            new Subscription($subscription->endpoint, $subscription->public_key, $subscription->auth_token, $subscription->content_encoding),
+            $payload,
+            ['TTL' => self::PICKUP_TTL_SECONDS, 'urgency' => 'high', 'topic' => $topic],
         );
 
         return $report->getResponse()?->getStatusCode();

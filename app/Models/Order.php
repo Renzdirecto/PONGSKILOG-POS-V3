@@ -152,4 +152,10 @@ class Order extends Model
     {
         return $this->hasOne(OrderVoid::class);
     }
+
+    /** @return HasOne<OrderPickupToken, $this> */
+    public function pickupToken(): HasOne
+    {
+        return $this->hasOne(OrderPickupToken::class);
+    }
 }

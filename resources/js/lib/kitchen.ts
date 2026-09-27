@@ -10,6 +10,8 @@ export const KITCHEN_REALTIME_EVENTS = [
 export const POS_READY_REALTIME_EVENTS = [
     '.kitchen.ticket_created',
     '.kitchen.status_changed',
+    /** A Take Out customer turned pickup notifications on/off, or a cashier buzzed (Phase 19.6B). */
+    '.pickup.notify_changed',
 ] as const;
 
 export const DISPLAY_REALTIME_EVENTS = ['.display.orders_changed'] as const;

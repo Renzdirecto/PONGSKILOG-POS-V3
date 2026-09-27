@@ -802,3 +802,36 @@ No new channel, event or payload field; Reverb/Echo remain the only live-update 
 - **Connectivity:** one app state (`lib/pwa-connectivity.ts`). Browser `offline` → Offline; `online` (or a request that got no response) → Reconnecting → `/up` answers → one authoritative `router.reload()` (session, Branch context and page props; 401/419 → login, 403/404 → workspace via `handleRevalidationException`) → Online. Bounded backoff (0, 2, 5, 10, 20, then 30 s), paused while the page is hidden, no timer at all once Online. "Last synced" = the last server response, for messaging only.
 - **Realtime hooks are unchanged:** they keep their own Echo-reconnect and event refetches (pusher-js reconnects on `online` by itself). No duplicate subscriptions, no second client, no new polling.
 - **Web Push complements, never replaces, realtime:** New Kitchen Order (`kitchen.ticket_created` event), Order Ready (`kitchen.status_changed` to `ready`, not from `done`) and Important Alert (each stored `AdminAlert`) are pushed to devices of the accounts allowed at delivery time — the `branch.{id}.kitchen` / `branch.{id}.pos` channel rule (`BranchSignalAccess`) and `AdminNotifier::receivesAlerts()`. Payload: `v`, `type`, `tag` (`kitchen-new-order:{order}`, `order-ready:{order}`, `admin-alert:{notification}`), allowlisted path, Branch name. A focused PONGSKILOG window already handling the event gets a silent notification (its own realtime view and sounds remain the cue).
+
+## Phase 19.6 — Customer experience realtime contract (planned)
+
+Phase 19.6 extends the existing after-commit invalidation model; exact event/class names are chosen during implementation without changing these frozen boundaries.
+
+- Branch display-mode and advertisement changes invalidate only authorized screens for that Branch.
+- Live-cart invalidations are scoped to the paired POS station/device. A Branch-wide customer-display channel must never carry another station's cart contents.
+- Event payloads contain identifiers/version/time only; the customer screen refetches its safe authoritative projection. Cart lines, prices, pickup tokens, subscriptions, and private/order internals are never broadcast in invalidation payloads.
+- Successful order commitment invalidates the paired display's temporary takeover. Its order number, type, same-type queue position, and Take Out QR come from the server projection.
+- Public pickup tracking uses only a narrow high-entropy order token/channel, never broad Branch POS/Kitchen/customer-display channels. The public page refetches only its restricted status projection.
+- Kitchen Ready remains the existing authoritative transition. Buzz is an explicit cashier action after Ready, delivered by queued Web Push only when the matching Take Out subscription remains valid at send time.
+- Buzz adds no polling. A 5-second server cooldown, replay/idempotency guard, and bounded attempts per Ready order apply even under concurrent requests; send failure never mutates order/Kitchen state.
+- Every customer screen and pickup page performs an authoritative refetch after reconnect before showing current state.
+
+## Phase 19.6 — Customer experience realtime (implemented 2026-09-27)
+
+All events are `ShouldBroadcastNow + ShouldDispatchAfterCommit + ShouldRescue` invalidations; every client refetches its own authoritative projection. No polling: the only timers renew a pairing code or signed media/Menu links shortly before they expire.
+
+| Event (`broadcastAs`) | Channel(s) | Payload | Emitted by | Client reaction |
+| --- | --- | --- | --- | --- |
+| `customer_screen.changed` | `private-customer-screen.{channel_key}` (one per screen; several screens in one event for Branch-wide ad changes) | `event_id`, `event_type`, `reason` (`pairing|mode|cart|takeover|ads`), `occurred_at` | pairing/unpair/reset, mode toggle, cart send that changed the stored cart, takeover, ad create/update/delete/reorder, sign-out cart cleanup | screen refetches `customer-screen/state` (and the playlist for `ads`/`pairing`) |
+| `qr.catalog_changed` (existing) | `private-qr-catalog.{branch}` | unchanged | existing catalog/stock writers | a paired screen in Menu mode refetches `customer-screen/menu` (debounced) |
+| `display.orders_changed` (existing) | `private-branch.{branch}.customer-display` | unchanged | commit, Kitchen transition, void, Store close | a paired screen in Customer Display mode refetches its state (board) |
+| `pickup.changed` | `private-pickup.{channel_key}` for every unexpired token of the Branch whose order is waiting or finished in the last 30 min (one event, channels batched) | `event_id`, `event_type`, `occurred_at` | `BroadcastPickupStatusChanged` on `DisplayOrdersChanged` | pickup page refetches `pickup/{token}/status` |
+| `pickup.notify_changed` | `private-branch.{branch}.pos` | `event_id`, `event_type`, `branch_id`, `order_id`, `occurred_at` | customer opt-in/out, accepted Buzz, rejected endpoint cleanup | POS reloads `readyOrders` / `kitchenStatus` (added to `POS_READY_REALTIME_EVENTS`) |
+| `customer_screen.status_changed` (manual-QA fixes) | `private-branch.{branch}.pos` | `event_id`, `event_type`, `branch_id`, `occurred_at` | the screen's own MENU / CUSTOMER DISPLAY press, its staff reset, the Menu closing after an order confirmation | each POS header control refetches its own station's `pos/customer-screen` status (debounced; also on opening the menu) |
+
+Manual-QA fixes: the `takeover` reason is now sent by the Pay Now / Pay Later request itself (after commit), not by a separate POS call. The screen shows the confirmation keyed by its id (a refetch never restarts it; finished ids are never shown again) and starts the countdown only when the number / QR is on screen, reporting `POST customer-screen/takeover/{id}/shown` so the server's time left matches after a reload or reconnect.
+
+- **Channel authorization:** the customer screen authorizes through `POST customer-screen/broadcasting/auth` with its device cookie: its own screen channel always; the paired Branch's `qr-catalog` and `customer-display` channels only while paired. The pickup page authorizes through `POST pickup/{token}/broadcasting/auth`: only its own `pickup.{channel_key}`. Both use their own public Reverb client (`lib/public-echo.ts`); the staff app's single Echo client is unchanged.
+- **Reconnect:** both public pages refetch everything on a *re*connect (not the first connect), on `online` and when the page becomes visible again; the screen shows "Reconnecting…" / "Live updates unavailable" and marks the Live Cart "May not be up to date" while disconnected.
+- **Ordering:** the screen's state refetch runs one request at a time with one trailing refresh (`createRealtimeRefresh`), so a slow response never lands over a newer one; POS cart sends are serialized and sequence-numbered (server keeps the newest per page instance).
+- **Web Push:** the Buzz is a queued `SendPickupBuzz` to the customer's own `pickup_push_subscriptions` row through `PickupPushGateway`; payload `v`, `type: pickup.ready`, `tag: pickup-ready:{token id}`, `order_number`, `url: /pickup/{token}` (E2E-encrypted to that browser only). Shown by `/pickup-sw.js` (scope `/pickup/`) with vibration; staff pushes and `/sw.js` are unchanged. Kitchen Ready never buzzes a customer by itself.

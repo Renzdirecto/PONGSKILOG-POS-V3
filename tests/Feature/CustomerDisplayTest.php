@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Support\KitchenBoard;
 use Database\Seeders\RbacSeeder;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -23,10 +24,11 @@ function displayUser(Branch $branch, string $role = 'kitchen_staff'): User
     return $user;
 }
 
-function displayOrder(Branch $branch, StoreSession $session, KitchenStatus $status, string $number): Order
+function displayOrder(Branch $branch, StoreSession $session, KitchenStatus $status, string $number, string $type = 'take_out'): Order
 {
     $order = Order::factory()->for($branch)->for($session)->create([
         'order_number' => $number,
+        'order_type' => $type,
         'customer_label' => 'Private Customer',
         'commercial_status' => 'active',
         'payment_status' => 'paid',
@@ -54,8 +56,9 @@ test('customer display exposes order numbers only and maps kitchen into preparin
         ->where('branchName', 'Main Branch')
         ->where('display', [
             'is_open' => true,
-            'preparing' => ['#1043'],
-            'ready' => ['#1044'],
+            'preparing' => [['number' => '#1043', 'order_type' => 'take_out']],
+            'ready' => [['number' => '#1044', 'order_type' => 'take_out']],
+            'counts' => ['dine_in' => 0, 'take_out' => 1],
         ])
         ->missing('auth')
         ->missing('branchContext')
@@ -70,6 +73,37 @@ test('customer display exposes order numbers only and maps kitchen into preparin
         ->not->toContain('items');
 });
 
+test('the Dine In / Take Out counts are the board\'s own queue, matching the one queue authority', function () {
+    $branch = Branch::factory()->create();
+    $session = StoreSession::factory()->for($branch)->create();
+    $this->travel(-5)->minutes();
+    displayOrder($branch, $session, KitchenStatus::Kitchen, '2001', 'dine_in');
+    $this->travel(1)->minutes();
+    displayOrder($branch, $session, KitchenStatus::Preparing, '2002', 'take_out');
+    $this->travel(1)->minutes();
+    displayOrder($branch, $session, KitchenStatus::Preparing, '2003', 'dine_in');
+    displayOrder($branch, $session, KitchenStatus::Ready, '2004', 'dine_in');
+    displayOrder($branch, $session, KitchenStatus::Done, '2005', 'take_out');
+    $this->travelBack();
+    $last = displayOrder($branch, $session, KitchenStatus::Kitchen, '2006', 'take_out');
+
+    $board = app(KitchenBoard::class);
+    $display = $board->customerDisplay($branch);
+    $queue = $board->queue($last);
+
+    expect($display['counts'])->toBe(['dine_in' => 2, 'take_out' => 2])
+        ->and($display['preparing'])->toBe([
+            ['number' => '#2001', 'order_type' => 'dine_in'],
+            ['number' => '#2002', 'order_type' => 'take_out'],
+            ['number' => '#2003', 'order_type' => 'dine_in'],
+            ['number' => '#2006', 'order_type' => 'take_out'],
+        ])
+        ->and($display['ready'])->toBe([['number' => '#2004', 'order_type' => 'dine_in']])
+        ->and(array_sum($display['counts']))->toBe($queue['total'])
+        ->and(array_map(fn (array $row): string => '#'.$row['order_number'], $queue['rows']))
+        ->toBe(array_column($display['preparing'], 'number'));
+});
+
 test('customer display shows closed and requires its permission', function () {
     $branch = Branch::factory()->create();
 
@@ -78,6 +112,7 @@ test('customer display shows closed and requires its permission', function () {
             'is_open' => false,
             'preparing' => [],
             'ready' => [],
+            'counts' => ['dine_in' => 0, 'take_out' => 0],
         ]));
 
     $this->actingAs(displayUser($branch, 'cashier'))

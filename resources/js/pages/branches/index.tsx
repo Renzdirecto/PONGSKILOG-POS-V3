@@ -24,6 +24,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { CustomerScreenMediaPanel } from '@/components/customer-screen-media-panel';
+import { CustomerScreenSettingsPanel } from '@/components/customer-screen-settings-panel';
 import { SegmentedTabs } from '@/components/owner-analytics';
 import {
     OwnerPage,
@@ -68,6 +70,7 @@ const SETTINGS_TABS = [
     ['branches', 'Branch Management'],
     ['receipt', 'Receipt'],
     ['qr', 'Customer QR'],
+    ['screen', 'Customer Screen'],
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number][0];
@@ -107,6 +110,9 @@ export default function Branches({
     );
     const receiptBranch =
         branches.find((branch) => branch.id === receiptBranchId) ?? branches[0];
+    const [screenBranchId, setScreenBranchId] = useState(branches[0]?.id ?? '');
+    const screenBranch =
+        branches.find((branch) => branch.id === screenBranchId) ?? branches[0];
     const [qrTabBranchId, setQrTabBranchId] = useState(branches[0]?.id ?? '');
     const qrTabBranch =
         branches.find((branch) => branch.id === qrTabBranchId) ?? branches[0];
@@ -126,7 +132,7 @@ export default function Branches({
                 }
                 description={
                     branchMode
-                        ? `Contact details, receipt and customer QR settings of ${scope.branch?.name ?? 'this Branch'}.`
+                        ? `Contact details, receipt, customer QR and customer screen settings of ${scope.branch?.name ?? 'this Branch'}.`
                         : 'Maintain branch details, availability, customer QR entry points, and current store state.'
                 }
                 action={
@@ -150,7 +156,67 @@ export default function Branches({
                         size="lg"
                     />
                 </div>
-                {section === 'qr' ? (
+                {section === 'screen' ? (
+                    screenBranch ? (
+                        <section
+                            aria-label="Customer Screen"
+                            className={`${ownerPanelClass} flex max-w-[980px] flex-col gap-4 p-4 sm:p-[18px]`}
+                        >
+                            <div className="flex flex-wrap items-end justify-between gap-3">
+                                <div className="flex min-w-0 flex-col gap-0.5">
+                                    <h2 className="text-[15px] font-bold tracking-[-0.01em]">
+                                        Customer screen
+                                    </h2>
+                                    <p className="text-xs text-[#767676]">
+                                        Order confirmation, customer links and
+                                        the ads the Branch's customer screens
+                                        play by default.
+                                    </p>
+                                </div>
+                                <label className="flex w-full max-w-xs flex-col gap-1.5 text-xs font-semibold">
+                                    Branch
+                                    <select
+                                        className={controlClass}
+                                        value={screenBranch.id}
+                                        onChange={(event) =>
+                                            setScreenBranchId(
+                                                event.target.value,
+                                            )
+                                        }
+                                    >
+                                        {branches.map((branch) => (
+                                            <option
+                                                key={branch.id}
+                                                value={branch.id}
+                                            >
+                                                {branch.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <CustomerScreenSettingsPanel
+                                key={`settings-${screenBranch.id}`}
+                                branchId={screenBranch.id}
+                            />
+                            <div className="flex flex-col gap-0.5 border-t border-neutral-200 pt-4">
+                                <h3 className="text-[14px] font-bold">Ads</h3>
+                                <p className="text-xs text-[#767676]">
+                                    Images and videos played in this order while
+                                    neither MENU nor CUSTOMER DISPLAY is on.
+                                </p>
+                            </div>
+                            <CustomerScreenMediaPanel
+                                key={screenBranch.id}
+                                branchId={screenBranch.id}
+                            />
+                        </section>
+                    ) : (
+                        <p className="text-sm text-neutral-500">
+                            Add a branch to set up its customer screen.
+                        </p>
+                    )
+                ) : section === 'qr' ? (
                     qrTabBranch ? (
                         <section
                             aria-label="Customer QR"

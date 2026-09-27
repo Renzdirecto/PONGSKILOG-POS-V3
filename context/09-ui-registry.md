@@ -1011,3 +1011,34 @@ Responsive: single column at 360–430px with Attention near the top; two/three 
 - **Products — {CODE}** (selected Branch): lists only that Branch's assortment; empty state "No products in {CODE} yet." with Add products / Copy from another Branch. Card actions: Branch settings, Mark unavailable / Mark available, Remove from {CODE} (confirmation explains stock/history are kept; unavailable is the pause), Edit product (business-wide only). All Branches: global catalog cards show "Sold at MAIN, QAVE" or "Not sold at any Branch yet". Product editor: per-Branch "Sell at {CODE}" (new Products join only selected Branches).
 - **Copy products** dialog: optional "Copy Operations setup for selected products" (Operations access only); review shows Source, Destination, Products, Plans/Ingredients/Recipes/Add-on effects counts, kept items, conflicts, **Will NOT copy** (Product stock, Ingredient stock, movements, purchases/expenses, sales/sessions) and the replace warning.
 - **Operations · {CODE}**: every heading names the Branch; All Branches shows "Choose a Branch". Empty states: "No Pamalengke Plans yet." (Create manually / Copy setup), "No Ingredients configured for this Branch.", "No Recipes configured for this Branch.". **Copy setup from another Branch** (`OperationsSetupCopyButton`): source, sections (Plans · Ingredients & settings · Recipes & add-on effects), Keep (default) / Replace, server dry-run review, confirm. Recipes: "Uses Product stock" names only this Branch and links to its product settings.
+
+## Phase 19.6 — Customer Experience Expansion — 2026-09-27
+
+### Customer screen (`/customer-screen`, public kiosk page, `pages/customer-screen.tsx`)
+
+- Dark kiosk surface (`#0f1010`), no staff navigation, no install prompt. Layers: pairing code (amber 6-character code, 5-minute renewal) → Ads (full-bleed images/videos, `object-contain`, fade; `IdleBrand` emblem + PONGSKILOG + "Est. 2022" + Branch when there is no media) / Menu / Customer Display (the shared `CustomerOrderBoard`, same as the staff-launched display) → the success takeover overlay on top.
+- Menu (`customer-screen-menu.tsx`): header (logo, title, Branch, clock), 44 px category chips, 2–5 column product cards (4:3 image, name, description, price or Size prices, "Sold out" / "Unavailable" badge, dimmed). Browse-only: no add, quantity, edit or checkout control anywhere.
+- Live Cart: a compact panel above the Menu (≤ 30% of the viewport, own scroll, amber bottom border): "Your order", DINE IN / TAKE OUT pill, item count, total, lines (qty ×, name with Size, + Add-ons · Instructions, amount); changed lines glow amber for ~1.4 s; "May not be up to date" while disconnected.
+- Takeover (`customer-screen-takeover.tsx`, manual-QA redesign): full-screen green-on-black confirmation (not the Customer Display board): countdown bar (starts once shown), "Thank you!", "YOUR ORDER", huge green number, DINE IN / TAKE OUT pill, a strong green bordered "TAKE OUT QUEUE / DINE IN QUEUE #n" card, "You are #n overall", Take Out QR card (200–300 px) "Scan to track your order"; on ≥ 900 px a "CURRENT QUEUE" panel beside it (≤ 10 rows, two columns from 560 px when > 5 rows, customer's row solid green, "#a–#b of N" when windowed). Duration = Branch setting (default 5 s).
+- Header (`customer-screen-header.tsx`): logo, Branch name, MENU / CUSTOMER DISPLAY toggles (yellow when active; labels collapse to icons < 520 px, "DISPLAY" < 900 px), Fullscreen (hidden where unsupported). Ads: arrows (48–56 px), swipe, press-and-hold pause, thin yellow progress bar. Ads + cart: full-screen "Your order" summary with a large yellow total.
+- Pickup page additions: green "TAKE OUT QUEUE #n" card + "#n in the overall queue"; "Your order" summary; Receipt section (View receipt / Hide / Print receipt → the canonical `DigitalReceiptCard`, print shows only the card); Facebook / Website / Maps buttons (only configured ones, equal columns).
+- Settings › Customer Screen: "Order confirmation" (Dine In / Take Out 3–15 s) and "Customer links" (Facebook, Website, Maps) form above the Ads list; ad durations 3/5/8/10/15 s.
+- Connection pill (bottom-right, amber): "Reconnecting…" / "Live updates unavailable". Hidden reset: hold the top-left 64 px corner for 3 s.
+
+- Final manual-QA polish (supersedes the takeover sizing above): the takeover never scrolls — the order block scales to fit, the Take Out QR (120–300 px) sits beside the number when the block is ≥ 34 rem wide, and the queue panel (beside it in landscape, below it in portrait) shows only whole rows that fit, always with the customer's row (solid type color, white inset ring, "YOU"). Order-type colors: Dine In green (emerald), Take Out blue, always with the DINE IN / TAKE OUT text; board numbers show their type label (waiting = dark tint, Ready = solid); the board ends with an "IN QUEUE · Dine In: X · Take Out: Y" bar.
+
+### Store Operations header control (`customer-screen-control.tsx`)
+
+- Monitor icon button (44 px; label from 1180 px: Ads / Menu / Customer Display / Screen) with a green dot when paired, on every Store Operations page for `pos.access` accounts. Popover: status line, two 56 px toggle tiles **MENU** and **CUSTOMER DISPLAY** (ON/OFF), helper text "both off → ads", Pair customer screen (dialog with a large monospaced code input), Open customer screen on this device, Unpair (confirm).
+
+### POS Ready modal — Buzz Customer (`pos-buzz-customer.tsx`)
+
+- Amber outline button on the left of the existing Ready modal footer, shown only when `order.buzz` is present: "Buzz Customer" → "Notified · wait 5s" → "Buzz again (n of 5)" → "Buzz limit reached (5 of 5)", with "Last notified … ago" below.
+
+### Settings › Customer Screen (`customer-screen-media-panel.tsx`)
+
+- Fourth Settings tab with a Branch select (Branch-scoped roles see only their Branch). Upload row (file, optional label, "Show for" seconds for images, Upload) with the size/format rules; ordered list rows: position, preview, Active/Hidden badge, type · duration · size, inline label, duration select (images), Hide/Show, move up/down, delete (confirm). Empty state explains the welcome screen.
+
+### Pickup page (`/pickup/{token}`, public, `pages/pickup.tsx`)
+
+- Mobile-first dark card (max 448 px): emblem + PONGSKILOG, TAKE OUT pill, large order number (green when Ready), Preparing → Ready → Done steps, status title/message, "You are #2 in the Take-Out queue"; notification card with one "Turn on notifications" button (or honest unsupported / blocked / iPhone / https messages) and "Turn off"; connection notice; invalid/expired link page.

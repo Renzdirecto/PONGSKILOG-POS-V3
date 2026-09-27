@@ -101,8 +101,8 @@
         <meta name="application-name" content="{{ config('app.name', 'Pongskilog') }}">
         <meta name="apple-mobile-web-app-title" content="PONGSKILOG">
         <meta name="theme-color" content="#111111">
-        {{-- Installable staff app (PWA Phase 1). Public Customer QR and receipt pages are not part of it. --}}
-        @unless (request()->routeIs('qr.*', 'kiosk.*', 'receipt.*'))
+        {{-- Installable staff app (PWA Phase 1). Public Customer QR, receipt, customer screen and pickup pages are not part of it. --}}
+        @unless (request()->routeIs('qr.*', 'kiosk.*', 'receipt.*', 'customer-screen.*', 'pickup.*'))
             <link rel="manifest" href="/manifest.webmanifest">
             <meta name="mobile-web-app-capable" content="yes">
             <meta name="apple-mobile-web-app-capable" content="yes">
@@ -132,7 +132,7 @@
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">
-        @unless (request()->routeIs('qr.*', 'kiosk.*', 'receipt.*'))
+        @unless (request()->routeIs('qr.*', 'kiosk.*', 'receipt.*', 'customer-screen.*', 'pickup.*'))
             <div id="pwa-boot" aria-hidden="true">
                 <img src="/images/branding/pongskilog-emblem.png" alt="" width="88" height="88">
                 PONGSKILOG

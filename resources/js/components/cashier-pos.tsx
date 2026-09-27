@@ -51,6 +51,7 @@ import {
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { useUpdateBlocker } from '@/hooks/use-pwa';
+import { useCustomerScreenCart } from '@/hooks/use-customer-screen-cart';
 import { isOfflineWriteBlock } from '@/lib/pwa-mutation-guard';
 import { serverWritesAllowed } from '@/lib/pwa-runtime';
 import { savedItemName } from '@/lib/pos-item-name';
@@ -193,6 +194,12 @@ export function CashierPos({
         branch_table_id: loadedQr?.branch_table_id ?? '',
     });
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
+    /** The paired customer screen mirrors this cart; the commit request itself confirms the order there (best effort). */
+    const customerScreenHeaders = useCustomerScreenCart({
+        lines,
+        orderType,
+        savedOrderId: saved?.id ?? null,
+    });
     const orderNumber =
         saved?.order_number ??
         saved?.qr_number ??
@@ -331,7 +338,9 @@ export function CashierPos({
         setPaymentError('');
         payment.transform(() => payload);
         try {
-            const result = await payment.submit(payNow());
+            const result = await payment.submit(payNow(), {
+                headers: customerScreenHeaders(),
+            });
             if (result.receipt?.payment_status !== 'paid')
                 throw new Error('Unconfirmed payment');
             setReceipt(result.receipt);
@@ -438,7 +447,9 @@ export function CashierPos({
         const { order_id: orderId, ...payload } = activation;
         payLater.transform(() => payload);
         try {
-            const result = await payLater.submit(commitPayLater(orderId));
+            const result = await payLater.submit(commitPayLater(orderId), {
+                headers: customerScreenHeaders(),
+            });
             if (!result.order || !confirmedPayLaterState(result.order)) {
                 throw new Error('Unconfirmed Pay Later result');
             }

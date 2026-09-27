@@ -1025,6 +1025,8 @@ Responsive: single column at 360–430px with Attention near the top; two/three 
 - Settings › Customer Screen: "Order confirmation" (Dine In / Take Out 3–15 s) and "Customer links" (Facebook, Website, Maps) form above the Ads list; ad durations 3/5/8/10/15 s.
 - Connection pill (bottom-right, amber): "Reconnecting…" / "Live updates unavailable". Hidden reset: hold the top-left 64 px corner for 3 s.
 
+- Final manual-QA polish (supersedes the takeover sizing above): the takeover never scrolls — the order block scales to fit, the Take Out QR (120–300 px) sits beside the number when the block is ≥ 34 rem wide, and the queue panel (beside it in landscape, below it in portrait) shows only whole rows that fit, always with the customer's row (solid type color, white inset ring, "YOU"). Order-type colors: Dine In green (emerald), Take Out blue, always with the DINE IN / TAKE OUT text; board numbers show their type label (waiting = dark tint, Ready = solid); the board ends with an "IN QUEUE · Dine In: X · Take Out: Y" bar.
+
 ### Store Operations header control (`customer-screen-control.tsx`)
 
 - Monitor icon button (44 px; label from 1180 px: Ads / Menu / Customer Display / Screen) with a green dot when paired, on every Store Operations page for `pos.access` accounts. Popover: status line, two 56 px toggle tiles **MENU** and **CUSTOMER DISPLAY** (ON/OFF), helper text "both off → ads", Pair customer screen (dialog with a large monospaced code input), Open customer screen on this device, Unpair (confirm).

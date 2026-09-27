@@ -290,7 +290,7 @@ try {
     $board = app(KitchenBoard::class);
     $waiting = $queued->filter(fn (Order $queuedOrder): bool => $queuedOrder->kitchen_status !== KitchenStatus::Ready);
     $rows = $board->queue($waiting->last())['rows'];
-    cxVerify(array_map(fn (array $row): string => '#'.$row['order_number'], $rows) === $board->customerDisplay($branch)['preparing'], 'E: the queue order differs from the board: '.json_encode($rows));
+    cxVerify(array_map(fn (array $row): string => '#'.$row['order_number'], $rows) === array_column($board->customerDisplay($branch)['preparing'], 'number'), 'E: the queue order differs from the board: '.json_encode($rows));
     $positions = $waiting->map(fn (Order $queuedOrder): array => array_intersect_key($board->queue($queuedOrder), array_flip(['overall_position', 'type_position'])))->values()->all();
     $overall = array_column($positions, 'overall_position');
     sort($overall);

@@ -9,11 +9,16 @@ import {
     createSlideTimer,
     customerScreenCommitHeaders,
     formatPairingCode,
+    fitQueueRows,
+    fitScale,
     fullscreenSupported,
     orderTypeText,
+    orderTypeTone,
     overallPositionText,
     pendingTakeover,
     POS_STATION_STORAGE_KEY,
+    queueGrid,
+    queueRangeText,
     readStationId,
     refreshDelayMs,
     showsLiveCart,
@@ -382,4 +387,172 @@ test('the order confirmation is its own view, separate from the Customer Display
     /** The countdown starts from the component's readiness, not from when the order was committed. */
     assert.match(takeoverView, /onLoad=\{markReady\}/);
     assert.match(page, /onReady=\{confirmation\.ready\}/);
+});
+
+const queueRow = (position: number, current = false) => ({
+    position,
+    order_number: String(1000 + position),
+    order_type:
+        position % 2 === 0 ? ('take_out' as const) : ('dine_in' as const),
+    current,
+});
+
+test('the confirmation queue shows only the rows that fit and always keeps the customer’s own row', () => {
+    const rows = Array.from({ length: 10 }, (_, index) =>
+        queueRow(18 + index, index === 9),
+    );
+    /** Room for everything: the server window is shown unchanged. */
+    assert.deepEqual(fitQueueRows(rows, 12), rows);
+    /** Own row last: the rows leading up to it. */
+    assert.deepEqual(
+        fitQueueRows(rows, 4).map((row) => row.position),
+        [24, 25, 26, 27],
+    );
+    /** Own row in the middle: rows before it and one after. */
+    const middle = rows.map((row, index) => ({ ...row, current: index === 4 }));
+    assert.deepEqual(
+        fitQueueRows(middle, 4).map((row) => row.position),
+        [20, 21, 22, 23],
+    );
+    /** Own row first, and a single-row screen still shows it. */
+    const first = rows.map((row, index) => ({ ...row, current: index === 0 }));
+    assert.deepEqual(
+        fitQueueRows(first, 3).map((row) => row.position),
+        [18, 19, 20],
+    );
+    assert.deepEqual(
+        fitQueueRows(middle, 0).map((row) => row.position),
+        [22],
+    );
+    /** No own row (no longer waiting): the front of the queue. */
+    const none = rows.map((row) => ({ ...row, current: false }));
+    assert.deepEqual(
+        fitQueueRows(none, 2).map((row) => row.position),
+        [18, 19],
+    );
+    /** Positions are the server's: the window never renumbers a row. */
+    for (const row of fitQueueRows(rows, 3)) {
+        assert.equal(
+            row,
+            rows.find((r) => r.position === row.position),
+        );
+    }
+    assert.equal(queueRangeText(fitQueueRows(rows, 4), 27), '#24–#27 of 27');
+    assert.equal(
+        queueRangeText(
+            rows.slice(0, 2).map((row, i) => ({ ...row, position: i + 1 })),
+            2,
+        ),
+        null,
+    );
+    assert.equal(queueRangeText([], 0), null);
+});
+
+test('the confirmation fits the screen: whole queue rows per column and a scale that never enlarges or scrolls', () => {
+    /** 400 px list, 44 px rows, 8 px gaps → 7 whole rows; 560 px wide → two 240 px columns. */
+    assert.deepEqual(
+        queueGrid({
+            height: 400,
+            width: 560,
+            rowHeight: 44,
+            gap: 8,
+            minColumnWidth: 240,
+        }),
+        { rowsPerColumn: 7, columns: 2 },
+    );
+    assert.deepEqual(
+        queueGrid({
+            height: 20,
+            width: 200,
+            rowHeight: 44,
+            gap: 8,
+            minColumnWidth: 240,
+        }),
+        { rowsPerColumn: 1, columns: 1 },
+    );
+    assert.equal(
+        fitScale({ width: 600, height: 700 }, { width: 600, height: 500 }),
+        1,
+    );
+    assert.equal(
+        fitScale({ width: 600, height: 400 }, { width: 600, height: 800 }),
+        0.5,
+    );
+    assert.equal(
+        fitScale({ width: 300, height: 900 }, { width: 600, height: 500 }),
+        0.5,
+    );
+    assert.equal(
+        fitScale({ width: 100, height: 100 }, { width: 600, height: 2000 }),
+        0.35,
+    );
+    assert.equal(
+        fitScale({ width: 0, height: 0 }, { width: 10, height: 10 }),
+        1,
+    );
+
+    const takeoverView = source('components/customer-screen-takeover.tsx');
+    assert.doesNotMatch(takeoverView, /overflow-y-auto|overflow-auto/);
+    assert.match(
+        takeoverView,
+        /fixed inset-0 z-50 flex flex-col overflow-hidden/,
+    );
+    assert.match(
+        takeoverView,
+        /fitQueueRows\(rows, grid\.rowsPerColumn \* grid\.columns\)/,
+    );
+    /** Number, type, both positions and the Take Out QR are all still part of the view. */
+    assert.match(takeoverView, /\{takeover\.order_number\}/);
+    assert.match(takeoverView, /orderTypeText\(takeover\.order_type\)/);
+    assert.match(takeoverView, /typeQueueLabel\(takeover\.order_type\)/);
+    assert.match(takeoverView, /#\{takeover\.type_position\}/);
+    assert.match(
+        takeoverView,
+        /overallPositionText\(takeover\.overall_position\)/,
+    );
+    assert.match(takeoverView, /src=\{pickup\.qr_image\}/);
+});
+
+test('Dine In is green and Take Out is blue on the customer-facing queue, always with its text label', () => {
+    const dineIn = orderTypeTone('dine_in');
+    const takeOut = orderTypeTone('take_out');
+    for (const classes of Object.values(dineIn)) {
+        assert.match(classes, /emerald/);
+        assert.doesNotMatch(classes, /blue/);
+    }
+    for (const classes of Object.values(takeOut)) {
+        assert.match(classes, /blue/);
+        assert.doesNotMatch(classes, /emerald/);
+    }
+    /** Readable text on both: light text on the dark tint, near-black text on the bright badge. */
+    assert.match(dineIn.tint, /text-emerald-50/);
+    assert.match(takeOut.tint, /text-blue-50/);
+    assert.match(dineIn.solid, /text-neutral-950/);
+    assert.match(takeOut.solid, /text-neutral-950/);
+
+    const takeoverView = source('components/customer-screen-takeover.tsx');
+    const board = source('components/customer-order-board.tsx');
+    /** Color is never the only cue: rows and board numbers keep DINE IN / TAKE OUT, the own row says YOU. */
+    assert.match(takeoverView, /orderTypeText\(row\.order_type\)/);
+    assert.match(takeoverView, /orderTypeTone\(row\.order_type\)/);
+    assert.match(takeoverView, /row\.current \?[\s\S]*ring-4 ring-white/);
+    assert.match(takeoverView, />\s*YOU\s*</);
+    assert.match(board, /orderTypeText\(order_type\)/);
+    assert.match(board, /orderTypeTone\(order_type\)/);
+});
+
+test('the board’s Dine In / Take Out counts come from the server and nothing re-derives the queue in React', () => {
+    const board = source('components/customer-order-board.tsx');
+    const takeoverView = source('components/customer-screen-takeover.tsx');
+    assert.match(board, /<QueueCounts counts=\{display\.counts\} \/>/);
+    assert.match(board, /\{type === 'dine_in' \? 'Dine In' : 'Take Out'\}:/);
+    assert.match(board, /\{counts\[type\]\}/);
+    for (const view of [board, takeoverView]) {
+        assert.doesNotMatch(
+            view,
+            /\.filter\([^)]*order_type|\.length\s*\+|committed_at|kitchen_status/,
+        );
+    }
+    /** The takeover never ranks orders itself: positions are read from the server rows. */
+    assert.doesNotMatch(takeoverView, /position:\s*(index|i)\s*\+/);
 });

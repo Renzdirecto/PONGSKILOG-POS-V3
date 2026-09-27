@@ -14,13 +14,20 @@ use App\Models\OrderPickupToken;
  * Take Out, Preparing / Ready / Done (or no longer active), its overall and Take Out queue positions from the one queue
  * authority (`KitchenBoard::queue()`, null once it is no longer waiting), a customer-safe order summary from the
  * order's own historical snapshots, whether its receipt can be viewed, the Branch's configured customer links and
- * whether Ready notifications are available / turned on. No customer name, table, notes, cost, payment details, staff,
- * Branch-internal or id data, and no action that could change the order.
+ * whether Ready notifications are available / turned on, and the optional foreground Buzz sound (only when the file
+ * is present). No customer name, table, notes, cost, payment details, staff, Branch-internal or id data, and no action
+ * that could change the order.
  *
- * @phpstan-type PickupProjection array{order_number: string, order_type: 'take_out', status: 'preparing'|'ready'|'done'|'unavailable', queue_position: int|null, overall_position: int|null, summary: array{items: list<array{name: string, quantity: int, details: list<string>, instructions: list<string>, amount: string}>, subtotal: string, total: string}, receipt_available: bool, links: array{facebook: string|null, website: string|null, maps: string|null}, notifications: array{available: bool, public_key: string|null, subscribed: bool}, channel: string}
+ * @phpstan-type PickupProjection array{order_number: string, order_type: 'take_out', status: 'preparing'|'ready'|'done'|'unavailable', queue_position: int|null, overall_position: int|null, summary: array{items: list<array{name: string, quantity: int, details: list<string>, instructions: list<string>, amount: string}>, subtotal: string, total: string}, receipt_available: bool, links: array{facebook: string|null, website: string|null, maps: string|null}, notifications: array{available: bool, public_key: string|null, subscribed: bool}, buzz_sound_url: string|null, channel: string}
  */
 class PickupStatus
 {
+    /**
+     * Optional Buzz cue for the OPEN pickup page only (a locked or backgrounded phone gets the push notification with the
+     * OS sound and vibration). Advertised only when a Branch-approved file is placed at this public path.
+     */
+    public const BUZZ_SOUND_PATH = 'audio/customer-screen-buzz.mp3';
+
     public function __construct(private KitchenBoard $board, private CustomerScreenSettings $settings) {}
 
     /**
@@ -62,6 +69,7 @@ class PickupStatus
                 'public_key' => PushNotifications::publicKey(),
                 'subscribed' => $pickup->pushSubscription()->exists(),
             ],
+            'buzz_sound_url' => is_file(public_path(self::BUZZ_SOUND_PATH)) ? '/'.self::BUZZ_SOUND_PATH : null,
             'channel' => 'pickup.'.$pickup->channel_key,
         ];
     }

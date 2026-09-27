@@ -54,10 +54,18 @@ export type CustomerScreenTakeover = {
     pickup: { url: string; qr_image: string } | null;
 };
 
+/** One number on the Customer Display board ("#1043") with its order type (for the Dine In / Take Out colors). */
+export type CustomerBoardNumber = { number: string; order_type: OrderType };
+
+/**
+ * The Customer Display board. `counts` are the Dine In / Take Out orders of its Preparing column (the active queue),
+ * computed by the server from the same rows as the board — never counted again in React.
+ */
 export type CustomerOrderBoardData = {
     is_open: boolean;
-    preparing: string[];
-    ready: string[];
+    preparing: CustomerBoardNumber[];
+    ready: CustomerBoardNumber[];
+    counts: { dine_in: number; take_out: number };
 };
 
 export type CustomerScreenState = {
@@ -196,6 +204,130 @@ export function overallPositionText(position: number | null): string | null {
 
 export function typeQueueLabel(type: OrderType): string {
     return type === 'dine_in' ? 'DINE IN QUEUE' : 'TAKE OUT QUEUE';
+}
+
+/**
+ * Customer-facing order-type colors (Phase 19.6 manual QA): Dine In is GREEN, Take Out is BLUE — always together with
+ * the DINE IN / TAKE OUT text, never color alone. `tint` is a dark tinted badge with light text (queue rows, board
+ * numbers), `solid` a bright badge with near-black text (the customer's own row, Ready numbers); both stay well above
+ * AA contrast. The customer's own order adds a ring and a "YOU" label on top of its color.
+ */
+export type OrderTypeTone = {
+    tint: string;
+    solid: string;
+    text: string;
+    bar: string;
+};
+
+const ORDER_TYPE_TONES: Record<OrderType, OrderTypeTone> = {
+    dine_in: {
+        tint: 'border-emerald-400/45 bg-emerald-950/80 text-emerald-50',
+        solid: 'border-emerald-300 bg-emerald-400 text-neutral-950',
+        text: 'text-emerald-400',
+        bar: 'bg-emerald-400',
+    },
+    take_out: {
+        tint: 'border-blue-400/45 bg-blue-950/80 text-blue-50',
+        solid: 'border-blue-300 bg-blue-400 text-neutral-950',
+        text: 'text-blue-400',
+        bar: 'bg-blue-400',
+    },
+};
+
+export function orderTypeTone(type: OrderType): OrderTypeTone {
+    return ORDER_TYPE_TONES[type];
+}
+
+/**
+ * How much a block must shrink to fit its box without any scrolling (never enlarged). `min` keeps it legible on a
+ * tiny screen; an unmeasured (zero) size never scales.
+ */
+export function fitScale(
+    box: { width: number; height: number },
+    content: { width: number; height: number },
+    min = 0.35,
+): number {
+    if (
+        box.width <= 0 ||
+        box.height <= 0 ||
+        content.width <= 0 ||
+        content.height <= 0
+    ) {
+        return 1;
+    }
+
+    return Math.max(
+        min,
+        Math.min(1, box.width / content.width, box.height / content.height),
+    );
+}
+
+/** How many queue rows fit the measured list: whole rows per column, and a second column only when it is wide enough. */
+export function queueGrid(input: {
+    height: number;
+    width: number;
+    rowHeight: number;
+    gap: number;
+    minColumnWidth: number;
+    maxColumns?: number;
+}): { rowsPerColumn: number; columns: number } {
+    const gap = Math.max(0, input.gap);
+    const rowsPerColumn =
+        input.rowHeight > 0
+            ? Math.max(
+                  1,
+                  Math.floor((input.height + gap) / (input.rowHeight + gap)),
+              )
+            : 1;
+    const columns =
+        input.minColumnWidth > 0
+            ? Math.floor((input.width + gap) / (input.minColumnWidth + gap))
+            : 1;
+
+    return {
+        rowsPerColumn,
+        columns: Math.max(1, Math.min(input.maxColumns ?? 2, columns)),
+    };
+}
+
+/**
+ * The queue rows that fit on screen: a presentation window over the server's rows (their positions untouched, nothing
+ * re-ranked), always keeping the customer's own row — with the rows leading up to it and one after where there is
+ * room. Without an own row (it is no longer waiting) the front of the queue is shown.
+ */
+export function fitQueueRows<Row extends { current: boolean }>(
+    rows: readonly Row[],
+    capacity: number,
+): Row[] {
+    const size = Math.max(1, Math.floor(capacity));
+    if (rows.length <= size) {
+        return [...rows];
+    }
+    const current = rows.findIndex((row) => row.current);
+    if (current === -1) {
+        return rows.slice(0, size);
+    }
+    const after = Math.min(1, rows.length - 1 - current, size - 1);
+    const start = Math.max(
+        0,
+        Math.min(current - (size - 1 - after), rows.length - size),
+    );
+
+    return rows.slice(start, start + size);
+}
+
+/** "#3–#8 of 12" when only part of the queue is on screen; null when every active order is shown. */
+export function queueRangeText(
+    visible: readonly { position: number }[],
+    total: number,
+): string | null {
+    if (visible.length === 0) {
+        return null;
+    }
+    const first = visible[0].position;
+    const last = visible[visible.length - 1].position;
+
+    return first > 1 || last < total ? `#${first}–#${last} of ${total}` : null;
 }
 
 /** The next / previous advertisement, wrapping around. */

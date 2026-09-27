@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSemanticRole;
+use App\Enums\OrderType;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\Order;
@@ -78,13 +79,19 @@ class KitchenBoard
         return $session === null ? $this->emptyCounts() : $this->countsForSession($branch, $session);
     }
 
-    /** @return array{is_open: bool, preparing: list<string>, ready: list<string>} */
+    /**
+     * The Customer Display board: order numbers (with their order type, for the Dine In / Take Out colors) in the
+     * board's own order, and the Dine In / Take Out counts of its "Preparing" column — the active queue `queue()` ranks —
+     * taken from the same rows, never from a second query.
+     *
+     * @return array{is_open: bool, preparing: list<array{number: string, order_type: string}>, ready: list<array{number: string, order_type: string}>, counts: array{dine_in: int, take_out: int}}
+     */
     public function customerDisplay(Branch $branch): array
     {
         $session = $this->openSession($branch);
 
         if ($session === null) {
-            return ['is_open' => false, 'preparing' => [], 'ready' => []];
+            return ['is_open' => false, 'preparing' => [], 'ready' => [], 'counts' => ['dine_in' => 0, 'take_out' => 0]];
         }
 
         $numbers = $this->ordersForSession($branch, $session)
@@ -95,13 +102,19 @@ class KitchenBoard
             ])
             ->orderBy('committed_at')
             ->orderBy('id')
-            ->get(['order_number', 'kitchen_status'])
+            ->get(['order_number', 'order_type', 'kitchen_status'])
             ->groupBy(fn (Order $order): string => $order->kitchen_status === KitchenStatus::Ready ? 'ready' : 'preparing');
+        $preparing = $numbers->get('preparing', collect());
+        $waitingByType = $preparing->countBy(fn (Order $order): string => $order->order_type->value);
 
         return [
             'is_open' => true,
-            'preparing' => $this->numberList($numbers->get('preparing', collect())),
+            'preparing' => $this->numberList($preparing),
             'ready' => $this->numberList($numbers->get('ready', collect())),
+            'counts' => [
+                'dine_in' => (int) $waitingByType->get(OrderType::DineIn->value, 0),
+                'take_out' => (int) $waitingByType->get(OrderType::TakeOut->value, 0),
+            ],
         ];
     }
 
@@ -332,12 +345,15 @@ class KitchenBoard
 
     /**
      * @param  Collection<int, Order>  $orders
-     * @return list<string>
+     * @return list<array{number: string, order_type: string}>
      */
     private function numberList(Collection $orders): array
     {
         return array_values($orders
-            ->map(fn (Order $order): string => '#'.$order->order_number)
+            ->map(fn (Order $order): array => [
+                'number' => '#'.$order->order_number,
+                'order_type' => $order->order_type->value,
+            ])
             ->values()
             ->all());
     }

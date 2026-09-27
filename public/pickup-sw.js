@@ -36,20 +36,42 @@ self.addEventListener('push', (event) => {
     }
     const number = cleanNumber(data.order_number);
     const tag = typeof data.tag === 'string' ? data.tag.slice(0, 80) : 'pickup-ready';
+    const target = targetPath(data.url);
 
     event.waitUntil(
-        self.registration.showNotification('PONGSKILOG', {
-            body: number ? `Order #${number} is ready for pickup.` : 'Your order is ready for pickup.',
-            tag,
-            renotify: true,
-            requireInteraction: true,
-            icon: ICON,
-            badge: ICON,
-            vibrate: [300, 120, 300, 120, 300],
-            data: { url: targetPath(data.url) },
-        }),
+        Promise.all([
+            self.registration.showNotification('PONGSKILOG', {
+                body: number ? `Order #${number} is ready for pickup.` : 'Your order is ready for pickup.',
+                tag,
+                renotify: true,
+                requireInteraction: true,
+                icon: ICON,
+                badge: ICON,
+                vibrate: [300, 120, 300, 120, 300],
+                data: { url: target },
+            }),
+            tellOpenPage(target),
+        ]),
     );
 });
+
+/**
+ * The notification above is the Buzz (OS sound and vibration where the phone allows). When this order's pickup page
+ * is also open, it is told too, so a page in the foreground can vibrate and play its optional sound. Never fails the push.
+ */
+async function tellOpenPage(target) {
+    if (target === null) {
+        return;
+    }
+    try {
+        const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        windows
+            .filter((client) => new URL(client.url).pathname === target)
+            .forEach((client) => client.postMessage({ type: 'pickup.buzz' }));
+    } catch {
+        // The notification is already the Buzz.
+    }
+}
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();

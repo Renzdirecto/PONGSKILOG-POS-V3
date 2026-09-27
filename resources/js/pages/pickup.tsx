@@ -17,8 +17,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { DigitalReceiptCard } from '@/components/digital-receipt-card';
 import {
+    isPickupBuzzMessage,
     PICKUP_WORKER_SCOPE,
     PICKUP_WORKER_URL,
+    pickupBuzzCue,
     pickupLinkButtons,
     pickupNotifyMessage,
     pickupNotifyState,
@@ -139,6 +141,8 @@ function PickupStatus({
         previousStatus.current = pickup.status;
     }, [pickup.status]);
 
+    usePickupBuzzCue(pickup.buzz_sound_url);
+
     const notice = connectionNotice(connection);
 
     return (
@@ -225,6 +229,75 @@ function PickupStatus({
             </main>
         </>
     );
+}
+
+const BUZZ_VIBRATION = [300, 120, 300, 120, 300];
+
+/**
+ * The open page's Buzz cue. The Buzz itself is the push notification (OS sound and vibration, also on a locked phone);
+ * the pickup worker additionally tells this page, and while it is in the foreground it vibrates and plays the
+ * optional Branch sound. Browsers only allow sound after a tap, so the first tap on the page unlocks it; a blocked,
+ * failed or absent sound is silent and never breaks the page.
+ */
+function usePickupBuzzCue(soundUrl: string | null) {
+    const audio = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        if (soundUrl === null || typeof Audio === 'undefined') return;
+        let element: HTMLAudioElement;
+        try {
+            element = new Audio(soundUrl);
+            element.preload = 'auto';
+        } catch {
+            return;
+        }
+        audio.current = element;
+        const unlock = () => {
+            element.muted = true;
+            element
+                .play()
+                .then(() => {
+                    element.pause();
+                    element.currentTime = 0;
+                })
+                .catch(() => undefined)
+                .finally(() => {
+                    element.muted = false;
+                });
+        };
+        window.addEventListener('pointerdown', unlock, { once: true });
+
+        return () => {
+            window.removeEventListener('pointerdown', unlock);
+            element.pause();
+            audio.current = null;
+        };
+    }, [soundUrl]);
+
+    useEffect(() => {
+        const container =
+            typeof navigator === 'undefined'
+                ? undefined
+                : navigator.serviceWorker;
+        if (!container) return;
+        const onMessage = (event: MessageEvent) => {
+            if (!isPickupBuzzMessage(event.data)) return;
+            const element = audio.current;
+            const cue = pickupBuzzCue({
+                visible: document.visibilityState === 'visible',
+                soundUrl: element === null ? null : soundUrl,
+            });
+            if (cue.vibrate) navigator.vibrate?.(BUZZ_VIBRATION);
+            if (cue.sound !== null && element !== null) {
+                element.currentTime = 0;
+                void element.play().catch(() => undefined);
+            }
+        };
+        container.addEventListener('message', onMessage);
+        container.startMessages();
+
+        return () => container.removeEventListener('message', onMessage);
+    }, [soundUrl]);
 }
 
 /** The customer-safe order summary from the order's own snapshots: names, Size / add-ons, instructions, amounts. */

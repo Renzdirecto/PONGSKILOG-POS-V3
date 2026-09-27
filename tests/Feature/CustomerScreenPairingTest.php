@@ -172,7 +172,7 @@ test('the Customer Display mode shows the existing order-number board', function
         ->putJson(route('pos.customer-screen.mode'), ['control' => 'customer_display'])->assertOk();
 
     pairingAsScreen($device['token'])->assertJsonPath('screen.mode', 'customer_display')
-        ->assertJsonPath('screen.board', ['is_open' => false, 'preparing' => [], 'ready' => []]);
+        ->assertJsonPath('screen.board', ['is_open' => false, 'preparing' => [], 'ready' => [], 'counts' => ['dine_in' => 0, 'take_out' => 0]]);
 });
 
 test('pairing and controls require POS access at the selected Branch and never cross Branches', function () {

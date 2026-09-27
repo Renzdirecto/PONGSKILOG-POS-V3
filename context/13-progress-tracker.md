@@ -1261,6 +1261,18 @@ Still pending for **Phase 20**: the pre-existing shared un-named `throttle:X,Y` 
 
 **User manual retest checklist:** pairing; Ads default with 3-s ads, arrows, swipe, hold-to-pause; header MENU / CUSTOMER DISPLAY (in sync with the POS header) and Fullscreen; Ads + cart → full order summary; Menu + cart → split; clear cart → Ads; Pay Now and Pay Later for **Dine In** and **Take Out** → confirmation appears every time, countdown starts once the number/QR is visible (default 5 s; try a changed Branch duration), queue list + overall + same-type position, no customer name; Menu closes to Ads afterwards, Customer Display stays; scan QR → pickup page positions, order summary, View / Print receipt, Facebook / Website / Maps buttons; notifications opt-in (HTTPS; iPhone Home Screen), Kitchen Ready, Buzz (valid subscription only, 5-s cooldown, max 5); reconnect; 360/390/430 px, tablet portrait/landscape and desktop/second monitor. Requires `npm run build` (or `npm run dev`) and a queue worker for Buzz.
 
+### Phase 19.6 final manual-QA polish — 2026-09-27
+
+**Status unchanged: FINAL AUTOMATED QA previously PASSED. USER MANUAL RETEST: REQUIRED — AWAITING USER. NO PR OPENED. NOT MERGED.** Baseline `035dc59`. Small polish pass only (no new scope, no migration):
+
+- **Fit-to-screen order confirmation.** Dine In and Take Out confirmations fit the customer screen with no scrolling: the order block (number, type, same-type + overall positions, Take Out QR — placed beside the number when the block is wide enough) scales to its box, and the queue shows only the whole rows that fit (one or two columns), always including the customer's own row with its true server positions ("#a–#b of N" when trimmed). Landscape tablet / desktop is side-by-side; portrait and phones stack with the queue below.
+- **Customer Display counts.** The persistent board ends with a compact "IN QUEUE · Dine In: X · Take Out: Y" bar. `KitchenBoard::customerDisplay()` counts its Preparing column (the same active queue as `KitchenBoard::queue()`) from the rows it already loads; board numbers now carry their order type.
+- **Order-type colors (customer-facing).** Dine In = GREEN, Take Out = BLUE on board numbers, confirmation queue rows, type pill, number and queue card — always with the DINE IN / TAKE OUT text. The customer's own row is solid with a white ring and a "YOU" label; Ready numbers are solid, waiting numbers a dark tint (contrast kept).
+- **Phone Buzz sound (final behavior).** Locked / backgrounded phone: the push notification only (OS/browser sound and vibration where allowed; no custom MP3 is possible or attempted). Open pickup page in the foreground: the push plus a page vibration and, if installed, a custom sound. Push/VAPID flow unchanged; `/pickup-sw.js` additionally posts `pickup.buzz` to that order's open page.
+- **Optional foreground MP3:** `public/audio/customer-screen-buzz.mp3` (not committed — place a Branch-approved file there). Advertised as `buzz_sound_url` only when the file exists, so an absent file means no request and no error; the first tap on the page unlocks audio and any autoplay refusal is silent. The customer-screen success sound (`public/audio/customer-screen-success.mp3`) stays separate.
+
+Verification: see `11-testing-qa.md` (final manual-QA polish). Retest additionally: confirmation fit on tablet landscape/portrait, desktop and a phone with a long queue (own row always visible, no scrollbar); board counts and green/blue numbers; Buzz with the pickup page open vs. phone locked (with and without the MP3).
+
 ---
 
 ## Phase 20 — Final Production Hardening

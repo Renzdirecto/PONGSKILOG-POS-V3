@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+    isPickupBuzzMessage,
+    PICKUP_BUZZ_MESSAGE,
     PICKUP_WORKER_SCOPE,
     PICKUP_WORKER_URL,
+    pickupBuzzCue,
     pickupNotifyMessage,
     pickupLinkButtons,
     pickupNotifyState,
@@ -168,4 +171,61 @@ test('the pickup worker is separate from the staff app worker and only shows thi
         page,
         /const enable = async \(\) => \{[\s\S]*Notification\.requestPermission\(\)[\s\S]*pushManager\.subscribe\(/,
     );
+});
+
+test('a Buzz is the push notification; only an open page in the foreground adds vibration and the optional sound', () => {
+    assert.equal(PICKUP_BUZZ_MESSAGE, 'pickup.buzz');
+    assert.equal(isPickupBuzzMessage({ type: 'pickup.buzz' }), true);
+    assert.equal(isPickupBuzzMessage({ type: 'pickup.ready' }), false);
+    assert.equal(isPickupBuzzMessage(null), false);
+    assert.equal(isPickupBuzzMessage('pickup.buzz'), false);
+
+    /** Locked / backgrounded: the OS notification (sound + vibration) is the Buzz; the page adds nothing. */
+    assert.deepEqual(
+        pickupBuzzCue({
+            visible: false,
+            soundUrl: '/audio/customer-screen-buzz.mp3',
+        }),
+        { vibrate: false, sound: null },
+    );
+    /** No MP3 installed: still a vibration, never a broken sound. */
+    assert.deepEqual(pickupBuzzCue({ visible: true, soundUrl: null }), {
+        vibrate: true,
+        sound: null,
+    });
+    assert.deepEqual(
+        pickupBuzzCue({
+            visible: true,
+            soundUrl: '/audio/customer-screen-buzz.mp3',
+        }),
+        { vibrate: true, sound: '/audio/customer-screen-buzz.mp3' },
+    );
+    assert.equal(
+        pickupBuzzCue({ visible: true, soundUrl: 'https://evil.test/a.mp3' })
+            .sound,
+        null,
+    );
+
+    const worker = readFileSync(
+        new URL('../public/pickup-sw.js', import.meta.url),
+        'utf8',
+    );
+    const page = readFileSync(
+        new URL('../resources/js/pages/pickup.tsx', import.meta.url),
+        'utf8',
+    );
+    /** The push still always shows its notification; telling the open page is extra and cannot fail it. */
+    assert.match(
+        worker,
+        /Promise\.all\(\[\s*self\.registration\.showNotification\([\s\S]*tellOpenPage\(target\)/,
+    );
+    assert.match(worker, /postMessage\(\{ type: 'pickup\.buzz' \}\)/);
+    /** The page never creates audio without an installed file, and a blocked / failed play is swallowed. */
+    assert.match(
+        page,
+        /if \(soundUrl === null \|\| typeof Audio === 'undefined'\) return;/,
+    );
+    assert.match(page, /void element\.play\(\)\.catch\(\(\) => undefined\)/);
+    assert.match(page, /usePickupBuzzCue\(pickup\.buzz_sound_url\)/);
+    assert.doesNotMatch(page, /customer-screen-buzz\.mp3/);
 });

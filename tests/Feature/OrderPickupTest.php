@@ -20,10 +20,12 @@ use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\CustomerQrProjection;
+use App\Support\PickupStatus;
 use App\Support\PickupTokens;
 use Database\Factories\PushSubscriptionFactory;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -126,6 +128,7 @@ test('the public pickup page shows the order number, status, both queue position
         'receipt_available' => true,
         'links' => ['facebook' => null, 'website' => null, 'maps' => null],
         'notifications' => ['available' => true, 'public_key' => PushSubscriptionFactory::BROWSER_PUBLIC_KEY, 'subscribed' => false],
+        'buzz_sound_url' => is_file(public_path(PickupStatus::BUZZ_SOUND_PATH)) ? '/'.PickupStatus::BUZZ_SOUND_PATH : null,
         'channel' => 'pickup.'.OrderPickupToken::query()->where('order_id', $order->id)->value('channel_key'),
     ]);
     expect($status->getContent())->not->toContain('Private Juan')->not->toContain('no onions')
@@ -345,6 +348,27 @@ test('an unpaid Pay Later Take Out order has no receipt until it is paid', funct
 
     $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.receipt_available', false);
     $this->getJson(route('pickup.receipt', $token))->assertNotFound();
+});
+
+test('the optional foreground Buzz sound is offered only when its file is installed', function () {
+    ['token' => $token] = pickupTakeOutOrder($this->cashier, $this->product);
+    $path = public_path(PickupStatus::BUZZ_SOUND_PATH);
+    $installed = is_file($path);
+
+    if (! $installed) {
+        $this->getJson(route('pickup.status', $token))->assertOk()->assertJsonPath('pickup.buzz_sound_url', null);
+        File::ensureDirectoryExists(dirname($path));
+        File::put($path, 'test');
+    }
+
+    try {
+        $this->getJson(route('pickup.status', $token))->assertOk()
+            ->assertJsonPath('pickup.buzz_sound_url', '/audio/customer-screen-buzz.mp3');
+    } finally {
+        if (! $installed) {
+            File::delete($path);
+        }
+    }
 });
 
 test('customer links appear only when configured with a safe http(s) address', function () {

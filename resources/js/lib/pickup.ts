@@ -38,6 +38,8 @@ export type PickupStatusData = {
         public_key: string | null;
         subscribed: boolean;
     };
+    /** The optional foreground Buzz sound; null when no file is installed (the Buzz is then vibration + notification). */
+    buzz_sound_url: string | null;
     channel: string;
 };
 
@@ -52,6 +54,39 @@ export type PickupNotifyState =
 /** The customer pickup worker: its own file and scope, separate from the staff app's `/sw.js`. */
 export const PICKUP_WORKER_URL = '/pickup-sw.js';
 export const PICKUP_WORKER_SCOPE = '/pickup/';
+
+/** What the pickup worker posts to this order's open page when a Buzz arrives (alongside its notification). */
+export const PICKUP_BUZZ_MESSAGE = 'pickup.buzz';
+
+export function isPickupBuzzMessage(data: unknown): boolean {
+    return (
+        typeof data === 'object' &&
+        data !== null &&
+        (data as { type?: unknown }).type === PICKUP_BUZZ_MESSAGE
+    );
+}
+
+/**
+ * The open page's extra Buzz cue. The push notification is the Buzz itself (OS sound and vibration, also when the phone
+ * is locked); only a page in the foreground adds a vibration and — when the Branch installed one — its own sound. A
+ * hidden page does nothing extra, and a missing sound file simply means no sound.
+ */
+export function pickupBuzzCue(input: {
+    visible: boolean;
+    soundUrl: string | null;
+}): { vibrate: boolean; sound: string | null } {
+    if (!input.visible) {
+        return { vibrate: false, sound: null };
+    }
+
+    return {
+        vibrate: true,
+        sound:
+            typeof input.soundUrl === 'string' && input.soundUrl.startsWith('/')
+                ? input.soundUrl
+                : null,
+    };
+}
 
 export function pickupStatusView(status: PickupStatusValue): {
     title: string;

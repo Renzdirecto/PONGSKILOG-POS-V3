@@ -1,17 +1,38 @@
 import type { PushSupport } from './pwa-push';
 
 /**
- * Takeout pickup page rules (Phase 19.6B). The page is read-only: the server projection decides the status and queue
- * position; the customer may only opt in to (or out of) this order's Ready notification. Scanning the QR alone never
- * subscribes anything — only the explicit Notify me button, after the browser's permission prompt.
+ * Takeout pickup page rules (Phase 19.6). The page is read-only: the server projection decides the status, the overall
+ * and Take Out queue positions, the order summary (historical snapshots) and whether the receipt can be viewed; the
+ * customer may only opt in to (or out of) this order's Ready notification. Scanning the QR alone never subscribes
+ * anything — only the explicit Notify me button, after the browser's permission prompt.
  */
 export type PickupStatusValue = 'preparing' | 'ready' | 'done' | 'unavailable';
+
+export type PickupSummaryLine = {
+    name: string;
+    quantity: number;
+    details: string[];
+    instructions: string[];
+    amount: string;
+};
+
+export type PickupLinks = {
+    facebook: string | null;
+    website: string | null;
+    maps: string | null;
+};
 
 export type PickupStatusData = {
     order_number: string;
     order_type: 'take_out';
     status: PickupStatusValue;
+    /** Position in the Take Out queue (null once the order is no longer waiting). */
     queue_position: number | null;
+    /** Position among all active orders, Dine In and Take Out together. */
+    overall_position: number | null;
+    summary: { items: PickupSummaryLine[]; subtotal: string; total: string };
+    receipt_available: boolean;
+    links: PickupLinks;
     notifications: {
         available: boolean;
         public_key: string | null;
@@ -65,10 +86,48 @@ export function pickupStatusView(status: PickupStatusValue): {
     }
 }
 
-export function pickupQueueText(position: number | null): string | null {
-    return position !== null && position > 0
-        ? `You are #${position} in the Take-Out queue`
-        : null;
+/**
+ * The queue part of the page: the Take Out position (emphasized) and the overall position — only while the order is
+ * still being prepared. Ready / Done / inactive orders are no longer waiting, so no position is shown for them.
+ */
+export function pickupQueueView(
+    pickup: Pick<
+        PickupStatusData,
+        'status' | 'queue_position' | 'overall_position'
+    >,
+): { takeOut: number | null; overall: string | null } | null {
+    if (pickup.status !== 'preparing') {
+        return null;
+    }
+    const takeOut =
+        pickup.queue_position !== null && pickup.queue_position > 0
+            ? pickup.queue_position
+            : null;
+    const overall =
+        pickup.overall_position !== null && pickup.overall_position > 0
+            ? `#${pickup.overall_position} in the overall queue`
+            : null;
+
+    return takeOut === null && overall === null ? null : { takeOut, overall };
+}
+
+/** The customer link buttons: only configured http(s) links, in a fixed order, never a placeholder. */
+export function pickupLinkButtons(
+    links: PickupLinks,
+): { key: keyof PickupLinks; label: string; url: string }[] {
+    const labels: Record<keyof PickupLinks, string> = {
+        facebook: 'Facebook',
+        website: 'Website',
+        maps: 'Maps',
+    };
+
+    return (['facebook', 'website', 'maps'] as const).flatMap((key) => {
+        const url = links[key];
+
+        return typeof url === 'string' && /^https?:\/\/[^\s]+$/i.test(url)
+            ? [{ key, label: labels[key], url }]
+            : [];
+    });
 }
 
 /**

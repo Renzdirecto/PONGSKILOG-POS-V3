@@ -5,6 +5,7 @@ namespace App\Actions\CustomerScreens;
 use App\Actions\Audit\AuditRecorder;
 use App\Enums\CustomerScreenMode;
 use App\Events\CustomerScreenChanged;
+use App\Events\CustomerScreenStatusChanged;
 use App\Models\Branch;
 use App\Models\CustomerScreen;
 use App\Models\User;
@@ -88,6 +89,7 @@ class UnpairCustomerScreen
                 auditableId: $locked->id,
             );
             CustomerScreenChanged::dispatch([$locked->channel_key], 'pairing');
+            CustomerScreenStatusChanged::dispatch((string) $branch->getKey());
         }, 3);
         $this->live->reset($screen);
     }

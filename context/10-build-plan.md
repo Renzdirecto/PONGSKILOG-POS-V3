@@ -533,7 +533,7 @@ Build:
 - Store Operations controls for mutually exclusive `MENU` and `CUSTOMER DISPLAY` modes; zero or one may be active, and both off means advertising mode
 - A browse-only Menu mode using the Branch catalog, categories, prices, and current availability, with no add/edit/pay controls
 - A paired-POS live-cart composition: compact realtime cart above the still-usable Menu at approximately 25–30% / 70–75%
-- A successful-order takeover showing the large green order number, order type, server-derived same-type queue position, and a Take Out pickup QR; 3 seconds for Dine In and 5 seconds for Take Out, then return to the prior selected mode or default advertising
+- A successful-order takeover showing the large green order number, order type, server-derived same-type queue position, and a Take Out pickup QR; 3 seconds for Dine In and 5 seconds for Take Out, then return to the prior selected mode or default advertising *(superseded by the manual-QA fixes: Branch durations default 5 s / 5 s counted from when it is shown, overall + same-type positions with a queue window, Menu closes to Ads afterwards, Customer Display stays)*
 
 Exit criteria:
 

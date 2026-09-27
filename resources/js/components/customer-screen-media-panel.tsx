@@ -37,6 +37,9 @@ type Media = {
     preview_url: string | null;
 };
 
+/** Image ads stay up for one of these (older ads keep whatever they were saved with). */
+const IMAGE_DURATIONS = [3, 5, 8, 10, 15] as const;
+
 type Limits = {
     max_items: number;
     image_max_mb: number;
@@ -192,7 +195,7 @@ function UploadForm({
     const input = useRef<HTMLInputElement>(null);
     const [file, setFile] = useState<File | null>(null);
     const [label, setLabel] = useState('');
-    const [duration, setDuration] = useState('8');
+    const [duration, setDuration] = useState('5');
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const isVideo = file?.type.startsWith('video/') ?? false;
@@ -257,7 +260,7 @@ function UploadForm({
                     onChange={(event) => setDuration(event.target.value)}
                     className={controlClass}
                 >
-                    {[5, 8, 10, 15, 20, 30, 45, 60].map((seconds) => (
+                    {IMAGE_DURATIONS.map((seconds) => (
                         <option key={seconds} value={seconds}>
                             {seconds} s
                         </option>
@@ -389,15 +392,8 @@ function MediaRow({
                         className={`${controlClass} h-11 w-auto`}
                     >
                         {[
-                            ...new Set([
-                                5,
-                                8,
-                                10,
-                                15,
-                                20,
-                                30,
-                                45,
-                                60,
+                            ...new Set<number>([
+                                ...IMAGE_DURATIONS,
                                 item.duration_seconds,
                             ]),
                         ]

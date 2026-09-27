@@ -18,6 +18,7 @@ use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\CustomerQrOrderController;
 use App\Http\Controllers\CustomerScreenController;
 use App\Http\Controllers\CustomerScreenMediaController;
+use App\Http\Controllers\CustomerScreenSettingsController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
@@ -92,6 +93,8 @@ Route::prefix('customer-screen')->name('customer-screen.')->middleware('throttle
     Route::get('menu', [CustomerScreenController::class, 'menu'])->name('menu');
     Route::get('media', [CustomerScreenController::class, 'media'])->name('media');
     Route::post('reset', [CustomerScreenController::class, 'reset'])->middleware('throttle:customer-screen-pairing-code')->name('reset');
+    Route::put('mode', [CustomerScreenController::class, 'mode'])->middleware('throttle:customer-screen-mode')->name('mode');
+    Route::post('takeover/{takeover}/shown', [CustomerScreenController::class, 'takeoverShown'])->where('takeover', '[A-Za-z0-9]{16}')->name('takeover.shown');
     Route::post('broadcasting/auth', [CustomerScreenController::class, 'authorizeChannel'])->name('broadcasting.auth');
 });
 
@@ -101,6 +104,7 @@ Route::prefix('pickup/{token}')->where(['token' => '[A-Za-z0-9_-]{43}'])->name('
     Route::get('status', [PickupController::class, 'status'])->name('status');
     Route::post('subscription', [PickupController::class, 'subscribe'])->middleware('throttle:pickup-subscription')->name('subscription.store');
     Route::delete('subscription', [PickupController::class, 'unsubscribe'])->middleware('throttle:pickup-subscription')->name('subscription.destroy');
+    Route::get('receipt', [PickupController::class, 'receipt'])->name('receipt');
     Route::post('broadcasting/auth', [PickupController::class, 'authorizeChannel'])->name('broadcasting.auth');
 });
 
@@ -119,6 +123,8 @@ Route::middleware(['auth'])->group(function () {
         Route::put('{media}', [CustomerScreenMediaController::class, 'update'])->whereUuid('media')->middleware('throttle:customer-screen-media')->name('update');
         Route::delete('{media}', [CustomerScreenMediaController::class, 'destroy'])->whereUuid('media')->middleware('throttle:customer-screen-media')->name('destroy');
     });
+    Route::get('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'show'])->whereUuid('branch')->name('branches.customer-screen-settings.show');
+    Route::put('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'update'])->whereUuid('branch')->middleware('throttle:customer-screen-media')->name('branches.customer-screen-settings.update');
     Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
     Route::middleware('can:inventory.manage')->group(function () {
         Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
@@ -288,7 +294,6 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('pairing', [PosCustomerScreenController::class, 'unpair'])->middleware('throttle:pos-customer-screen-pairing')->name('unpair');
             Route::put('mode', [PosCustomerScreenController::class, 'mode'])->name('mode');
             Route::post('cart', [PosCustomerScreenController::class, 'cart'])->name('cart');
-            Route::post('takeover', [PosCustomerScreenController::class, 'takeover'])->name('takeover');
         });
         Route::post('pos/orders/{order}/buzz', PickupBuzzController::class)->whereUuid('order')->middleware('throttle:pickup-buzz')->name('pos.orders.buzz');
     });

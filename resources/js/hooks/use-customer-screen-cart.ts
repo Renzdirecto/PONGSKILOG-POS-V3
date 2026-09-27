@@ -1,27 +1,30 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { createClientUuid } from '@/lib/client-uuid';
-import { createCartSequencer } from '@/lib/customer-screen';
+import {
+    createCartSequencer,
+    customerScreenCommitHeaders,
+} from '@/lib/customer-screen';
 import {
     enqueueStationWrite,
+    posStationId,
     stationRequest,
     stationScreen,
 } from '@/lib/pos-station';
-import {
-    cart as cartRoute,
-    takeover as takeoverRoute,
-} from '@/routes/pos/customer-screen';
+import { cart as cartRoute } from '@/routes/pos/customer-screen';
 import type { CartLine, OrderType } from '@/types/pos';
 
 /** Rapid cart edits are coalesced: the screen receives the latest cart once the cashier pauses for this long. */
 const CART_DEBOUNCE_MS = 300;
 
 /**
- * Projects this POS station's unfinished cart onto its paired customer screen (Phase 19.6A) and announces a committed
- * order for the takeover. The cart is never an order: only ids and quantities are sent (the server derives the
- * customer-safe text and prices), it lives in short-lived cache on the server, and a failed send only means the screen
- * catches up on the next change. Sends are debounced, numbered per page instance and run one at a time, so the newest
- * cart always wins; the takeover waits for the last cart send before it. Nothing is sent without a paired screen, and
- * nothing here can block or delay a payment.
+ * Projects this POS station's unfinished cart onto its paired customer screen (Phase 19.6). The cart is never an
+ * order: only ids and quantities are sent (the server derives the customer-safe text and prices), it lives in
+ * short-lived cache on the server, and a failed send only means the screen catches up on the next change. Sends are
+ * debounced, numbered per page instance and run one at a time, so the newest cart always wins.
+ *
+ * The committed order is confirmed on the screen by the Pay Now / Pay Later request itself: the returned
+ * `commitHeaders()` add this station and the last cart number to that request, so there is no second request that
+ * could be late, lost or skipped. Nothing here can block or delay a payment.
  */
 export function useCustomerScreenCart({
     lines,
@@ -64,14 +67,14 @@ export function useCustomerScreenCart({
         return () => window.clearTimeout(timer);
     }, [paired, lines, orderType, savedOrderId]);
 
-    /** Shows a just-committed order on the paired screen (3 s Dine In / 5 s Take Out); best effort, never awaited. */
-    return useCallback((orderId: string) => {
-        if (stationScreen.get()?.paired !== true) return;
-        void enqueueStationWrite(() =>
-            stationRequest(takeoverRoute(), {
-                order_id: orderId,
-                ...sequencer.current.last(),
-            }),
-        ).catch(() => undefined);
-    }, []);
+    /** Headers for Pay Now / Pay Later: the server confirms the committed order on the paired screen (best effort). */
+    return useCallback(
+        () =>
+            customerScreenCommitHeaders(
+                posStationId(),
+                stationScreen.get()?.paired === true,
+                sequencer.current.last(),
+            ),
+        [],
+    );
 }

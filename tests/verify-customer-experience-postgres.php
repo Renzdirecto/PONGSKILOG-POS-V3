@@ -2,11 +2,12 @@
 
 /**
  * Opt-in: DB_URL=null php tests/verify-customer-experience-postgres.php
- * Phase 19.6 Customer Experience on real PostgreSQL: migration rollback/reapply and constraints, independent processes
- * buzzing the same Ready Take Out order at once (5-second cooldown and idempotency under a real row lock), and two
- * screens paired with one POS station at the same instant (unique Branch + station index, one retry releases the
- * previous screen). Uses only loopback PostgreSQL and a random cx_* schema, then drops it. The normal development
- * schema is never touched.
+ * Phase 19.6 Customer Experience on real PostgreSQL: migration rollback/reapply and constraints (including the Branch
+ * Customer Screen settings columns and their defaults), independent processes buzzing the same Ready Take Out order at
+ * once (5-second cooldown and idempotency under a real row lock), two screens paired with one POS station at the same
+ * instant (unique Branch + station index, one retry releases the previous screen) and the queue-position authority
+ * matching the Customer Display board order (committed_at, id) across both order types. Uses only loopback PostgreSQL
+ * and a random cx_* schema, then drops it. The normal development schema is never touched.
  */
 
 use App\Actions\CustomerScreens\PairCustomerScreen;
@@ -22,6 +23,7 @@ use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\CustomerScreens;
+use App\Support\KitchenBoard;
 use App\Support\PickupPushGateway;
 use App\Support\PickupTokens;
 use Database\Factories\PushSubscriptionFactory;
@@ -179,15 +181,26 @@ try {
     $observer->statement('CREATE SCHEMA "'.$schema.'"');
     $createdSchema = true;
 
-    // A: fresh migrations, then the additive Phase 19.6 migration rolls back and reapplies cleanly with its constraints.
+    // A: fresh migrations, then the additive Phase 19.6 migrations roll back and reapply cleanly with their constraints.
     $tables = ['customer_screens', 'customer_screen_media', 'order_pickup_tokens', 'pickup_push_subscriptions'];
+    $settings = ['customer_screen_dine_in_success_seconds', 'customer_screen_take_out_success_seconds', 'maps_url'];
     cxVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'A: fresh migration failed.');
-    $latest = basename((string) collect(glob(database_path('migrations/*.php')) ?: [])->sort()->last());
-    cxVerify(str_ends_with($latest, 'create_customer_experience_tables.php'), 'A: the Phase 19.6 migration is not the latest.');
+    $migrations = collect(glob(database_path('migrations/*.php')) ?: [])->map(fn (string $path): string => basename($path))->sort()->values();
+    $position = $migrations->search(fn (string $name): bool => str_ends_with($name, 'create_customer_experience_tables.php'));
+    cxVerify($position !== false && str_ends_with((string) $migrations->last(), 'add_customer_screen_settings_to_branches_table.php'), 'A: the Phase 19.6 migrations are not the latest.');
     cxVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0
+        && collect($settings)->every(fn (string $column): bool => ! DB::getSchemaBuilder()->hasColumn('branches', $column))
+        && collect($tables)->every(fn (string $table): bool => DB::getSchemaBuilder()->hasTable($table)), 'A: settings rollback was not exact.');
+    cxVerify(Artisan::call('migrate:rollback', ['--step' => $migrations->count() - 1 - $position, '--force' => true, '--no-interaction' => true]) === 0
         && collect($tables)->every(fn (string $table): bool => ! DB::getSchemaBuilder()->hasTable($table)), 'A: rollback left a table behind.');
+    $legacyBranch = (string) Str::uuid();
+    DB::table('branches')->insert(['id' => $legacyBranch, 'code' => 'CXOLD', 'kiosk_code' => 'CXOLD', 'name' => 'Existing Branch', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);
     cxVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0
         && collect($tables)->every(fn (string $table): bool => DB::getSchemaBuilder()->hasTable($table)), 'A: reapply failed.');
+    $legacy = DB::table('branches')->where('id', $legacyBranch)->first();
+    cxVerify($legacy !== null && (int) $legacy->customer_screen_dine_in_success_seconds === 5 && (int) $legacy->customer_screen_take_out_success_seconds === 5
+        && $legacy->maps_url === null, 'A: existing Branches did not get the 5-second defaults.');
+    DB::table('branches')->where('id', $legacyBranch)->delete();
     $indexes = collect(DB::select('SELECT indexname FROM pg_indexes WHERE schemaname = ?', [$schema]))->pluck('indexname');
     foreach (['customer_screens_branch_id_station_hash_unique', 'customer_screens_token_hash_unique', 'customer_screens_pairing_code_hash_unique',
         'order_pickup_tokens_order_id_unique', 'order_pickup_tokens_token_hash_unique', 'order_pickup_tokens_branch_id_expires_at_index',
@@ -201,7 +214,7 @@ try {
         $invalidMode = (string) $exception->getCode();
     }
     cxVerify($invalidMode === '23514', 'A: a mode outside ads/menu/customer_display was accepted.');
-    echo 'CASE A PASS: fresh migration, rollback and reapply; unique/lookup indexes and the mode CHECK exist.'.PHP_EOL;
+    echo 'CASE A PASS: fresh migration, rollback and reapply of both Phase 19.6 migrations; indexes, the mode CHECK and the 5-second defaults exist.'.PHP_EOL;
 
     (new RbacSeeder)->run();
     $branch = Branch::factory()->create(['code' => 'CXPG']);
@@ -258,6 +271,32 @@ try {
         && $second->fresh()->isPaired() && ! $first->fresh()->isPaired()
         && CustomerScreen::query()->where('branch_id', $branch->id)->count() === 1, 'D: the racing pairing did not release the previous screen: '.json_encode($results));
     echo 'CASE D PASS: pairing racing an uncommitted pairing of the same station hit the unique index, retried once and released the previous screen.'.PHP_EOL;
+
+    // E: the queue-position authority follows the Customer Display board order on PostgreSQL, ties broken by id.
+    $tie = now()->subMinutes(3)->startOfSecond();
+    $queued = collect([
+        ['take_out', KitchenStatus::Kitchen, $tie], ['dine_in', KitchenStatus::Kitchen, $tie], ['dine_in', KitchenStatus::Preparing, $tie->addSecond()],
+        ['take_out', KitchenStatus::Preparing, $tie->addSeconds(2)], ['dine_in', KitchenStatus::Ready, $tie->addSeconds(3)],
+    ])->map(function (array $spec, int $index) use ($branch, $session): Order {
+        [$type, $status, $at] = $spec;
+        $queuedOrder = Order::factory()->for($branch)->for($session)->create([
+            'order_type' => $type, 'order_number' => (string) (300 + $index), 'commercial_status' => 'active', 'payment_status' => 'paid',
+            'payment_term' => 'immediate', 'kitchen_status' => $status, 'committed_at' => $at,
+        ]);
+        KitchenTicket::factory()->for($branch)->for($queuedOrder)->create(['status' => $status]);
+
+        return $queuedOrder;
+    });
+    $board = app(KitchenBoard::class);
+    $waiting = $queued->filter(fn (Order $queuedOrder): bool => $queuedOrder->kitchen_status !== KitchenStatus::Ready);
+    $rows = $board->queue($waiting->last())['rows'];
+    cxVerify(array_map(fn (array $row): string => '#'.$row['order_number'], $rows) === $board->customerDisplay($branch)['preparing'], 'E: the queue order differs from the board: '.json_encode($rows));
+    $positions = $waiting->map(fn (Order $queuedOrder): array => array_intersect_key($board->queue($queuedOrder), array_flip(['overall_position', 'type_position'])))->values()->all();
+    $overall = array_column($positions, 'overall_position');
+    sort($overall);
+    cxVerify($overall === [1, 2, 3, 4] && $board->queue($queued->last())['overall_position'] === null
+        && $board->queue($waiting->last())['type_position'] === 2, 'E: unexpected queue positions: '.json_encode($positions));
+    echo 'CASE E PASS: overall and same-type positions follow the board order (committed_at, id) across Dine In and Take Out; Ready is not queued.'.PHP_EOL;
 
     echo 'PHASE 19.6 CUSTOMER EXPERIENCE POSTGRESQL VERIFICATION PASSED'.PHP_EOL;
 } finally {

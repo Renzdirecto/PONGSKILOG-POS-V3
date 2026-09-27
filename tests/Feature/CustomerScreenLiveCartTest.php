@@ -1,9 +1,11 @@
 <?php
 
+use App\Actions\CustomerScreens\ShowOrderOnCustomerScreen;
 use App\Enums\CustomerScreenMode;
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSelectionType;
 use App\Events\CustomerScreenChanged;
+use App\Events\CustomerScreenStatusChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\CustomerScreen;
@@ -11,13 +13,17 @@ use App\Models\KitchenTicket;
 use App\Models\ModifierGroup;
 use App\Models\ModifierOption;
 use App\Models\Order;
+use App\Models\OrderPickupToken;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Support\CustomerScreenLiveState;
 use App\Support\CustomerScreens;
 use App\Support\KitchenBoard;
+use App\Support\PickupTokens;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -187,37 +193,61 @@ test('carts never cross stations and an unpaired station stores nothing', functi
     liveCartSend(liveCartCashier($this->main, 'kitchen_staff'), $this->station, $items, 1)->assertForbidden();
 });
 
-test('a committed Dine In order takes over for 3 seconds with its same-type queue position and keeps the mode', function () {
+/** @param array<string, string> $headers */
+function liveCartPayNow(User $cashier, Product $product, string $type, array $headers = [], ?string $key = null): TestResponse
+{
+    return test()->actingAs($cashier)->withHeaders($headers)->postJson(route('pos.payments.store'), [
+        'order_type' => $type, 'customer_label' => 'Juan Dela Cruz', 'items' => [['product_id' => $product->id, 'quantity' => 1, 'notes' => 'staff only note', 'modifiers' => []]],
+        'payment_method' => 'cash', 'cash_received' => '500.00', 'cashless_amount' => null, 'idempotency_key' => $key ?? (string) Str::uuid(),
+    ]);
+}
+
+function liveCartShown(string $token, string $takeoverId): TestResponse
+{
+    return test()->withCookie(CustomerScreens::COOKIE, $token)->postJson(route('customer-screen.takeover.shown', $takeoverId));
+}
+
+test('a committed Dine In order is confirmed on the paired screen with its queue positions, no QR and never the customer name', function () {
+    Event::fake([CustomerScreenChanged::class, CustomerScreenStatusChanged::class]);
     $session = StoreSession::factory()->for($this->main)->create();
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
     $this->travel(-5)->minutes();
     liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '101');
-    liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Preparing, '102');
-    liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Kitchen, '103');
+    liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Preparing, '102');
+    liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Preparing, '103');
     liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Ready, '104');
-    liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '105', ['commercial_status' => 'voided', 'voided_at' => now()]);
+    liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Done, '105', ['completed_at' => now()]);
+    liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '106', ['commercial_status' => 'voided', 'voided_at' => now()]);
     $this->travelBack();
-    $order = liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '106');
     $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
         ->putJson(route('pos.customer-screen.mode'), ['control' => 'menu'])->assertOk();
 
-    $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
-        ->postJson(route('pos.customer-screen.takeover'), ['order_id' => $order->id])
-        ->assertOk()->assertExactJson(['shown' => true, 'duration_ms' => 3000]);
+    $receipt = liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => $this->station])
+        ->assertOk()->assertJsonPath('receipt.payment_status', 'paid')->json('receipt');
 
-    liveCartState($this->screenToken)
-        ->assertJsonPath('screen.mode', 'menu')
-        ->assertJsonPath('screen.takeover.order_number', '106')
+    $state = liveCartState($this->screenToken)
+        ->assertJsonPath('screen.mode', 'ads')
+        ->assertJsonPath('screen.takeover.order_number', $receipt['order_number'])
         ->assertJsonPath('screen.takeover.order_type', 'dine_in')
-        ->assertJsonPath('screen.takeover.queue_position', 3)
-        ->assertJsonPath('screen.takeover.duration_ms', 3000)
+        ->assertJsonPath('screen.takeover.overall_position', 4)
+        ->assertJsonPath('screen.takeover.type_position', 3)
+        ->assertJsonPath('screen.takeover.queue_total', 4)
+        ->assertJsonPath('screen.takeover.duration_ms', 5000)
+        ->assertJsonPath('screen.takeover.remaining_ms', null)
         ->assertJsonPath('screen.takeover.pickup', null);
-
-    $this->travel(3100)->milliseconds();
-    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null)->assertJsonPath('screen.mode', 'menu');
-    expect(CustomerScreen::query()->whereNotNull('branch_id')->sole()->mode)->toBe(CustomerScreenMode::Menu);
+    expect($state->json('screen.takeover.queue'))->toBe([
+        ['position' => 1, 'order_number' => '101', 'order_type' => 'dine_in', 'current' => false],
+        ['position' => 2, 'order_number' => '102', 'order_type' => 'take_out', 'current' => false],
+        ['position' => 3, 'order_number' => '103', 'order_type' => 'dine_in', 'current' => false],
+        ['position' => 4, 'order_number' => $receipt['order_number'], 'order_type' => 'dine_in', 'current' => true],
+    ])->and($state->getContent())->not->toContain('Juan Dela Cruz')->not->toContain('staff only note')->not->toContain($receipt['id']);
+    expect(CustomerScreen::query()->whereNotNull('branch_id')->sole()->mode)->toBe(CustomerScreenMode::Ads);
+    Event::assertDispatched(CustomerScreenChanged::class, fn (CustomerScreenChanged $event): bool => $event->broadcastWith()['reason'] === 'takeover');
+    Event::assertDispatched(CustomerScreenStatusChanged::class, fn (CustomerScreenStatusChanged $event): bool => $event->broadcastWith()['branch_id'] === $this->main->id
+        && array_keys($event->broadcastWith()) === ['event_id', 'event_type', 'branch_id', 'occurred_at']);
 });
 
-test('a committed Take Out order takes over for 5 seconds with the Take Out queue and its pickup QR', function () {
+test('a committed Take Out order is confirmed with its pickup QR and both queue positions', function () {
     $session = StoreSession::factory()->for($this->main)->create();
     $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
     $this->travel(-2)->minutes();
@@ -225,40 +255,110 @@ test('a committed Take Out order takes over for 5 seconds with the Take Out queu
     liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '202');
     $this->travelBack();
 
-    $receipt = $this->actingAs($this->cashier)->postJson(route('pos.payments.store'), [
-        'order_type' => 'take_out', 'customer_label' => '', 'items' => [['product_id' => $product->id, 'quantity' => 1, 'notes' => '', 'modifiers' => []]],
-        'payment_method' => 'cash', 'cash_received' => '200.00', 'cashless_amount' => null, 'idempotency_key' => (string) Str::uuid(),
-    ])->assertOk()->json('receipt');
-
-    $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
-        ->postJson(route('pos.customer-screen.takeover'), ['order_id' => $receipt['id']])
-        ->assertOk()->assertJsonPath('duration_ms', 5000);
+    $receipt = liveCartPayNow($this->cashier, $product, 'take_out', [CustomerScreens::STATION_HEADER => $this->station])->assertOk()->json('receipt');
 
     $state = liveCartState($this->screenToken)
         ->assertJsonPath('screen.mode', 'ads')
-        ->assertJsonPath('screen.takeover.order_number', $receipt['order_number'])
         ->assertJsonPath('screen.takeover.order_type', 'take_out')
-        ->assertJsonPath('screen.takeover.queue_position', 2)
-        ->assertJsonPath('screen.takeover.duration_ms', 5000);
-    expect($state->json('screen.takeover.pickup.url'))->toMatch('#\Ahttps?://[^/]+/pickup/[A-Za-z0-9_-]{43}\z#')
+        ->assertJsonPath('screen.takeover.overall_position', 3)
+        ->assertJsonPath('screen.takeover.type_position', 2);
+    $raw = app(PickupTokens::class)->rawToken(OrderPickupToken::query()->where('order_id', $receipt['id'])->sole());
+    expect($state->json('screen.takeover.pickup.url'))->toEndWith('/pickup/'.$raw)
         ->and($state->json('screen.takeover.pickup.qr_image'))->toStartWith('data:image/svg+xml;base64,')
-        ->and($state->json('screen.takeover.remaining_ms'))->toBeGreaterThan(0)->toBeLessThanOrEqual(5000);
-
-    $this->travel(4)->seconds();
-    liveCartState($this->screenToken)->assertJsonPath('screen.takeover.order_number', $receipt['order_number']);
-    $this->travel(2)->seconds();
-    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null)->assertJsonPath('screen.mode', 'ads');
+        ->and($state->getContent())->not->toContain('Juan Dela Cruz');
 });
 
-test('a takeover clears the cart and a cart send still in flight cannot bring it back', function () {
-    $menu = liveCartLemonade($this->main);
-    $session = StoreSession::factory()->for($this->main)->create();
-    $order = liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '301');
-    $items = [['key' => 'x', 'product_id' => $menu['product']->id, 'quantity' => 1, 'modifiers' => []]];
-    liveCartSend($this->cashier, $this->station, $items, 7)->assertOk();
+test('a Pay Later commit is confirmed too and a selected Customer Display stays selected', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
+    $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
+        ->putJson(route('pos.customer-screen.mode'), ['control' => 'customer_display'])->assertOk();
+    $reservation = $this->actingAs($this->cashier)->postJson(route('pos.orders.reservations.store'), ['order_type' => 'dine_in'])->assertOk()->json('order');
 
     $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
-        ->postJson(route('pos.customer-screen.takeover'), ['order_id' => $order->id, 'instance' => 'pos-instance-1', 'sequence' => 7])->assertOk();
+        ->postJson(route('pos.orders.pay-later.store', $reservation['id']), [
+            'idempotency_key' => (string) Str::uuid(), 'order_type' => 'dine_in', 'customer_label' => 'Table Guest', 'branch_table_id' => null,
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'notes' => '', 'modifiers' => []]],
+        ])->assertOk();
+
+    liveCartState($this->screenToken)
+        ->assertJsonPath('screen.mode', 'customer_display')
+        ->assertJsonPath('screen.takeover.order_number', $reservation['order_number'])
+        ->assertJsonPath('screen.takeover.order_type', 'dine_in')
+        ->assertJsonPath('screen.takeover.type_position', 1)
+        ->assertJsonPath('screen.takeover.pickup', null)
+        ->assertDontSee('Table Guest');
+});
+
+test('the countdown starts only once the screen shows the confirmation and uses the Branch durations', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $this->main->update(['customer_screen_dine_in_success_seconds' => 3, 'customer_screen_take_out_success_seconds' => 12]);
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
+    liveCartPayNow($this->cashier, $product, 'take_out', [CustomerScreens::STATION_HEADER => $this->station])->assertOk();
+    $takeover = liveCartState($this->screenToken)->assertJsonPath('screen.takeover.duration_ms', 12000)->json('screen.takeover');
+
+    /** Slow QR rendering / refetching does not consume the scan window: it is still pending, with its full duration. */
+    $this->travel(8)->seconds();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover.id', $takeover['id'])->assertJsonPath('screen.takeover.remaining_ms', null);
+    liveCartShown($this->screenToken, $takeover['id'])->assertOk()->assertExactJson(['remaining_ms' => 12000]);
+    $this->travel(5)->seconds();
+    liveCartShown($this->screenToken, $takeover['id'])->assertOk()->assertExactJson(['remaining_ms' => 7000]);
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover.remaining_ms', 7000);
+    $this->travel(7)->seconds();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null);
+    liveCartShown($this->screenToken, $takeover['id'])->assertNotFound();
+
+    liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => $this->station])->assertOk();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover.duration_ms', 3000);
+});
+
+test('a confirmation the screen never shows expires, and only the paired screen can report it shown', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
+    $otherToken = liveCartPairedScreen(liveCartCashier($this->main), (string) Str::uuid());
+    liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => $this->station])->assertOk();
+    $takeoverId = liveCartState($this->screenToken)->json('screen.takeover.id');
+
+    liveCartShown($otherToken, $takeoverId)->assertNotFound();
+    liveCartShown($this->screenToken, 'AAAAAAAAAAAAAAAA')->assertNotFound();
+    liveCartState($otherToken)->assertJsonPath('screen.takeover', null);
+
+    $this->travel(CustomerScreenLiveState::TAKEOVER_PENDING_MS + 1000)->milliseconds();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null);
+    liveCartShown($this->screenToken, $takeoverId)->assertNotFound();
+});
+
+test('a replayed payment never shows its order twice and a commit without a paired station shows nothing', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
+    $key = (string) Str::uuid();
+    liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => $this->station], $key)->assertOk();
+    $first = liveCartState($this->screenToken)->json('screen.takeover.id');
+    liveCartShown($this->screenToken, $first)->assertOk();
+    $this->travel(6)->seconds();
+
+    liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => $this->station], $key)->assertOk();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null);
+
+    $this->withoutHeader(CustomerScreens::STATION_HEADER);
+    liveCartPayNow($this->cashier, $product, 'dine_in')->assertOk();
+    liveCartPayNow($this->cashier, $product, 'dine_in', [CustomerScreens::STATION_HEADER => (string) Str::uuid()])->assertOk();
+    liveCartPayNow(liveCartCashier($this->qave), Product::factory()->soldAt($this->qave)->create(), 'dine_in', [CustomerScreens::STATION_HEADER => $this->station])
+        ->assertUnprocessable();
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null);
+});
+
+test('a confirmation clears the cart and a cart send still in flight cannot bring it back', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $menu = liveCartLemonade($this->main);
+    $items = [['key' => 'x', 'product_id' => $menu['product']->id, 'quantity' => 1, 'modifiers' => []]];
+    liveCartSend($this->cashier, $this->station, $items, 7)->assertOk();
+    liveCartState($this->screenToken)->assertJsonCount(1, 'screen.cart.lines');
+
+    liveCartPayNow($this->cashier, Product::factory()->soldAt($this->main)->create(['default_price' => '50.00']), 'dine_in', [
+        CustomerScreens::STATION_HEADER => $this->station,
+        ShowOrderOnCustomerScreen::CART_FENCE_HEADER => 'pos-instance-1:7',
+    ])->assertOk();
     liveCartState($this->screenToken)->assertJsonPath('screen.cart', null);
 
     liveCartSend($this->cashier, $this->station, $items, 7)->assertOk();
@@ -267,39 +367,101 @@ test('a takeover clears the cart and a cart send still in flight cannot bring it
     liveCartState($this->screenToken)->assertJsonCount(1, 'screen.cart.lines');
 });
 
-test('a takeover only shows a recent committed order of the cashier Branch', function () {
-    $session = StoreSession::factory()->for($this->main)->create();
-    $foreign = liveCartCommittedOrder($this->qave, StoreSession::factory()->for($this->qave)->create(), 'dine_in', KitchenStatus::Kitchen, '401');
-    $old = liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '402', ['committed_at' => now()->subMinutes(30)]);
-    $draft = Order::factory()->for($this->main)->create(['order_number' => '403', 'commercial_status' => 'draft', 'committed_at' => null]);
-    $takeover = fn (string $orderId) => $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
-        ->postJson(route('pos.customer-screen.takeover'), ['order_id' => $orderId]);
+test('a pickup token failure never affects the committed payment and the screen still confirms without a QR', function () {
+    StoreSession::factory()->for($this->main)->create();
+    $product = Product::factory()->soldAt($this->main)->create(['default_price' => '150.00']);
+    $this->mock(PickupTokens::class, function ($mock): void {
+        $mock->shouldReceive('issue', 'ensureFor')->andThrow(new RuntimeException('token store down'));
+    });
 
-    $takeover($foreign->id)->assertNotFound();
-    $takeover($old->id)->assertNotFound();
-    $takeover($draft->id)->assertNotFound();
-    liveCartState($this->screenToken)->assertJsonPath('screen.takeover', null);
+    $receipt = liveCartPayNow($this->cashier, $product, 'take_out', [CustomerScreens::STATION_HEADER => $this->station])
+        ->assertOk()->assertJsonPath('receipt.payment_status', 'paid')->json('receipt');
+
+    expect(Order::query()->findOrFail($receipt['id'])->committed_at)->not->toBeNull()
+        ->and(OrderPickupToken::query()->count())->toBe(0);
+    liveCartState($this->screenToken)->assertJsonPath('screen.takeover.order_type', 'take_out')->assertJsonPath('screen.takeover.pickup', null);
 });
 
-test('queue positions come from the canonical board order and ignore finished and voided orders', function () {
+test('queue positions come from the canonical board order across both order types and ignore finished and voided orders', function () {
     $session = StoreSession::factory()->for($this->main)->create();
     $this->travel(-10)->minutes();
     $first = liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Kitchen, '501');
     $this->travel(1)->minutes();
-    $second = liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Preparing, '502');
+    $dineIn = liveCartCommittedOrder($this->main, $session, 'dine_in', KitchenStatus::Kitchen, '502');
+    $second = liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Preparing, '503');
     $this->travel(1)->minutes();
-    liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Done, '503', ['completed_at' => now()]);
-    $third = liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Kitchen, '504');
+    liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Done, '504', ['completed_at' => now()]);
+    $third = liveCartCommittedOrder($this->main, $session, 'take_out', KitchenStatus::Kitchen, '505');
     $this->travelBack();
     $board = app(KitchenBoard::class);
 
-    expect($board->queuePosition($first))->toBe(1)
-        ->and($board->queuePosition($second))->toBe(2)
-        ->and($board->queuePosition($third))->toBe(3);
+    /** Same committed_at: the id decides, exactly like the Customer Display board. */
+    [$tieFirst, $tieSecond] = collect([$dineIn, $second])->sortBy('id')->values()->all();
+    expect($board->queue($first))->toMatchArray(['overall_position' => 1, 'type_position' => 1, 'total' => 4])
+        ->and($board->queue($tieFirst)['overall_position'])->toBe(2)
+        ->and($board->queue($tieSecond)['overall_position'])->toBe(3)
+        ->and($board->queue($second)['type_position'])->toBe(2)
+        ->and($board->queue($dineIn)['type_position'])->toBe(1)
+        ->and($board->queue($third))->toMatchArray(['overall_position' => 4, 'type_position' => 3])
+        ->and($board->queue($third)['type_position'])->toBe(3);
 
     $first->update(['kitchen_status' => KitchenStatus::Ready]);
     $second->update(['commercial_status' => 'voided', 'voided_at' => now()]);
-    expect($board->queuePosition($third->fresh()))->toBe(1)
-        ->and($board->queuePosition($first->fresh()))->toBeNull()
-        ->and($board->queuePosition($second->fresh()))->toBeNull();
+    expect($board->queue($third->fresh()))->toMatchArray(['overall_position' => 2, 'type_position' => 1, 'total' => 2])
+        ->and($board->queue($first->fresh()))->toMatchArray(['overall_position' => null, 'type_position' => null])
+        ->and($board->queue($second->fresh())['type_position'])->toBeNull();
+});
+
+test('a long queue shows a bounded window that always contains the customer order with its true position', function () {
+    $session = StoreSession::factory()->for($this->main)->create();
+    $orders = collect(range(1, 30))->map(function (int $index) use ($session): Order {
+        $this->travel(1)->seconds();
+
+        return liveCartCommittedOrder($this->main, $session, $index % 3 === 0 ? 'dine_in' : 'take_out', KitchenStatus::Kitchen, (string) (1000 + $index));
+    });
+    $board = app(KitchenBoard::class);
+
+    $near = $board->queue($orders[3]);
+    expect(array_column($near['rows'], 'position'))->toBe(range(1, 10))
+        ->and($near['rows'][3]['current'])->toBeTrue();
+
+    $far = $board->queue($orders[26]);
+    expect($far['overall_position'])->toBe(27)
+        ->and($far['type_position'])->toBe(9)
+        ->and($far['total'])->toBe(30)
+        ->and(array_column($far['rows'], 'position'))->toBe(range(19, 28))
+        ->and(collect($far['rows'])->firstWhere('current', true))->toBe(['position' => 27, 'order_number' => '1027', 'order_type' => 'dine_in', 'current' => true]);
+
+    $last = $board->queue($orders[29]);
+    expect(array_column($last['rows'], 'position'))->toBe(range(21, 30));
+
+    /** One queue read whatever the queue length. */
+    $count = function (Order $order) use ($board): int {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $board->queue($order->fresh());
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $queries;
+    };
+    expect($count($orders[2]))->toBe($count($orders[29]));
+});
+
+test('the screen header toggles the same single mode as the POS and tells the POS header to refetch', function () {
+    Event::fake([CustomerScreenStatusChanged::class]);
+    $press = fn (string $control, ?string $token = null) => $this->withCookie(CustomerScreens::COOKIE, $token ?? $this->screenToken)
+        ->putJson(route('customer-screen.mode'), ['control' => $control]);
+
+    $press('menu')->assertOk()->assertJsonPath('screen.mode', 'menu');
+    $this->actingAs($this->cashier)->withHeader(CustomerScreens::STATION_HEADER, $this->station)
+        ->getJson(route('pos.customer-screen.status'))->assertJsonPath('mode', 'menu');
+    $press('customer_display')->assertOk()->assertJsonPath('screen.mode', 'customer_display');
+    $press('customer_display')->assertOk()->assertJsonPath('screen.mode', 'ads');
+    $press('ads')->assertUnprocessable();
+    Event::assertDispatchedTimes(CustomerScreenStatusChanged::class, 3);
+
+    $unpaired = $this->withCookie(CustomerScreens::COOKIE, '')->postJson(route('customer-screen.pairing-code'))->getCookie(CustomerScreens::COOKIE)->getValue();
+    $press('menu', $unpaired)->assertNotFound();
+    $press('menu', str_repeat('a', 64))->assertNotFound();
 });

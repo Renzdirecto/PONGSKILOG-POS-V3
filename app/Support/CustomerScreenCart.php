@@ -113,10 +113,21 @@ class CustomerScreenCart
     /** @return CartLine */
     private function savedLine(string $screenId, OrderItem $item): array
     {
+        return ['key' => $this->lineKey($screenId, 'saved:'.$item->getKey()), ...self::customerLine($item)];
+    }
+
+    /**
+     * A committed or saved order line as a customer may see it, from the order's own historical snapshots (never
+     * today's catalog): the Size-aware name, quantity, add-on names, structured instructions and the line amount. No
+     * ids, free-text notes, cost or stock. Shared by the Live Cart and the pickup page's order summary.
+     *
+     * @return array{name: string, quantity: int, details: list<string>, instructions: list<string>, amount: string}
+     */
+    public static function customerLine(OrderItem $item): array
+    {
         $modifiers = $item->modifiers;
 
         return [
-            'key' => $this->lineKey($screenId, 'saved:'.$item->getKey()),
             'name' => OperationalItemName::fromOrderItem($item)['display_name'],
             'quantity' => $item->quantity,
             'details' => array_values($modifiers

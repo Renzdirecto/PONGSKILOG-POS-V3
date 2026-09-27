@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     media as mediaRoute,
     menu as menuRoute,
+    mode as modeRoute,
     pairingCode as pairingCodeRoute,
     state as stateRoute,
 } from '@/routes/customer-screen';
 import { auth as authorizeChannel } from '@/routes/customer-screen/broadcasting';
+import { shown as takeoverShownRoute } from '@/routes/customer-screen/takeover';
 import {
     refreshDelayMs,
+    type CustomerScreenControl,
     type CustomerMenuData,
     type CustomerScreenPlaylist,
     type CustomerScreenState,
@@ -23,7 +26,8 @@ type ScreenEvent = { event_id?: string; reason?: string };
  * authoritative projection (one request at a time, the last one wins, so a slow response never lands over a newer
  * one), the Menu and the advertisement playlist. After a reconnect, a returning network or the tablet waking up, it
  * refetches everything once. There is no polling: the only timers renew a pairing code or signed media links just
- * before they expire.
+ * before they expire. Its own writes are presentation only: the header's MENU / CUSTOMER DISPLAY press (the same one
+ * mode the POS controls) and reporting that an order confirmation is on screen.
  */
 export function useCustomerScreen(initial: CustomerScreenState) {
     const [screen, setScreen] = useState(initial);
@@ -280,6 +284,28 @@ export function useCustomerScreen(initial: CustomerScreenState) {
         mediaRefresh,
     ]);
 
+    /** The header's MENU / CUSTOMER DISPLAY press: the server toggles the one stored mode and answers the new state. */
+    const pressControl = useCallback(
+        async (control: CustomerScreenControl) => {
+            const result = await qrRequest<{ screen: CustomerScreenState }>(
+                modeRoute(),
+                { control },
+            );
+            setScreen(result.screen);
+            stateRefresh.schedule();
+        },
+        [stateRefresh],
+    );
+
+    /** The confirmation is on screen: the server starts its countdown too (so a reload shows only the time left). */
+    const reportTakeoverShown = useCallback((takeoverId: string) => {
+        const send = () =>
+            qrRequest(takeoverShownRoute(takeoverId)).then(() => undefined);
+        send().catch(() => {
+            window.setTimeout(() => void send().catch(() => undefined), 1000);
+        });
+    }, []);
+
     return {
         screen,
         connection,
@@ -287,5 +313,7 @@ export function useCustomerScreen(initial: CustomerScreenState) {
         menu,
         playlist,
         refresh: () => stateRefresh.schedule(0),
+        pressControl,
+        reportTakeoverShown,
     };
 }

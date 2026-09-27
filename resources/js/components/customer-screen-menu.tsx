@@ -1,13 +1,13 @@
 import { ShoppingBag, UtensilsCrossed } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CategoryIcon } from '@/components/category-icon';
+import { useHighlightedLines } from '@/components/customer-screen-order-summary';
 import {
-    changedLineKeys,
     orderTypeText,
+    showsLiveCart,
     type CustomerMenuData,
     type CustomerMenuProduct,
     type CustomerScreenCart,
-    type CustomerScreenCartLine,
 } from '@/lib/customer-screen';
 import { pesos } from '@/lib/pos-money';
 import type { CategoryIconKey } from '@/types/catalog';
@@ -28,7 +28,7 @@ export function CustomerScreenMenu({
 }) {
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            {cart && cart.lines.length > 0 && (
+            {cart && showsLiveCart('menu', cart) && (
                 <LiveCart cart={cart} live={live} />
             )}
             <MenuBrowser menu={menu} />
@@ -37,18 +37,7 @@ export function CustomerScreenMenu({
 }
 
 function LiveCart({ cart, live }: { cart: CustomerScreenCart; live: boolean }) {
-    const previous = useRef<CustomerScreenCartLine[] | null>(null);
-    const [highlighted, setHighlighted] = useState<string[]>([]);
-
-    useEffect(() => {
-        const changed = changedLineKeys(previous.current, cart.lines);
-        previous.current = cart.lines;
-        if (changed.length === 0) return;
-        setHighlighted(changed);
-        const timer = window.setTimeout(() => setHighlighted([]), 1400);
-
-        return () => window.clearTimeout(timer);
-    }, [cart.lines]);
+    const highlighted = useHighlightedLines(cart.lines);
 
     return (
         <section

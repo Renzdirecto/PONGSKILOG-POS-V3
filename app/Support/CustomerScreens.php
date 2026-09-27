@@ -29,7 +29,7 @@ class CustomerScreens
 
     public const CODE_TTL_SECONDS = 300;
 
-    /** No 0/O, 1/I/L: a code read across a counter is typed correctly. 32^6 ≈ 1.07 billion codes. */
+    /** No 0/O, 1/I/L: a code read across a counter is typed correctly. 31^6 ≈ 887 million codes. */
     private const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
     /** Five years: the device keeps its pairing as long as the browser profile keeps its cookies. */

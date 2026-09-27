@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\CustomerScreens\ToggleCustomerScreenMode;
 use App\Actions\CustomerScreens\UnpairCustomerScreen;
+use App\Enums\CustomerScreenMode;
 use App\Models\CustomerScreen;
 use App\Support\CustomerMenu;
+use App\Support\CustomerScreenLiveState;
 use App\Support\CustomerScreenMediaLibrary;
 use App\Support\CustomerScreenProjection;
 use App\Support\CustomerScreens;
@@ -12,6 +15,7 @@ use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -19,7 +23,8 @@ use Symfony\Component\HttpFoundation\Response;
  * The public customer-facing screen (Phase 19.6A): a kiosk page with no login, no staff navigation and no staff shared
  * props. The device is identified only by its own HttpOnly cookie; everything it may read is the allowlisted
  * projection of the Branch/station it is paired with. It has no endpoint that could add to a cart, change an order
- * or take a payment — the only writes are asking for its own pairing code and resetting its own pairing.
+ * or take a payment — the only writes are its own presentation: asking for a pairing code, resetting its pairing,
+ * its header's MENU / CUSTOMER DISPLAY controls and reporting that an order confirmation is on screen.
  */
 class CustomerScreenController extends Controller
 {
@@ -43,13 +48,17 @@ class CustomerScreenController extends Controller
 
     /**
      * A fresh one-time pairing code for this (unpaired) device, valid 5 minutes. Asking again replaces the previous
-     * code. A paired device gets no code.
+     * code. A paired device gets no code, only its current state (e.g. it was paired while its realtime was down).
      */
     public function pairingCode(Request $request): JsonResponse
     {
         [$screen, $cookie] = $this->screens->resolveOrCreate($request);
         if ($screen->isPaired()) {
-            return $this->noStore(response()->json(['code' => null, 'expires_at' => null]));
+            return $this->noStore(response()->json([
+                'code' => null,
+                'expires_at' => null,
+                'screen' => $this->projection->for($this->touch($screen), $request->getSchemeAndHttpHost()),
+            ]));
         }
         $code = null;
         for ($attempt = 0; $attempt < 5 && $code === null; $attempt++) {
@@ -85,6 +94,28 @@ class CustomerScreenController extends Controller
         $screen = $this->pairedScreen($request);
 
         return $this->noStore(response()->json(['media' => $library->playlist($screen->branch ?? abort(404))]));
+    }
+
+    /** The screen header's MENU / CUSTOMER DISPLAY controls: the same single mode the POS header controls. */
+    public function mode(Request $request, ToggleCustomerScreenMode $toggle): JsonResponse
+    {
+        $screen = $this->pairedScreen($request);
+        $data = $request->validate(['control' => ['required', Rule::in([CustomerScreenMode::Menu->value, CustomerScreenMode::CustomerDisplay->value])]]);
+        $toggle->fromScreen($screen, CustomerScreenMode::from($data['control'])) ?? abort(404);
+
+        return $this->state($request);
+    }
+
+    /**
+     * The order confirmation is on screen (number and, for Take Out, the QR rendered): its countdown starts now on the
+     * server too, so a reload shows only the time left. Unknown or ended confirmations answer 404.
+     */
+    public function takeoverShown(Request $request, CustomerScreenLiveState $live, string $takeover): JsonResponse
+    {
+        $remaining = $live->markShown($this->pairedScreen($request), $takeover);
+        abort_if($remaining === null, 404);
+
+        return $this->noStore(response()->json(['remaining_ms' => $remaining]));
     }
 
     /** The screen's hidden staff reset (a long press): unpairs this device only, e.g. when its station was lost. */

@@ -204,3 +204,73 @@ test('a Branch-scoped Settings manager without a selected Branch still cannot ma
         ->getJson(route('branches.customer-screen-media.index', $this->qave))->assertForbidden();
     $this->actingAs($manager)->getJson(route('branches.customer-screen-media.index', $this->main))->assertOk();
 });
+
+test('image ads stay up for a bounded choice of seconds and older ads keep their saved duration', function () {
+    $owner = mediaStaff(null, 'owner');
+    $upload = fn (?int $seconds) => $this->actingAs($owner)->post(route('branches.customer-screen-media.store', $this->main), array_filter([
+        'file' => UploadedFile::fake()->image('Promo.jpg', 800, 600),
+        'duration_seconds' => $seconds,
+    ]), ['Accept' => 'application/json']);
+
+    $upload(3)->assertCreated();
+    $upload(null)->assertCreated();
+    $upload(7)->assertUnprocessable()->assertJsonValidationErrors('duration_seconds');
+    $upload(20)->assertUnprocessable()->assertJsonValidationErrors('duration_seconds');
+    expect(CustomerScreenMedia::query()->orderBy('sort_order')->pluck('duration_seconds')->all())->toBe([3, 5]);
+
+    $older = CustomerScreenMedia::factory()->for($this->main)->create(['duration_seconds' => 30]);
+    $update = fn (array $changes) => $this->actingAs($owner)->putJson(route('branches.customer-screen-media.update', ['branch' => $this->main, 'media' => $older]), $changes);
+    $update(['is_active' => false])->assertOk();
+    $update(['duration_seconds' => 12])->assertUnprocessable()->assertJsonValidationErrors('duration_seconds');
+    expect($older->fresh()->only(['duration_seconds', 'is_active']))->toBe(['duration_seconds' => 30, 'is_active' => false]);
+    $update(['duration_seconds' => 15])->assertOk();
+    expect($older->fresh()->duration_seconds)->toBe(15);
+});
+
+test('the order confirmation durations default to 5 seconds and managers set them within 3 to 15 seconds', function () {
+    $owner = mediaStaff(null, 'owner');
+    $valid = ['dine_in_success_seconds' => 3, 'take_out_success_seconds' => 15, 'facebook_url' => null, 'website_url' => null, 'maps_url' => null];
+
+    $this->actingAs($owner)->getJson(route('branches.customer-screen-settings.show', $this->main))->assertOk()
+        ->assertJsonPath('settings.dine_in_success_seconds', 5)
+        ->assertJsonPath('settings.take_out_success_seconds', 5)
+        ->assertJsonPath('settings.limits', ['min_seconds' => 3, 'max_seconds' => 15]);
+    $this->actingAs($owner)->putJson(route('branches.customer-screen-settings.update', $this->main), $valid)->assertOk()
+        ->assertJsonPath('settings.dine_in_success_seconds', 3)
+        ->assertJsonPath('settings.take_out_success_seconds', 15);
+    foreach ([2, 16, 'five'] as $invalid) {
+        $this->actingAs($owner)->putJson(route('branches.customer-screen-settings.update', $this->main), [...$valid, 'dine_in_success_seconds' => $invalid])
+            ->assertUnprocessable()->assertJsonValidationErrors('dine_in_success_seconds');
+    }
+    expect($this->main->fresh()->only(['customer_screen_dine_in_success_seconds', 'customer_screen_take_out_success_seconds']))
+        ->toBe(['customer_screen_dine_in_success_seconds' => 3, 'customer_screen_take_out_success_seconds' => 15]);
+    $this->assertDatabaseHas('audit_logs', ['action' => 'customer_screen_settings.updated', 'branch_id' => $this->main->id]);
+});
+
+test('customer links accept only http(s) addresses and blank links are cleared', function () {
+    $owner = mediaStaff(null, 'owner');
+    $save = fn (array $links) => $this->actingAs($owner)->putJson(route('branches.customer-screen-settings.update', $this->main), [
+        'dine_in_success_seconds' => 5, 'take_out_success_seconds' => 5, 'facebook_url' => null, 'website_url' => null, 'maps_url' => null, ...$links,
+    ]);
+
+    $save(['facebook_url' => 'https://facebook.com/pongskilog', 'website_url' => 'https://pongskilog.example', 'maps_url' => 'https://maps.google.com/?q=Pongskilog'])->assertOk()
+        ->assertJsonPath('settings.maps_url', 'https://maps.google.com/?q=Pongskilog');
+    foreach (['javascript:alert(1)', 'data:text/html,hi', 'ftp://files.example', 'not a link'] as $unsafe) {
+        $save(['maps_url' => $unsafe])->assertUnprocessable()->assertJsonValidationErrors('maps_url');
+        $save(['website_url' => $unsafe])->assertUnprocessable()->assertJsonValidationErrors('website_url');
+    }
+    $save(['facebook_url' => ''])->assertOk();
+    expect($this->main->fresh()->only(['facebook_url', 'website_url', 'maps_url']))->toBe(['facebook_url' => null, 'website_url' => null, 'maps_url' => null]);
+});
+
+test('customer screen settings are managed only for Branches the account manages', function () {
+    $valid = ['dine_in_success_seconds' => 5, 'take_out_success_seconds' => 5, 'facebook_url' => null, 'website_url' => null, 'maps_url' => null];
+    $manager = mediaBranchSettingsManager($this->qave);
+
+    $this->actingAs($manager)->putJson(route('branches.customer-screen-settings.update', $this->qave), $valid)->assertOk();
+    $this->actingAs($manager)->putJson(route('branches.customer-screen-settings.update', $this->main), $valid)->assertForbidden();
+    $this->actingAs($manager)->getJson(route('branches.customer-screen-settings.show', $this->main))->assertForbidden();
+    $this->actingAs(mediaStaff($this->main, 'cashier'))->putJson(route('branches.customer-screen-settings.update', $this->main), $valid)->assertForbidden();
+    auth()->logout();
+    $this->putJson(route('branches.customer-screen-settings.update', $this->main), $valid)->assertUnauthorized();
+});

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Support\CustomerScreens;
 use App\Support\PickupPushGateway;
 use App\Support\PushGateway;
 use App\Support\WebPushGateway;
@@ -72,9 +73,21 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('pos-customer-screen-pairing', fn (Request $request) => Limit::perMinute(10)->by($account($request)));
         RateLimiter::for('pickup-buzz', fn (Request $request) => Limit::perMinute(30)->by($account($request)));
         RateLimiter::for('customer-screen-media', fn (Request $request) => Limit::perMinute(60)->by($account($request)));
-        RateLimiter::for('customer-screen', fn (Request $request) => Limit::perMinute(120)->by((string) $request->ip()));
+        /**
+         * Public pages are limited per capability (screen device cookie / pickup link), with a generous per-IP ceiling:
+         * many phones or screens behind one store Wi-Fi or carrier NAT share an IP and all refetch on the same signal.
+         */
+        $device = fn (Request $request): string => sha1(is_string($cookie = $request->cookie(CustomerScreens::COOKIE)) ? $cookie : '');
+        RateLimiter::for('customer-screen', fn (Request $request) => [
+            Limit::perMinute(120)->by('device|'.$request->ip().'|'.$device($request)),
+            Limit::perMinute(1200)->by('ip|'.$request->ip()),
+        ]);
         RateLimiter::for('customer-screen-pairing-code', fn (Request $request) => Limit::perMinute(10)->by((string) $request->ip()));
-        RateLimiter::for('pickup', fn (Request $request) => Limit::perMinute(120)->by((string) $request->ip()));
+        RateLimiter::for('customer-screen-mode', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
+        RateLimiter::for('pickup', fn (Request $request) => [
+            Limit::perMinute(120)->by('link|'.sha1((string) $request->route('token'))),
+            Limit::perMinute(1200)->by('ip|'.$request->ip()),
+        ]);
         RateLimiter::for('pickup-subscription', fn (Request $request) => [
             Limit::perMinute(10)->by('link|'.sha1((string) $request->route('token'))),
             Limit::perMinute(30)->by('ip|'.$request->ip()),

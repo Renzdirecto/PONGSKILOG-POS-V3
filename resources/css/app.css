@@ -264,3 +264,13 @@ body:has([data-slot='dialog-content'].pos-surface)
         transform: scaleX(0);
     }
 }
+
+/* Phase 19.6 customer screen: the current advertisement's progress bar. */
+@keyframes customer-screen-progress {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
+    }
+}

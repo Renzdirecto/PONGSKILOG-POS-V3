@@ -36,7 +36,10 @@ class CustomerScreenMediaLibrary
 
     public const VIDEO_MAX_SECONDS = 60;
 
-    public const IMAGE_DEFAULT_SECONDS = 8;
+    public const IMAGE_DEFAULT_SECONDS = 5;
+
+    /** How long an image advertisement may stay up (a short, bounded choice; older rows keep any stored value). */
+    public const IMAGE_DURATIONS = [3, 5, 8, 10, 15];
 
     public const URL_MINUTES = 60;
 

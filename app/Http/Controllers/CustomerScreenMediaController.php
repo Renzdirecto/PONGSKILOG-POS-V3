@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -59,17 +60,17 @@ class CustomerScreenMediaController extends Controller
         $data = $request->validate([
             'file' => ['required', 'file'],
             'label' => ['nullable', 'string', 'max:80'],
-            'duration_seconds' => ['nullable', 'integer', 'min:3', 'max:60'],
+            'duration_seconds' => ['nullable', 'integer', Rule::in(CustomerScreenMediaLibrary::IMAGE_DURATIONS)],
         ]);
-        if (CustomerScreenMedia::query()->where('branch_id', $branch->getKey())->count() >= CustomerScreenMediaLibrary::MAX_ITEMS) {
-            throw ValidationException::withMessages(['file' => 'A Branch can have at most '.CustomerScreenMediaLibrary::MAX_ITEMS.' advertisements. Remove one first.']);
-        }
+        $this->ensureRoom($branch);
         $stored = $this->library->store($branch, $request->file('file'));
 
         try {
             $media = DB::transaction(function () use ($request, $branch, $data, $stored): CustomerScreenMedia {
                 $actor = $this->actor($request);
                 $locked = Branch::query()->whereKey($branch->getKey())->lockForUpdate()->firstOrFail();
+                /** Counted again under the Branch lock, so two concurrent uploads cannot pass the limit together. */
+                $this->ensureRoom($locked);
                 $media = CustomerScreenMedia::query()->create([
                     'branch_id' => $locked->getKey(),
                     'media_type' => $stored['media_type'],
@@ -103,7 +104,7 @@ class CustomerScreenMediaController extends Controller
         abort_unless($media->branch_id === $branch->getKey(), 404);
         $data = $request->validate([
             'label' => ['sometimes', 'string', 'min:1', 'max:80'],
-            'duration_seconds' => ['sometimes', 'integer', 'min:3', 'max:60'],
+            'duration_seconds' => ['sometimes', 'integer', Rule::in(CustomerScreenMediaLibrary::IMAGE_DURATIONS)],
             'is_active' => ['sometimes', 'boolean'],
         ]);
         if ($media->media_type === 'video') {
@@ -166,6 +167,13 @@ class CustomerScreenMediaController extends Controller
         });
 
         return response()->json(['saved' => true]);
+    }
+
+    private function ensureRoom(Branch $branch): void
+    {
+        if (CustomerScreenMedia::query()->where('branch_id', $branch->getKey())->count() >= CustomerScreenMediaLibrary::MAX_ITEMS) {
+            throw ValidationException::withMessages(['file' => 'A Branch can have at most '.CustomerScreenMediaLibrary::MAX_ITEMS.' advertisements. Remove one first.']);
+        }
     }
 
     private function actor(Request $request): User

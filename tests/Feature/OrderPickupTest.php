@@ -2,6 +2,7 @@
 
 use App\Actions\Orders\TransitionKitchenOrder;
 use App\Enums\KitchenStatus;
+use App\Enums\ModifierSelectionType;
 use App\Events\OrderUpdated;
 use App\Events\PickupNotifyChanged;
 use App\Events\PickupStatusChanged;
@@ -9,6 +10,8 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\KitchenTicket;
+use App\Models\ModifierGroup;
+use App\Models\ModifierOption;
 use App\Models\Order;
 use App\Models\OrderPickupToken;
 use App\Models\PickupPushSubscription;
@@ -16,6 +19,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Support\CustomerQrProjection;
 use App\Support\PickupTokens;
 use Database\Factories\PushSubscriptionFactory;
 use Database\Seeders\RbacSeeder;
@@ -100,7 +104,7 @@ test('Pay Later Take Out orders get a token and a failed commit gets none', func
     expect(OrderPickupToken::query()->count())->toBe(1);
 });
 
-test('the public pickup page shows only the order number, Take Out, status and Take Out queue position', function () {
+test('the public pickup page shows the order number, status, both queue positions and a customer-safe summary only', function () {
     $this->travel(-3)->minutes();
     $ahead = pickupTakeOutOrder($this->cashier, $this->product)['order'];
     pickupPay($this->cashier, $this->product, 'dine_in')->assertOk();
@@ -113,12 +117,21 @@ test('the public pickup page shows only the order number, Take Out, status and T
         'order_type' => 'take_out',
         'status' => 'preparing',
         'queue_position' => 2,
+        'overall_position' => 3,
+        'summary' => [
+            'items' => [['name' => $this->product->name, 'quantity' => 1, 'details' => [], 'instructions' => [], 'amount' => '120.00']],
+            'subtotal' => '120.00',
+            'total' => '120.00',
+        ],
+        'receipt_available' => true,
+        'links' => ['facebook' => null, 'website' => null, 'maps' => null],
         'notifications' => ['available' => true, 'public_key' => PushSubscriptionFactory::BROWSER_PUBLIC_KEY, 'subscribed' => false],
         'channel' => 'pickup.'.OrderPickupToken::query()->where('order_id', $order->id)->value('channel_key'),
     ]);
-    expect($status->getContent())->not->toContain('Private Juan')->not->toContain('no onions')->not->toContain('120.00')
+    expect($status->getContent())->not->toContain('Private Juan')->not->toContain('no onions')
         ->not->toContain($order->id)->not->toContain($this->branch->id)->not->toContain('Main Branch')->not->toContain($this->cashier->name)
         ->and($status->headers->get('Cache-Control'))->toContain('no-store')
+        ->and($status->headers->get('X-Robots-Tag'))->toContain('noindex')
         ->and($status->headers->get('Referrer-Policy'))->toBe('no-referrer');
 
     $page = $this->get(route('pickup.show', $token))->assertOk();
@@ -155,9 +168,11 @@ test('the pickup status follows the Kitchen lifecycle and a non Take Out order h
     $transition = fn (KitchenStatus $status) => app(TransitionKitchenOrder::class)->execute($kitchen, $this->branch, $order->fresh(), $status);
 
     $transition(KitchenStatus::Preparing);
-    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.status', 'preparing')->assertJsonPath('pickup.queue_position', 1);
+    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.status', 'preparing')
+        ->assertJsonPath('pickup.queue_position', 1)->assertJsonPath('pickup.overall_position', 1);
     $transition(KitchenStatus::Ready);
-    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.status', 'ready')->assertJsonPath('pickup.queue_position', null);
+    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.status', 'ready')
+        ->assertJsonPath('pickup.queue_position', null)->assertJsonPath('pickup.overall_position', null);
     $transition(KitchenStatus::Done);
     $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.status', 'done')
         ->assertJsonPath('pickup.notifications.available', false);
@@ -209,6 +224,8 @@ test('pickup endpoints are rate limited and can never change the order', functio
         $this->getJson(route('pickup.status', $token))->assertOk();
     }
     $this->getJson(route('pickup.status', $token))->assertTooManyRequests();
+    /** Limits are per pickup link: another customer's phone behind the same store IP keeps updating. */
+    $this->getJson(route('pickup.status', pickupTakeOutOrder($this->cashier, $this->product)['token']))->assertOk();
 });
 
 test('scanning alone subscribes nothing; an explicit opt-in is idempotent and bound to its own order', function () {
@@ -269,4 +286,78 @@ test('a committed edit that turns a Dine In order into Take Out issues its picku
     OrderUpdated::dispatch($order->fresh(), ['items', 'total', 'payment_status']);
 
     expect(OrderPickupToken::query()->where('order_id', $order->id)->count())->toBe(1);
+});
+
+test('the pickup summary comes from the order snapshots, never today\'s catalog', function () {
+    $size = ModifierGroup::factory()->create(['name' => 'Size', 'semantic_role' => 'size', 'min_select' => 1, 'max_select' => 1]);
+    $instructions = ModifierGroup::factory()->create(['name' => 'Instructions', 'semantic_role' => 'instruction', 'selection_type' => ModifierSelectionType::Multiple, 'max_select' => 2]);
+    $large = ModifierOption::factory()->for($size)->create(['name' => 'Large', 'price_delta' => '30.00']);
+    $lessIce = ModifierOption::factory()->for($instructions)->create(['name' => 'Less ice', 'price_delta' => '0.00']);
+    $this->product->update(['name' => 'Iced Tea']);
+    $this->product->modifierGroups()->attach([$size->id, $instructions->id]);
+    $order = Order::query()->findOrFail($this->actingAs($this->cashier)->postJson(route('pos.payments.store'), [
+        'order_type' => 'take_out', 'customer_label' => 'Private Juan', 'payment_method' => 'cash', 'cash_received' => '500.00', 'cashless_amount' => null,
+        'idempotency_key' => (string) Str::uuid(), 'items' => [['product_id' => $this->product->id, 'quantity' => 2, 'notes' => 'staff: regular', 'modifiers' => [
+            ['group_id' => $size->id, 'option_id' => $large->id], ['group_id' => $instructions->id, 'option_id' => $lessIce->id],
+        ]]],
+    ])->assertOk()->json('receipt.id'));
+    $token = app(PickupTokens::class)->rawToken(OrderPickupToken::query()->where('order_id', $order->id)->sole());
+    $this->product->update(['name' => 'Renamed Tea', 'default_price' => '999.00']);
+    $large->update(['name' => 'Jumbo']);
+
+    $status = $this->getJson(route('pickup.status', $token))->assertOk();
+    expect($status->json('pickup.summary'))->toBe([
+        'items' => [['name' => 'Large Iced Tea', 'quantity' => 2, 'details' => [], 'instructions' => ['Less ice'], 'amount' => '300.00']],
+        'subtotal' => '300.00',
+        'total' => '300.00',
+    ])->and($status->getContent())->not->toContain('staff: regular')->not->toContain('Renamed')->not->toContain('Jumbo');
+});
+
+test('the receipt is the canonical customer receipt, reachable only through a valid pickup link', function () {
+    ['order' => $order, 'token' => $token] = pickupTakeOutOrder($this->cashier, $this->product);
+
+    $response = $this->getJson(route('pickup.receipt', $token))->assertOk()
+        ->assertJsonPath('receipt.order_number', $order->order_number)
+        ->assertJsonPath('receipt.reference_number', $order->reference_number)
+        ->assertJsonPath('receipt.total', '120.00')
+        ->assertJsonPath('receipt.customer_label', null)
+        ->assertJsonPath('receipt.table_name', null)
+        ->assertJsonPath('receipt.items.0.notes', null)
+        ->assertJsonPath('receipt.payments.0.method', 'cash');
+    expect(array_keys($response->json('receipt')))->toBe(array_keys(app(CustomerQrProjection::class)->publicReceipt($order->fresh())))
+        ->and($response->getContent())->not->toContain('Private Juan')->not->toContain('no onions')->not->toContain($order->id)->not->toContain($this->cashier->name)
+        ->and($response->headers->get('Cache-Control'))->toContain('no-store')
+        ->and($response->headers->get('X-Robots-Tag'))->toContain('noindex');
+
+    $this->getJson('/pickup/'.$order->id.'/receipt')->assertNotFound();
+    $this->getJson(route('pickup.receipt', substr($token, 0, 42).($token[42] === 'A' ? 'B' : 'A')))->assertNotFound();
+    $this->travel(PickupTokens::LIFETIME_HOURS)->hours();
+    $this->getJson(route('pickup.receipt', $token))->assertStatus(410);
+});
+
+test('an unpaid Pay Later Take Out order has no receipt until it is paid', function () {
+    $reservation = $this->actingAs($this->cashier)->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out'])->assertOk()->json('order');
+    $this->actingAs($this->cashier)->postJson(route('pos.orders.pay-later.store', $reservation['id']), [
+        'idempotency_key' => (string) Str::uuid(), 'order_type' => 'take_out', 'customer_label' => '', 'branch_table_id' => null,
+        'items' => [['product_id' => $this->product->id, 'quantity' => 1, 'notes' => '', 'modifiers' => []]],
+    ])->assertOk();
+    $token = app(PickupTokens::class)->rawToken(OrderPickupToken::query()->where('order_id', $reservation['id'])->sole());
+
+    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.receipt_available', false);
+    $this->getJson(route('pickup.receipt', $token))->assertNotFound();
+});
+
+test('customer links appear only when configured with a safe http(s) address', function () {
+    ['token' => $token] = pickupTakeOutOrder($this->cashier, $this->product);
+    $this->branch->forceFill([
+        'facebook_url' => 'https://facebook.com/pongskilog',
+        'website_url' => 'javascript:alert(1)',
+        'maps_url' => 'https://maps.google.com/?q=Pongskilog',
+    ])->save();
+
+    $this->getJson(route('pickup.status', $token))->assertJsonPath('pickup.links', [
+        'facebook' => 'https://facebook.com/pongskilog',
+        'website' => null,
+        'maps' => 'https://maps.google.com/?q=Pongskilog',
+    ]);
 });

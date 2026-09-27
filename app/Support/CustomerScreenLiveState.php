@@ -17,18 +17,26 @@ use Illuminate\Support\Str;
  * ignored, so a delayed request can never overwrite a newer cart. A takeover also clears the cart and remembers the
  * instance/sequence it cleared through, so a cart send that was already in flight cannot bring the paid cart back.
  *
+ * The takeover's countdown starts when the screen reports it is actually showing (order data and, for Take Out, the
+ * pickup QR rendered) — never when the order was committed — so a slow network or QR rendering cannot eat the
+ * customer's scan window. A takeover the screen never shows is dropped after `TAKEOVER_PENDING_MS`, and each order is
+ * announced at most once per screen, so a replayed payment request never shows it twice.
+ *
  * @phpstan-import-type CartProjection from CustomerScreenCart
  *
  * @phpstan-type StoredCart array{instance: string, sequence: int, user_id: int, order_type: string|null, cart: CartProjection, updated_at: string}
- * @phpstan-type StoredTakeover array{id: string, order_id: string, started_at_ms: int, duration_ms: int}
+ * @phpstan-type StoredTakeover array{id: string, order_id: string, duration_ms: int, created_at_ms: int, shown_at_ms: int|null}
  */
 class CustomerScreenLiveState
 {
     /** A cart the POS stopped updating (closed tab, crashed device) disappears from the screen after this. */
     public const CART_TTL_SECONDS = 900;
 
-    /** Dine In 3 seconds, Take Out 5 seconds (frozen Phase 19.6 behavior). */
-    public const TAKEOVER_MS = ['dine_in' => 3000, 'take_out' => 5000];
+    /** A takeover the screen has not started showing within this time (screen offline or asleep) is dropped. */
+    public const TAKEOVER_PENDING_MS = 20_000;
+
+    /** An order announced on a screen is never announced there again for this long (payment replays, retries). */
+    private const ANNOUNCED_SECONDS = 900;
 
     /**
      * Stores a cart send unless an equal or newer send of the same page instance is already stored.
@@ -69,54 +77,78 @@ class CustomerScreenLiveState
         return $this->storedCart(Cache::get($this->key($screen, 'cart')));
     }
 
-    public function clearCart(CustomerScreen $screen): void
-    {
-        Cache::forget($this->key($screen, 'cart'));
-    }
-
     /**
-     * Starts the temporary takeover for a committed order and clears the cart it replaced. `$through` is the last cart
+     * Queues the temporary takeover for a committed order and clears the cart it replaced. `$through` is the last cart
      * send the POS made before the payment, so that send (or an older one still in flight) cannot restore the cart.
+     * Returns null when this order was already announced on this screen (or the screen state is busy).
      *
      * @param  array{instance: string, sequence: int}|null  $through
-     * @return StoredTakeover
+     * @return StoredTakeover|null
      */
-    public function startTakeover(CustomerScreen $screen, string $orderId, string $orderType, ?array $through): array
+    public function startTakeover(CustomerScreen $screen, string $orderId, int $durationMs, ?array $through): ?array
     {
-        $takeover = [
-            'id' => Str::random(16),
-            'order_id' => $orderId,
-            'started_at_ms' => (int) now()->getTimestampMs(),
-            'duration_ms' => self::TAKEOVER_MS[$orderType] ?? self::TAKEOVER_MS['dine_in'],
-        ];
-
-        $this->locked($screen, function () use ($screen, $takeover, $through): void {
-            Cache::put($this->key($screen, 'takeover'), $takeover, 60);
+        return $this->locked($screen, function () use ($screen, $orderId, $durationMs, $through): ?array {
+            $announced = $this->key($screen, 'announced:'.$orderId);
+            if (Cache::has($announced)) {
+                return null;
+            }
+            $takeover = [
+                'id' => Str::random(16),
+                'order_id' => $orderId,
+                'duration_ms' => $durationMs,
+                'created_at_ms' => (int) now()->getTimestampMs(),
+                'shown_at_ms' => null,
+            ];
+            Cache::put($this->key($screen, 'takeover'), $takeover, 120);
+            Cache::put($announced, true, self::ANNOUNCED_SECONDS);
             Cache::forget($this->key($screen, 'cart'));
             if ($through !== null) {
                 Cache::put($this->key($screen, 'cleared'), $through, self::CART_TTL_SECONDS);
             }
-        });
 
-        return $takeover;
+            return $takeover;
+        });
     }
 
     /**
-     * The takeover still showing, with the milliseconds left, or null once it has ended.
+     * The current takeover: still waiting to be shown (`remaining_ms` null) or showing with the milliseconds left.
+     * Null once it ended or was never shown in time.
      *
-     * @return array{takeover: StoredTakeover, remaining_ms: int}|null
+     * @return array{takeover: StoredTakeover, remaining_ms: int|null}|null
      */
     public function takeover(CustomerScreen $screen): ?array
     {
-        $stored = Cache::get($this->key($screen, 'takeover'));
-        if (! is_array($stored) || ! is_string($stored['id'] ?? null) || ! is_string($stored['order_id'] ?? null)
-            || ! is_int($stored['started_at_ms'] ?? null) || ! is_int($stored['duration_ms'] ?? null)) {
+        $takeover = $this->storedTakeover(Cache::get($this->key($screen, 'takeover')));
+        if ($takeover === null) {
             return null;
         }
-        $takeover = ['id' => $stored['id'], 'order_id' => $stored['order_id'], 'started_at_ms' => $stored['started_at_ms'], 'duration_ms' => $stored['duration_ms']];
-        $remaining = $takeover['started_at_ms'] + $takeover['duration_ms'] - (int) now()->getTimestampMs();
+        $now = (int) now()->getTimestampMs();
+        if ($takeover['shown_at_ms'] === null) {
+            return $now - $takeover['created_at_ms'] < self::TAKEOVER_PENDING_MS ? ['takeover' => $takeover, 'remaining_ms' => null] : null;
+        }
+        $remaining = $takeover['shown_at_ms'] + $takeover['duration_ms'] - $now;
 
         return $remaining > 0 ? ['takeover' => $takeover, 'remaining_ms' => $remaining] : null;
+    }
+
+    /**
+     * The screen reports the takeover is on screen: its countdown starts now (the first report wins; later reports and
+     * reloads get the time left). Returns the milliseconds left, or null for an unknown or ended takeover.
+     */
+    public function markShown(CustomerScreen $screen, string $takeoverId): ?int
+    {
+        return $this->locked($screen, function () use ($screen, $takeoverId): ?int {
+            $current = $this->takeover($screen);
+            if ($current === null || ! hash_equals($current['takeover']['id'], $takeoverId)) {
+                return null;
+            }
+            if ($current['remaining_ms'] !== null) {
+                return $current['remaining_ms'];
+            }
+            Cache::put($this->key($screen, 'takeover'), [...$current['takeover'], 'shown_at_ms' => (int) now()->getTimestampMs()], 120);
+
+            return $current['takeover']['duration_ms'];
+        });
     }
 
     /** Pairing changed or ended: nothing of the previous station may remain on the screen. */
@@ -197,6 +229,24 @@ class CustomerScreenLiveState
             'order_type' => is_string($orderType) ? $orderType : null,
             'cart' => ['lines' => $lines, 'total' => $value['cart']['total'], 'item_count' => $value['cart']['item_count']],
             'updated_at' => $value['updated_at'],
+        ];
+    }
+
+    /** @return StoredTakeover|null */
+    private function storedTakeover(mixed $value): ?array
+    {
+        if (! is_array($value) || ! is_string($value['id'] ?? null) || ! is_string($value['order_id'] ?? null)
+            || ! is_int($value['duration_ms'] ?? null) || ! is_int($value['created_at_ms'] ?? null)) {
+            return null;
+        }
+        $shownAt = $value['shown_at_ms'] ?? null;
+
+        return [
+            'id' => $value['id'],
+            'order_id' => $value['order_id'],
+            'duration_ms' => $value['duration_ms'],
+            'created_at_ms' => $value['created_at_ms'],
+            'shown_at_ms' => is_int($shownAt) ? $shownAt : null,
         ];
     }
 

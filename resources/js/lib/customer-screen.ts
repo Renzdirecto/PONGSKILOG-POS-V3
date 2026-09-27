@@ -1,13 +1,16 @@
 /**
- * Customer-facing screen V2 (Phase 19.6A) — pure rules shared by the public screen, the POS header control and the
+ * Customer-facing screen V2 (Phase 19.6) — pure rules shared by the public screen, the POS header control and the
  * POS live-cart sync. The server stays the authority for everything shown; these helpers only decide presentation.
  *
  * Display state machine:
- *   persistent mode (server): ads | menu | customer_display — the two Store Operations controls are mutually exclusive
- *   and both may be off (ads is the default);
- *   temporary takeover (server, ephemeral): a committed order shown for 3 s (Dine In) / 5 s (Take Out) on top of
- *   whatever mode is selected. It never changes the mode, so the screen returns to it by itself.
- *   Menu + a live cart: the cart appears as a compact bounded panel above the still-scrollable Menu.
+ *   persistent mode (server, one column): ads | menu | customer_display — MENU and CUSTOMER DISPLAY (on the POS header
+ *   and on the screen's own header) are mutually exclusive, pressing the active one again returns to Ads;
+ *   Ads + a live cart: a full-screen order summary replaces the slideshow until the cart is cleared or paid;
+ *   Menu + a live cart: the cart appears as a compact bounded panel above the still-scrollable Menu;
+ *   Customer Display: the normal order-number board (a cart does not replace it);
+ *   order confirmation (server, ephemeral): every committed Dine In / Take Out order is confirmed above everything.
+ *   Its countdown (the Branch's configured seconds) starts only once the number and, for Take Out, the pickup QR are
+ *   on screen. The Menu closes when an order is confirmed (Ads afterwards); a selected Customer Display stays.
  */
 export type CustomerScreenMode = 'ads' | 'menu' | 'customer_display';
 export type CustomerScreenControl = Exclude<CustomerScreenMode, 'ads'>;
@@ -30,13 +33,24 @@ export type CustomerScreenCart = {
     updated_at: string;
 };
 
+export type CustomerScreenQueueRow = {
+    position: number;
+    order_number: string;
+    order_type: OrderType;
+    current: boolean;
+};
+
 export type CustomerScreenTakeover = {
     id: string;
     order_number: string;
     order_type: OrderType;
-    queue_position: number | null;
-    remaining_ms: number;
     duration_ms: number;
+    /** Null while the confirmation waits to be shown; the time left once it is showing (e.g. after a reload). */
+    remaining_ms: number | null;
+    overall_position: number | null;
+    type_position: number | null;
+    queue: CustomerScreenQueueRow[];
+    queue_total: number;
     pickup: { url: string; qr_image: string } | null;
 };
 
@@ -53,6 +67,7 @@ export type CustomerScreenState = {
     cart: CustomerScreenCart | null;
     takeover: CustomerScreenTakeover | null;
     board: CustomerOrderBoardData | null;
+    sound_url: string | null;
     channels: { screen: string; catalog?: string; board?: string } | null;
 };
 
@@ -88,27 +103,30 @@ export type CustomerScreenPlaylist = {
 export type CustomerScreenLayer =
     | 'pairing'
     | 'takeover'
+    | 'order_summary'
     | 'ads'
     | 'menu'
     | 'customer_display';
 
-/** Dine In 3 seconds, Take Out 5 seconds (frozen). The server sends the exact remaining time; this is the fallback. */
-export const TAKEOVER_MS: Readonly<Record<OrderType, number>> = {
-    dine_in: 3000,
-    take_out: 5000,
-};
+/** The Branch's confirmation duration is 3–15 s; anything else from the wire is clamped. */
+export const TAKEOVER_MIN_MS = 3000;
+export const TAKEOVER_MAX_MS = 15000;
 
-/** Pressing a control: the other one turns off; pressing the active one again returns to Ads (the server decides). */
-export function toggledMode(
-    current: CustomerScreenMode,
-    control: CustomerScreenControl,
-): CustomerScreenMode {
-    return current === control ? 'ads' : control;
+/** The longest the screen waits for the pickup QR image before starting the countdown anyway (it never hangs). */
+export const TAKEOVER_READY_TIMEOUT_MS = 4000;
+
+function hasLines(cart: CustomerScreenCart | null | undefined): boolean {
+    return cart !== null && cart !== undefined && cart.lines.length > 0;
 }
 
-/** Which layer fills the screen now. A takeover sits above every mode; an unpaired screen only shows its code. */
+/**
+ * Which layer fills the screen now. An order confirmation sits above every mode; an unpaired screen only shows its
+ * code; in Ads mode a live cart replaces the slideshow with the full order summary.
+ */
 export function activeLayer(
-    state: Pick<CustomerScreenState, 'status' | 'mode'>,
+    state: Pick<CustomerScreenState, 'status' | 'mode'> & {
+        cart?: CustomerScreenCart | null;
+    },
     takeoverShowing: boolean,
 ): CustomerScreenLayer {
     if (state.status !== 'paired') {
@@ -117,16 +135,191 @@ export function activeLayer(
     if (takeoverShowing) {
         return 'takeover';
     }
+    if (state.mode === 'ads' && hasLines(state.cart)) {
+        return 'order_summary';
+    }
 
     return state.mode;
 }
 
-/** The Live Cart panel shows in Menu mode only, and only while the paired station has lines. */
+/** The Live Cart panel shows in Menu mode only (split with the Menu), and only while the paired station has lines. */
 export function showsLiveCart(
     mode: CustomerScreenMode,
     cart: CustomerScreenCart | null,
 ): boolean {
-    return mode === 'menu' && cart !== null && cart.lines.length > 0;
+    return mode === 'menu' && hasLines(cart);
+}
+
+/**
+ * The confirmation still to show: a server takeover this screen has not finished yet. A refetch during or after it
+ * never restarts it (finished ids are remembered by the page).
+ */
+export function pendingTakeover(
+    current: CustomerScreenTakeover | null,
+    finished: ReadonlySet<string>,
+): CustomerScreenTakeover | null {
+    if (current === null || finished.has(current.id)) {
+        return null;
+    }
+
+    return current.remaining_ms === null || current.remaining_ms > 0
+        ? current
+        : null;
+}
+
+/**
+ * How long the confirmation stays once it is on screen: the full configured duration, or only the time left when the
+ * server says it was already showing (a reload in the middle). Always within 3–15 s.
+ */
+export function takeoverShowMs(takeover: CustomerScreenTakeover): number {
+    const full = Math.max(
+        TAKEOVER_MIN_MS,
+        Math.min(TAKEOVER_MAX_MS, takeover.duration_ms),
+    );
+
+    return takeover.remaining_ms === null
+        ? full
+        : Math.max(0, Math.min(takeover.remaining_ms, full));
+}
+
+/** A Take Out confirmation with a pickup QR waits for the QR image; Dine In (or a Take Out without a QR) is ready now. */
+export function takeoverWaitsForQr(takeover: CustomerScreenTakeover): boolean {
+    return takeover.order_type === 'take_out' && takeover.pickup !== null;
+}
+
+/** "You are #27 overall" — the true position among all active orders, even when only a window of rows is shown. */
+export function overallPositionText(position: number | null): string | null {
+    return position === null || position < 1
+        ? null
+        : `You are #${position} overall`;
+}
+
+export function typeQueueLabel(type: OrderType): string {
+    return type === 'dine_in' ? 'DINE IN QUEUE' : 'TAKE OUT QUEUE';
+}
+
+/** The next / previous advertisement, wrapping around. */
+export function stepSlide(
+    index: number,
+    length: number,
+    direction: 1 | -1,
+): number {
+    if (length <= 0) {
+        return 0;
+    }
+
+    return (((index + direction) % length) + length) % length;
+}
+
+/** A horizontal swipe: left → next, right → previous; short or mostly vertical moves are not swipes. */
+export function swipeDirection(
+    deltaX: number,
+    deltaY: number,
+    threshold = 48,
+): 'next' | 'previous' | null {
+    if (Math.abs(deltaX) < threshold || Math.abs(deltaX) < Math.abs(deltaY)) {
+        return null;
+    }
+
+    return deltaX < 0 ? 'next' : 'previous';
+}
+
+type SlideClock = {
+    now: () => number;
+    set: (callback: () => void, ms: number) => unknown;
+    clear: (handle: unknown) => void;
+};
+
+/**
+ * One advertisement countdown that can be paused (press and hold) and resumed with the time it had left. Starting a
+ * new slide (timer, swipe or arrow) cancels the previous countdown, so there is only ever one pending timer.
+ */
+export function createSlideTimer(
+    onElapsed: () => void,
+    clock: SlideClock = {
+        now: () => Date.now(),
+        set: (callback, ms) => setTimeout(callback, ms),
+        clear: (handle) =>
+            clearTimeout(handle as ReturnType<typeof setTimeout>),
+    },
+) {
+    let handle: unknown;
+    let remaining = 0;
+    let startedAt = 0;
+    let paused = false;
+    const cancel = () => {
+        if (handle !== undefined) {
+            clock.clear(handle);
+            handle = undefined;
+        }
+    };
+    const run = () => {
+        startedAt = clock.now();
+        handle = clock.set(() => {
+            handle = undefined;
+            onElapsed();
+        }, remaining);
+    };
+
+    return {
+        start: (ms: number) => {
+            cancel();
+            paused = false;
+            remaining = Math.max(0, ms);
+            run();
+        },
+        pause: () => {
+            if (paused || handle === undefined) return;
+            cancel();
+            remaining = Math.max(0, remaining - (clock.now() - startedAt));
+            paused = true;
+        },
+        resume: () => {
+            if (!paused) return;
+            paused = false;
+            run();
+        },
+        stop: () => {
+            cancel();
+            paused = false;
+        },
+        isPaused: () => paused,
+        isRunning: () => handle !== undefined,
+    };
+}
+
+/** Whether this browser can put the page in fullscreen (kiosk browsers and iPhone Safari often cannot). */
+export function fullscreenSupported(
+    doc: {
+        fullscreenEnabled?: boolean;
+        documentElement?: { requestFullscreen?: unknown };
+    } | null,
+): boolean {
+    return (
+        doc !== null &&
+        doc.fullscreenEnabled === true &&
+        typeof doc.documentElement?.requestFullscreen === 'function'
+    );
+}
+
+/**
+ * Headers the POS adds to Pay Now / Pay Later so the server can confirm the committed order on this station's paired
+ * screen from the same request: the station id and the last cart send (so an older cart send in flight cannot bring
+ * the paid cart back). Nothing is added without a paired screen.
+ */
+export function customerScreenCommitHeaders(
+    stationId: string | null,
+    paired: boolean,
+    lastCart: { instance: string; sequence: number },
+): Record<string, string> {
+    if (!paired || stationId === null) {
+        return {};
+    }
+
+    return {
+        'X-POS-Station': stationId,
+        'X-Customer-Screen-Cart': `${lastCart.instance}:${lastCart.sequence}`,
+    };
 }
 
 /** Lines that are new or whose quantity/amount changed since the previous projection (for a short highlight). */
@@ -154,25 +347,6 @@ export function changedLineKeys(
 
 export function orderTypeText(type: OrderType): string {
     return type === 'dine_in' ? 'DINE IN' : 'TAKE OUT';
-}
-
-/** "You are #3 in the Dine-In queue" — only from the server-derived same-type position. */
-export function queuePositionText(
-    type: OrderType,
-    position: number | null,
-): string | null {
-    if (position === null || position < 1) {
-        return null;
-    }
-
-    return `You are #${position} in the ${type === 'dine_in' ? 'Dine-In' : 'Take-Out'} queue`;
-}
-
-/** Milliseconds the takeover stays up: the server's remaining time, bounded by its type's full duration. */
-export function takeoverRemainingMs(takeover: CustomerScreenTakeover): number {
-    const full = TAKEOVER_MS[takeover.order_type];
-
-    return Math.max(0, Math.min(takeover.remaining_ms, full));
 }
 
 /** "AB3K7Q" → "AB3 K7Q" for reading across a counter. */

@@ -5,8 +5,9 @@ import {
     PICKUP_WORKER_SCOPE,
     PICKUP_WORKER_URL,
     pickupNotifyMessage,
+    pickupLinkButtons,
     pickupNotifyState,
-    pickupQueueText,
+    pickupQueueView,
     pickupStatusView,
 } from '../resources/js/lib/pickup.ts';
 
@@ -78,13 +79,59 @@ test('unsupported, insecure and iPhone browsers keep the live page without a bro
     );
 });
 
-test('the pickup page shows Preparing, Ready and Done with the Take Out queue position', () => {
+test('the pickup page shows Preparing, Ready and Done with the Take Out and overall queue positions', () => {
     assert.equal(pickupStatusView('preparing').title, 'Preparing');
     assert.equal(pickupStatusView('ready').tone, 'green');
     assert.equal(pickupStatusView('done').title, 'Picked up');
     assert.equal(pickupStatusView('unavailable').tone, 'neutral');
-    assert.equal(pickupQueueText(2), 'You are #2 in the Take-Out queue');
-    assert.equal(pickupQueueText(null), null);
+    assert.deepEqual(
+        pickupQueueView({
+            status: 'preparing',
+            queue_position: 6,
+            overall_position: 10,
+        }),
+        { takeOut: 6, overall: '#10 in the overall queue' },
+    );
+    /** Ready / Done orders are no longer waiting: no fake position. */
+    assert.equal(
+        pickupQueueView({
+            status: 'ready',
+            queue_position: 6,
+            overall_position: 10,
+        }),
+        null,
+    );
+    assert.equal(
+        pickupQueueView({
+            status: 'preparing',
+            queue_position: null,
+            overall_position: null,
+        }),
+        null,
+    );
+});
+
+test('customer link buttons show only configured http(s) links, never a placeholder', () => {
+    assert.deepEqual(
+        pickupLinkButtons({
+            facebook: 'https://facebook.com/pongskilog',
+            website: 'javascript:alert(1)',
+            maps: 'https://maps.google.com/?q=Pongskilog',
+        }).map((button) => button.key),
+        ['facebook', 'maps'],
+    );
+    assert.deepEqual(
+        pickupLinkButtons({ facebook: null, website: '', maps: null }),
+        [],
+    );
+    const page = readFileSync(
+        new URL('../resources/js/pages/pickup.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.match(page, /rel="noopener noreferrer"/);
+    /** The receipt reuses the canonical customer receipt card. */
+    assert.match(page, /<DigitalReceiptCard receipt=\{receipt\} \/>/);
+    assert.match(page, /window\.print\(\)/);
 });
 
 test('the pickup worker is separate from the staff app worker and only shows this order’s Buzz', () => {

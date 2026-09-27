@@ -53,8 +53,8 @@ export async function stationRequest<T>(
 }
 
 /**
- * Station writes to the customer screen (cart sends, the takeover) run one after another in the order they were
- * made, so the takeover can never overtake the last cart send before the payment.
+ * Station cart sends run one after another in the order they were made, so an older cart can never overtake a newer
+ * one. (The order confirmation travels with the Pay Now / Pay Later request itself.)
  */
 let writes: Promise<unknown> = Promise.resolve();
 export function enqueueStationWrite<T>(task: () => Promise<T>): Promise<T> {

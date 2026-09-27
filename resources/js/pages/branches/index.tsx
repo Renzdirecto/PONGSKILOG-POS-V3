@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { CustomerScreenMediaPanel } from '@/components/customer-screen-media-panel';
+import { CustomerScreenSettingsPanel } from '@/components/customer-screen-settings-panel';
 import { SegmentedTabs } from '@/components/owner-analytics';
 import {
     OwnerPage,
@@ -164,11 +165,12 @@ export default function Branches({
                             <div className="flex flex-wrap items-end justify-between gap-3">
                                 <div className="flex min-w-0 flex-col gap-0.5">
                                     <h2 className="text-[15px] font-bold tracking-[-0.01em]">
-                                        Customer screen ads
+                                        Customer screen
                                     </h2>
                                     <p className="text-xs text-[#767676]">
-                                        Images and videos the Branch's customer
-                                        screens play by default, in this order.
+                                        Order confirmation, customer links and
+                                        the ads the Branch's customer screens
+                                        play by default.
                                     </p>
                                 </div>
                                 <label className="flex w-full max-w-xs flex-col gap-1.5 text-xs font-semibold">
@@ -192,6 +194,17 @@ export default function Branches({
                                         ))}
                                     </select>
                                 </label>
+                            </div>
+                            <CustomerScreenSettingsPanel
+                                key={`settings-${screenBranch.id}`}
+                                branchId={screenBranch.id}
+                            />
+                            <div className="flex flex-col gap-0.5 border-t border-neutral-200 pt-4">
+                                <h3 className="text-[14px] font-bold">Ads</h3>
+                                <p className="text-xs text-[#767676]">
+                                    Images and videos played in this order while
+                                    neither MENU nor CUSTOMER DISPLAY is on.
+                                </p>
                             </div>
                             <CustomerScreenMediaPanel
                                 key={screenBranch.id}

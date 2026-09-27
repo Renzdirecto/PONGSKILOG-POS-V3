@@ -1,17 +1,19 @@
 import { Head } from '@inertiajs/react';
-import { Clock3, MonitorSmartphone, WifiOff } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { MonitorSmartphone, WifiOff } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CustomerOrderBoard } from '@/components/customer-order-board';
 import { CustomerScreenAds, IdleBrand } from '@/components/customer-screen-ads';
+import { CustomerScreenHeader } from '@/components/customer-screen-header';
 import { CustomerScreenMenu } from '@/components/customer-screen-menu';
+import { CustomerScreenOrderSummary } from '@/components/customer-screen-order-summary';
 import { CustomerScreenTakeover } from '@/components/customer-screen-takeover';
 import { useCustomerScreen } from '@/hooks/use-customer-screen';
 import {
     activeLayer,
     connectionNotice,
     formatPairingCode,
-    showsLiveCart,
-    takeoverRemainingMs,
+    pendingTakeover,
+    takeoverShowMs,
     type CustomerScreenState,
     type CustomerScreenTakeover as Takeover,
 } from '@/lib/customer-screen';
@@ -19,22 +21,36 @@ import { qrRequest } from '@/lib/qr-http';
 import { reset as resetRoute } from '@/routes/customer-screen';
 
 /**
- * The customer-facing counter screen (Phase 19.6A). Kiosk layout, no staff navigation and nothing a customer could
- * use to change an order: advertising by default, the browse-only Menu (with the paired POS station's Live Cart on
- * top), or the existing order-number board — plus the temporary successful-order takeover above all of them.
+ * The customer-facing counter screen (Phase 19.6). Kiosk layout with its own header (logo, Branch, MENU, CUSTOMER
+ * DISPLAY, Fullscreen) and nothing a customer could use to change an order: advertising by default (replaced by the
+ * full order summary while the paired POS builds a cart), the browse-only Menu (with the Live Cart on top), or the
+ * normal order-number board — plus the dedicated order confirmation above all of them after every committed order.
  */
 export default function CustomerScreen({
     screen: initial,
 }: {
     screen: CustomerScreenState;
 }) {
-    const { screen, connection, pairingCode, menu, playlist, refresh } =
-        useCustomerScreen(initial);
-    const takeover = useTakeover(screen.takeover);
-    const layer = activeLayer(screen, takeover !== null);
+    const {
+        screen,
+        connection,
+        pairingCode,
+        menu,
+        playlist,
+        refresh,
+        pressControl,
+        reportTakeoverShown,
+    } = useCustomerScreen(initial);
     const paired = screen.status === 'paired';
+    const confirmation = useOrderConfirmation(
+        paired ? screen.takeover : null,
+        reportTakeoverShown,
+        screen.sound_url,
+    );
+    const base = activeLayer(screen, false);
     const notice = paired ? connectionNotice(connection) : null;
     const branchName = screen.branch?.name ?? null;
+    const live = connection === 'connected';
 
     return (
         <>
@@ -49,39 +65,40 @@ export default function CustomerScreen({
                         }}
                     />
                 )}
-                {layer === 'pairing' ? (
+                {base === 'pairing' ? (
                     <PairingView code={pairingCode} />
                 ) : (
                     <>
+                        <CustomerScreenHeader
+                            branchName={branchName}
+                            mode={screen.mode}
+                            onControl={pressControl}
+                        />
                         {screen.mode === 'ads' && (
                             <CustomerScreenAds
                                 playlist={playlist}
                                 branchName={branchName}
+                                suspended={
+                                    base !== 'ads' ||
+                                    confirmation.current !== null
+                                }
+                            />
+                        )}
+                        {base === 'order_summary' && screen.cart && (
+                            <CustomerScreenOrderSummary
+                                cart={screen.cart}
+                                live={live}
                             />
                         )}
                         {screen.mode === 'menu' && (
-                            <>
-                                <ScreenHeader
-                                    title={
-                                        showsLiveCart(screen.mode, screen.cart)
-                                            ? 'Menu · Your order'
-                                            : 'Menu'
-                                    }
-                                    branchName={branchName}
-                                />
-                                <CustomerScreenMenu
-                                    menu={menu}
-                                    cart={screen.cart}
-                                    live={connection === 'connected'}
-                                />
-                            </>
+                            <CustomerScreenMenu
+                                menu={menu}
+                                cart={screen.cart}
+                                live={live}
+                            />
                         )}
                         {screen.mode === 'customer_display' && (
                             <>
-                                <ScreenHeader
-                                    title="Order status"
-                                    branchName={branchName}
-                                />
                                 {screen.board ? (
                                     <CustomerOrderBoard
                                         display={screen.board}
@@ -96,11 +113,13 @@ export default function CustomerScreen({
                         )}
                     </>
                 )}
-                {takeover && (
+                {confirmation.current && base !== 'pairing' && (
                     <CustomerScreenTakeover
-                        key={takeover.takeover.id}
-                        takeover={takeover.takeover}
-                        remainingMs={takeover.remaining}
+                        key={confirmation.current.takeover.id}
+                        takeover={confirmation.current.takeover}
+                        showing={confirmation.current.showing}
+                        showMs={confirmation.current.showMs}
+                        onReady={confirmation.ready}
                     />
                 )}
                 {notice && (
@@ -116,79 +135,94 @@ export default function CustomerScreen({
     );
 }
 
+type Confirmation = { takeover: Takeover; showing: boolean; showMs: number };
+
 /**
- * Shows each takeover once, for the time the server says is left (bounded by 3 s / 5 s), keyed by its id: a refetch
- * during the takeover never restarts it, and the server ending it hides it at once. The mode underneath stays mounted,
- * so the screen returns to exactly where it was.
+ * The order confirmation's lifecycle on this screen, keyed by the server's takeover id:
+ * - a new confirmation mounts first ("preparing"); its countdown starts only when the component reports it is really
+ *   on screen (the QR rendered for Take Out), then the server is told so a reload shows only the time left;
+ * - a refetch during it only refreshes its data (queue rows), never restarts it; a newer order replaces it at once;
+ * - when its time is up it is remembered as finished, so the same confirmation is never shown twice; the mode
+ *   underneath is whatever the server stores (Menu has already closed to Ads; Customer Display stays).
+ * An optional approved sound plays when it appears, if the browser allows audio (after any tap on the screen).
  */
-function useTakeover(
-    current: Takeover | null,
-): { takeover: Takeover; remaining: number } | null {
-    const [shown, setShown] = useState<{
-        takeover: Takeover;
-        remaining: number;
-    } | null>(null);
-    const latest = useRef(current);
-    latest.current = current;
-    const id = current?.id ?? null;
+function useOrderConfirmation(
+    serverTakeover: Takeover | null,
+    reportShown: (takeoverId: string) => void,
+    soundUrl: string | null,
+) {
+    const finished = useRef(new Set<string>());
+    const [current, setCurrent] = useState<Confirmation | null>(null);
+    const candidate = pendingTakeover(serverTakeover, finished.current);
 
     useEffect(() => {
-        const value = latest.current;
-        const remaining = value === null ? 0 : takeoverRemainingMs(value);
-        if (id === null || value === null || remaining <= 0) {
-            setShown(null);
+        setCurrent((previous) => {
+            if (candidate === null) {
+                /** Ended on the server: one already counting down finishes on its own timer; one never shown is dropped. */
+                return previous !== null && previous.showing ? previous : null;
+            }
+            if (previous !== null && previous.takeover.id === candidate.id) {
+                return { ...previous, takeover: candidate };
+            }
+            if (previous !== null) {
+                finished.current.add(previous.takeover.id);
+            }
 
-            return;
-        }
-        setShown({ takeover: value, remaining });
-        const timer = window.setTimeout(() => setShown(null), remaining);
+            return {
+                takeover: candidate,
+                showing: false,
+                showMs: takeoverShowMs(candidate),
+            };
+        });
+    }, [candidate]);
 
-        return () => window.clearTimeout(timer);
-    }, [id]);
-
-    return shown;
-}
-
-function ScreenHeader({
-    title,
-    branchName,
-}: {
-    title: string;
-    branchName: string | null;
-}) {
-    const [clock, setClock] = useState(() => new Date());
-    useEffect(() => {
-        const timer = window.setInterval(() => setClock(new Date()), 15_000);
-
-        return () => window.clearInterval(timer);
+    const ready = useCallback(() => {
+        setCurrent((previous) =>
+            previous === null || previous.showing
+                ? previous
+                : {
+                      ...previous,
+                      showing: true,
+                      showMs: takeoverShowMs(previous.takeover),
+                  },
+        );
     }, []);
 
-    return (
-        <header className="flex min-h-[64px] shrink-0 items-center gap-3 border-b border-white/10 px-4 py-2 sm:px-6">
-            <img
-                src="/images/branding/logo.png"
-                alt="PONGSKILOG"
-                className="w-[58px] sm:w-[68px]"
-            />
-            <div className="min-w-0 flex-1">
-                <h1 className="truncate text-lg font-black tracking-tight sm:text-2xl">
-                    {title}
-                </h1>
-                {branchName && (
-                    <p className="truncate text-xs text-white/50">
-                        {branchName}
-                    </p>
-                )}
-            </div>
-            <span className="flex items-center gap-2 text-sm font-bold text-white/80 tabular-nums sm:text-lg">
-                <Clock3 className="size-4 text-white/45" />
-                {clock.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                })}
-            </span>
-        </header>
-    );
+    const reportRef = useRef(reportShown);
+    reportRef.current = reportShown;
+    const soundRef = useRef(soundUrl);
+    soundRef.current = soundUrl;
+    const announced = useRef<string | null>(null);
+    const showingId = current?.showing ? current.takeover.id : null;
+    const showMs = current?.showMs ?? 0;
+    useEffect(() => {
+        if (showingId === null) return;
+        if (announced.current !== showingId) {
+            announced.current = showingId;
+            reportRef.current(showingId);
+            playCue(soundRef.current);
+        }
+        const timer = window.setTimeout(() => {
+            finished.current.add(showingId);
+            setCurrent((previous) =>
+                previous?.takeover.id === showingId ? null : previous,
+            );
+        }, showMs);
+
+        return () => window.clearTimeout(timer);
+    }, [showingId, showMs]);
+
+    return { current, ready };
+}
+
+/** The optional customer-screen cue: silently skipped when absent or when the browser blocks autoplay. */
+function playCue(url: string | null) {
+    if (url === null) return;
+    try {
+        void new Audio(url).play().catch(() => undefined);
+    } catch {
+        /** Audio unavailable in this browser: the confirmation is visual anyway. */
+    }
 }
 
 function PairingView({

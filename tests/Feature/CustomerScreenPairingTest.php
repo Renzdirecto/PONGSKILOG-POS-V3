@@ -211,7 +211,7 @@ test('the public screen cannot reach any staff mutation and staff routes need a 
         ['postJson', route('pos.customer-screen.pair'), ['code' => $device['code']]],
         ['putJson', route('pos.customer-screen.mode'), ['control' => 'menu']],
         ['postJson', route('pos.customer-screen.cart'), ['instance' => 'abcdefgh', 'sequence' => 1, 'items' => []]],
-        ['postJson', route('pos.customer-screen.takeover'), ['order_id' => (string) Str::uuid()]],
+        ['postJson', route('pos.payments.store'), ['order_type' => 'take_out', 'items' => []]],
     ] as [$method, $url, $data]) {
         $this->withCookie(CustomerScreens::COOKIE, $device['token'])->withHeader(CustomerScreens::STATION_HEADER, $station)
             ->{$method}($url, $data)->assertUnauthorized();
@@ -250,6 +250,10 @@ test('the screen can reset its own pairing and then asks for a new code', functi
     $cashier = pairingStaff($this->main);
     $device = pairingScreenDevice();
     pairingPair($cashier, (string) Str::uuid(), $device['code'])->assertOk();
+
+    /** A screen that missed the pairing signal renews its code: it gets its paired state instead of a code. */
+    $this->withCookie(CustomerScreens::COOKIE, $device['token'])->postJson(route('customer-screen.pairing-code'))->assertOk()
+        ->assertJsonPath('code', null)->assertJsonPath('screen.status', 'paired')->assertJsonPath('screen.branch.name', $this->main->name);
 
     $this->withCookie(CustomerScreens::COOKIE, $device['token'])->postJson(route('customer-screen.reset'))->assertOk();
 

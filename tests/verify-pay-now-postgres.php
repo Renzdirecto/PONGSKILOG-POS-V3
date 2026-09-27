@@ -414,6 +414,8 @@ try {
 
     $otherBranch = Branch::factory()->create();
     StoreSession::factory()->for($otherBranch)->create();
+    /** Both Branches sell the Product, so whichever worker takes the root lock first can pay and the other conflicts. */
+    BranchProduct::factory()->for($otherBranch)->for($product)->create(['tracks_inventory' => false]);
     $cashier->branches()->attach($otherBranch, ['is_active' => true]);
     $root = (string) Str::uuid();
     $beforeOrders = Order::count();

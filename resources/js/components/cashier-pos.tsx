@@ -194,8 +194,8 @@ export function CashierPos({
         branch_table_id: loadedQr?.branch_table_id ?? '',
     });
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
-    /** The paired customer screen mirrors this cart and shows each committed order (best effort, never blocking). */
-    const announceOrder = useCustomerScreenCart({
+    /** The paired customer screen mirrors this cart; the commit request itself confirms the order there (best effort). */
+    const customerScreenHeaders = useCustomerScreenCart({
         lines,
         orderType,
         savedOrderId: saved?.id ?? null,
@@ -338,11 +338,12 @@ export function CashierPos({
         setPaymentError('');
         payment.transform(() => payload);
         try {
-            const result = await payment.submit(payNow());
+            const result = await payment.submit(payNow(), {
+                headers: customerScreenHeaders(),
+            });
             if (result.receipt?.payment_status !== 'paid')
                 throw new Error('Unconfirmed payment');
             setReceipt(result.receipt);
-            announceOrder(result.receipt.id);
             setAttempt(null);
             setLines([]);
             setSaved(null);
@@ -446,12 +447,13 @@ export function CashierPos({
         const { order_id: orderId, ...payload } = activation;
         payLater.transform(() => payload);
         try {
-            const result = await payLater.submit(commitPayLater(orderId));
+            const result = await payLater.submit(commitPayLater(orderId), {
+                headers: customerScreenHeaders(),
+            });
             if (!result.order || !confirmedPayLaterState(result.order)) {
                 throw new Error('Unconfirmed Pay Later result');
             }
             setPayLaterSuccess(result.order);
-            announceOrder(result.order.id);
             setPayLaterAttempt(null);
             setLines([]);
             setSaved(null);

@@ -6,7 +6,14 @@ import {
     MonitorSmartphone,
     UtensilsCrossed,
 } from 'lucide-react';
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useEcho } from '@laravel/echo-react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    useSyncExternalStore,
+} from 'react';
 import type { FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,6 +35,10 @@ import {
 import { Input } from '@/components/ui/input';
 import type { CustomerScreenControl as Control } from '@/lib/customer-screen';
 import { qrError } from '@/lib/qr-http';
+import {
+    createBranchEventGuard,
+    createRealtimeRefresh,
+} from '@/lib/realtime-refresh';
 import {
     stationRequest,
     stationScreen,
@@ -52,7 +63,9 @@ const MODE_LABEL = {
  * The customer screen control of this POS station, in the shared Store Operations header (Phase 19.6A). It pairs a
  * screen with this station (by the code the screen shows), unpairs it, and presses the two mutually exclusive
  * controls — MENU and CUSTOMER DISPLAY; with both off the screen plays advertisements. Every press is decided by the
- * server, so the buttons always show the stored mode.
+ * server, so the buttons always show the stored mode. The screen's own header presses the same mode (and the Menu
+ * closes after an order confirmation): a compact `customer_screen.status_changed` signal on the Branch POS channel, or
+ * opening this menu, refetches this station's status, so the two controls never disagree.
  */
 export function CustomerScreenControl({ branchId }: { branchId: string }) {
     const status = useSyncExternalStore(
@@ -84,6 +97,31 @@ export function CustomerScreenControl({ branchId }: { branchId: string }) {
         stationScreen.set(null);
         load();
     }, [branchId, load]);
+
+    const refresh = useMemo(
+        () =>
+            createRealtimeRefresh((finish) => {
+                stationRequest<StationScreenStatus>(statusRoute())
+                    .then((next) => stationScreen.set(next))
+                    .catch(() => undefined)
+                    .finally(finish);
+            }, 150),
+        [],
+    );
+    useEffect(() => {
+        refresh.activate();
+
+        return () => refresh.dispose();
+    }, [refresh]);
+    const accept = useMemo(() => createBranchEventGuard(branchId), [branchId]);
+    useEcho<Record<string, unknown>>(
+        `branch.${branchId}.pos`,
+        ['.customer_screen.status_changed'],
+        (event) => {
+            if (accept(event)) refresh.schedule();
+        },
+        [branchId, accept, refresh],
+    );
 
     const press = async (control: Control) => {
         if (busy) return;
@@ -133,7 +171,11 @@ export function CustomerScreenControl({ branchId }: { branchId: string }) {
 
     return (
         <>
-            <DropdownMenu>
+            <DropdownMenu
+                onOpenChange={(open) => {
+                    if (open) refresh.schedule(0);
+                }}
+            >
                 <DropdownMenuTrigger asChild>
                     <button
                         type="button"

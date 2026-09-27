@@ -105,34 +105,67 @@ class KitchenBoard
         ];
     }
 
-    /**
-     * An order's place in its own order type's preparation queue: 1 + the orders of the same type still waiting in the
-     * Customer Display "Preparing" column (Kitchen or Preparing) that were committed before it, in the board's own
-     * order (committed_at, id) within the OPEN Store Session. Dine In and Take Out never count against each other;
-     * Ready, Done, voided, archived, uncommitted and earlier-session orders are never ahead. Null once the order itself
-     * is no longer waiting (Ready, Done, voided) or its Store Session is not the open one.
-     */
-    public function queuePosition(Order $order): ?int
-    {
-        if ($order->committed_at === null
-            || ! in_array($order->kitchen_status, [KitchenStatus::Kitchen, KitchenStatus::Preparing], true)
-            || ! in_array($order->commercial_status, [CommercialStatus::Active, CommercialStatus::Completed], true)) {
-            return null;
-        }
-        $branch = $order->branch()->first();
-        $session = $branch === null ? null : $this->openSession($branch);
-        if ($branch === null || $session === null || $order->store_session_id !== $session->id) {
-            return null;
-        }
-        $committedAt = $order->committed_at;
+    /** How many queue rows a customer-facing queue list shows at most. */
+    public const QUEUE_WINDOW = 10;
 
-        return $this->ordersForSession($branch, $session)
-            ->where('order_type', $order->order_type)
+    /**
+     * The one queue-position authority (Phase 19.6) used by the customer screen's order confirmation and the pickup
+     * page. The active queue is the Customer Display "Preparing" column: committed orders of the OPEN Store Session
+     * still in Kitchen or Preparing, in the board's own order (committed_at, id). Ready, Done, voided, archived,
+     * uncommitted and earlier-session orders are not in it.
+     *
+     * - `overall_position`: the order's place among every active order (Dine In and Take Out together);
+     * - `type_position`: its place among active orders of its own type only;
+     * - `rows`: at most `$window` rows with their true absolute positions, always including this order (the first rows
+     *   when it is near the front, otherwise the rows leading up to it and one after).
+     *
+     * Positions are null once the order itself is not waiting (Ready, Done, voided) or its Store Session is not the open
+     * one; the rows then still show the current queue. One query reads the queue (four small columns), whatever its
+     * length. No customer names, tables, items or ids are returned.
+     *
+     * @return array{overall_position: int|null, type_position: int|null, total: int, rows: list<array{position: int, order_number: string, order_type: string, current: bool}>}
+     */
+    public function queue(Order $order, int $window = self::QUEUE_WINDOW): array
+    {
+        $empty = ['overall_position' => null, 'type_position' => null, 'total' => 0, 'rows' => []];
+        $branch = $order->relationLoaded('branch') ? $order->branch : $order->branch()->first();
+        $session = $branch === null ? null : $this->openSession($branch);
+        if ($branch === null || $session === null) {
+            return $empty;
+        }
+        $active = $this->ordersForSession($branch, $session)
             ->whereIn('kitchen_status', [KitchenStatus::Kitchen, KitchenStatus::Preparing])
-            ->where(fn (Builder $ahead) => $ahead
-                ->where('committed_at', '<', $committedAt)
-                ->orWhere(fn (Builder $tie) => $tie->where('committed_at', $committedAt)->where('id', '<', $order->id)))
-            ->count() + 1;
+            ->orderBy('committed_at')
+            ->orderBy('id')
+            ->get(['id', 'order_number', 'order_type', 'committed_at']);
+
+        $overall = null;
+        $typePosition = null;
+        $sameType = 0;
+        foreach ($active->values() as $index => $row) {
+            if ($row->order_type === $order->order_type) {
+                $sameType++;
+            }
+            if ($row->getKey() === $order->getKey()) {
+                $overall = $index + 1;
+                $typePosition = $sameType;
+            }
+        }
+        $total = $active->count();
+        $window = max(1, $window);
+        $start = $overall === null || $overall <= $window ? 1 : min($overall - $window + 2, $total - $window + 1);
+
+        return [
+            'overall_position' => $overall,
+            'type_position' => $typePosition,
+            'total' => $total,
+            'rows' => array_values($active->slice($start - 1, $window)->values()->map(fn (Order $row, int $offset): array => [
+                'position' => $start + $offset,
+                'order_number' => (string) $row->order_number,
+                'order_type' => $row->order_type->value,
+                'current' => $row->getKey() === $order->getKey(),
+            ])->all()),
+        ];
     }
 
     /** @return list<array<string, mixed>> */

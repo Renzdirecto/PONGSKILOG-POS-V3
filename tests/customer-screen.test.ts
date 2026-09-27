@@ -6,16 +6,22 @@ import {
     changedLineKeys,
     connectionNotice,
     createCartSequencer,
+    createSlideTimer,
+    customerScreenCommitHeaders,
     formatPairingCode,
+    fullscreenSupported,
     orderTypeText,
+    overallPositionText,
+    pendingTakeover,
     POS_STATION_STORAGE_KEY,
-    queuePositionText,
     readStationId,
     refreshDelayMs,
     showsLiveCart,
-    takeoverRemainingMs,
-    TAKEOVER_MS,
-    toggledMode,
+    stepSlide,
+    swipeDirection,
+    takeoverShowMs,
+    takeoverWaitsForQr,
+    typeQueueLabel,
     type CustomerScreenCart,
     type CustomerScreenTakeover,
 } from '../resources/js/lib/customer-screen.ts';
@@ -40,14 +46,7 @@ const cart = (lines = [line('a')]): CustomerScreenCart => ({
     updated_at: '2026-09-27T10:00:00+08:00',
 });
 
-test('MENU and CUSTOMER DISPLAY are mutually exclusive; pressing the active control returns to Ads', () => {
-    assert.equal(toggledMode('ads', 'menu'), 'menu');
-    assert.equal(toggledMode('menu', 'customer_display'), 'customer_display');
-    assert.equal(toggledMode('customer_display', 'customer_display'), 'ads');
-    assert.equal(toggledMode('menu', 'menu'), 'ads');
-});
-
-test('the takeover sits above every mode and an unpaired screen only shows its pairing code', () => {
+test('the confirmation sits above every mode and an unpaired screen only shows its pairing code', () => {
     assert.equal(
         activeLayer({ status: 'unpaired', mode: 'menu' }, true),
         'pairing',
@@ -64,6 +63,38 @@ test('the takeover sits above every mode and an unpaired screen only shows its p
     assert.equal(
         activeLayer({ status: 'paired', mode: 'customer_display' }, false),
         'customer_display',
+    );
+});
+
+test('Ads with an active cart shows the full order summary, Menu keeps its split and clearing the cart returns to Ads', () => {
+    const paired = { status: 'paired' as const };
+    assert.equal(
+        activeLayer({ ...paired, mode: 'ads', cart: cart() }, false),
+        'order_summary',
+    );
+    assert.equal(
+        activeLayer({ ...paired, mode: 'ads', cart: cart([]) }, false),
+        'ads',
+    );
+    assert.equal(
+        activeLayer({ ...paired, mode: 'ads', cart: null }, false),
+        'ads',
+    );
+    assert.equal(
+        activeLayer({ ...paired, mode: 'menu', cart: cart() }, false),
+        'menu',
+    );
+    assert.equal(showsLiveCart('menu', cart()), true);
+    assert.equal(
+        activeLayer(
+            { ...paired, mode: 'customer_display', cart: cart() },
+            false,
+        ),
+        'customer_display',
+    );
+    assert.equal(
+        activeLayer({ ...paired, mode: 'ads', cart: cart() }, true),
+        'takeover',
     );
 });
 
@@ -87,39 +118,157 @@ test('only new or changed cart lines are highlighted', () => {
     assert.deepEqual(changedLineKeys([line('a')], [line('a')]), []);
 });
 
-test('takeovers last 3 s for Dine In and 5 s for Take Out and never longer than the server allows', () => {
-    assert.deepEqual(TAKEOVER_MS, { dine_in: 3000, take_out: 5000 });
-    const takeover = (
-        order_type: 'dine_in' | 'take_out',
-        remaining_ms: number,
-    ): CustomerScreenTakeover => ({
-        id: 't',
-        order_number: '024',
-        order_type,
-        queue_position: 3,
-        remaining_ms,
-        duration_ms: TAKEOVER_MS[order_type],
-        pickup: null,
-    });
-    assert.equal(takeoverRemainingMs(takeover('dine_in', 2800)), 2800);
-    assert.equal(takeoverRemainingMs(takeover('dine_in', 9000)), 3000);
-    assert.equal(takeoverRemainingMs(takeover('take_out', 9000)), 5000);
-    assert.equal(takeoverRemainingMs(takeover('take_out', -5)), 0);
+const takeover = (
+    overrides: Partial<CustomerScreenTakeover> = {},
+): CustomerScreenTakeover => ({
+    id: 't1',
+    order_number: '1053',
+    order_type: 'take_out',
+    duration_ms: 5000,
+    remaining_ms: null,
+    overall_position: 10,
+    type_position: 6,
+    queue: [],
+    queue_total: 10,
+    pickup: {
+        url: 'https://pos.test/pickup/x',
+        qr_image: 'data:image/svg+xml;base64,',
+    },
+    ...overrides,
 });
 
-test('queue and order-type texts come only from the server-derived position', () => {
+test('the confirmation countdown is the full configured duration once shown, or only the time left after a reload', () => {
+    assert.equal(takeoverShowMs(takeover()), 5000);
+    assert.equal(takeoverShowMs(takeover({ duration_ms: 12000 })), 12000);
+    assert.equal(takeoverShowMs(takeover({ duration_ms: 90000 })), 15000);
+    assert.equal(takeoverShowMs(takeover({ duration_ms: 1000 })), 3000);
+    assert.equal(takeoverShowMs(takeover({ remaining_ms: 2200 })), 2200);
+    assert.equal(takeoverShowMs(takeover({ remaining_ms: 99999 })), 5000);
+    assert.equal(takeoverShowMs(takeover({ remaining_ms: -5 })), 0);
+});
+
+test('Take Out waits for its QR before counting down; Dine In or a Take Out without a QR is ready at once', () => {
+    assert.equal(takeoverWaitsForQr(takeover()), true);
+    assert.equal(takeoverWaitsForQr(takeover({ pickup: null })), false);
     assert.equal(
-        queuePositionText('dine_in', 3),
-        'You are #3 in the Dine-In queue',
+        takeoverWaitsForQr(takeover({ order_type: 'dine_in', pickup: null })),
+        false,
     );
+});
+
+test('a finished confirmation is never shown again and an ended one is not restarted', () => {
+    const finished = new Set<string>();
+    assert.deepEqual(pendingTakeover(takeover(), finished), takeover());
+    assert.equal(pendingTakeover(null, finished), null);
     assert.equal(
-        queuePositionText('take_out', 1),
-        'You are #1 in the Take-Out queue',
+        pendingTakeover(takeover({ remaining_ms: 0 }), finished),
+        null,
     );
-    assert.equal(queuePositionText('take_out', null), null);
-    assert.equal(queuePositionText('dine_in', 0), null);
+    finished.add('t1');
+    assert.equal(pendingTakeover(takeover(), finished), null);
+    assert.equal(pendingTakeover(takeover({ id: 't2' }), finished)?.id, 't2');
+});
+
+test('queue and order-type texts come only from the server-derived positions', () => {
+    assert.equal(overallPositionText(27), 'You are #27 overall');
+    assert.equal(overallPositionText(null), null);
+    assert.equal(overallPositionText(0), null);
+    assert.equal(typeQueueLabel('take_out'), 'TAKE OUT QUEUE');
+    assert.equal(typeQueueLabel('dine_in'), 'DINE IN QUEUE');
     assert.equal(orderTypeText('dine_in'), 'DINE IN');
     assert.equal(orderTypeText('take_out'), 'TAKE OUT');
+});
+
+test('ad navigation wraps both ways and only a clear horizontal swipe changes the slide', () => {
+    assert.equal(stepSlide(0, 3, 1), 1);
+    assert.equal(stepSlide(2, 3, 1), 0);
+    assert.equal(stepSlide(0, 3, -1), 2);
+    assert.equal(stepSlide(0, 0, 1), 0);
+    assert.equal(swipeDirection(-80, 10), 'next');
+    assert.equal(swipeDirection(90, -20), 'previous');
+    assert.equal(swipeDirection(-20, 0), null);
+    assert.equal(swipeDirection(-60, 120), null);
+});
+
+test('an ad countdown can be paused and resumed with the time it had left and never leaves a second timer', () => {
+    let now = 0;
+    const pending = new Map<number, { at: number; run: () => void }>();
+    let nextId = 1;
+    const clock = {
+        now: () => now,
+        set: (run: () => void, ms: number) => {
+            const id = nextId++;
+            pending.set(id, { at: now + ms, run });
+
+            return id;
+        },
+        clear: (id: unknown) => void pending.delete(id as number),
+    };
+    const advance = (ms: number) => {
+        now += ms;
+        for (const [id, timer] of pending) {
+            if (timer.at <= now) {
+                pending.delete(id);
+                timer.run();
+            }
+        }
+    };
+    let elapsed = 0;
+    const timer = createSlideTimer(() => (elapsed += 1), clock);
+
+    timer.start(3000);
+    advance(1000);
+    timer.pause();
+    assert.equal(timer.isPaused(), true);
+    assert.equal(pending.size, 0);
+    advance(10_000);
+    assert.equal(elapsed, 0);
+    timer.resume();
+    advance(1999);
+    assert.equal(elapsed, 0);
+    advance(1);
+    assert.equal(elapsed, 1);
+
+    timer.start(5000);
+    timer.start(3000);
+    assert.equal(pending.size, 1);
+    timer.stop();
+    assert.equal(pending.size, 0);
+    assert.equal(timer.isRunning(), false);
+});
+
+test('fullscreen is offered only where the browser supports it and never touches the screen state', () => {
+    assert.equal(
+        fullscreenSupported({
+            fullscreenEnabled: true,
+            documentElement: { requestFullscreen: () => undefined },
+        }),
+        true,
+    );
+    assert.equal(
+        fullscreenSupported({ fullscreenEnabled: false, documentElement: {} }),
+        false,
+    );
+    assert.equal(fullscreenSupported(null), false);
+    const header = source('components/customer-screen-header.tsx');
+    assert.match(header, /requestFullscreen\(\)/);
+    assert.doesNotMatch(header, /qrRequest|modeRoute|setScreen/);
+});
+
+test('the POS commit carries its station and last cart number only when a screen is paired', () => {
+    const last = { instance: 'instance-1', sequence: 7 };
+    assert.deepEqual(
+        customerScreenCommitHeaders('station-id-1234567', true, last),
+        {
+            'X-POS-Station': 'station-id-1234567',
+            'X-Customer-Screen-Cart': 'instance-1:7',
+        },
+    );
+    assert.deepEqual(
+        customerScreenCommitHeaders('station-id-1234567', false, last),
+        {},
+    );
+    assert.deepEqual(customerScreenCommitHeaders(null, true, last), {});
 });
 
 test('cart sends are numbered per page instance so the newest always wins', () => {
@@ -206,13 +355,31 @@ test('the Store Operations shell renders one customer screen control for POS acc
         layout,
         /auth\.permissions\.includes\('pos\.access'\) &&\s*branchContext\.current && \(\s*<CustomerScreenControl/,
     );
+    /** Both canonical commits carry the station, so the server confirms Dine In and Take Out alike. */
     const pos = source('components/cashier-pos.tsx');
     assert.match(
         pos,
-        /setReceipt\(result\.receipt\);\s*announceOrder\(result\.receipt\.id\);/,
+        /payment\.submit\(payNow\(\), \{\s*headers: customerScreenHeaders\(\),\s*\}\)/,
     );
     assert.match(
         pos,
-        /setPayLaterSuccess\(result\.order\);\s*announceOrder\(result\.order\.id\);/,
+        /payLater\.submit\(commitPayLater\(orderId\), \{\s*headers: customerScreenHeaders\(\),\s*\}\)/,
     );
+    assert.doesNotMatch(pos, /announceOrder|takeoverRoute/);
+    /** The POS header refetches when the screen changes the shared mode itself. */
+    const control = source('components/customer-screen-control.tsx');
+    assert.match(control, /'\.customer_screen\.status_changed'/);
+});
+
+test('the order confirmation is its own view, separate from the Customer Display board, and shows no customer name', () => {
+    const takeoverView = source('components/customer-screen-takeover.tsx');
+    const page = source('pages/customer-screen.tsx');
+    assert.doesNotMatch(
+        takeoverView,
+        /CustomerOrderBoard|customer_label|customer_name/,
+    );
+    assert.match(page, /<CustomerOrderBoard/);
+    /** The countdown starts from the component's readiness, not from when the order was committed. */
+    assert.match(takeoverView, /onLoad=\{markReady\}/);
+    assert.match(page, /onReady=\{confirmation\.ready\}/);
 });

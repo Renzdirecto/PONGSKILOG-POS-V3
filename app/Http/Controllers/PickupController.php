@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Pickup\SavePickupSubscription;
 use App\Http\Requests\StorePickupSubscriptionRequest;
 use App\Models\OrderPickupToken;
+use App\Support\CustomerQrProjection;
 use App\Support\PickupStatus;
 use App\Support\PickupTokens;
 use App\Support\PushNotifications;
@@ -17,9 +18,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The public Takeout pickup page (Phase 19.6B). Possessing the token is the whole capability: read this order's pickup
- * status and opt in or out of its Ready notification. There is no login, no staff shared data, no order mutation and
- * no way to reach another order (lookup is by the token's hash only; a raw order id or a hash is never accepted).
- * Responses are private and never cached; the page's own link is kept out of Referer headers.
+ * status, summary and receipt, and opt in or out of its Ready notification — all only while the token is valid (12
+ * hours). There is no login, no staff shared data, no order mutation and no way to reach another order (lookup is by
+ * the token's hash only; a raw order id or a hash is never accepted). Responses are private, never cached and not
+ * indexed; the page's own link is kept out of Referer headers.
  */
 class PickupController extends Controller
 {
@@ -49,6 +51,23 @@ class PickupController extends Controller
         [, $status] = $this->resolve($token);
 
         return $this->private(response()->json(['pickup' => $status]));
+    }
+
+    /**
+     * The order's receipt through this pickup capability: the canonical customer receipt contract (the same card as
+     * the POS receipt link), without the cashier-entered name, table or free-text notes. Answers 404 until the order is
+     * paid (a Pay Later order) and 410 once the pickup link expired.
+     */
+    public function receipt(string $token, CustomerQrProjection $projection): JsonResponse
+    {
+        [$pickup, $status] = $this->resolve($token);
+        abort_unless($status['receipt_available'], 404, 'The receipt is available once the order is paid.');
+        $receipt = $projection->publicReceipt($pickup->order);
+        $receipt['customer_label'] = null;
+        $receipt['table_name'] = null;
+        $receipt['items'] = array_map(fn (array $item): array => [...$item, 'notes' => null], (array) $receipt['items']);
+
+        return $this->private(response()->json(['receipt' => $receipt]));
     }
 
     public function subscribe(StorePickupSubscriptionRequest $request, string $token, SavePickupSubscription $save): JsonResponse

@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
 use App\Models\Payment;
+use Illuminate\Support\Arr;
 
 class CustomerQrProjection
 {
@@ -66,6 +67,22 @@ class CustomerQrProjection
                 ])->all(),
             ])->all(),
         ];
+    }
+
+    /**
+     * The customer-facing receipt contract (the card of `public-receipt` / `DigitalReceiptCard`), shared by the signed
+     * POS receipt link and the Take Out pickup page. Only paid, non-voided orders within the receipt window.
+     *
+     * @return array<string, mixed>
+     */
+    public function publicReceipt(Order $order): array
+    {
+        abort_unless(filled($order->order_number) && filled($order->reference_number), 404);
+
+        return Arr::only($this->receipt($order), [
+            'order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type',
+            'customer_label', 'table_name', 'items', 'subtotal', 'total', 'branch', 'payments',
+        ]);
     }
 
     /** @return array<string, mixed> */

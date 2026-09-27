@@ -5,13 +5,11 @@ namespace App\Http\Controllers;
 use App\Actions\CustomerScreens\PairCustomerScreen;
 use App\Actions\CustomerScreens\ToggleCustomerScreenMode;
 use App\Actions\CustomerScreens\UnpairCustomerScreen;
-use App\Enums\CommercialStatus;
 use App\Enums\CustomerScreenMode;
 use App\Events\CustomerScreenChanged;
 use App\Http\Requests\SyncCustomerScreenCartRequest;
 use App\Models\Branch;
 use App\Models\CustomerScreen;
-use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\CustomerScreenCart;
@@ -25,15 +23,13 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The POS station's side of its customer screen (Phase 19.6A): the Store Operations header control (pairing status,
- * pair / unpair, the MENU and CUSTOMER DISPLAY controls), the live cart projection and the successful-order takeover.
+ * pair / unpair, the MENU and CUSTOMER DISPLAY controls) and the live cart projection. The successful-order
+ * confirmation is started by the commit endpoints themselves (`ShowOrderOnCustomerScreen`), not by a second request.
  * Every request is a POS action at the selected Branch (`PosAccess`), the station comes from the `X-POS-Station`
  * header and the Branch from the server-side Branch context — a forged Branch or station id finds no screen.
  */
 class PosCustomerScreenController extends Controller
 {
-    /** A takeover is only for an order this station just committed, never a replay of an old one. */
-    private const TAKEOVER_WINDOW_MINUTES = 10;
-
     public function __construct(
         private CustomerScreens $screens,
         private CustomerScreenLiveState $live,
@@ -91,34 +87,6 @@ class PosCustomerScreenController extends Controller
         }
 
         return response()->json(['paired' => true]);
-    }
-
-    public function takeover(Request $request): JsonResponse
-    {
-        [$user, $branch, $station] = $this->station($request);
-        $data = $request->validate([
-            'order_id' => ['required', 'uuid'],
-            'instance' => ['nullable', 'string', 'regex:/\A[A-Za-z0-9-]{8,64}\z/'],
-            'sequence' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
-        ]);
-        $this->access->authorize($user, $branch);
-        $screen = $this->screens->forStation($branch, $station);
-        if ($screen === null) {
-            return response()->json(['shown' => false]);
-        }
-        $order = Order::query()
-            ->where('branch_id', $branch->getKey())
-            ->whereKey($data['order_id'])
-            ->whereNotNull('committed_at')
-            ->where('committed_at', '>=', now()->subMinutes(self::TAKEOVER_WINDOW_MINUTES))
-            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed])
-            ->first();
-        abort_if($order === null || $order->order_number === null, 404, 'This order cannot be shown on the customer screen.');
-        $through = isset($data['instance'], $data['sequence']) ? ['instance' => (string) $data['instance'], 'sequence' => (int) $data['sequence']] : null;
-        $takeover = $this->live->startTakeover($screen, $order->id, $order->order_type->value, $through);
-        CustomerScreenChanged::dispatch([$screen->channel_key], 'takeover');
-
-        return response()->json(['shown' => true, 'duration_ms' => $takeover['duration_ms']]);
     }
 
     /** @return array{0: User, 1: Branch, 2: string} */

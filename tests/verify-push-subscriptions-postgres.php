@@ -176,11 +176,12 @@ try {
     $observer->statement('CREATE SCHEMA "'.$schema.'"');
     $createdSchema = true;
 
-    // A: fresh migrations, then the additive push migration rolls back and reapplies cleanly.
+    // A: fresh migrations, then the additive push migration (and any later ones) roll back and reapply cleanly.
     pwaVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'A: fresh migration failed.');
-    $latest = basename((string) collect(glob(database_path('migrations/*.php')) ?: [])->sort()->last());
-    pwaVerify(str_ends_with($latest, 'create_push_subscriptions_table.php'), 'A: the push migration is not the latest.');
-    pwaVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0
+    $migrations = collect(glob(database_path('migrations/*.php')) ?: [])->map(fn (string $path): string => basename($path))->sort()->values();
+    $position = $migrations->search(fn (string $name): bool => str_ends_with($name, 'create_push_subscriptions_table.php'));
+    pwaVerify($position !== false, 'A: the push migration is missing.');
+    pwaVerify(Artisan::call('migrate:rollback', ['--step' => $migrations->count() - $position, '--force' => true, '--no-interaction' => true]) === 0
         && ! DB::getSchemaBuilder()->hasTable('push_subscriptions'), 'A: rollback left the table behind.');
     pwaVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0
         && DB::getSchemaBuilder()->hasTable('push_subscriptions'), 'A: reapply failed.');

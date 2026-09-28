@@ -611,3 +611,40 @@ Documentation only: no Railway or Cloudflare setting was changed.
 - **Static file:** `public/pickup-sw.js` (the customer pickup service worker, scope `/pickup/`) must be served from the site root with a JavaScript content type; it is not part of the Vite build or the staff precache.
 - **HTTPS:** customer notifications need a secure origin (service worker + Push); the pickup QR encodes the host that rendered the customer screen, so open the customer screen through the public HTTPS domain. iPhone customers only get notifications from Home Screen web apps; the page stays live without them.
 - **Customer screen devices:** open `https://<domain>/customer-screen` in a full-screen/kiosk browser window (or a second window of the POS PC), then pair it from the POS header control. It is a public page (no staff sign-in on the counter device).
+
+## 32. Phase 20 Final Production Hardening — operations notes (not deployed)
+
+Nothing in this section has been exercised against a real staging or production environment. Staging validation, backup/restore verification and production health checks remain **PENDING** release-stage actions (tracker).
+
+**Migrations (additive; run `php artisan migrate --force` before switching traffic).**
+- `2026_09_27_165552` Stock Correction: `store_session_inventory_adjustments.direction` (`decrease` default, so legacy rows stay correct) and the widened reason CHECK. Rollback refuses while new-reason or increase rows exist.
+- `2026_09_27_170628` Pamamalengke funding: `pamamalengke_purchases.payment_source` (backfilled from the expense, NOT NULL), nullable `store_session_expense_id`, and on PostgreSQL a `(branch_id, id)` unique index on `store_sessions` plus the composite FK `pamamalengke_purchases_branch_session_foreign`. Rollback refuses while closed-session allocations exist.
+- `2026_09_27_174640` `users.preferred_name`; `2026_09_27_180018` `branches.receipt_layout` (JSON) and `branches.image_path`.
+- Verified: fresh / rollback / reapply on disposable SQLite and isolated PostgreSQL (`tests/verify-final-hardening-postgres.php`); forward-applied to the local development database (batch 21) without reset.
+
+**Release identity.** `APP_VERSION` (`development` locally, `v1.0.0-rc.N` on staging, `v1.0.0` for the first production release) and `APP_BUILD_SHA` (the deployed commit; on Railway `RAILWAY_GIT_COMMIT_SHA` is used when it is unset). Never hard-code a SHA. Shown in App & notifications › Version and returned by `/health`; nothing else about the environment is exposed.
+
+**Health.** `/up` is the framework liveness probe (use it for deploy gating). `GET /health` is readiness for monitoring: JSON, `no-store`, throttled per IP, read-only (no writes, no session/cookies). `503` only when a critical dependency fails (`database`, `cache`); otherwise `200` with `status: ok|degraded` and per-check results: `queue` (heartbeat written every minute by the scheduler through the queue — `fail` = never seen, `stale` = worker or scheduler stopped), `reverb` (2 s probe), `storage` (bucket HEAD, 2 s), `private_files` (writable). Alert when `/health` is not `ok` for more than 5 minutes.
+
+**Scheduler and queue.** Run `schedule:run` every minute (or `schedule:work`) — QR 30-minute auto-archive, model pruning and the queue heartbeat depend on it (`withoutOverlapping()->onOneServer()`, so more than one app instance is safe with a shared Redis cache). Run at least one `queue:work` (push delivery, Buzz, heartbeat).
+
+**Reverb.** `REVERB_ALLOWED_ORIGINS` = the app host(s) (never `*` outside local); client events are disabled. Broadcasts run synchronously after commit, so the HTTP client is bounded by `REVERB_CONNECT_TIMEOUT` (2 s) and `REVERB_TIMEOUT` (3 s): an unreachable Reverb slows a request by seconds instead of hanging a payment, and the signal is lost (clients refetch on reconnect).
+
+**Security configuration.** `APP_ENV=production`, `APP_DEBUG=false`, `composer install --no-dev`; `APP_URL` = the public HTTPS origin (password-reset links are built from it, never from the request Host); `SESSION_SECURE_COOKIE=true`; `TRUSTED_PROXIES` set for the platform proxy; a real `MAIL_MAILER` (the `log` mailer would write reset links into logs). Every web response carries `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and, over HTTPS, HSTS. All throttles are named limiters (`RateLimits`) stored in the cache store — use Redis so limits hold across instances.
+
+**Storage.** Product images, advertisements, Branch photos and receipt logos live on the private `s3` disk. Signed links are now stable per time window (30 min Products, 60 min advertisements) and cached, and new uploads carry `Cache-Control: public, max-age=31536000, immutable`, so devices stop re-downloading images after every sale. Invoice proofs, Store expense receipts and staff photos use `PAYMENT_PROOFS_DISK` / `STORE_EXPENSE_RECEIPTS_DISK` / `STAFF_AVATARS_DISK` (default `local`): the container disk is **not persistent on Railway** — set them to `s3` (or mount a persistent volume) before staging.
+
+**Database connection pooling (recommendation — not validated against real Supabase/Railway).**
+- Web requests (short transactions): Supabase's transaction pooler (Supavisor, port 6543) is compatible with the application's locking — every `FOR UPDATE` / `FOR SHARE` and `pg_advisory_xact_lock` is transaction-scoped and no request relies on session state. PDO uses server-side prepared statements by default; with transaction pooling enable emulated prepares for the web connection (a `PDO::ATTR_EMULATE_PREPARES` option on a dedicated connection) and verify on staging before production.
+- Queue workers, the scheduler and Reverb (long-lived processes): the session pooler (port 5432) or a direct connection.
+- Migrations: always the direct (or session) connection — DDL, the constraint swaps and CHECK rebuilds must not run through the transaction pooler.
+- Size: (web PHP workers × instances) + queue workers + scheduler + Reverb must stay below the pooler/database connection limit of the plan, with headroom for migrations and the SQL console. Local development keeps its direct local PostgreSQL connection.
+
+**Backup and restore (PENDING — perform on staging, then record the result).**
+1. Confirm automated PostgreSQL backups (Supabase daily backups / PITR per plan) and their retention.
+2. Restore the latest backup into a scratch project; point a staging build at it; run `php artisan migrate:status` (no pending, no drift).
+3. Spot-check business history: a closed Store Session's reconciliation snapshot, Payments, inventory and ingredient movements, Pamamalengke purchases and Audit entries for one day.
+4. Object storage: confirm bucket versioning or a scheduled copy; restore one product image, one advertisement and one invoice proof and open them through the app.
+5. Rollback/redeploy: redeploy the previous release (additive migrations stay; never `migrate:rollback` on production data without the guards above) and confirm `/health` is `ok`.
+
+**Staging readiness (PENDING).** Separate from production: database, Redis, Reverb app id/key/secret, VAPID keys, bucket, `APP_KEY`, session cookie domain and `APP_VERSION=v1.0.0-rc.N` + SHA. Then run the Phase 20 manual QA checklist (`11-testing-qa.md`) against staging.

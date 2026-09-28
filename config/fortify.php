@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ThrottleAccountRecovery;
 use Laravel\Fortify\Features;
 
 return [
@@ -101,7 +102,7 @@ return [
     |
     */
 
-    'middleware' => ['web'],
+    'middleware' => ['web', ThrottleAccountRecovery::class],
 
     /*
     |--------------------------------------------------------------------------
@@ -117,6 +118,8 @@ return [
     'limiters' => [
         'login' => 'login',
         'two-factor' => 'two-factor',
+        /** A named limiter (App\Support\RateLimits); Fortify's default '6,1' would share the un-named counter. */
+        'verification' => 'verification',
     ],
 
     /*

@@ -36,7 +36,9 @@ class ReplaceProductImage
                 'card.webp' => $variants['card'],
                 'detail.webp' => $variants['detail'],
             ] as $filename => $contents) {
-                if (! $disk->put($directory.'/'.$filename, $contents)) {
+                /** The served variants never change at their path (a new image gets a new directory): cache them long. */
+                $options = str_ends_with($filename, '.webp') ? ['CacheControl' => 'public, max-age=31536000, immutable', 'ContentType' => 'image/webp'] : [];
+                if (! $disk->put($directory.'/'.$filename, $contents, $options)) {
                     throw new RuntimeException('Could not store the product image asset.');
                 }
             }

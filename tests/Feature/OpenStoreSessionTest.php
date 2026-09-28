@@ -3,6 +3,7 @@
 use App\Actions\StoreSessions\OpenStoreSession;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
+use App\Events\StoreOpened;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Permission;
@@ -18,6 +19,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -356,4 +358,25 @@ test('a failed session write is rolled back and unrelated database errors propag
         ->toThrow($exception);
 
     $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('opening the Store tells every Store Operations page once, without balances', function () {
+    Event::fake([StoreOpened::class]);
+    $branch = Branch::factory()->create();
+    $user = assignedStoreOpener($branch);
+
+    $session = app(OpenStoreSession::class)->execute($user, $branch, '5000.00', '1000.00');
+    app(OpenStoreSession::class)->execute($user, $branch, '5000.00', '1000.00');
+
+    Event::assertDispatchedTimes(StoreOpened::class, 1);
+    Event::assertDispatched(StoreOpened::class, function (StoreOpened $event) use ($branch, $session): bool {
+        $payload = $event->broadcastWith();
+
+        return $payload['branch_id'] === $branch->id && $payload['store_session_id'] === $session->id
+            && $payload['state'] === 'open'
+            && array_map(fn ($channel): string => $channel->name, $event->broadcastOn()) === [
+                'private-branch.'.$branch->id.'.pos', 'private-branch.'.$branch->id.'.kitchen', 'private-branch.'.$branch->id.'.store-session',
+            ]
+            && ! array_key_exists('opening_cash_amount', $payload) && ! array_key_exists('opened_by_user_id', $payload);
+    });
 });

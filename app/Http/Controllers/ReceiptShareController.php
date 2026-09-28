@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\CustomerQrProjection;
+use App\Support\PosAccess;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -19,12 +20,13 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ReceiptShareController extends Controller
 {
-    public function store(Request $request, Order $order, ActiveBranchContext $context, CustomerQrProjection $projection): JsonResponse
+    public function store(Request $request, Order $order, ActiveBranchContext $context, CustomerQrProjection $projection, PosAccess $access): JsonResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         $branch = $context->current($user);
         abort_if($branch === null, 403);
+        $access->authorize($user, $branch);
         abort_unless($order->branch_id === $branch->id, 404);
         $receipt = $projection->publicReceipt($order);
         $path = URL::temporarySignedRoute('receipt.show', CarbonImmutable::parse($receipt['receipt_expires_at']), ['order' => $order->id], absolute: false);

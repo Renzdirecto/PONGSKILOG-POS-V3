@@ -18,38 +18,7 @@ class CatalogRealtime
 
     public function productChanged(Product $product, ?Branch $branch = null, bool $availabilityChanged = false): void
     {
-        $branches = $branch === null
-            ? Branch::query()->orderBy('id')->get()
-            : new Collection([$branch]);
-        $version = (int) now()->format('Uu');
-
-        foreach ($branches as $targetBranch) {
-            CustomerCatalogChanged::dispatch($targetBranch->id);
-            $loadedProduct = $this->catalog->productsForOrder($targetBranch, [$product->getKey()])->first();
-
-            if ($loadedProduct === null) {
-                continue;
-            }
-
-            $state = $this->catalog->resolveLoaded($loadedProduct);
-            ProductBranchConfigurationChanged::dispatch(
-                $targetBranch->id,
-                $product->id,
-                $state['is_available'],
-                $state['effective_price'],
-                $version,
-            );
-
-            if ($availabilityChanged) {
-                ProductAvailabilityChanged::dispatch(
-                    $targetBranch->id,
-                    $product->id,
-                    $state['is_available'],
-                    $state['effective_price'],
-                    $version,
-                );
-            }
-        }
+        $this->signal([(string) $product->getKey()], $branch === null ? null : new Collection([$branch]), $availabilityChanged);
     }
 
     /**
@@ -73,11 +42,45 @@ class CatalogRealtime
         }
     }
 
-    /** @param iterable<Product> $products */
+    /**
+     * Several Products changed business-wide (a category, modifier group or option): every Branch gets one Customer QR
+     * invalidation and the compact per-Product events, resolved with one catalog load per Branch, whatever the number
+     * of Products.
+     *
+     * @param  iterable<Product>  $products
+     */
     public function productsChanged(iterable $products, bool $availabilityChanged = false): void
     {
+        $ids = [];
         foreach ($products as $product) {
-            $this->productChanged($product, availabilityChanged: $availabilityChanged);
+            $ids[(string) $product->getKey()] = true;
+        }
+        $this->signal(array_keys($ids), null, $availabilityChanged);
+    }
+
+    /**
+     * @param  list<string>  $productIds
+     * @param  Collection<int, Branch>|null  $branches  null: every Branch
+     */
+    private function signal(array $productIds, ?Collection $branches, bool $availabilityChanged): void
+    {
+        if ($productIds === []) {
+            return;
+        }
+        $branches ??= Branch::query()->orderBy('id')->get();
+        $version = (int) now()->format('Uu');
+
+        foreach ($branches as $targetBranch) {
+            CustomerCatalogChanged::dispatch($targetBranch->id);
+
+            foreach ($this->catalog->productsForOrder($targetBranch, $productIds) as $loadedProduct) {
+                $state = $this->catalog->resolveLoaded($loadedProduct);
+                ProductBranchConfigurationChanged::dispatch($targetBranch->id, $loadedProduct->id, $state['is_available'], $state['effective_price'], $version);
+
+                if ($availabilityChanged) {
+                    ProductAvailabilityChanged::dispatch($targetBranch->id, $loadedProduct->id, $state['is_available'], $state['effective_price'], $version);
+                }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ use App\Actions\Audit\AuditRecorder;
 use App\Http\Requests\SetVoidAuthorizationPinRequest;
 use App\Models\User;
 use App\Models\VoidAuthorizationSetting;
+use App\Support\VoidPinGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -54,6 +55,8 @@ class SetVoidAuthorizationPinController extends Controller
                 metadata: ['pin' => '[REDACTED]'],
             );
         });
+        /** A new PIN cannot be guessed from earlier attempts, so it ends any Void PIN lockout. */
+        VoidPinGuard::reset();
 
         return to_route('workspaces.void-orders')->with('success', 'Void PIN updated.');
     }

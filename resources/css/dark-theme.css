@@ -1,0 +1,345 @@
+/*
+ * Dark appearance (Phase 20) — generated from one mapping, never per-page patches.
+ *
+ * Staff screens were built on a light palette of utility classes (bg-white, text-[#767676], border-[#e5e5e5] …).
+ * In Dark this adapter maps each of them onto a small set of dark tokens with WCAG-sensible contrast (body text ≥ 7:1,
+ * secondary text ≥ 4.5:1 on the surfaces). Elements inside .theme-static keep their own colours: the already-dark
+ * shell chrome, printable receipts and QR codes (which must stay dark-on-white to scan). Customer-facing pages are
+ * always Light (the server locks them). Unlayered, so it wins over Tailwind's layered utilities.
+ */
+html.dark {
+    color-scheme: dark;
+    --pk-page: #0e0e10;
+    --pk-surface: #17171a;
+    --pk-sunken: #1b1b1f;
+    --pk-raised: #222227;
+    --pk-raised-2: #2b2b31;
+    --pk-border: #2e2e34;
+    --pk-border-strong: #45454d;
+    --pk-text: #f4f4f5;
+    --pk-text-2: #dedee3;
+    --pk-text-3: #b4b4bd;
+    --pk-text-4: #8e8e98;
+    --pk-red-bg: rgb(127 29 29 / 0.32);
+    --pk-red-border: rgb(248 113 113 / 0.45);
+    --pk-red-text: #fca5a5;
+    --pk-amber-bg: rgb(120 53 15 / 0.35);
+    --pk-amber-border: rgb(251 191 36 / 0.4);
+    --pk-amber-text: #fcd34d;
+    --pk-green-bg: rgb(6 78 59 / 0.4);
+    --pk-green-border: rgb(52 211 153 / 0.4);
+    --pk-green-text: #6ee7b7;
+    --pk-blue-bg: rgb(30 58 138 / 0.4);
+    --pk-blue-border: rgb(96 165 250 / 0.45);
+    --pk-blue-text: #93c5fd;
+    --pk-violet-bg: rgb(76 29 149 / 0.4);
+    --pk-violet-border: rgb(167 139 250 / 0.45);
+    --pk-violet-text: #c4b5fd;
+    background-color: var(--pk-page);
+}
+
+html.dark body {
+    background-color: var(--pk-page);
+}
+
+html.dark ::placeholder {
+    color: var(--pk-text-4);
+}
+
+html.dark .bg-white:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#fff\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#ffffff\]:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-surface);
+}
+
+html.dark .bg-neutral-50:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#fafafa\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f7f7f7\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f5f5f5\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#faf9f6\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f8f8f8\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f9f9f9\]:not(.theme-static, .theme-static *),
+html.dark .bg-stone-50:not(.theme-static, .theme-static *),
+html.dark .bg-zinc-50:not(.theme-static, .theme-static *),
+html.dark .bg-gray-50:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-sunken);
+}
+
+html.dark .bg-neutral-100:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f2f2f2\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f4f4f4\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#f3f3f3\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#ededed\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#eeeeee\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#efefef\]:not(.theme-static, .theme-static *),
+html.dark .bg-stone-100:not(.theme-static, .theme-static *),
+html.dark .bg-gray-100:not(.theme-static, .theme-static *),
+html.dark .bg-zinc-100:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-raised);
+}
+
+html.dark .bg-neutral-200:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#e5e5e5\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#e8e8e8\]:not(.theme-static, .theme-static *),
+html.dark .bg-gray-200:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-raised-2);
+}
+
+html.dark .hover\:bg-neutral-50:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-neutral-100:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-\[\#fafafa\]:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-\[\#f7f7f7\]:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-\[\#f2f2f2\]:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-white:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-gray-100:hover:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-raised);
+}
+
+html.dark .hover\:bg-neutral-200:hover:not(.theme-static, .theme-static *),
+html.dark .hover\:bg-\[\#ededed\]:hover:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-raised-2);
+}
+
+html.dark .border-neutral-100:not(.theme-static, .theme-static *),
+html.dark .border-neutral-200:not(.theme-static, .theme-static *),
+html.dark .border-\[\#e5e5e5\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#efefef\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#f2f2f2\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#ececec\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#eeeeee\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#f0f0f0\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#e8e8e8\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#ebebeb\]:not(.theme-static, .theme-static *),
+html.dark .border-b-neutral-100:not(.theme-static, .theme-static *),
+html.dark .border-t-neutral-100:not(.theme-static, .theme-static *),
+html.dark .border-b-\[\#f2f2f2\]:not(.theme-static, .theme-static *),
+html.dark .border-t-\[\#c9c9c9\]:not(.theme-static, .theme-static *),
+html.dark .border-b-\[\#f2f2f2\]:not(.theme-static, .theme-static *),
+html.dark .border-gray-200:not(.theme-static, .theme-static *),
+html.dark .border-input:not(.theme-static, .theme-static *),
+html.dark .border-neutral-200\/90:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-border);
+}
+
+html.dark .border-neutral-300:not(.theme-static, .theme-static *),
+html.dark .border-neutral-400:not(.theme-static, .theme-static *),
+html.dark .border-\[\#d8d8d8\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#c9c9c9\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#d4d4d4\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#dcdcdc\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#cfcfcf\]:not(.theme-static, .theme-static *),
+html.dark .border-gray-300:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-border-strong);
+}
+
+html.dark .border-\[\#111\]:not(.theme-static, .theme-static *),
+html.dark .border-\[\#111111\]:not(.theme-static, .theme-static *),
+html.dark .border-neutral-950:not(.theme-static, .theme-static *),
+html.dark .border-neutral-900:not(.theme-static, .theme-static *),
+html.dark .border-black:not(.theme-static, .theme-static *),
+html.dark .hover\:border-\[\#111\]:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-text);
+}
+
+html.dark .divide-neutral-100:not(.theme-static, .theme-static *) > :not(:last-child),
+html.dark .divide-neutral-200:not(.theme-static, .theme-static *) > :not(:last-child),
+html.dark .divide-\[\#f0f0f0\]:not(.theme-static, .theme-static *) > :not(:last-child),
+html.dark .divide-\[\#eeeeee\]:not(.theme-static, .theme-static *) > :not(:last-child),
+html.dark .divide-\[\#f2f2f2\]:not(.theme-static, .theme-static *) > :not(:last-child) {
+    border-color: var(--pk-border);
+}
+
+html.dark .text-neutral-950:not(.theme-static, .theme-static *),
+html.dark .text-neutral-900:not(.theme-static, .theme-static *),
+html.dark .text-\[\#111\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#111111\]:not(.theme-static, .theme-static *),
+html.dark .text-black:not(.theme-static, .theme-static *),
+html.dark .text-\[\#0a0a0a\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#1a1a1a\]:not(.theme-static, .theme-static *),
+html.dark .text-foreground:not(.theme-static, .theme-static *),
+html.dark .text-gray-900:not(.theme-static, .theme-static *),
+html.dark .text-stone-900:not(.theme-static, .theme-static *) {
+    color: var(--pk-text);
+}
+
+html.dark .text-neutral-800:not(.theme-static, .theme-static *),
+html.dark .text-neutral-700:not(.theme-static, .theme-static *),
+html.dark .text-\[\#333\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#333333\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#444\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#222\]:not(.theme-static, .theme-static *),
+html.dark .text-gray-700:not(.theme-static, .theme-static *),
+html.dark .text-gray-800:not(.theme-static, .theme-static *) {
+    color: var(--pk-text-2);
+}
+
+html.dark .text-neutral-600:not(.theme-static, .theme-static *),
+html.dark .text-neutral-500:not(.theme-static, .theme-static *),
+html.dark .text-\[\#555\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#666\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#666666\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#767676\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#777\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#6b6b6b\]:not(.theme-static, .theme-static *),
+html.dark .text-gray-500:not(.theme-static, .theme-static *),
+html.dark .text-gray-600:not(.theme-static, .theme-static *),
+html.dark .text-stone-500:not(.theme-static, .theme-static *) {
+    color: var(--pk-text-3);
+}
+
+html.dark .text-neutral-400:not(.theme-static, .theme-static *),
+html.dark .text-neutral-300:not(.theme-static, .theme-static *),
+html.dark .text-\[\#888\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#8a8a8a\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#949494\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#999\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#aaa\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#9a9a9a\]:not(.theme-static, .theme-static *),
+html.dark .text-gray-400:not(.theme-static, .theme-static *) {
+    color: var(--pk-text-4);
+}
+
+html.dark .bg-red-50:not(.theme-static, .theme-static *),
+html.dark .bg-red-100:not(.theme-static, .theme-static *),
+html.dark .bg-rose-50:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#fef2f2\]:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-red-bg);
+}
+
+html.dark .border-red-100:not(.theme-static, .theme-static *),
+html.dark .border-red-200:not(.theme-static, .theme-static *),
+html.dark .border-red-300:not(.theme-static, .theme-static *),
+html.dark .border-rose-200:not(.theme-static, .theme-static *),
+html.dark .border-\[\#b91c1c\]:not(.theme-static, .theme-static *),
+html.dark .border-red-700:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-red-border);
+}
+
+html.dark .text-red-600:not(.theme-static, .theme-static *),
+html.dark .text-red-700:not(.theme-static, .theme-static *),
+html.dark .text-red-800:not(.theme-static, .theme-static *),
+html.dark .text-red-900:not(.theme-static, .theme-static *),
+html.dark .text-rose-700:not(.theme-static, .theme-static *),
+html.dark .text-\[\#b91c1c\]:not(.theme-static, .theme-static *),
+html.dark .text-destructive:not(.theme-static, .theme-static *) {
+    color: var(--pk-red-text);
+}
+
+html.dark .bg-amber-50:not(.theme-static, .theme-static *),
+html.dark .bg-amber-100:not(.theme-static, .theme-static *),
+html.dark .bg-yellow-50:not(.theme-static, .theme-static *),
+html.dark .bg-orange-50:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#fbf6e9\]:not(.theme-static, .theme-static *),
+html.dark .bg-\[\#fff7e6\]:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-amber-bg);
+}
+
+html.dark .border-amber-100:not(.theme-static, .theme-static *),
+html.dark .border-amber-200:not(.theme-static, .theme-static *),
+html.dark .border-amber-300:not(.theme-static, .theme-static *),
+html.dark .border-yellow-200:not(.theme-static, .theme-static *),
+html.dark .border-orange-200:not(.theme-static, .theme-static *),
+html.dark .border-\[\#ead7a4\]:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-amber-border);
+}
+
+html.dark .text-amber-700:not(.theme-static, .theme-static *),
+html.dark .text-amber-800:not(.theme-static, .theme-static *),
+html.dark .text-amber-900:not(.theme-static, .theme-static *),
+html.dark .text-amber-950:not(.theme-static, .theme-static *),
+html.dark .text-yellow-800:not(.theme-static, .theme-static *),
+html.dark .text-orange-700:not(.theme-static, .theme-static *),
+html.dark .text-\[\#b45309\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#8c671e\]:not(.theme-static, .theme-static *),
+html.dark .text-\[\#7a5710\]:not(.theme-static, .theme-static *) {
+    color: var(--pk-amber-text);
+}
+
+html.dark .bg-emerald-50:not(.theme-static, .theme-static *),
+html.dark .bg-emerald-100:not(.theme-static, .theme-static *),
+html.dark .bg-green-50:not(.theme-static, .theme-static *),
+html.dark .bg-green-100:not(.theme-static, .theme-static *),
+html.dark .bg-lime-50:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-green-bg);
+}
+
+html.dark .border-emerald-100:not(.theme-static, .theme-static *),
+html.dark .border-emerald-200:not(.theme-static, .theme-static *),
+html.dark .border-green-200:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-green-border);
+}
+
+html.dark .text-emerald-600:not(.theme-static, .theme-static *),
+html.dark .text-emerald-700:not(.theme-static, .theme-static *),
+html.dark .text-emerald-800:not(.theme-static, .theme-static *),
+html.dark .text-emerald-900:not(.theme-static, .theme-static *),
+html.dark .text-green-700:not(.theme-static, .theme-static *),
+html.dark .text-green-800:not(.theme-static, .theme-static *),
+html.dark .text-\[\#15803d\]:not(.theme-static, .theme-static *) {
+    color: var(--pk-green-text);
+}
+
+html.dark .bg-blue-50:not(.theme-static, .theme-static *),
+html.dark .bg-blue-100:not(.theme-static, .theme-static *),
+html.dark .bg-sky-50:not(.theme-static, .theme-static *),
+html.dark .bg-sky-100:not(.theme-static, .theme-static *),
+html.dark .bg-indigo-50:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-blue-bg);
+}
+
+html.dark .border-blue-100:not(.theme-static, .theme-static *),
+html.dark .border-blue-200:not(.theme-static, .theme-static *),
+html.dark .border-sky-200:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-blue-border);
+}
+
+html.dark .text-blue-600:not(.theme-static, .theme-static *),
+html.dark .text-blue-700:not(.theme-static, .theme-static *),
+html.dark .text-blue-800:not(.theme-static, .theme-static *),
+html.dark .text-sky-700:not(.theme-static, .theme-static *),
+html.dark .text-sky-800:not(.theme-static, .theme-static *),
+html.dark .text-indigo-700:not(.theme-static, .theme-static *) {
+    color: var(--pk-blue-text);
+}
+
+html.dark .bg-violet-50:not(.theme-static, .theme-static *),
+html.dark .bg-violet-100:not(.theme-static, .theme-static *),
+html.dark .bg-purple-50:not(.theme-static, .theme-static *) {
+    background-color: var(--pk-violet-bg);
+}
+
+html.dark .border-violet-100:not(.theme-static, .theme-static *),
+html.dark .border-violet-200:not(.theme-static, .theme-static *) {
+    border-color: var(--pk-violet-border);
+}
+
+html.dark .text-violet-700:not(.theme-static, .theme-static *),
+html.dark .text-violet-800:not(.theme-static, .theme-static *),
+html.dark .text-purple-700:not(.theme-static, .theme-static *) {
+    color: var(--pk-violet-text);
+}
+
+html.dark .focus-visible\:ring-\[\#111\]:focus-visible:not(.theme-static, .theme-static *),
+html.dark .focus-visible\:ring-neutral-950:focus-visible:not(.theme-static, .theme-static *),
+html.dark .focus-visible\:ring-black:focus-visible:not(.theme-static, .theme-static *),
+html.dark .focus\:ring-neutral-950:focus:not(.theme-static, .theme-static *) {
+    --tw-ring-color: var(--pk-text);
+}
+
+html.dark button.bg-neutral-950:not(.theme-static, .theme-static *),
+html.dark a.bg-neutral-950:not(.theme-static, .theme-static *),
+html.dark [aria-pressed='true'].bg-neutral-950:not(.theme-static, .theme-static *),
+html.dark button.bg-\[\#111\]:not(.theme-static, .theme-static *),
+html.dark a.bg-\[\#111\]:not(.theme-static, .theme-static *),
+html.dark [aria-pressed='true'].bg-\[\#111\]:not(.theme-static, .theme-static *),
+html.dark button.bg-\[\#111111\]:not(.theme-static, .theme-static *),
+html.dark a.bg-\[\#111111\]:not(.theme-static, .theme-static *),
+html.dark [aria-pressed='true'].bg-\[\#111111\]:not(.theme-static, .theme-static *),
+html.dark button.bg-black:not(.theme-static, .theme-static *),
+html.dark a.bg-black:not(.theme-static, .theme-static *),
+html.dark [aria-pressed='true'].bg-black:not(.theme-static, .theme-static *),
+html.dark button.bg-neutral-900:not(.theme-static, .theme-static *),
+html.dark a.bg-neutral-900:not(.theme-static, .theme-static *),
+html.dark [aria-pressed='true'].bg-neutral-900:not(.theme-static, .theme-static *) {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+}

@@ -71,7 +71,12 @@ test('exact close archives unclaimed QR, persists the snapshot, audits once and 
         ->assertJsonPath('store_session.closing_cash_amount', '1400.00')
         ->assertJsonPath('store_session.cash_variance', '0.00')
         ->assertJsonPath('store_session.cashless_variance', '0.00')
-        ->assertJsonPath('store_session.qr_archived_count', 1);
+        ->assertJsonPath('store_session.qr_archived_count', 1)
+        /** The close summary starts from how the session opened: when, by whom, and with which float. */
+        ->assertJsonPath('store_session.opened_at', $scenario->session->opened_at->toIso8601String())
+        ->assertJsonPath('store_session.opened_by.name', $scenario->session->openedBy->name)
+        ->assertJsonPath('store_session.opening_cash_amount', '1000.00')
+        ->assertJsonPath('store_session.opening_cashless_amount', '0.00');
 
     $session = $scenario->session->fresh();
     expect($session->status)->toBe(StoreSessionStatus::Closed)
@@ -448,7 +453,7 @@ test('pay later, settlement and inventory adjustment are rejected by the backend
         'idempotency_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'cash_received' => '100.00',
     ])->assertUnprocessable()->assertJsonValidationErrors(['store']);
     $http->postJson(route('store-session-inventory-adjustments.store'), [
-        'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 1,
+        'idempotency_key' => (string) Str::uuid(), 'direction' => 'decrease', 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 1,
     ])->assertUnprocessable()->assertJsonValidationErrors(['store']);
 
     expect($draft->fresh()->committed_at)->toBeNull()
@@ -529,7 +534,7 @@ test('after close the cashier workspace is Store Closed with Open Store availabl
     $this->actingAs($scenario->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
         ->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $scenario->branch->id])
+            ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $scenario->branch->id, 'canOpen' => true])
             ->where('store', ['branchStatus' => 'active', 'canOpen' => true]));
     $this->post(route('store-sessions.open'), ['opening_cash_amount' => '500.00', 'opening_cashless_amount' => '0.00'])
         ->assertRedirect(route('workspaces.cashier'));

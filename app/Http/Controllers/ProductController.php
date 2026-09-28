@@ -75,9 +75,10 @@ class ProductController extends Controller
             }
         }
 
-        $products = $productsQuery
-            ->orderBy('name')->orderBy('id')->paginate(24)->withQueryString()
-            ->through(function (Product $product) use ($images, $branches, $inventoryBranch, $inventoryState): array {
+        $page = $productsQuery->orderBy('name')->orderBy('id')->paginate(24)->withQueryString();
+        $imageUrls = $images->safeCardUrls($page->getCollection());
+        $products = $page
+            ->through(function (Product $product) use ($imageUrls, $branches, $inventoryBranch, $inventoryState): array {
                 $overrides = $product->branchProducts->keyBy('branch_id');
                 $inventoryConfiguration = $inventoryBranch === null ? null : $overrides->get($inventoryBranch->id);
                 $inventory = $inventoryBranch === null
@@ -88,7 +89,7 @@ class ProductController extends Controller
                     ...$product->only(['id', 'name', 'description', 'category_id', 'default_price', 'is_active']),
                     'category_name' => $product->category->name,
                     'category_active' => $product->category->is_active,
-                    'image_url' => $images->safeCardUrl($product),
+                    'image_url' => $imageUrls[$product->id] ?? null,
                     'has_image' => $product->image_path !== null,
                     'modifier_group_ids' => $product->modifierGroups->modelKeys(),
                     'modifier_group_count' => $product->modifierGroups->count(),

@@ -1067,8 +1067,8 @@ Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/
 
 1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
 2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **COMPLETE / MERGED** (PR #25, `4e3ab28`; not deployed)
-3. Phase 19.6 — Customer Experience Expansion: **IMPLEMENTATION + MANUAL-QA FIXES: COMPLETE · FINAL AUTOMATED QA: PASSED · USER MANUAL RETEST: REQUIRED / AWAITING USER** (branch `feature/customer-experience-expansion`; no PR opened, not merged, not deployed)
-4. Phase 20 — Final Production Hardening: **NOT STARTED** (next, after Phase 19.6 acceptance)
+3. Phase 19.6 — Customer Experience Expansion: **COMPLETE / MERGED** (PR #26, `7e511c3`; not deployed)
+4. Phase 20 — Final Production Hardening: **IMPLEMENTATION COMPLETE · AUTOMATED QA: see Phase 20 · USER MANUAL QA: AWAITING USER · STAGING / BACKUP-RESTORE / PRODUCTION HEALTH: PENDING · PRODUCTION READINESS: NOT APPROVED** (branch `feature/final-production-hardening`; no PR opened, not merged, not deployed)
 5. Deployment
 6. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5 or Phase 19.6)
 
@@ -1277,26 +1277,63 @@ Verification: see `11-testing-qa.md` (final manual-QA polish). Retest additional
 
 ## Phase 20 — Final Production Hardening
 
-**Status: NOT STARTED** (starts after the user accepts Phase 19.6). Phase 20 remains the final feature-frozen production hardening pass and must audit Phase 19.6 together with every earlier feature — including the pre-existing shared un-named `throttle` counter noted under Phase 19.6 verification. No new product feature scope is admitted during Phase 20.
+**Status: IMPLEMENTATION COMPLETE (2026-09-28) · AUTOMATED PHASE 20 QA: PASSED · USER MANUAL PHASE 20 QA: AWAITING USER · STAGING VALIDATION: PENDING · BACKUP / RESTORE: PENDING · PRODUCTION HEALTH CHECKS: PENDING · PRODUCTION READINESS: NOT APPROVED.** Branch `feature/final-production-hardening` (fast-forwarded to `dev` `7e511c3`, PR #26 merge). No PR opened, not merged, not deployed. Feature-frozen: accepted Manual-QA corrections, business-rule consistency, security, concurrency, reliability and measured performance only. Phase 17 Stock Transfers stays DEFERRED; PWA Phase 2 stays FUTURE.
 
-- [ ] Full RBAC review
-- [ ] Full branch-isolation test pass
-- [ ] Payment concurrency test pass
-- [ ] Inventory race-condition test pass
-- [ ] Store Open concurrency test pass
-- [ ] Store Close reliability test pass
-- [ ] QR archive test pass
-- [ ] Realtime reconnect test pass
+Baseline gates (checked only when actually verified):
+
+- [x] Full RBAC review — route/controller/action review; fixes below; automated tests
+- [x] Full branch-isolation test pass — forged/foreign ids re-derive the active Branch; complete suite + new isolation tests (Branch photo, funding session, receipts)
+- [x] Payment concurrency test pass — PostgreSQL harnesses (Pay Now, Pay Later, close-store, POS) rerun at Final QA
+- [x] Inventory race-condition test pass — inventory / operations harnesses + Phase 20 harness B (Stock Correction vs sale, both orders)
+- [x] Store Open concurrency test pass — Phase 20 harness A (one open session, both callers get it, one audit)
+- [x] Store Close reliability test pass — close-store harness (Close vs Close, Close vs every competing write, both orders) + Phase 20 harness C (Pamamalengke vs Close, both orders) and D (closed reconciliation untouched)
+- [x] QR archive test pass — QR harness + scheduler/Close archive tests
+- [ ] Realtime reconnect test pass — reconnect logic covered by automated source/unit tests only; a live reconnect / Reverb-restart check is in the manual checklist
 - [ ] 360px QA
 - [ ] 390px QA
 - [ ] 430px QA
 - [ ] Tablet QA
 - [ ] Desktop QA
-- [ ] Staging validation
-- [ ] Backup / restore verification
-- [ ] Production health checks
-- [ ] CI green
-- [ ] Production readiness approved
+- [ ] Staging validation — no staging environment available (steps: `12-deployment-operations.md` §32)
+- [ ] Backup / restore verification — not performed (steps: `12-deployment-operations.md` §32)
+- [ ] Production health checks — `/health` implemented and tested locally; production check pending deployment
+- [ ] CI green — CI runs on pushes/PRs to `dev`/`staging`/`main` only; it has not run for this branch (no PR)
+- [ ] Production readiness approved — not approved (manual, staging and release-stage gates open)
+
+Accepted Phase 20 corrections (implemented + automated tests; device/visual acceptance is part of the user's manual QA):
+
+- [x] Collapsible desktop sidebars for Owner and Super Admin from one server-read preference (no width flash); tablet rail › Expand navigation; stronger section headings; mobile dock pill stays inside the dock
+- [x] App & notifications › Version: APP_VERSION + build SHA (environment-driven)
+- [x] Account & preferences (Profile, Security, Appearance, App & notifications, Sign out); styled Confirm Password; self-edit limited to Preferred Name / photo / appearance
+- [x] Appearance Light / Dark (default Light) through one shared token adapter; customer-facing pages locked Light
+- [x] Pamalengke Plans without "What a plan holds" and "Today across plans"
+- [x] Operations Overview: Products Sold (category → Product × size from order snapshots) first; order Products Sold, Upcoming Pamamalengke, Today's Consumption, Needs Attention, Recent Ingredient Movements; fixed query count
+- [x] Operations nav Ingredients → Ingredient Stock → Recipes; Ingredient Stock / Ingredients responsive (container query, pinned Adjust, 44 px targets)
+- [x] Stock Correction model (± with reasons; Complimentary/Staff meal removed; never a purchase)
+- [x] Giveaway regression audit (unchanged; operations harness G-A…G-E pass)
+- [x] Pamamalengke funding Store Session: no open-Store requirement, closed-session allocation without expense, closed reconciliation immutable, race-safe
+- [x] Pamamalengke Summary: Copy as text + Export as image
+- [x] Cash View removed (duplicated Profit view)
+- [x] Branch store photo (optional, re-encoded WebP, Branch authorization, fallback)
+- [x] One canonical receipt + Receipt Settings (controlled blocks, order, header, custom rows, separators, order-again QR); snapshots only
+- [x] Preferred Name semantics (receipts: Preferred Name else first given name; audit keeps the real account)
+- [x] Customer QR named limiters (device cookie + per-IP ceiling; submit per device and per Branch/IP)
+- [x] Un-named throttle collision fixed (every route on a named limiter) + regression tests
+- [x] Shared Store status / Open Store control on every Store Operations page (permission-aware) + `store.opened` realtime
+- [x] Store Close summary shows opening date/time, opening Cash / Cashless and who opened
+- [x] Pay Now polish: no "Invoice: —", green Exact, camera vs file picker with type/size checks, no keypad on phones
+- [x] QR Orders: no stale cross-tab cards (keyed + aborted requests), shared badge on every Store Operations page, archived newest first, Restore only for the open session; 30-minute auto-archive verified
+- [x] Reports: Period Highlights right after the KPI cards
+- [x] Mobile: dock overflow, Ready panel above View cart, Kitchen full-screen focus fallback (iOS) with round logo, round logo in phone headers
+- [x] Notification matrix documented (`06-realtime-contracts.md`); Void PIN lock alert added
+- [x] Security: Void PIN lockout + audit + alert, transactions.view on POS transaction routes, anti-enumeration account recovery, reset links from APP_URL, password change/reset ends other sessions (audited), security headers, Reverb client events off / allowed origins, voided invoice proofs 404, Branch cannot leave Active while open
+- [x] Reliability: bounded Reverb HTTP client, handled background reloads, reconnect jitter, serialized notification refreshes, POS catalog realtime rebuilt
+- [x] Performance: stable windowed signed image URLs (batched, cached) + immutable uploads, one catalog signal per paid order, catalog fan-out without N+1, hidden-tab report refresh deferred, lazy Store Session dialog chunk, versioned receipt-logo caching
+- [x] Health (`/health` readiness + queue heartbeat) and release metadata; pooling / backup / staging guidance documented
+
+Verification (details in `11-testing-qa.md` › Phase 20): complete Laravel suite **2,301 passed / 17,293 assertions, 0 failures, 0 errors, 0 skipped** (definitive run after correcting two stale test contracts found by the first full run); frontend 352/352; lint, TypeScript (app + service worker), production build, Pint, PHPStan 0; all 20 PostgreSQL harnesses including the new Phase 20 harness; Phase 20 migrations fresh/rollback/reapply on SQLite and PostgreSQL and forward-applied to the local development database; dependency audits clean; secret/debug scan clean. Manual/browser QA was not performed by the agent.
+
+Known limits / deferred: the unreachable starter-kit shell (`pages/dashboard.tsx`, `AppLayout` family) is left in place (not a runtime path); `Model::preventLazyLoading` not enabled (would need a full N+1 sweep); per-Product catalog events are still one queued broadcast per Product × Branch (only the synchronous Customer QR signal was collapsed); connection-pooling settings are recommendations until validated on staging.
 
 ---
 

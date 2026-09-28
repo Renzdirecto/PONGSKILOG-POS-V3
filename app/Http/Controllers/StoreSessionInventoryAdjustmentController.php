@@ -12,7 +12,7 @@ use Illuminate\Http\JsonResponse;
 class StoreSessionInventoryAdjustmentController extends Controller
 {
     /**
-     * Record an inventory-only deduction for the current Store Session.
+     * Record a Stock Correction (inventory-only, up or down) for the current Store Session.
      */
     public function __invoke(StoreSessionInventoryAdjustmentRequest $request, ActiveBranchContext $context, RecordStoreSessionInventoryAdjustment $record): JsonResponse
     {
@@ -27,6 +27,7 @@ class StoreSessionInventoryAdjustmentController extends Controller
                 'id' => $adjustment->id,
                 'reason_code' => $adjustment->reason_code->value,
                 'reason_label' => $adjustment->reason_code->label(),
+                'direction' => $adjustment->direction->value,
                 'product_id' => $adjustment->product_id,
                 'product_name' => $adjustment->product->name,
                 'quantity' => $adjustment->quantity,

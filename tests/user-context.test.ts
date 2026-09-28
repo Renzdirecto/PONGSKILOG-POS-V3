@@ -75,3 +75,10 @@ test('background refreshes never show a raw error page when access was just revo
         assert.match(code, /onNetworkError: \(\) => false/, hook);
     }
 });
+
+test('a reconnect revalidates only the shared context, spread over a few seconds; a context signal reloads the page', () => {
+    assert.match(userContextHook, /\.\.\.\(full \? \{\} : \{ only: RECONNECT_CONTEXT_PROPS \}\)/);
+    assert.match(userContextHook, /scheduleRefresh\(Math\.round\(Math\.random\(\) \* RECONNECT_JITTER_MS\)\)/);
+    assert.match(userContextHook, /fullReload\.current = true;\s*scheduleRefresh\(\);/);
+    assert.match(userContextHook, /'auth',\s*'branchContext',\s*'storeContext',\s*'notificationCenter',\s*'qrWaitingCount',/);
+});

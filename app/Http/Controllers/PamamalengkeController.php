@@ -7,7 +7,9 @@ use App\Actions\Operations\ManagePamamalengkeList;
 use App\Models\Ingredient;
 use App\Models\OperationPlan;
 use App\Models\PamamalengkeListEntry;
+use App\Models\PamamalengkePurchaseItem;
 use App\Support\ExactMoney;
+use App\Support\PamamalengkeFunding;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -39,9 +41,14 @@ class PamamalengkeController extends Controller
 
     public function confirm(Request $request, OperationPlan $plan, ConfirmPamamalengke $confirm): RedirectResponse
     {
-        $purchase = $confirm->execute($request->user(), $plan, $request->only(['idempotency_key', 'payment_source', 'note', 'items']));
-        $total = ExactMoney::cents((string) $purchase->expense()->value('amount'));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Pamamalengke confirmed · '.ExactMoney::display($total).' saved as a Store Purchase.']);
+        $purchase = $confirm->execute($request->user(), $plan, $request->only([
+            'idempotency_key', 'funding_store_session_id', 'funding_session_status', 'payment_source', 'note', 'items',
+        ]));
+        $total = $purchase->items->sum(fn (PamamalengkePurchaseItem $item): int => ExactMoney::cents((string) $item->line_total));
+        $funding = $purchase->fundingSession()->firstOrFail();
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Pamamalengke confirmed · '.ExactMoney::display($total).($purchase->store_session_expense_id !== null
+            ? ' saved as a Store Purchase of the open Store Session.'
+            : ' allocated to the closed Store Session '.PamamalengkeFunding::label($funding).'. Its Close Store result is unchanged.')]);
         Inertia::flash('pamamalengkeConfirmed', ['purchase_id' => $purchase->id, 'idempotency_key' => $purchase->idempotency_key]);
 
         return to_route('operations.pamamalengke', ['plan' => $plan->id]);

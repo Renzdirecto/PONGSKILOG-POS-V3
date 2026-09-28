@@ -2,14 +2,9 @@ import { Link, router } from '@inertiajs/react';
 import {
     ArrowRight,
     Archive,
-    BarChart3,
-    Box,
     Check,
-    ListChecks,
-    Leaf,
     Pencil,
     Plus,
-    RefreshCw,
     ShoppingCart,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -33,10 +28,8 @@ import { formatPeso } from '@/lib/operations';
 import operationsRoutes from '@/routes/operations';
 import type {
     OperationsContext,
-    OperationsFigures,
     OperationsIngredient,
     OperationsPlan,
-    OperationsSummaryProps,
 } from '@/types/operations';
 
 type PlanCard = {
@@ -50,7 +43,6 @@ type PlanCard = {
     to_buy: number | null;
     suggested_cents: number | null;
     suggested_unknown: number;
-    figures: OperationsFigures | null;
 };
 
 type PickerProduct = {
@@ -63,26 +55,13 @@ type PickerProduct = {
 type Props = {
     operations: OperationsContext;
     cards: PlanCard[];
-    summary: OperationsSummaryProps;
-    outside: { count: number; examples: string[] };
     shared: (OperationsIngredient & { plan_ids: string[] }) | null;
     products: PickerProduct[];
 };
 
-const PARTS: [typeof Box, string][] = [
-    [Box, 'Products'],
-    [ListChecks, 'Recipes'],
-    [Leaf, 'Ingredients'],
-    [RefreshCw, 'Replenishment rules'],
-    [ShoppingCart, 'Purchasing recommendations'],
-    [BarChart3, 'Reporting'],
-];
-
 export default function OperationsPlans({
     operations,
     cards,
-    summary,
-    outside,
     shared,
     products,
 }: Props) {
@@ -91,7 +70,6 @@ export default function OperationsPlans({
     const canEdit = operations.can_configure;
     const planName = (id: string) =>
         operations.plans.find((plan) => plan.id === id)?.name ?? 'Plan';
-    const business = summary.business;
 
     return (
         <OperationsShell
@@ -113,35 +91,6 @@ export default function OperationsPlans({
                 ) : undefined
             }
         >
-            <section className={opsCardClass} aria-labelledby="plan-holds">
-                <div className="flex flex-col gap-1">
-                    <h2
-                        id="plan-holds"
-                        className="text-[14.5px] font-bold tracking-[-0.01em]"
-                    >
-                        What a plan holds
-                    </h2>
-                    <p className="max-w-[80ch] text-[12.5px] leading-5 text-[#555]">
-                        A plan groups the products you sell, the recipes that
-                        connect them to ingredients, the replenishment rules and
-                        the market list, so each product family gets its own
-                        planning and reporting. A plan does not hold stock of
-                        its own.
-                    </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                    {PARTS.map(([Icon, label]) => (
-                        <span
-                            key={label}
-                            className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f2f2f2] px-2.5 text-[11.5px] font-semibold text-[#333]"
-                        >
-                            <Icon className="size-[13px]" aria-hidden="true" />
-                            {label}
-                        </span>
-                    ))}
-                </div>
-            </section>
-
             {operations.plans.length === 0 ? (
                 <EmptyState
                     title="No Pamalengke Plans yet."
@@ -303,231 +252,6 @@ export default function OperationsPlans({
                 </div>
             )}
 
-            {operations.plans.length > 0 && (
-                <section
-                    className={opsCardClass}
-                    aria-labelledby="today-across"
-                >
-                    <div className="flex flex-col gap-0.5">
-                        <h2
-                            id="today-across"
-                            className="text-[14.5px] font-bold"
-                        >
-                            Today across plans
-                        </h2>
-                        <p className="text-xs text-[#767676]">
-                            Business date {summary.business_date} ·{' '}
-                            {operations.branch
-                                ? `${operations.branch.name} branch`
-                                : 'All Branches'}
-                            . Estimated from recipes and the costs recorded when
-                            each sale was made.
-                        </p>
-                    </div>
-                    <div className="hidden overflow-hidden rounded-xl border border-[#efefef] min-[820px]:block">
-                        <table className="w-full text-left">
-                            <thead className="bg-[#fafafa]">
-                                <tr>
-                                    {[
-                                        'Plan',
-                                        'Sales',
-                                        'Est. COGS',
-                                        'Est. gross profit',
-                                        'Suggested market cost',
-                                    ].map((label, index) => (
-                                        <th
-                                            key={label}
-                                            scope="col"
-                                            className={`px-3.5 py-2.5 ${opsLabelClass} ${index ? 'text-right' : ''}`}
-                                        >
-                                            {label}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {operations.plans.map((plan) => {
-                                    const card = cards.find(
-                                        (item) => item.id === plan.id,
-                                    );
-                                    const figures = card?.figures;
-
-                                    return (
-                                        <tr
-                                            key={plan.id}
-                                            className="border-t border-[#f2f2f2] hover:bg-[#fafafa]"
-                                        >
-                                            <th
-                                                scope="row"
-                                                className="px-3.5 py-3 text-[13.5px] font-semibold"
-                                            >
-                                                <Link
-                                                    href={operationsHref(
-                                                        'overview',
-                                                        plan.id,
-                                                    )}
-                                                    className="inline-flex items-center gap-2 hover:underline"
-                                                >
-                                                    <PlanIcon
-                                                        icon={plan.icon}
-                                                        className="size-4"
-                                                    />
-                                                    {plan.name} plan
-                                                </Link>
-                                            </th>
-                                            <td className="px-3.5 py-3 text-right text-[13.5px] font-semibold tabular-nums">
-                                                {formatPeso(
-                                                    figures?.sales_cents ?? 0,
-                                                    true,
-                                                )}
-                                            </td>
-                                            <td className="px-3.5 py-3 text-right text-[13.5px] text-[#555] tabular-nums">
-                                                {formatPeso(
-                                                    figures?.cogs_cents ?? 0,
-                                                    true,
-                                                )}
-                                                {figures?.incomplete && (
-                                                    <span className="block text-[10.5px] text-[#b45309]">
-                                                        Incomplete
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-3.5 py-3 text-right text-[13.5px] font-bold tabular-nums">
-                                                {formatPeso(
-                                                    figures?.gross_profit_cents ??
-                                                        0,
-                                                    true,
-                                                )}
-                                            </td>
-                                            <td className="px-3.5 py-3 text-right text-[13.5px] font-semibold text-[#7a5710] tabular-nums">
-                                                {card?.suggested_cents ===
-                                                    null || card === undefined
-                                                    ? '—'
-                                                    : formatPeso(
-                                                          card.suggested_cents,
-                                                          true,
-                                                      )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                    <ul className="flex flex-col gap-2 min-[820px]:hidden">
-                        {operations.plans.map((plan) => {
-                            const card = cards.find(
-                                (item) => item.id === plan.id,
-                            );
-                            const figures = card?.figures;
-
-                            return (
-                                <li key={plan.id}>
-                                    <Link
-                                        href={operationsHref(
-                                            'overview',
-                                            plan.id,
-                                        )}
-                                        className="flex flex-col gap-2 rounded-xl border border-[#e5e5e5] p-3"
-                                    >
-                                        <span className="flex items-center gap-2 text-[13.5px] font-bold">
-                                            <PlanIcon
-                                                icon={plan.icon}
-                                                className="size-4"
-                                            />
-                                            <span className="flex-1">
-                                                {plan.name} plan
-                                            </span>
-                                            <ArrowRight className="size-4 text-[#767676]" />
-                                        </span>
-                                        <span className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
-                                            <MiniValue
-                                                label="Sales"
-                                                value={formatPeso(
-                                                    figures?.sales_cents ?? 0,
-                                                    true,
-                                                )}
-                                            />
-                                            <MiniValue
-                                                label="Est. COGS"
-                                                value={formatPeso(
-                                                    figures?.cogs_cents ?? 0,
-                                                    true,
-                                                )}
-                                            />
-                                            <MiniValue
-                                                label="Est. gross profit"
-                                                value={formatPeso(
-                                                    figures?.gross_profit_cents ??
-                                                        0,
-                                                    true,
-                                                )}
-                                            />
-                                            <MiniValue
-                                                label="Market cost"
-                                                value={
-                                                    card?.suggested_cents ==
-                                                    null
-                                                        ? '—'
-                                                        : formatPeso(
-                                                              card.suggested_cents,
-                                                              true,
-                                                          )
-                                                }
-                                            />
-                                        </span>
-                                    </Link>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                    <dl className="ml-auto flex w-full max-w-[560px] flex-col">
-                        <TotalRow
-                            label="Business net sales"
-                            value={formatPeso(business.sales_cents)}
-                            sub="Same Net Sales as Reports"
-                        />
-                        <TotalRow
-                            label="Estimated ingredient COGS"
-                            value={`−${formatPeso(business.cogs_cents)}`}
-                            sub={
-                                business.uncosted_sales_cents > 0
-                                    ? `${formatPeso(business.uncosted_sales_cents)} of sales is not costed`
-                                    : undefined
-                            }
-                        />
-                        <TotalRow
-                            label="Estimated gross profit"
-                            value={formatPeso(business.gross_profit_cents)}
-                            strong
-                        />
-                        <TotalRow
-                            label="Non-stock supplies bought today"
-                            value={`−${formatPeso(business.non_stock_cents)}`}
-                            sub="Manual pamamalengke items"
-                        />
-                        <TotalRow
-                            label="Other store expenses"
-                            value={`−${formatPeso(business.other_expenses_cents)}`}
-                            sub="Other Store Purchases / Expenses, counted once"
-                        />
-                        <TotalRow
-                            label="Business estimated operating profit"
-                            value={formatPeso(business.operating_profit_cents)}
-                            total
-                        />
-                    </dl>
-                    <p className="text-[11.5px] leading-5 text-[#767676]">
-                        {outside.count > 0
-                            ? `${outside.count} active product${outside.count === 1 ? ' is' : 's are'} outside every plan (for example ${outside.examples.slice(0, 2).join(' and ')}). ${formatPeso(summary.outside_plan_sales_cents)} of today's sales is outside plan metrics and uncosted.`
-                            : 'Every active product belongs to a plan.'}
-                        {business.incomplete
-                            ? ' Estimates are incomplete where recipes or costs are missing; missing costs are never treated as ₱0.'
-                            : ''}
-                    </p>
-                </section>
-            )}
-
             {shared && (
                 <section className={opsCardClass} aria-labelledby="one-record">
                     <div className="flex flex-col gap-0.5">
@@ -611,55 +335,6 @@ function Stat({
                 className={`text-[11px] leading-4 ${warn ? 'font-semibold text-[#b45309]' : 'text-[#8a8a8a]'}`}
             >
                 {note}
-            </dd>
-        </div>
-    );
-}
-
-function MiniValue({ label, value }: { label: string; value: string }) {
-    return (
-        <span className="flex min-w-0 flex-col">
-            <span className={opsLabelClass}>{label}</span>
-            <span className="text-sm font-bold tabular-nums">{value}</span>
-        </span>
-    );
-}
-
-function TotalRow({
-    label,
-    value,
-    sub,
-    strong = false,
-    total = false,
-}: {
-    label: string;
-    value: string;
-    sub?: string;
-    strong?: boolean;
-    total?: boolean;
-}) {
-    return (
-        <div
-            className={`flex items-center gap-2.5 ${total ? 'mt-0.5 border-t-[1.5px] border-[#111] pt-2.5' : strong ? 'border-y border-t-[#c9c9c9] border-b-[#f2f2f2] py-2' : 'border-b border-[#f2f2f2] py-2'}`}
-        >
-            <dt className="flex min-w-0 flex-1 flex-col">
-                <span
-                    className={
-                        strong || total
-                            ? 'text-[13.5px] font-bold'
-                            : 'text-[13px] font-medium'
-                    }
-                >
-                    {label}
-                </span>
-                {sub && (
-                    <span className="text-[11px] text-[#8a8a8a]">{sub}</span>
-                )}
-            </dt>
-            <dd
-                className={`shrink-0 font-bold whitespace-nowrap tabular-nums ${total ? 'text-lg' : 'text-[13.5px]'}`}
-            >
-                {value}
             </dd>
         </div>
     );

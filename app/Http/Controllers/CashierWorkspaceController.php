@@ -39,9 +39,6 @@ class CashierWorkspaceController extends Controller
         }
 
         return Inertia::render('workspaces/show', [
-            'qrWaitingCount' => fn (): int => Order::query()->where('branch_id', $branch->id)
-                ->where('source', OrderSource::CustomerQr)->where('commercial_status', CommercialStatus::Submitted)
-                ->whereNull('loaded_by_user_id')->whereIn('store_session_id', $branch->storeSessions()->where('status', 'open')->select('id'))->count(),
             'loadedQr' => function () use ($branch, $user): ?array {
                 $order = Order::query()->where('branch_id', $branch->id)
                     ->where('source', OrderSource::CustomerQr)

@@ -1,6 +1,11 @@
 export type User = {
     id: number;
+    /** The full name: admin-managed identity (audit, Staff administration). */
     name: string;
+    /** Self-chosen display name, or null. */
+    preferredName?: string | null;
+    /** Preferred Name when set, else the full name: use for greetings and shells, never for identity. */
+    displayName: string;
     email: string;
     /** Business/job title shown to people (display only; access always comes from the Role). */
     position?: string | null;
@@ -33,6 +38,8 @@ export type StoreContext = {
     status: 'open' | 'closed' | null;
     isOpen: boolean;
     branchId: string | null;
+    /** The server would accept Open Store from this account at this Branch now (it still decides). */
+    canOpen: boolean;
 };
 
 export type CurrentStoreSession = {
@@ -85,9 +92,11 @@ export type StoreSessionGiveaway = {
     } | null;
 };
 
+/** A Stock Correction: `quantity` is the positive size, `direction` its sign; stock only, never money. */
 export type StoreSessionInventoryAdjustment = {
     id: string;
     product_name: string;
+    direction: 'decrease' | 'increase';
     quantity: number;
     reason_code: string;
     reason_label: string;

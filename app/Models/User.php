@@ -21,7 +21,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $employee_id
  * @property string|null $avatar_path
  * @property string|null $position Business/job title for display only; access always comes from the Role.
- * @property string $name
+ * @property string $name The full name: admin-managed identity (Staff administration), shown in audit records.
+ * @property string|null $preferred_name Self-chosen display name (Phase 20), never an identity or permission.
  * @property string $email
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -53,6 +54,30 @@ class User extends Authenticatable
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    /** The friendly name for greetings and shells: the Preferred Name when set, else the full name. */
+    public function displayName(): string
+    {
+        $preferred = trim((string) $this->preferred_name);
+
+        return $preferred !== '' ? $preferred : $this->name;
+    }
+
+    /**
+     * The name customers may see (cashier on a receipt): the Preferred Name when set, else only the first given name,
+     * so a customer never receives a staff member's full legal name. Leading titles and abbreviations ("Dr.", "Ma.")
+     * are skipped; a name made only of those is shown as it is.
+     */
+    public function customerFacingName(): string
+    {
+        $preferred = trim((string) $this->preferred_name);
+        if ($preferred !== '') {
+            return $preferred;
+        }
+        $tokens = preg_split('/\s+/u', trim($this->name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return collect($tokens)->first(fn (string $token): bool => ! str_ends_with($token, '.')) ?? trim($this->name);
     }
 
     /** @return BelongsToMany<Role, $this> */

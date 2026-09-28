@@ -29,9 +29,12 @@ import type { PosReadyOrder } from '@/types';
 export function PosReadyNotifications({
     branchId,
     orders,
+    aboveCart = false,
 }: {
     branchId: string;
     orders: PosReadyOrder[];
+    /** Phones: the POS order view has a View cart bar above the dock, so the panel sits above both. */
+    aboveCart?: boolean;
 }) {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
@@ -148,7 +151,10 @@ export function PosReadyNotifications({
             </DropdownMenu>
 
             {orders.length > 0 && (
-                <aside className="fixed right-3 bottom-[84px] left-3 z-20 overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-xl md:right-auto md:bottom-4 md:left-[110px] md:w-[300px]">
+                <aside
+                    aria-label="Orders ready for pickup"
+                    className={`fixed right-[max(12px,env(safe-area-inset-right))] left-[max(12px,env(safe-area-inset-left))] z-30 overflow-hidden ${aboveCart ? 'bottom-[calc(max(12px,env(safe-area-inset-bottom))+132px)]' : 'bottom-[calc(max(12px,env(safe-area-inset-bottom))+72px)]'} rounded-2xl border border-emerald-200 bg-white shadow-xl md:right-auto md:bottom-4 md:left-[110px] md:w-[300px]`}
+                >
                     <div className="flex items-center justify-between bg-emerald-700 px-3 py-2 text-white">
                         <span className="text-[10px] font-black tracking-[0.14em] uppercase">
                             Ready for pickup

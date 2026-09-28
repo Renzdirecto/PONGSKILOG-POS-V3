@@ -1,17 +1,21 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router, useHttp } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
+import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 import { createRealtimeRefresh } from '@/lib/realtime-refresh';
 import { unreadCount as unreadCountRoute } from '@/routes/super-admin/notifications';
 
 type NotificationSignalOptions = {
     userId: number;
-    onSignal: () => void;
+    /** Runs one refresh; calls `finish` when it completed, so refreshes never overlap or land out of order. */
+    onSignal: (finish: () => void) => void;
 };
 
 /**
  * Listens on the viewer's own private channel for the invalidation-only `notifications.changed` signal and runs one
- * debounced refresh per burst, plus one after the realtime connection recovers. There is no polling timer.
+ * debounced refresh per burst (one at a time), plus one after the realtime connection recovers — not on the first
+ * connect, right after the server rendered the page. There is no polling timer.
  */
 function useNotificationSignal({
     userId,
@@ -19,14 +23,14 @@ function useNotificationSignal({
 }: NotificationSignalOptions): void {
     const connectionStatus = useConnectionStatus();
     const previousStatus = useRef(connectionStatus);
+    const hasConnected = useRef(connectionStatus === 'connected');
     const onSignalRef = useRef(onSignal);
     onSignalRef.current = onSignal;
 
     const refresh = useMemo(
         () =>
             createRealtimeRefresh((finish) => {
-                onSignalRef.current();
-                finish();
+                onSignalRef.current(finish);
             }, 400),
         [],
     );
@@ -41,10 +45,16 @@ function useNotificationSignal({
 
     useEffect(() => {
         if (
-            previousStatus.current !== 'connected' &&
-            connectionStatus === 'connected'
+            shouldRefetchCatalogAfterConnectionChange(
+                previousStatus.current,
+                connectionStatus,
+                hasConnected.current,
+            )
         ) {
             scheduleRefresh(0);
+        }
+        if (connectionStatus === 'connected') {
+            hasConnected.current = true;
         }
         previousStatus.current = connectionStatus;
     }, [connectionStatus, scheduleRefresh]);
@@ -75,7 +85,7 @@ export function useUnreadNotifications(
 
     useNotificationSignal({
         userId,
-        onSignal: () => {
+        onSignal: (finish) => {
             request
                 .get(unreadCountRoute.url(), {
                     headers: { Accept: 'application/json' },
@@ -87,7 +97,8 @@ export function useUnreadNotifications(
                 })
                 .catch(() => {
                     // Keep the last confirmed count; the next signal or visit refreshes it.
-                });
+                })
+                .finally(finish);
         },
     });
 
@@ -107,6 +118,13 @@ export function useNotificationsPageRefresh(
 
     useNotificationSignal({
         userId,
-        onSignal: () => router.reload({ only: onlyRef.current }),
+        onSignal: (finish) =>
+            router.reload({
+                only: onlyRef.current,
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+                onFinish: finish,
+            }),
     });
 }

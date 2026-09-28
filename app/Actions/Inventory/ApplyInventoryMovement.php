@@ -33,6 +33,8 @@ class ApplyInventoryMovement
         ?string $orderId = null,
         ?string $storeSessionExpenseId = null,
         ?string $stockTransferId = null,
+        /** False when the caller moves several Products and sends one Customer QR catalog signal itself. */
+        bool $signalCustomerCatalog = true,
     ): InventoryMovement {
         if ($quantityDelta === 0) {
             throw ValidationException::withMessages(['quantity_delta' => 'The inventory quantity delta must not be zero.']);
@@ -48,7 +50,7 @@ class ApplyInventoryMovement
             'stock_transfer_id' => ['nullable', 'uuid'],
         ])->validate();
 
-        return DB::transaction(function () use ($branch, $product, $movementType, $quantityDelta, $reason, $actor, $orderId, $storeSessionExpenseId, $stockTransferId): InventoryMovement {
+        return DB::transaction(function () use ($branch, $product, $movementType, $quantityDelta, $reason, $actor, $orderId, $storeSessionExpenseId, $stockTransferId, $signalCustomerCatalog): InventoryMovement {
             $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
             $product = Product::query()->whereKey($product->getKey())->firstOrFail();
             $actor = $actor === null ? null : User::query()->whereKey($actor->getKey())->firstOrFail();
@@ -117,7 +119,9 @@ class ApplyInventoryMovement
                 $balance->version,
             );
 
-            CustomerCatalogChanged::dispatch($branch->id);
+            if ($signalCustomerCatalog) {
+                CustomerCatalogChanged::dispatch($branch->id);
+            }
 
             /** Only the movement that empties a stocked balance alerts; it holds the balance row lock. */
             if ($onHandBefore > 0 && $balance->on_hand <= 0) {

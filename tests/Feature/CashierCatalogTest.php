@@ -198,7 +198,8 @@ test('catalog signs only returned card variants and exposes no image internals',
     $signedPaths = [];
     Storage::fake('s3')->buildTemporaryUrlsUsing(function (string $path, DateTimeInterface $expiration) use (&$signedPaths) {
         $signedPaths[] = $path;
-        expect($expiration->getTimestamp())->toBe(now()->addMinutes(5)->getTimestamp());
+        /** Stable per 30-minute window and valid until the end of the next window (ProductImages::URL_MINUTES). */
+        expect($expiration->getTimestamp())->toBe((intdiv(now()->getTimestamp(), 1800) + 2) * 1800);
 
         return 'https://assets.example.test/'.$path.'?signature=test';
     });

@@ -2,19 +2,25 @@
 
 namespace App\Http\Requests\Settings;
 
-use App\Concerns\ProfileValidationRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
+/**
+ * Self-service profile (Phase 20): only the display-oriented Preferred Name. The full name, sign-in e-mail, Employee
+ * ID, Position, Role, Branch assignments and status stay admin-managed in Staff administration.
+ */
 class ProfileUpdateRequest extends FormRequest
 {
-    use ProfileValidationRules;
+    /** Letters (any script), spaces, periods, apostrophes and hyphens: a name, never markup or a URL. */
+    public const PREFERRED_NAME_PATTERN = "/\A[\pL\pM][\pL\pM .'’-]*\z/u";
 
-    /** Emails are stored lowercase, as the Staff forms store them. */
+    /** Whitespace is collapsed; a blank value clears the Preferred Name. */
     protected function prepareForValidation(): void
     {
-        if (is_string($this->input('email'))) {
-            $this->merge(['email' => mb_strtolower(trim($this->input('email')))]);
+        $value = $this->input('preferred_name');
+        if (is_string($value)) {
+            $value = trim((string) preg_replace('/\s+/u', ' ', $value));
+            $this->merge(['preferred_name' => $value === '' ? null : $value]);
         }
     }
 
@@ -25,6 +31,16 @@ class ProfileUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
-        return $this->profileRules($this->user()->id);
+        return [
+            'preferred_name' => ['present', 'nullable', 'string', 'max:60', 'regex:'.self::PREFERRED_NAME_PATTERN],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'preferred_name.regex' => 'Use letters, spaces, periods, apostrophes or hyphens only.',
+        ];
     }
 }

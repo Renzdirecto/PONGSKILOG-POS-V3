@@ -39,6 +39,7 @@ import {
     projectKitchenBoard,
 } from '@/lib/kitchen-transitions';
 import type { KitchenTransitionResult } from '@/lib/kitchen-transitions';
+import { fullscreenSupported } from '@/lib/customer-screen';
 import { customerDisplay } from '@/routes/workspaces';
 import type {
     BranchContext,
@@ -79,7 +80,13 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         'kitchen-active-tab',
     );
     const [search, setSearch] = useRemember('', 'kitchen-search');
-    const [fullscreen, setFullscreen] = useState(false);
+    const [nativeFullscreen, setNativeFullscreen] = useState(false);
+    /**
+     * Where the Fullscreen API is missing or refused (iPhone Safari, some kiosk browsers) the same full-screen board is
+     * a fixed layer over the shell instead: the dense grid still fills the screen.
+     */
+    const [focusView, setFocusView] = useState(false);
+    const fullscreen = nativeFullscreen || focusView;
     const transitions = useMemo(
         () => new KitchenTransitionStore(),
         [branch?.id],
@@ -178,7 +185,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
 
     useEffect(() => {
         const synchronizeFullscreen = () => {
-            setFullscreen(document.fullscreenElement === surface.current);
+            setNativeFullscreen(document.fullscreenElement === surface.current);
         };
 
         document.addEventListener('fullscreenchange', synchronizeFullscreen);
@@ -195,15 +202,32 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         [projectedBoard.tickets, search, tab],
     );
 
+    useEffect(() => {
+        if (!focusView) return;
+        const leave = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setFocusView(false);
+        };
+        window.addEventListener('keydown', leave);
+        return () => window.removeEventListener('keydown', leave);
+    }, [focusView]);
+
     async function toggleFullscreen() {
+        if (focusView) {
+            setFocusView(false);
+            return;
+        }
+        if (document.fullscreenElement === surface.current) {
+            await document.exitFullscreen().catch(() => undefined);
+            return;
+        }
+        if (!fullscreenSupported(document)) {
+            setFocusView(true);
+            return;
+        }
         try {
-            if (document.fullscreenElement === surface.current) {
-                await document.exitFullscreen();
-            } else {
-                await surface.current?.requestFullscreen();
-            }
+            await surface.current?.requestFullscreen();
         } catch {
-            toast.error('Fullscreen could not be opened in this browser.');
+            setFocusView(true);
         }
     }
 
@@ -264,6 +288,13 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
             >
                 <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
                     <div className="flex flex-wrap items-center gap-2 overflow-hidden px-3 py-2.5 sm:flex-nowrap md:px-4">
+                        {fullscreen && (
+                            <img
+                                src="/images/branding/logo.png"
+                                alt="PONGSKILOG"
+                                className="size-10 shrink-0 rounded-full bg-[#111] object-contain p-1"
+                            />
+                        )}
                         <nav
                             aria-label="Kitchen status filters"
                             className="order-2 flex min-w-0 basis-full gap-1 overflow-x-auto py-px sm:order-none sm:flex-1 sm:basis-auto"
@@ -497,7 +528,7 @@ function TicketCard({
                             type="button"
                             disabled={disabled || current || !allowed}
                             onClick={() => onTransition(ticket, status)}
-                            className={`min-h-9 rounded-[7px] border px-1 text-[9px] font-bold uppercase transition sm:text-[10px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
+                            className={`min-h-11 min-w-0 truncate rounded-[8px] border px-1 text-[10.5px] font-bold uppercase transition sm:text-[11px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
                         >
                             {compact && status === 'preparing'
                                 ? 'Prep'

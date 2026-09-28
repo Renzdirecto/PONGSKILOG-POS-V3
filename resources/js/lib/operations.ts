@@ -94,6 +94,69 @@ export function formatPeso(cents: number, wholeOnly = false): string {
         : `${sign}₱${whole}.${String(magnitude % 100).padStart(2, '0')}`;
 }
 
+export type ShoppingListLine = {
+    name: string;
+    quantity: string;
+    estimate_cents: number | null;
+};
+
+/** "2026-09-28" (a Manila business date) → "Sep 28, 2026". */
+export function businessDateLabel(date: string): string {
+    const [year, month, day] = date.split('-').map(Number);
+    if (!year || !month || !day) return date;
+    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(
+        'en-PH',
+        { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' },
+    );
+}
+
+/**
+ * The Pamamalengke list as plain text for a shopper (Copy as text): Branch, plan, date, "Name — quantity" lines and
+ * the estimated (and, while shopping, actual) total. Nothing about staff, sessions or expenses.
+ */
+export function pamamalengkeShareText(list: {
+    branch: string;
+    plan: string;
+    date: string;
+    lines: ShoppingListLine[];
+    estimate_cents: number;
+    actual_cents?: number | null;
+}): string {
+    const unknown = list.lines.filter(
+        (line) => line.estimate_cents === null,
+    ).length;
+    return [
+        `PONGSKILOG — ${list.branch}`,
+        `Pamamalengke · ${list.plan} plan`,
+        businessDateLabel(list.date),
+        '',
+        ...(list.lines.length > 0
+            ? list.lines.map((line) => `${line.name} — ${line.quantity}`)
+            : ['Nothing on the list.']),
+        '',
+        `Estimated total: ${formatPeso(list.estimate_cents)}${unknown > 0 ? ` (${unknown} item${unknown === 1 ? '' : 's'} without a known cost)` : ''}`,
+        ...(list.actual_cents
+            ? [`Actual so far: ${formatPeso(list.actual_cents)}`]
+            : []),
+    ].join('\n');
+}
+
+/** A category's size counts: "10 Large | 6 Medium | 10 Small". */
+export function productsSoldSizes(
+    sizes: { name: string; quantity: number }[],
+): string {
+    return sizes.map((size) => `${size.quantity} ${size.name}`).join(' | ');
+}
+
+/** One Products Sold row: "3× Large Lemon Yakult", or "2× Tapsilog" without a size. */
+export function productsSoldLine(line: {
+    name: string;
+    size: string | null;
+    quantity: number;
+}): string {
+    return `${line.quantity}× ${line.size ? `${line.size} ` : ''}${line.name}`;
+}
+
 /** Rounded half away from zero: numerator ÷ denominator for non-negative integers. */
 function divideRounded(numerator: number, denominator: number): number {
     const quotient = Math.trunc(numerator / denominator);

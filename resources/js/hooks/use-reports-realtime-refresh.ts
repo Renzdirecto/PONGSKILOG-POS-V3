@@ -20,6 +20,7 @@ const NO_IGNORED_REASONS: readonly string[] = [];
  *
  * A reload always requests the current URL, so it waits while the page runs its own visit (a period or filter
  * change) and an in-flight reload is cancelled when such a visit starts; one refresh follows the new page instead.
+ * A tab in the background does not reload on every signal: it remembers it is stale and refreshes once when shown.
  */
 export function useReportsRealtimeRefresh(
     only: string[],
@@ -34,6 +35,7 @@ export function useReportsRealtimeRefresh(
     const hasConnected = useRef(connectionStatus === 'connected');
     const onlyRef = useRef(only);
     onlyRef.current = only;
+    const staleWhileHidden = useRef(false);
 
     const refresh = useMemo(
         () =>
@@ -63,7 +65,12 @@ export function useReportsRealtimeRefresh(
         channel,
         ['.reports.changed'],
         (event) => {
-            if (acceptEvent(event)) {
+            if (!acceptEvent(event)) {
+                return;
+            }
+            if (document.visibilityState === 'hidden') {
+                staleWhileHidden.current = true;
+            } else {
                 scheduleRefresh();
             }
         },
@@ -124,12 +131,23 @@ export function useReportsRealtimeRefresh(
         });
         const recover = () => scheduleRefresh(0);
         window.addEventListener('online', recover);
+        const shown = () => {
+            if (
+                document.visibilityState === 'visible' &&
+                staleWhileHidden.current
+            ) {
+                staleWhileHidden.current = false;
+                scheduleRefresh(0);
+            }
+        };
+        document.addEventListener('visibilitychange', shown);
 
         return () => {
             refresh.dispose();
             removeStart();
             removeFinish();
             window.removeEventListener('online', recover);
+            document.removeEventListener('visibilitychange', shown);
         };
     }, [refresh, scheduleRefresh]);
 }

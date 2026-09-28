@@ -188,7 +188,8 @@ if ($worker) {
             ], fn (mixed $value): bool => $value !== null))->only(['id']),
             'adjust' => app(RecordStoreSessionInventoryAdjustment::class)->execute($user, $branch, [
                 'idempotency_key' => (string) Str::uuid(),
-                'reason_code' => 'complimentary',
+                'direction' => 'decrease',
+                'reason_code' => 'wastage',
                 'product_id' => $argv[7],
                 'quantity' => 1,
             ])->only(['id']),

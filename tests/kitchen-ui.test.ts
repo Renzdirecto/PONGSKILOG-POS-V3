@@ -119,6 +119,7 @@ test('POS refreshes both ready orders and kitchen status for ticket lifecycle an
         '.kitchen.ticket_created',
         '.kitchen.status_changed',
         '.pickup.notify_changed',
+        '.order.voided',
     ]);
 });
 
@@ -237,4 +238,22 @@ test('Vite keeps hot assets and generated development font URLs on one fixed ser
     assert.match(viteConfig, /host: '127\.0\.0\.1'/);
     assert.match(viteConfig, /port: 5173/);
     assert.match(viteConfig, /strictPort: true/);
+});
+
+test('Kitchen full screen falls back to a fixed focus view where the Fullscreen API is missing, with the round logo', () => {
+    const kitchen = readFileSync(
+        new URL('../resources/js/pages/workspaces/kitchen.tsx', import.meta.url),
+        'utf8',
+    );
+    const layout = readFileSync(
+        new URL('../resources/js/layouts/workspace-layout.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.match(kitchen, /const fullscreen = nativeFullscreen \|\| focusView;/);
+    assert.match(kitchen, /if \(!fullscreenSupported\(document\)\) \{\s*setFocusView\(true\);/);
+    assert.match(kitchen, /catch \{\s*setFocusView\(true\);/);
+    assert.match(kitchen, /event\.key === 'Escape'\) setFocusView\(false\)/);
+    assert.match(kitchen, /\{fullscreen && \(\s*<img\s+src="\/images\/branding\/logo\.png"[\s\S]*?rounded-full/);
+    assert.match(kitchen, /min-h-11 min-w-0 truncate rounded-\[8px\] border px-1 text-\[10\.5px\]/);
+    assert.match(layout, /className="theme-static size-9 shrink-0 rounded-full bg-\[#111\] object-contain p-1 md:hidden"/);
 });

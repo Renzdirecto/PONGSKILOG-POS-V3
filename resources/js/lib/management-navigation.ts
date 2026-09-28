@@ -135,8 +135,8 @@ export const managementDestinations: readonly ManagementDestination[] = [
             ['plans', 'Pamalengke Plans', 'Plans'],
             ['overview', 'Overview', 'Overview'],
             ['ingredients', 'Ingredients', 'Ingredients'],
-            ['recipes', 'Recipes', 'Recipes'],
             ['stock', 'Ingredient Stock', 'Stock'],
+            ['recipes', 'Recipes', 'Recipes'],
             ['pamamalengke', 'Pamamalengke', 'Market'],
             ['purchases', 'Purchases', 'Purchases'],
         ] as const
@@ -279,15 +279,15 @@ export function activeManagementDestination(
     return null;
 }
 
-/** localStorage key of the desktop sidebar preference (a per-device UI convenience, never stored on the server). */
-export const MANAGEMENT_SIDEBAR_STORAGE_KEY = 'management-sidebar';
+/**
+ * The desktop sidebar preference of this device, shared by the Owner and Super Admin shells: the `sidebar_state`
+ * cookie, which the server reads (shared prop `sidebarOpen`) so the first render already has the right width and
+ * navigating never flashes between widths. A UI convenience only, never an account setting.
+ */
+export const SIDEBAR_COOKIE = 'sidebar_state';
 
-export function restoredSidebarCollapsed(storedValue: string | null): boolean {
-    return storedValue === 'collapsed';
-}
-
-export function storedSidebarValue(collapsed: boolean): string {
-    return collapsed ? 'collapsed' : 'expanded';
+export function sidebarPreferenceCookie(collapsed: boolean): string {
+    return `${SIDEBAR_COOKIE}=${collapsed ? 'false' : 'true'}; path=/; max-age=31536000; SameSite=Lax`;
 }
 
 /**

@@ -261,7 +261,7 @@ test('expenses count Store Session expenses once and exclude stock-only adjustme
         'payment_source' => 'cash', 'note' => null, 'restock' => true, 'product_id' => $scenario->product->id, 'quantity' => 3,
     ]);
     app(RecordStoreSessionInventoryAdjustment::class)->execute($scenario->cashier, $scenario->branch, [
-        'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 2,
+        'idempotency_key' => (string) Str::uuid(), 'direction' => 'decrease', 'reason_code' => 'wastage', 'product_id' => $scenario->product->id, 'quantity' => 2,
     ]);
 
     expect(salesReport($scenario->branch, reportDay('2026-09-23'))->inertiaProps('report.summary.expenses'))

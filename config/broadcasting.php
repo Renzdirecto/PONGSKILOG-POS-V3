@@ -44,6 +44,12 @@ return [
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                /**
+                 * Most signals broadcast synchronously right after commit (ShouldBroadcastNow + ShouldRescue): a slow or
+                 * unreachable Reverb must cost a request at most a few seconds, never hang a payment.
+                 */
+                'connect_timeout' => (float) env('REVERB_CONNECT_TIMEOUT', 2),
+                'timeout' => (float) env('REVERB_TIMEOUT', 3),
             ],
         ],
 

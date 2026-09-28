@@ -33,7 +33,8 @@ const realtime = readFileSync(
 );
 
 test('STORE OPEN launches the reusable current-session expense surface', () => {
-    assert.match(workspace, /onClick=\{openStoreSessionDetails\}/);
+    assert.match(workspace, /onViewSession=\{openStoreSessionDetails\}/);
+    assert.match(workspace, /<StoreStatusControl/);
     assert.match(
         workspace,
         /storeSessionRequest\.get\(\s*currentStoreSession\.url\(\)/,
@@ -173,4 +174,32 @@ test('reopening shows the cached session while refreshing and never keeps a clos
     );
     assert.match(dialog, /aria-label="Loading Store Session"/);
     assert.match(dialog, /\[&>button\]:focus-visible:ring-2/);
+});
+
+test('every Store Operations page shares one Store status control that shows actions only to permitted accounts', () => {
+    const control = readFileSync(
+        new URL('../resources/js/components/store-status-control.tsx', import.meta.url),
+        'utf8',
+    );
+    const openStore = readFileSync(
+        new URL('../resources/js/components/open-store-form.tsx', import.meta.url),
+        'utf8',
+    );
+    const cashierStore = readFileSync(
+        new URL('../resources/js/components/cashier-store.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.doesNotMatch(workspace, /isPos \|\| isDashboard\) \?/);
+    assert.match(
+        workspace,
+        /auth\.permissions\.includes\('pos\.access'\) &&\s*auth\.permissions\.includes\('store_expenses\.manage'\)/,
+    );
+    assert.match(control, /return canViewSession \? \(/);
+    assert.match(control, /aria-label="Store open"/);
+    assert.match(control, /if \(!storeContext\?\.canOpen \|\| branchName === null\)/);
+    assert.match(control, /<OpenStoreForm/);
+    assert.match(openStore, /export function OpenStoreForm/);
+    assert.match(openStore, /onSuccess: \(\) => onOpened\?\.\(\)/);
+    assert.match(cashierStore, /import \{ OpenStoreForm \} from '@\/components\/open-store-form'/);
+    assert.doesNotMatch(cashierStore, /function OpenStoreForm/);
 });

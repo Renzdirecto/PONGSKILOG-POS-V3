@@ -27,6 +27,23 @@ type Preview = { file: File; url: string };
 
 const MAX_INVOICE_EDGE = 1600;
 const MAX_INVOICE_UPLOAD_BYTES = 1_500_000;
+/** Accepted photos before local resizing (the server re-checks the prepared JPEG: type, 2 MB, dimensions). */
+export const INVOICE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const MAX_INVOICE_SOURCE_BYTES = 20 * 1024 * 1024;
+
+/** Why a chosen file cannot be an invoice photo, or null when it can be prepared. */
+export function invoiceFileProblem(file: {
+    type: string;
+    size: number;
+}): string | null {
+    if (!INVOICE_IMAGE_TYPES.includes(file.type)) {
+        return 'Choose a JPG, PNG or WebP photo of the invoice.';
+    }
+    if (file.size > MAX_INVOICE_SOURCE_BYTES) {
+        return 'This photo is larger than 20 MB. Choose a smaller photo.';
+    }
+    return null;
+}
 
 function loadInvoiceImage(url: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
@@ -145,7 +162,10 @@ export function TransactionInvoiceDialog({
     onClose: () => void;
     onChanged: (invoice: Invoice | null) => void;
 }) {
+    /** Choose image / Replace: the photo library or files, never camera-only. */
     const input = useRef<HTMLInputElement>(null);
+    /** Take photo: the device camera, used when the in-page camera is unavailable or denied. */
+    const photoInput = useRef<HTMLInputElement>(null);
     const video = useRef<HTMLVideoElement>(null);
     const stream = useRef<MediaStream | null>(null);
     const [camera, setCamera] = useState(false);
@@ -175,6 +195,11 @@ export function TransactionInvoiceDialog({
 
     async function choosePreview(file: File) {
         stopCamera();
+        const problem = invoiceFileProblem(file);
+        if (problem) {
+            toast.error(problem);
+            return;
+        }
         setProcessing(true);
 
         try {
@@ -197,6 +222,7 @@ export function TransactionInvoiceDialog({
     function retry() {
         setPreview(null);
         if (input.current) input.current.value = '';
+        if (photoInput.current) photoInput.current.value = '';
     }
 
     function closeDialog() {
@@ -231,7 +257,7 @@ export function TransactionInvoiceDialog({
 
     async function startCamera() {
         if (!navigator.mediaDevices?.getUserMedia) {
-            input.current?.click();
+            photoInput.current?.click();
             return;
         }
         try {
@@ -243,7 +269,7 @@ export function TransactionInvoiceDialog({
                 if (video.current) video.current.srcObject = stream.current;
             });
         } catch {
-            input.current?.click();
+            photoInput.current?.click();
         }
     }
 
@@ -431,7 +457,7 @@ export function TransactionInvoiceDialog({
                                 disabled={processing}
                                 onClick={() => void startCamera()}
                             >
-                                <Camera /> Use camera
+                                <Camera /> Take photo
                             </Button>
                             <Button
                                 variant="outline"
@@ -445,6 +471,16 @@ export function TransactionInvoiceDialog({
                     )}
                     <input
                         ref={input}
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) void choosePreview(file);
+                        }}
+                    />
+                    <input
+                        ref={photoInput}
                         hidden
                         type="file"
                         accept="image/jpeg,image/png,image/webp"

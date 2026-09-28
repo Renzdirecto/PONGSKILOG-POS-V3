@@ -1,9 +1,11 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, Link } from '@inertiajs/react';
+import { ArrowLeft } from 'lucide-react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { workspace } from '@/routes';
 import { store } from '@/routes/password/confirm';
 
 export default function ConfirmPassword() {
@@ -13,30 +15,37 @@ export default function ConfirmPassword() {
 
             <Form {...store.form()} resetOnSuccess={['password']}>
                 {({ processing, errors }) => (
-                    <div className="space-y-6">
-                        <div className="grid gap-2">
+                    <div className="space-y-5">
+                        <div className="grid gap-1.5">
                             <Label htmlFor="password">Password</Label>
                             <PasswordInput
                                 id="password"
                                 name="password"
-                                placeholder="Password"
+                                placeholder="Your password"
                                 autoComplete="current-password"
+                                className="min-h-11 rounded-xl"
                                 autoFocus
                             />
 
                             <InputError message={errors.password} />
                         </div>
 
-                        <div className="flex items-center">
-                            <Button
-                                className="w-full"
-                                disabled={processing}
-                                data-test="confirm-password-button"
-                            >
-                                {processing && <Spinner />}
-                                Confirm password
-                            </Button>
-                        </div>
+                        <Button
+                            className="min-h-12 w-full rounded-xl bg-neutral-950 text-white hover:bg-black"
+                            disabled={processing}
+                            data-test="confirm-password-button"
+                        >
+                            {processing && <Spinner />}
+                            Confirm password
+                        </Button>
+
+                        <Link
+                            href={workspace()}
+                            className="flex min-h-11 items-center justify-center gap-2 rounded-xl text-[13px] font-semibold text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950"
+                        >
+                            <ArrowLeft className="size-4" aria-hidden="true" />
+                            Back to workspace
+                        </Link>
                     </div>
                 )}
             </Form>
@@ -45,7 +54,7 @@ export default function ConfirmPassword() {
 }
 
 ConfirmPassword.layout = {
-    title: 'Confirm password',
+    title: 'Confirm your password',
     description:
-        'This is a secure area of the application. Please confirm your password before continuing.',
+        'For your security, enter your password again before opening this area.',
 };

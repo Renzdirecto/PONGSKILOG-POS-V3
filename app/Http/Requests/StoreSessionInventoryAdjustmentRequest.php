@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\StockCorrectionDirection;
 use App\Enums\StoreInventoryAdjustmentReason;
 use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -33,12 +34,21 @@ class StoreSessionInventoryAdjustmentRequest extends FormRequest
         return self::adjustmentRules();
     }
 
-    /** @return array<string, list<mixed>> */
+    /**
+     * A Stock Correction: the direction and positive quantity that make the system stock match the physical count.
+     * Complimentary and Staff meal are no longer accepted; a free Product is recorded as a Giveaway.
+     *
+     * @return array<string, list<mixed>>
+     */
     public static function adjustmentRules(): array
     {
         return [
             'idempotency_key' => ['required', 'uuid'],
-            'reason_code' => ['required', Rule::enum(StoreInventoryAdjustmentReason::class)],
+            'direction' => ['required', Rule::enum(StockCorrectionDirection::class)],
+            'reason_code' => ['required', 'string', Rule::in(array_map(
+                fn (StoreInventoryAdjustmentReason $reason): string => $reason->value,
+                StoreInventoryAdjustmentReason::correctionReasons(),
+            ))],
             'product_id' => ['required', 'uuid'],
             'quantity' => ['required', 'integer', 'min:1', 'max:1000000'],
             'note' => ['nullable', 'required_if:reason_code,other', 'string', 'max:500'],
@@ -49,7 +59,9 @@ class StoreSessionInventoryAdjustmentRequest extends FormRequest
     public static function adjustmentMessages(): array
     {
         return [
-            'note.required_if' => 'Explain the adjustment when the reason is Other.',
+            'direction.required' => 'Choose whether the correction adds or removes stock.',
+            'reason_code.in' => 'Choose a Stock Correction reason. Record free items as a Giveaway.',
+            'note.required_if' => 'Explain the correction when the reason is Other.',
             'quantity.min' => 'Enter a quantity of at least 1.',
             'quantity.integer' => 'Enter a whole-number quantity.',
         ];

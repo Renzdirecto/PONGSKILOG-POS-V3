@@ -1,14 +1,14 @@
 import { Form, Head } from '@inertiajs/react';
 import { useRef } from 'react';
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
-import Heading from '@/components/heading';
+import { AccountSection } from '@/components/account-section';
 import InputError from '@/components/input-error';
+import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
+import ManageTwoFactor from '@/components/manage-two-factor';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { edit } from '@/routes/security';
-import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
-import ManageTwoFactor from '@/components/manage-two-factor';
+import { Spinner } from '@/components/ui/spinner';
 
 // oxfmt-ignore
 type Props = {
@@ -16,23 +16,21 @@ type Props = {
 } &
     ManageTwoFactorProps;
 
+/** Password and two-factor authentication for the signed-in account (behind a recent password confirmation). */
 export default function Security(props: Props) {
     const passwordInput = useRef<HTMLInputElement>(null);
     const currentPasswordInput = useRef<HTMLInputElement>(null);
 
     return (
         <>
-            <Head title="Security settings" />
+            <Head title="Security" />
+            <h1 className="sr-only">Security</h1>
 
-            <h1 className="sr-only">Security settings</h1>
-
-            <div className="space-y-6">
-                <Heading
-                    variant="small"
-                    title="Update password"
-                    description="Ensure your account is using a long, random password to stay secure"
-                />
-
+            <AccountSection
+                id="password"
+                title="Password"
+                description="Use a long password you do not use anywhere else. Changing it signs out your other devices."
+            >
                 <Form
                     {...SecurityController.update.form()}
                     options={{
@@ -53,89 +51,83 @@ export default function Security(props: Props) {
                             currentPasswordInput.current?.focus();
                         }
                     }}
-                    className="space-y-6"
+                    className="flex flex-col gap-4"
                 >
                     {({ errors, processing }) => (
                         <>
-                            <div className="grid gap-2">
+                            <div className="grid gap-1.5">
                                 <Label htmlFor="current_password">
                                     Current password
                                 </Label>
-
                                 <PasswordInput
                                     id="current_password"
                                     ref={currentPasswordInput}
                                     name="current_password"
-                                    className="mt-1 block w-full"
+                                    className="min-h-11 rounded-xl"
                                     autoComplete="current-password"
                                     placeholder="Current password"
                                 />
-
                                 <InputError message={errors.current_password} />
                             </div>
 
-                            <div className="grid gap-2">
+                            <div className="grid gap-1.5">
                                 <Label htmlFor="password">New password</Label>
-
                                 <PasswordInput
                                     id="password"
                                     ref={passwordInput}
                                     name="password"
-                                    className="mt-1 block w-full"
+                                    className="min-h-11 rounded-xl"
                                     autoComplete="new-password"
                                     placeholder="New password"
                                     passwordrules={props.passwordRules}
                                 />
-
                                 <InputError message={errors.password} />
                             </div>
 
-                            <div className="grid gap-2">
+                            <div className="grid gap-1.5">
                                 <Label htmlFor="password_confirmation">
-                                    Confirm password
+                                    Confirm new password
                                 </Label>
-
                                 <PasswordInput
                                     id="password_confirmation"
                                     name="password_confirmation"
-                                    className="mt-1 block w-full"
+                                    className="min-h-11 rounded-xl"
                                     autoComplete="new-password"
-                                    placeholder="Confirm password"
+                                    placeholder="Confirm new password"
                                     passwordrules={props.passwordRules}
                                 />
-
                                 <InputError
                                     message={errors.password_confirmation}
                                 />
                             </div>
 
-                            <div className="flex items-center gap-4">
-                                <Button
-                                    disabled={processing}
-                                    data-test="update-password-button"
-                                >
-                                    Save
-                                </Button>
-                            </div>
+                            <Button
+                                disabled={processing}
+                                data-test="update-password-button"
+                                className="min-h-11 w-full rounded-xl bg-neutral-950 text-white hover:bg-black sm:w-fit"
+                            >
+                                {processing && <Spinner />}
+                                Change password
+                            </Button>
                         </>
                     )}
                 </Form>
-            </div>
+            </AccountSection>
 
-            <ManageTwoFactor
-                canManageTwoFactor={props.canManageTwoFactor}
-                requiresConfirmation={props.requiresConfirmation}
-                twoFactorEnabled={props.twoFactorEnabled}
-            />
+            {props.canManageTwoFactor && (
+                <AccountSection
+                    id="two-factor"
+                    title="Two-factor authentication"
+                    description="Ask for a code from an authenticator app on your phone whenever you sign in."
+                >
+                    <ManageTwoFactor
+                        canManageTwoFactor={props.canManageTwoFactor}
+                        requiresConfirmation={props.requiresConfirmation}
+                        twoFactorEnabled={props.twoFactorEnabled}
+                        embedded
+                    />
+                </AccountSection>
+            )}
         </>
     );
 }
-
-Security.layout = {
-    breadcrumbs: [
-        {
-            title: 'Security settings',
-            href: edit(),
-        },
-    ],
-};

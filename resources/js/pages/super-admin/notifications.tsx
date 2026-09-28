@@ -5,6 +5,7 @@ import {
     ChevronLeft,
     ChevronRight,
     PackageX,
+    ShieldAlert,
     ShieldCheck,
     UserCog,
     type LucideIcon,
@@ -50,6 +51,7 @@ const categoryIcons: Record<string, { icon: LucideIcon; className: string }> = {
     access: { icon: ShieldCheck, className: 'bg-violet-50 text-violet-700' },
     staff: { icon: UserCog, className: 'bg-blue-50 text-blue-700' },
     stock: { icon: PackageX, className: 'bg-red-50 text-red-700' },
+    security: { icon: ShieldAlert, className: 'bg-amber-50 text-amber-800' },
 };
 
 export default function Notifications({

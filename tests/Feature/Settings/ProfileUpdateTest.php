@@ -1,70 +1,119 @@
 <?php
 
+use App\Models\AuditLog;
+use App\Models\Branch;
 use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 
-test('profile page is displayed', function () {
+test('the profile page shows the admin-managed identity read-only beside the Preferred Name', function () {
+    $user = User::factory()->create(['name' => 'Maria Clara Santos', 'email' => 'maria@pongskilog.test', 'employee_id' => 'EMP00042', 'position' => 'Barista', 'preferred_name' => 'Ria']);
+    $user->branches()->attach(Branch::factory()->create(['name' => 'Main']), ['is_active' => true]);
+
+    $this->actingAs($user)->get(route('profile.edit'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('settings/profile')
+            ->where('identity', ['name' => 'Maria Clara Santos', 'email' => 'maria@pongskilog.test', 'employee_id' => 'EMP00042', 'position' => 'Barista', 'branches' => ['Main']])
+            ->where('preferredName', 'Ria'));
+});
+
+test('a staff member sets, normalizes and clears their own Preferred Name, audited', function () {
+    $user = User::factory()->create(['name' => 'Maria Clara Santos']);
+
+    $this->actingAs($user)->patch(route('profile.update'), ['preferred_name' => '  Ria   Santos '])
+        ->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+    expect($user->refresh()->preferred_name)->toBe('Ria Santos')
+        ->and($user->displayName())->toBe('Ria Santos')
+        ->and($user->customerFacingName())->toBe('Ria Santos');
+
+    $this->actingAs($user)->patch(route('profile.update'), ['preferred_name' => ''])->assertSessionHasNoErrors();
+    expect($user->refresh()->preferred_name)->toBeNull()
+        ->and($user->displayName())->toBe('Maria Clara Santos')
+        ->and($user->customerFacingName())->toBe('Maria');
+
+    expect(AuditLog::query()->where('action', 'account.preferred_name_changed')->where('user_id', $user->id)->count())->toBe(2);
+});
+
+test('without a Preferred Name customers see only the first given name, skipping titles and abbreviations', function (string $name, string $shown) {
+    expect(User::factory()->make(['name' => $name, 'preferred_name' => null])->customerFacingName())->toBe($shown);
+})->with([
+    ['Maria Clara Santos', 'Maria'],
+    ['Dr. Jose Rizal', 'Jose'],
+    ['Ma. Cristina Reyes', 'Cristina'],
+    ['  Ana  ', 'Ana'],
+    ['Mr.', 'Mr.'],
+]);
+
+test('the Preferred Name must look like a name', function (string $value) {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->get(route('profile.edit'));
+    $this->actingAs($user)->patch(route('profile.update'), ['preferred_name' => $value])->assertSessionHasErrors('preferred_name');
 
-    $response->assertOk();
+    expect($user->refresh()->preferred_name)->toBeNull();
+})->with([
+    'markup' => ['<b>Boss</b>'],
+    'url' => ['https://example.com'],
+    'too long' => [str_repeat('a', 61)],
+    'digits' => ['Cashier 1'],
+]);
+
+test('staff can never change their own full name, sign-in e-mail or organization identity from the profile', function () {
+    $user = User::factory()->create(['name' => 'Maria Clara Santos', 'email' => 'maria@pongskilog.test', 'employee_id' => 'EMP00042', 'position' => 'Barista']);
+
+    $this->actingAs($user)->patch(route('profile.update'), [
+        'preferred_name' => 'Ria',
+        'name' => 'Owner Person',
+        'email' => 'attacker@example.com',
+        'employee_id' => 'EMP99999',
+        'position' => 'Owner',
+        'is_active' => false,
+    ])->assertSessionHasNoErrors();
+
+    expect($user->refresh()->only(['name', 'email', 'employee_id', 'position', 'is_active', 'preferred_name']))->toBe([
+        'name' => 'Maria Clara Santos', 'email' => 'maria@pongskilog.test', 'employee_id' => 'EMP00042',
+        'position' => 'Barista', 'is_active' => true, 'preferred_name' => 'Ria',
+    ]);
 });
 
-test('profile information can be updated', function () {
+test('a staff member replaces and removes their own profile photo on the private disk', function () {
+    Storage::fake('local');
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->patch(route('profile.update'), [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+    $this->actingAs($user)->post(route('profile.avatar.update'), ['avatar' => UploadedFile::fake()->image('me.png', 256, 256)])
+        ->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+    $first = $user->refresh()->avatar_path;
+    Storage::disk('local')->assertExists($first);
+    $this->actingAs($user)->get(route('profile.avatar'))->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
 
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect(route('profile.edit'));
+    $this->actingAs($user)->post(route('profile.avatar.update'), ['avatar' => UploadedFile::fake()->image('new.jpg', 128, 128)])->assertSessionHasNoErrors();
+    Storage::disk('local')->assertMissing($first);
 
-    $user->refresh();
-
-    expect($user->name)->toBe('Test User');
-    expect($user->email)->toBe('test@example.com');
-    expect($user->email_verified_at)->toBeNull();
+    $second = $user->refresh()->avatar_path;
+    $this->actingAs($user)->delete(route('profile.avatar.destroy'))->assertRedirect(route('profile.edit'));
+    expect($user->refresh()->avatar_path)->toBeNull();
+    Storage::disk('local')->assertMissing($second);
+    expect(AuditLog::query()->where('user_id', $user->id)->pluck('action')->all())
+        ->toBe(['account.avatar_updated', 'account.avatar_updated', 'account.avatar_removed']);
 });
 
-test('a profile email must stay unique ignoring case and is stored lowercase', function () {
-    User::factory()->create(['email' => 'taken@example.com']);
-    $user = User::factory()->create(['email' => 'mine@example.com']);
-
-    $this->actingAs($user)->patch(route('profile.update'), ['name' => $user->name, 'email' => 'Taken@Example.com'])
-        ->assertSessionHasErrors('email');
-    expect($user->refresh()->email)->toBe('mine@example.com');
-
-    $this->actingAs($user)->patch(route('profile.update'), ['name' => $user->name, 'email' => ' New.Me@Example.com '])
-        ->assertSessionHasNoErrors();
-    expect($user->refresh()->email)->toBe('new.me@example.com');
-});
-
-test('email verification status is unchanged when the email address is unchanged', function () {
+test('a profile photo must be a real, reasonably sized image', function (UploadedFile $file) {
+    Storage::fake('local');
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->patch(route('profile.update'), [
-            'name' => 'Test User',
-            'email' => $user->email,
-        ]);
+    $this->actingAs($user)->post(route('profile.avatar.update'), ['avatar' => $file])->assertSessionHasErrors('avatar');
 
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect(route('profile.edit'));
-
-    expect($user->refresh()->email_verified_at)->not->toBeNull();
-});
+    expect($user->refresh()->avatar_path)->toBeNull();
+})->with([
+    'svg' => fn () => UploadedFile::fake()->create('me.svg', 5, 'image/svg+xml'),
+    'text file' => fn () => UploadedFile::fake()->create('me.png', 5, 'text/plain'),
+    'too large' => fn () => UploadedFile::fake()->image('me.png', 256, 256)->size(2100),
+    'too small' => fn () => UploadedFile::fake()->image('me.png', 32, 32),
+]);
 
 test('an account cannot delete itself', function () {
     $user = User::factory()->create();

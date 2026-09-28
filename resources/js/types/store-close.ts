@@ -84,6 +84,7 @@ export type StoreCloseResult = {
         status: 'closed';
         branch: { code: string; name: string };
         opened_at: string;
+        opened_by: { name: string | null };
         closed_at: string;
         closed_by: { name: string | null };
         opening_cash_amount: string;

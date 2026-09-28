@@ -17,7 +17,7 @@ const layout = readFileSync(
 test('operational sidebar unlocks Dashboard for POS staff', () => {
     assert.match(
         layout,
-        /label: 'Dashboard',\s+icon: LayoutDashboard,\s+available: auth\.permissions\.includes\('pos\.access'\),\s+href: cashierDashboard\(\),\s+active: isDashboard,/,
+        /label: 'Dashboard',\s+short: 'Home',\s+icon: LayoutDashboard,\s+available: auth\.permissions\.includes\('pos\.access'\),\s+href: cashierDashboard\(\),\s+active: isDashboard,/,
     );
     assert.match(
         layout,

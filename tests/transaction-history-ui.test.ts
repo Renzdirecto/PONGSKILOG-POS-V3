@@ -123,6 +123,19 @@ test('invoice selection and capture create a local preview before confirm upload
     assert.match(invoice, /onClick=\{\(\) => setViewingInvoice\(true\)\}/);
     assert.match(invoice, /Invoice receipt/);
     assert.doesNotMatch(invoice, /target="_blank"/);
+    /** Choose image / Replace open the library; only Take photo (or its fallback) asks for the camera. */
+    const pickers = [...invoice.matchAll(/<input\s+ref=\{(\w+)\}[\s\S]*?\/>/g)];
+    assert.deepEqual(
+        pickers.map(([markup, ref]) => [ref, markup.includes('capture=')]),
+        [
+            ['input', false],
+            ['photoInput', true],
+        ],
+    );
+    assert.match(invoice, /onClick=\{\(\) => input\.current\?\.click\(\)\}[\s\S]*Replace/);
+    assert.match(invoice, /getUserMedia\) \{\s*photoInput\.current\?\.click\(\);/);
+    assert.match(invoice, /const problem = invoiceFileProblem\(file\);/);
+    assert.match(invoice, /Choose a JPG, PNG or WebP photo of the invoice\./);
     assert.doesNotMatch(invoice, /function retry\(\)[\s\S]{0,180}store\(paymentId\)/);
 });
 

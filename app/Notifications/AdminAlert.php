@@ -10,7 +10,7 @@ use Illuminate\Notifications\Notification;
  */
 class AdminAlert extends Notification
 {
-    public const CATEGORIES = ['access', 'staff', 'stock'];
+    public const CATEGORIES = ['access', 'staff', 'stock', 'security'];
 
     public function __construct(
         public string $category,

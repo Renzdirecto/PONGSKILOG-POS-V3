@@ -160,14 +160,31 @@ export default function OperationsPurchases({
                                                 ? 'Cashless'
                                                 : 'Cash'}
                                         </span>
+                                        <span className="text-xs text-[#555] tabular-nums">
+                                            Funded by Store Session{' '}
+                                            {run.funding.label}
+                                        </span>
                                     </span>
-                                    <Chip
-                                        tone={restocked ? 'green' : 'outline'}
-                                    >
-                                        {restocked
-                                            ? 'Stock + expense'
-                                            : 'Expense only'}
-                                    </Chip>
+                                    <span className="flex shrink-0 flex-col items-end gap-1">
+                                        <Chip
+                                            tone={
+                                                run.funding.recorded_as ===
+                                                'store_purchase'
+                                                    ? 'gold'
+                                                    : 'outline'
+                                            }
+                                        >
+                                            {run.funding.recorded_as ===
+                                            'store_purchase'
+                                                ? 'Store Purchase'
+                                                : 'Allocated after close'}
+                                        </Chip>
+                                        {restocked && (
+                                            <Chip tone="green">
+                                                Stock restocked
+                                            </Chip>
+                                        )}
+                                    </span>
                                 </div>
                                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 min-[560px]:grid-cols-4">
                                     <Value
@@ -256,8 +273,10 @@ export default function OperationsPurchases({
                                             </div>
                                         ))}
                                         <p className="pt-2 text-[11px] leading-5 text-[#767676]">
-                                            Saved once as Store Purchase{' '}
-                                            {run.expense_reference}
+                                            {run.funding.recorded_as ===
+                                            'store_purchase'
+                                                ? `Saved once as Store Purchase ${run.funding.expense_reference} of the Store Session ${run.funding.label}, so it is part of that session's Close Store expenses`
+                                                : `Allocated to the closed Store Session ${run.funding.label} for profitability. No expense was added, so that session's Close Store result is unchanged`}
                                             {run.note ? ` · ${run.note}` : ''}.
                                             Audited with{' '}
                                             {run.bought_by ?? 'the buyer'} and

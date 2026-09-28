@@ -16,6 +16,8 @@ import {
     formatPeso,
     formatQuantity,
     parseSignedQuantity,
+    productsSoldLine,
+    productsSoldSizes,
     unitLabel,
 } from '@/lib/operations';
 import operationsRoutes from '@/routes/operations';
@@ -46,18 +48,6 @@ type Props = {
     movements: IngredientMovementGroup[];
     summary: OperationsSummaryProps;
     earlier: EarlierPurchase[];
-};
-
-const RECIPE_STATE: Record<
-    Props['recipes'][number]['state'],
-    [string, string]
-> = {
-    set: ['Recipe set', 'bg-[#15803d]'],
-    partial: ['Some sizes missing', 'bg-[#b45309]'],
-    missing: ['No recipe · not costed', 'bg-[#b45309]'],
-    not_needed: ['No recipe needed', 'bg-[#8a8a8a]'],
-    product_stock: ['Uses Product stock', 'bg-[#8a8a8a]'],
-    configuration_error: ['Size groups need fixing', 'bg-[#b91c1c]'],
 };
 
 export default function OperationsOverview(props: Props) {
@@ -232,53 +222,65 @@ export default function OperationsOverview(props: Props) {
                 missing recipes or costs are never counted as ₱0.
             </p>
 
-            <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-2 md:gap-3">
-                <section className={opsCardClass} aria-labelledby="attention">
-                    <h2 id="attention" className="text-[14.5px] font-bold">
-                        Needs attention
+            <section className={opsCardClass} aria-labelledby="products-sold">
+                <div className="flex flex-col gap-0.5">
+                    <h2 id="products-sold" className="text-[14.5px] font-bold">
+                        Products sold
                     </h2>
-                    {!operations.branch && (
-                        <p className="text-[12.5px] text-[#767676]">
-                            Stock attention needs one Branch. Choose one in the
-                            header.
-                        </p>
-                    )}
-                    {attention.length === 0 ? (
-                        <p className="text-[12.5px] leading-5 text-[#767676]">
-                            Nothing needs attention. Every ingredient is above
-                            its rule and every product has a recipe.
-                        </p>
-                    ) : (
-                        <ul className="flex flex-col">
-                            {attention.map((item) => (
-                                <li
-                                    key={item.key}
-                                    className="flex min-h-[50px] items-center gap-2.5 border-t border-[#f2f2f2] py-1"
-                                >
-                                    <span
-                                        className={`size-[9px] shrink-0 rounded-full ${item.tone}`}
-                                        aria-hidden="true"
-                                    />
-                                    <span className="flex min-w-0 flex-1 flex-col">
-                                        <span className="text-[13px] font-semibold wrap-anywhere">
-                                            {item.name}
-                                        </span>
-                                        <span className="text-[11.5px] text-[#767676] tabular-nums">
-                                            {item.sub}
-                                        </span>
+                    <p className="text-xs text-[#767676]">
+                        This plan's sales today by category, from each order's
+                        saved items and sizes.
+                    </p>
+                </div>
+                {!figures || figures.products_sold.length === 0 ? (
+                    <p className="text-[12.5px] text-[#767676]">
+                        No sales in this plan yet today.
+                    </p>
+                ) : (
+                    <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-2 min-[1200px]:grid-cols-3">
+                        {figures.products_sold.map((category) => (
+                            <article
+                                key={category.category_id}
+                                className="flex min-w-0 flex-col gap-2 rounded-xl border border-[#ececec] p-3"
+                            >
+                                <header className="flex items-baseline justify-between gap-2">
+                                    <h3 className="text-[13.5px] font-bold wrap-anywhere">
+                                        {category.name} · Products sold
+                                    </h3>
+                                    <span className="shrink-0 text-[12px] font-semibold text-[#555] tabular-nums">
+                                        {category.quantity} sold
                                     </span>
-                                    <Link
-                                        href={item.href}
-                                        className={opsButtonClass}
-                                    >
-                                        {item.action}
-                                    </Link>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </section>
+                                </header>
+                                {category.sizes.length > 0 && (
+                                    <p className="rounded-lg bg-[#f7f7f7] px-2.5 py-1.5 text-[12px] font-semibold text-[#333] tabular-nums">
+                                        {productsSoldSizes(category.sizes)}
+                                    </p>
+                                )}
+                                <ul className="flex flex-col">
+                                    {category.lines.map((line) => (
+                                        <li
+                                            key={`${line.product_id}|${line.size ?? ''}`}
+                                            className="flex items-center gap-2.5 border-t border-[#f2f2f2] py-1.5 first:border-t-0"
+                                        >
+                                            <span className="min-w-0 flex-1 text-[13px] font-semibold wrap-anywhere">
+                                                {productsSoldLine(line)}
+                                            </span>
+                                            <span className="text-[12.5px] font-bold whitespace-nowrap tabular-nums">
+                                                {formatPeso(
+                                                    line.sales_cents,
+                                                    true,
+                                                )}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </section>
 
+            <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-2 md:gap-3">
                 <section className={opsCardClass} aria-labelledby="next-run">
                     <div className="flex items-start justify-between gap-2.5">
                         <div className="flex min-w-0 flex-col gap-0.5">
@@ -386,9 +388,6 @@ export default function OperationsOverview(props: Props) {
                         </button>
                     </div>
                 </section>
-            </div>
-
-            <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-2 md:gap-3">
                 <section className={opsCardClass} aria-labelledby="consumption">
                     <div className="flex flex-col gap-0.5">
                         <h2
@@ -477,72 +476,53 @@ export default function OperationsOverview(props: Props) {
                         </ul>
                     )}
                 </section>
-                <section
-                    className={opsCardClass}
-                    aria-labelledby="top-products"
-                >
-                    <div className="flex flex-col gap-0.5">
-                        <h2
-                            id="top-products"
-                            className="text-[14.5px] font-bold"
-                        >
-                            Top-selling products
-                        </h2>
-                        <p className="text-xs text-[#767676]">
-                            Existing Catalog products in this plan, by sales
-                            today.
-                        </p>
-                    </div>
-                    {!figures || figures.products.length === 0 ? (
-                        <p className="text-[12.5px] text-[#767676]">
-                            No sales in this plan yet today.
-                        </p>
-                    ) : (
-                        <ul className="flex flex-col">
-                            {figures.products.slice(0, 6).map((product) => {
-                                const state =
-                                    recipes.find(
-                                        (recipe) =>
-                                            recipe.id === product.product_id,
-                                    )?.state ??
-                                    (product.state === 'recipe'
-                                        ? 'set'
-                                        : product.state === 'not_needed'
-                                          ? 'not_needed'
-                                          : 'missing');
-                                const [label, tone] = RECIPE_STATE[state];
-
-                                return (
-                                    <li
-                                        key={product.product_id}
-                                        className="flex min-h-[46px] items-center gap-2.5 border-t border-[#f2f2f2] py-1 first:border-t-0"
-                                    >
-                                        <span
-                                            className={`size-2 shrink-0 rounded-full ${tone}`}
-                                            aria-hidden="true"
-                                        />
-                                        <span className="flex min-w-0 flex-1 flex-col">
-                                            <span className="text-[13px] font-semibold">
-                                                {product.name}
-                                            </span>
-                                            <span className="text-[11.5px] text-[#767676]">
-                                                {product.quantity} sold ·{' '}
-                                                {label}
-                                            </span>
-                                        </span>
-                                        <span className="text-[13.5px] font-bold whitespace-nowrap tabular-nums">
-                                            {formatPeso(
-                                                product.sales_cents,
-                                                true,
-                                            )}
-                                        </span>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </section>
             </div>
+
+            <section className={opsCardClass} aria-labelledby="attention">
+                <h2 id="attention" className="text-[14.5px] font-bold">
+                    Needs attention
+                </h2>
+                {!operations.branch && (
+                    <p className="text-[12.5px] text-[#767676]">
+                        Stock attention needs one Branch. Choose one in the
+                        header.
+                    </p>
+                )}
+                {attention.length === 0 ? (
+                    <p className="text-[12.5px] leading-5 text-[#767676]">
+                        Nothing needs attention. Every ingredient is above
+                        its rule and every product has a recipe.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col">
+                        {attention.map((item) => (
+                            <li
+                                key={item.key}
+                                className="flex min-h-[50px] items-center gap-2.5 border-t border-[#f2f2f2] py-1"
+                            >
+                                <span
+                                    className={`size-[9px] shrink-0 rounded-full ${item.tone}`}
+                                    aria-hidden="true"
+                                />
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    <span className="text-[13px] font-semibold wrap-anywhere">
+                                        {item.name}
+                                    </span>
+                                    <span className="text-[11.5px] text-[#767676] tabular-nums">
+                                        {item.sub}
+                                    </span>
+                                </span>
+                                <Link
+                                    href={item.href}
+                                    className={opsButtonClass}
+                                >
+                                    {item.action}
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
 
             <section className={opsCardClass} aria-labelledby="recent-moves">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -576,6 +556,7 @@ export default function OperationsOverview(props: Props) {
             {summaryTab && (
                 <SummaryDialog
                     open
+                    branchLabel={operations.branch?.code ?? null}
                     onClose={() => setSummaryTab(null)}
                     initialTab={summaryTab}
                     planName={plan.name}

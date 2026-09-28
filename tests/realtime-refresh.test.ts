@@ -245,7 +245,7 @@ test('a page can ignore report reasons that never change it, and operations igno
 });
 
 test('background reloads send a revoked session to the workspace instead of a raw error dialog', () => {
-    for (const hook of ['use-branch-realtime-refresh', 'use-audit-realtime-refresh', 'use-pos-qr-realtime']) {
+    for (const hook of ['use-branch-realtime-refresh', 'use-audit-realtime-refresh', 'use-pos-qr-realtime', 'use-pos-catalog-realtime']) {
         const source = jsSource(`hooks/${hook}.ts`);
         assert.match(source, /onHttpException: handleRevalidationException/, hook);
         assert.match(source, /onNetworkError: \(\) => false/, hook);
@@ -271,4 +271,42 @@ test('the audit register refreshes only its entries on each new audit record', (
         jsSource('pages/super-admin/audit-trail.tsx'),
         /const realtimeProps = useMemo\(\(\) => \['logs'\], \[\]\)/,
     );
+});
+
+test('QR Orders never shows another tab\'s cards and the waiting badge stays current on every Store Operations page', () => {
+    const qr = jsSource('components/staff-qr-orders.tsx');
+    const layout = jsSource('layouts/workspace-layout.tsx');
+    const http = jsSource('lib/qr-http.ts');
+
+    assert.match(qr, /const queue = result\?\.key === queryKey \? result\.orders : null;/);
+    assert.match(qr, /inflight\.current\?\.abort\(\);/);
+    assert.match(qr, /controller\.signal/);
+    assert.match(qr, /refresh\.schedule\(typing \? 300 : 0\)/);
+    assert.match(qr, /order\.commercial_status === 'archived_unclaimed'/);
+    assert.doesNotMatch(qr, /\{archived \?\s*'ARCHIVED'|\{!archived && \(/);
+    assert.match(qr, /order\.restorable \?/);
+    assert.match(http, /signal\?: AbortSignal/);
+    assert.match(layout, /<QrWaitingCountListener/);
+    assert.match(layout, /usePosQrRealtime\(branchId, QR_WAITING_COUNT_PROPS\)/);
+    assert.match(jsSource('components/cashier-pos.tsx'), /usePosQrRealtime\(branch\.id, \['loadedQr'\]\)/);
+    assert.match(jsSource('hooks/use-pos-qr-realtime.ts'), /preserveUrl: true/);
+});
+
+test('notification refreshes run one at a time, only after a reconnect, and never show a raw error page', () => {
+    const hook = jsSource('hooks/use-notification-center.ts');
+    assert.match(hook, /onSignalRef\.current\(finish\);/);
+    assert.match(hook, /\.finally\(finish\)/);
+    assert.match(hook, /onFinish: finish,/);
+    assert.match(hook, /shouldRefetchCatalogAfterConnectionChange\(/);
+    assert.doesNotMatch(hook, /previousStatus\.current !== 'connected' &&/);
+    assert.match(hook, /onHttpException: handleRevalidationException/);
+    assert.match(hook, /onNetworkError: \(\) => false/);
+});
+
+test('reports in a background tab mark themselves stale and refresh once when shown', () => {
+    const hook = jsSource('hooks/use-reports-realtime-refresh.ts');
+    assert.match(hook, /if \(document\.visibilityState === 'hidden'\) \{\s*staleWhileHidden\.current = true;/);
+    assert.match(hook, /document\.addEventListener\('visibilitychange', shown\)/);
+    assert.match(hook, /staleWhileHidden\.current = false;\s*scheduleRefresh\(0\);/);
+    assert.match(hook, /document\.removeEventListener\('visibilitychange', shown\)/);
 });

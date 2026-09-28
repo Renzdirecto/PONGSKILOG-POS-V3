@@ -3,6 +3,8 @@
 use App\Actions\Operations\ConfirmPamamalengke;
 use App\Actions\StoreSessions\RecordStoreSessionExpense;
 use App\Enums\StoreSessionStatus;
+use App\Events\ReportsChanged;
+use App\Events\StoreExpenseRecorded;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
@@ -10,14 +12,18 @@ use App\Models\Ingredient;
 use App\Models\IngredientMovement;
 use App\Models\PamamalengkeListEntry;
 use App\Models\PamamalengkePurchase;
+use App\Models\Payment;
+use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
 use App\Support\ActiveBranchContext;
 use App\Support\ExactQuantity;
 use App\Support\OperationsSummary;
+use App\Support\PamamalengkeFunding;
 use App\Support\ReplenishmentAdvisor;
 use App\Support\StoreSessionReconciliation;
 use App\Support\StoreSessionSalesReport;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\OperationsScenario;
@@ -33,14 +39,30 @@ function recommend(Ingredient $ingredient, string $current): array
 
 function confirmRun(object $test, array $items, array $overrides = [])
 {
+    $funding = $overrides['funding'] ?? $test->ops->session;
+
     return $test->actingAs($test->ops->owner)
         ->withSession([ActiveBranchContext::SESSION_KEY => $test->ops->branch->id])
         ->post(route('operations.pamamalengke.confirm', $overrides['plan'] ?? $test->ops->drinks), [
             'idempotency_key' => $overrides['key'] ?? (string) Str::uuid(),
+            'funding_store_session_id' => $funding->id,
+            'funding_session_status' => $overrides['status'] ?? $funding->status->value,
             'payment_source' => $overrides['source'] ?? 'cash',
             'note' => $overrides['note'] ?? null,
             'items' => $items,
         ]);
+}
+
+/** A Store Session of the scenario Branch that closed earlier today with its reconciliation sealed. */
+function closedFundingSession(object $test, string $openedAt = '-6 hours'): StoreSession
+{
+    return StoreSession::factory()->for($test->ops->branch)->closed()->create([
+        'opened_by_user_id' => $test->ops->cashier->id,
+        'closed_by_user_id' => $test->ops->cashier->id,
+        'opened_at' => now()->modify($openedAt),
+        'closed_at' => now()->modify($openedAt)->addHours(2),
+        'reconciliation_snapshot' => ['sealed' => true],
+    ]);
 }
 
 test('top up to target buys whole purchase units for any shortfall, including fractions and negative stock', function () {
@@ -110,6 +132,8 @@ test('confirming writes one canonical store purchase and exact ingredient restoc
         ->and($expense->store_session_id)->toBe($this->ops->session->id)
         ->and($expense->created_by_user_id)->toBe($this->ops->owner->id)
         ->and($purchase->store_session_expense_id)->toBe($expense->id)
+        ->and($purchase->store_session_id)->toBe($this->ops->session->id)
+        ->and($purchase->payment_source)->toBe('cash')
         ->and($purchase->items()->count())->toBe(3)
         ->and($this->ops->stock('yakult'))->toBe('20')
         ->and($this->ops->stock('syrup'))->toBe('1500')
@@ -152,17 +176,138 @@ test('a retried confirmation never duplicates the purchase, expense or restock; 
         ->and($this->ops->stock('lemon'))->toBe('30.5');
 });
 
-test('confirming keeps the existing open store session rule and needs a positive total and known costs', function () {
+test('confirming needs a positive total, known costs and a funding Store Session', function () {
     $items = [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']];
     confirmRun($this, [[...$items[0], 'actual_unit_cost' => '0.00']])->assertSessionHasErrors('items');
     confirmRun($this, [[...$items[0], 'actual_unit_cost' => '']])->assertSessionHasErrors('items.0.actual_unit_cost');
-
-    $this->ops->session->forceFill(['status' => StoreSessionStatus::Closed, 'closed_at' => now()])->saveQuietly();
-    confirmRun($this, $items)->assertSessionHasErrors('store');
+    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->ops->branch->id])
+        ->post(route('operations.pamamalengke.confirm', $this->ops->drinks), [
+            'idempotency_key' => (string) Str::uuid(), 'payment_source' => 'cash', 'items' => $items,
+        ])->assertSessionHasErrors(['funding_store_session_id', 'funding_session_status']);
 
     expect(StoreSessionExpense::query()->count())->toBe(0)
+        ->and(PamamalengkePurchase::query()->count())->toBe(0)
         ->and(IngredientMovement::query()->where('movement_type', 'purchase_restock')->exists())->toBeFalse()
         ->and($this->ops->stock('lemon'))->toBe('29.5');
+});
+
+test('with the Store closed a run funded by a closed session restocks at once and never touches that session reconciliation', function () {
+    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    $this->ops->session->forceFill(['status' => StoreSessionStatus::Closed, 'closed_at' => now()])->saveQuietly();
+    $closed = $this->ops->session->fresh();
+    $sealed = $closed->only(['closing_cash_amount', 'closing_cashless_amount', 'expected_cash_amount', 'expected_cashless_amount', 'cash_variance', 'cashless_variance', 'reconciliation_snapshot', 'closed_at', 'updated_at']);
+    $flows = app(StoreSessionReconciliation::class)->flows([$closed->id => $this->ops->branch->id])[$closed->id];
+    $payments = Payment::query()->count();
+    Event::fake([ReportsChanged::class, StoreExpenseRecorded::class]);
+
+    confirmRun($this, [
+        ['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['yakult']->id, 'actual_quantity' => '2', 'actual_unit_cost' => '56.50'],
+        ['type' => 'manual', 'name' => 'Ice', 'unit' => 'bag', 'actual_quantity' => '1', 'actual_unit_cost' => '30.00'],
+    ], ['funding' => $closed, 'source' => 'cashless'])->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast.message', 'Pamamalengke confirmed · ₱143.00 allocated to the closed Store Session '.PamamalengkeFunding::label($closed).'. Its Close Store result is unchanged.');
+
+    $purchase = PamamalengkePurchase::query()->sole();
+    expect($purchase->store_session_id)->toBe($closed->id)
+        ->and($purchase->store_session_expense_id)->toBeNull()
+        ->and($purchase->payment_source)->toBe('cashless')
+        ->and(StoreSessionExpense::query()->count())->toBe(0)
+        ->and(Payment::query()->count())->toBe($payments)
+        ->and($this->ops->stock('yakult'))->toBe('19')
+        ->and(IngredientMovement::query()->where('pamamalengke_purchase_id', $purchase->id)->sole()->store_session_expense_id)->toBeNull()
+        ->and($closed->fresh()->only(array_keys($sealed)))->toEqual($sealed)
+        ->and(app(StoreSessionReconciliation::class)->flows([$closed->id => $this->ops->branch->id])[$closed->id])->toBe($flows)
+        ->and(AuditLog::query()->where('action', 'pamamalengke.confirmed')->sole()->after)
+        ->toMatchArray(['funding_store_session_id' => $closed->id, 'funding_session_status' => 'closed', 'store_session_expense_id' => null, 'actual_total' => '143.00']);
+    Event::assertDispatched(ReportsChanged::class, fn (ReportsChanged $event): bool => $event->broadcastWith()['reason'] === 'pamamalengke.allocated');
+    Event::assertNotDispatched(StoreExpenseRecorded::class);
+});
+
+test('the open Store is not required: an earlier closed session may fund a run while another session is open', function () {
+    $closed = closedFundingSession($this);
+
+    confirmRun($this, [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']], ['funding' => $closed])
+        ->assertSessionHasNoErrors();
+
+    expect(PamamalengkePurchase::query()->sole()->store_session_id)->toBe($closed->id)
+        ->and(StoreSessionExpense::query()->count())->toBe(0)
+        ->and(app(StoreSessionReconciliation::class)->flows([$this->ops->session->id => $this->ops->branch->id])[$this->ops->session->id]['expenses']['cash'])->toBe(0)
+        ->and($this->ops->stock('lemon'))->toBe('30.5');
+});
+
+test('a funding session of another Branch or an unknown id is rejected without writing anything', function () {
+    $foreign = StoreSession::factory()->for(Branch::factory()->create())->create();
+
+    foreach ([$foreign, StoreSession::factory()->make(['id' => (string) Str::uuid()])] as $session) {
+        confirmRun($this, [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']], ['funding' => $session, 'status' => 'open'])
+            ->assertSessionHasErrors('funding_store_session_id');
+    }
+
+    expect(PamamalengkePurchase::query()->count())->toBe(0)
+        ->and(StoreSessionExpense::query()->count())->toBe(0)
+        ->and($this->ops->stock('lemon'))->toBe('29.5');
+});
+
+test('a session that closed after it was chosen is rejected instead of silently changing how the run is recorded', function () {
+    $items = [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']];
+    $this->ops->session->forceFill(['status' => StoreSessionStatus::Closed, 'closed_at' => now()])->saveQuietly();
+
+    confirmRun($this, $items, ['status' => 'open'])->assertSessionHasErrors([
+        'funding_store_session_id' => 'That Store Session was closed while you were confirming. Its Close Store result is final, so choose the funding Store Session again.',
+    ]);
+    confirmRun($this, $items, ['funding' => StoreSession::factory()->for($this->ops->branch)->create(), 'status' => 'closed'])
+        ->assertSessionHasErrors('funding_store_session_id');
+
+    expect(PamamalengkePurchase::query()->count())->toBe(0)->and($this->ops->stock('lemon'))->toBe('29.5');
+});
+
+test('a retried closed-session allocation writes once; the same key with another funding session is rejected', function () {
+    $closed = closedFundingSession($this);
+    $key = (string) Str::uuid();
+    $items = [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']];
+
+    confirmRun($this, $items, ['key' => $key, 'funding' => $closed])->assertSessionHasNoErrors();
+    confirmRun($this, $items, ['key' => $key, 'funding' => $closed])->assertSessionHasNoErrors();
+    confirmRun($this, $items, ['key' => $key])->assertStatus(409);
+
+    expect(PamamalengkePurchase::query()->count())->toBe(1)
+        ->and(StoreSessionExpense::query()->count())->toBe(0)
+        ->and(IngredientMovement::query()->where('movement_type', 'purchase_restock')->count())->toBe(1)
+        ->and($this->ops->stock('lemon'))->toBe('30.5');
+});
+
+test('the pamamalengke page offers this Branch funding sessions, open first then recent closed ones', function () {
+    $older = closedFundingSession($this, '-30 hours');
+    $recent = closedFundingSession($this, '-6 hours');
+    StoreSession::factory()->for(Branch::factory()->create())->closed()->create();
+
+    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->ops->branch->id])
+        ->get(route('operations.pamamalengke', ['plan' => $this->ops->drinks->id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('funding_sessions', fn ($sessions) => collect($sessions)->pluck('id')->all() === [$this->ops->session->id, $recent->id, $older->id]
+                && collect($sessions)->pluck('status')->all() === ['open', 'closed', 'closed']
+                && str_ends_with($sessions[0]['label'], '– LIVE')));
+});
+
+test('the purchase history explains how each run was funded and totals allocations from their items', function () {
+    $closed = closedFundingSession($this);
+    confirmRun($this, [['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '1', 'actual_unit_cost' => '10.00']])->assertSessionHasNoErrors();
+    $this->travel(1)->seconds();
+    confirmRun($this, [['type' => 'manual', 'name' => 'Ice', 'unit' => 'bag', 'actual_quantity' => '2', 'actual_unit_cost' => '30.00']], ['funding' => $closed])->assertSessionHasNoErrors();
+
+    $this->actingAs($this->ops->owner)->withSession([ActiveBranchContext::SESSION_KEY => $this->ops->branch->id])
+        ->get(route('operations.purchases'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('stats.today_cents', 7000)
+            ->where('stats.today_runs', 2)
+            ->where('purchases.data.0.funding.recorded_as', 'allocation')
+            ->where('purchases.data.0.funding.session_id', $closed->id)
+            ->where('purchases.data.0.funding.expense_reference', null)
+            ->where('purchases.data.0.actual_cents', 6000)
+            ->where('purchases.data.1.funding.recorded_as', 'store_purchase')
+            ->where('purchases.data.1.funding.expense_reference', fn (string $reference): bool => str_starts_with($reference, 'EXP-'))
+            ->where('purchases.data.1.actual_cents', 1000));
 });
 
 test('a shared ingredient bought from either plan restocks the one branch record', function () {
@@ -186,7 +331,7 @@ test('the latest purchase cost drives future estimates while past sales keep the
         ->and(AuditLog::query()->where('action', 'pamamalengke.confirmed')->sole()->metadata['cost_updates'][0]['to'])->toBe('65.00');
 });
 
-test('cash after purchases is not profit and store-wide expenses are counted once, only for the business', function () {
+test('pamamalengke belongs to its funding session and store-wide expenses are counted once, only for the business', function () {
     $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 2, 'm'), $this->ops->line($this->ops->tapsilog, 1), $this->ops->line($this->ops->coke, 1)]);
     confirmRun($this, [
         ['type' => 'ingredient', 'ingredient_id' => $this->ops->ingredients['lemon']->id, 'actual_quantity' => '2', 'actual_unit_cost' => '10.00'],
@@ -195,6 +340,12 @@ test('cash after purchases is not profit and store-wide expenses are counted onc
     app(RecordStoreSessionExpense::class)->execute($this->ops->cashier, $this->ops->branch, [
         'idempotency_key' => (string) Str::uuid(), 'description' => 'LPG top-up', 'amount' => '350.00', 'payment_source' => 'cash', 'restock' => false,
     ]);
+    /** An earlier session of today closed; a run funded by it afterwards is an allocation with no expense row. */
+    $earlier = StoreSession::factory()->for($this->ops->branch)->closed()->create([
+        'opened_by_user_id' => $this->ops->cashier->id, 'opened_at' => $this->ops->session->opened_at, 'closed_at' => $this->ops->session->opened_at,
+    ]);
+    confirmRun($this, [['type' => 'manual', 'name' => 'Straws', 'unit' => 'pack', 'actual_quantity' => '1', 'actual_unit_cost' => '45.00']], ['funding' => $earlier])
+        ->assertSessionHasNoErrors();
 
     $summary = app(OperationsSummary::class)->today($this->ops->branch);
     $drinks = $summary['plans'][$this->ops->drinks->id];
@@ -206,21 +357,21 @@ test('cash after purchases is not profit and store-wide expenses are counted onc
         ->and($drinks['cogs_cents'])->toBe(4500)
         ->and($drinks['uncosted_sales_cents'])->toBe(2500)
         ->and($drinks['incomplete'])->toBeTrue()
-        ->and($drinks['pamamalengke_cents'])->toBe(5000)
-        ->and($drinks['non_stock_cents'])->toBe(3000)
+        ->and($drinks['pamamalengke_cents'])->toBe(5000 + 4500)
+        ->and($drinks['non_stock_cents'])->toBe(3000 + 4500)
         ->and($drinks['other_expenses_cents'])->toBe(0)
-        ->and($drinks['cash_after_cents'])->toBe(11500)
-        ->and($drinks['operating_profit_cents'])->toBe(16500 - 4500 - 3000);
+        ->and($drinks['operating_profit_cents'])->toBe(16500 - 4500 - 7500)
+        ->and($drinks)->not->toHaveKey('cash_after_cents');
 
     /** Tapsilog: Rice 200 g × ₱54/kg = ₱10.80, Egg ₱8, Water 100 ml × ₱40/5 L = ₱0.80. */
     expect($silog['sales_cents'])->toBe(12000)->and($silog['cogs_cents'])->toBe(1960);
 
+    /** Store expenses ₱400 = LPG ₱350 + the ₱50 Store Purchase run; only that run is excluded from other expenses. */
     expect($business['sales_cents'])->toBe(28500)
         ->and($business['cogs_cents'])->toBe(6460)
-        ->and($business['pamamalengke_cents'])->toBe(5000)
+        ->and($business['pamamalengke_cents'])->toBe(9500)
         ->and($business['other_expenses_cents'])->toBe(35000)
-        ->and($business['cash_after_cents'])->toBe(28500 - 5000 - 35000)
-        ->and($business['operating_profit_cents'])->toBe(28500 - 6460 - 3000 - 35000);
+        ->and($business['operating_profit_cents'])->toBe(28500 - 6460 - 7500 - 35000);
 });
 
 test('operations business net sales match the Phase 16 reports and voided orders drop out', function () {

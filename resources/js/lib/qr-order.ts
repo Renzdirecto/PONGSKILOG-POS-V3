@@ -1,5 +1,5 @@
-import type { QrLine, QrOrder, QrReceipt } from '../types/qr';
-import { cents, pesos } from './pos-money';
+import type { QrLine, QrOrder } from '../types/qr';
+import { cents } from './pos-money';
 export function qrLineCents(line: QrLine): bigint {
     return (
         (line.product.modifier_groups ?? []).reduce(
@@ -49,42 +49,6 @@ export function canStartQrOrder(order: QrOrder): boolean {
         order.commercial_status === 'archived_unclaimed'
     );
 }
-export function receiptText(receipt: QrReceipt): string {
-    return [
-        'PONGSKILOG',
-        receipt.branch.name,
-        '',
-        `Order number : #${receipt.order_number}`,
-        `Date : ${receipt.paid_at}`,
-        `Order type : ${receipt.order_type === 'dine_in' ? 'Dine in' : 'Take out'}`,
-        'PAID',
-        '',
-        ...receipt.items.flatMap((item) => [
-            `${item.quantity}x ${item.display_name ?? item.name}  ${pesos(item.line_total)}`,
-            ...item.modifiers
-                .filter((mod) => mod.semantic_role !== 'size')
-                .map(
-                    (mod) =>
-                        `   ${mod.semantic_role === 'instruction' ? 'Instructions: ' : ''}${mod.name}`,
-                ),
-            ...(item.notes ? [`   Note: ${item.notes}`] : []),
-        ]),
-        '',
-        `TOTAL : ${pesos(receipt.total)}`,
-        ...receipt.payments.flatMap((payment) => [
-            `${payment.method === 'cash' ? 'Cash' : 'Cashless'} : ${pesos(payment.amount)}`,
-            ...(payment.amount_received
-                ? [
-                      `Received : ${pesos(payment.amount_received)}`,
-                      `Change : ${pesos(payment.change_amount ?? '0.00')}`,
-                  ]
-                : []),
-        ]),
-        '',
-        'Salamat sa pag-order sa Pongskilog!',
-    ].join('\n');
-}
-
 export function mergeQrLine(cart: QrLine[], line: QrLine): QrLine[] {
     const selection = (row: QrLine) =>
         row.modifiers

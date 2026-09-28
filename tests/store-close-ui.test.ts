@@ -188,14 +188,35 @@ test('the flow never prefills counts and submits only server-validated values', 
     assert.match(flow, /Recheck/);
 });
 
+test('the close review, confirmation and summary show how the Store Session opened', () => {
+    assert.match(flow, /function SessionOpening\(/);
+    assert.equal(
+        flow.match(/<SessionOpening session=\{preview\.store_session\} \/>/g)
+            ?.length,
+        2,
+    );
+    for (const label of [
+        'Opened at',
+        'Opened by',
+        'Opening Cash',
+        'Opening Cashless',
+    ]) {
+        assert.match(flow, new RegExp(`\\[\\s*'${label}'`));
+    }
+});
+
 test('realtime only invalidates and refetches authoritative close state', () => {
     assert.match(realtime, /`branch\.\$\{branchId\}\.pos`/);
     assert.match(realtime, /STORE_CLOSE_POS_EVENTS/);
     assert.match(realtime, /\['\.store\.expense_recorded'\]/);
     assert.match(realtime, /window\.addEventListener\('online', recover\)/);
-    assert.match(closedRealtime, /\['\.store\.closed'\]/);
+    assert.match(closedRealtime, /\['\.store\.closed', '\.store\.opened'\]/);
     assert.match(workspace, /<StoreClosedListener/);
-    assert.match(workspace, /router\.reload\(\)/);
+    assert.match(workspace, /onOpened=\{handleStoreOpened\}/);
+    assert.match(
+        workspace,
+        /router\.reload\(\{\s*onHttpException: handleRevalidationException,\s*onNetworkError: \(\) => false,\s*\}\)/,
+    );
 });
 
 test('the closing cashier is identified before store.closed can arrive ahead of the response', () => {

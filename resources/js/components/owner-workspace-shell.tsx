@@ -24,7 +24,7 @@ import {
     UtensilsCrossed,
     type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { BranchSwitcher } from '@/components/branch-switcher';
 import { PersonAvatar } from '@/components/person-avatar';
@@ -45,15 +45,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useManagementSidebar } from '@/hooks/use-management-sidebar';
 import {
     activeManagementDestination,
     identitySubtitle,
-    MANAGEMENT_SIDEBAR_STORAGE_KEY,
     managementDestinations,
     managementNavigation,
     pinnedManagementDestinations,
-    restoredSidebarCollapsed,
-    storedSidebarValue,
     type ManagementDestination,
     type ManagementDestinationId,
 } from '@/lib/management-navigation';
@@ -159,7 +157,8 @@ export function managementDestinationHref(
 
 /**
  * One permitted destination. `full` is the expanded sidebar row, `rail` the collapsed desktop icon (named through
- * aria-label and a tooltip), `compact` the tablet rail and mobile dock tile.
+ * aria-label and a tooltip), `compact` the tablet rail tile and `dock` the mobile dock tile (it fills the dock's
+ * height, so the active pill never overflows it).
  */
 function NavigationControl({
     destination,
@@ -171,7 +170,7 @@ function NavigationControl({
     destination: ManagementDestination;
     href: RouteTarget;
     active: boolean;
-    variant: 'full' | 'rail' | 'compact';
+    variant: 'full' | 'rail' | 'compact' | 'dock';
     onNavigate?: () => void;
 }) {
     const Icon = destinationIcons[destination.id];
@@ -182,6 +181,7 @@ function NavigationControl({
         full: `flex h-[46px] w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition ${focusRing} ${tone}`,
         rail: `mx-auto flex size-11 items-center justify-center rounded-[10px] transition ${focusRing} ${tone}`,
         compact: `relative flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 text-center text-[10px] leading-tight font-semibold transition ${focusRing} ${tone}`,
+        dock: `relative flex h-full w-full min-w-0 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 text-center text-[10px] leading-tight font-semibold transition ${focusRing} ${tone}`,
     }[variant];
 
     return (
@@ -200,6 +200,11 @@ function NavigationControl({
                 </span>
             )}
             {variant === 'compact' && <span>{destination.shortLabel}</span>}
+            {variant === 'dock' && (
+                <span className="max-w-full truncate">
+                    {destination.shortLabel}
+                </span>
+            )}
         </Link>
     );
 }
@@ -223,7 +228,7 @@ export function OwnerWorkspaceShell({
     const page = usePage<SharedProps & OperationsPageProps>();
     const { auth, branchContext } = page.props;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, toggleCollapsed] = useManagementSidebar();
     /** Super Admin uses the dedicated collapsible SuperAdminShell; this shell serves the Owner and business-wide custom roles. */
     const workspaceLabel = auth.roleLabel ?? 'Owner';
     /** Position (business/job title) names the person; it never grants access. Falls back to the Role label. */
@@ -263,36 +268,11 @@ export function OwnerWorkspaceShell({
         (destination) => destination.id === 'settings',
     );
 
-    useEffect(() => {
-        try {
-            setCollapsed(
-                restoredSidebarCollapsed(
-                    window.localStorage.getItem(MANAGEMENT_SIDEBAR_STORAGE_KEY),
-                ),
-            );
-        } catch {
-            /** Storage can be unavailable (private mode); the sidebar simply starts expanded. */
-        }
-    }, []);
-
-    function toggleCollapsed() {
-        const next = !collapsed;
-        setCollapsed(next);
-        try {
-            window.localStorage.setItem(
-                MANAGEMENT_SIDEBAR_STORAGE_KEY,
-                storedSidebarValue(next),
-            );
-        } catch {
-            /** The preference is a convenience only. */
-        }
-    }
-
     return (
         <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white print:p-0">
             <aside
                 data-collapsed={collapsed}
-                className={`hidden shrink-0 flex-col overflow-hidden bg-[#111111] transition-[width] duration-200 ease-out motion-reduce:transition-none min-[1180px]:flex print:hidden! ${collapsed ? 'w-[76px]' : 'w-[248px]'}`}
+                className={`theme-static hidden shrink-0 flex-col overflow-hidden bg-[#111111] transition-[width] duration-200 ease-out motion-reduce:transition-none min-[1180px]:flex print:hidden! ${collapsed ? 'w-[76px]' : 'w-[248px]'}`}
             >
                 <div
                     className={`flex h-[72px] shrink-0 items-center border-b border-white/10 ${collapsed ? 'justify-center px-2' : 'justify-between gap-2 pr-3 pl-4'}`}
@@ -407,16 +387,16 @@ export function OwnerWorkspaceShell({
                     {collapsed ? (
                         <div className="flex flex-col items-center gap-2 text-white">
                             <span
-                                title={`${auth.user?.name ?? ''} · ${identityLabel}`}
+                                title={`${auth.user?.displayName ?? ''} · ${identityLabel}`}
                                 className="flex size-[34px] items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
                             >
                                 <PersonAvatar
-                                    name={auth.user?.name}
+                                    name={auth.user?.displayName}
                                     avatarUrl={avatarUrl}
                                     className="flex size-full items-center justify-center"
                                 />
                                 <span className="sr-only">
-                                    {auth.user?.name}, {identityLabel}
+                                    {auth.user?.displayName}, {identityLabel}
                                 </span>
                             </span>
                             <Link
@@ -433,13 +413,13 @@ export function OwnerWorkspaceShell({
                     ) : (
                         <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
                             <PersonAvatar
-                                name={auth.user?.name}
+                                name={auth.user?.displayName}
                                 avatarUrl={avatarUrl}
                                 className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
                             />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[13px] font-semibold">
-                                    {auth.user?.name}
+                                    {auth.user?.displayName}
                                 </span>
                                 <span className="block truncate text-[11px] text-white/60">
                                     {identityLabel}
@@ -458,7 +438,7 @@ export function OwnerWorkspaceShell({
                 </div>
             </aside>
 
-            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
+            <aside className="theme-static hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
                     href={canReports ? owner() : workspace()}
                     className={`flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-inset ${focusRing}`}
@@ -476,6 +456,17 @@ export function OwnerWorkspaceShell({
                     {branchContext.current?.code ??
                         (branchContext.businessWide ? 'All branches' : '')}
                 </p>
+                <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded={mobileMenuOpen}
+                    aria-label="Expand navigation"
+                    title="Expand navigation"
+                    onClick={() => setMobileMenuOpen(true)}
+                    className={`mx-auto mt-2 flex size-11 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white ${focusRing}`}
+                >
+                    <PanelLeftOpen className="size-[18px]" aria-hidden="true" />
+                </button>
                 <nav
                     aria-label={`${workspaceLabel} navigation`}
                     className="owner-hide-scrollbar flex flex-1 flex-col gap-1.5 overflow-y-auto px-2 py-2"
@@ -500,7 +491,7 @@ export function OwnerWorkspaceShell({
                         className={`flex size-11 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold text-white ${focusRing}`}
                     >
                         <PersonAvatar
-                            name={auth.user?.name}
+                            name={auth.user?.displayName}
                             avatarUrl={avatarUrl}
                             className="flex size-full items-center justify-center"
                         />
@@ -529,7 +520,7 @@ export function OwnerWorkspaceShell({
                     </div>
                     <div className="hidden min-w-0 flex-1 text-right md:block">
                         <p className="truncate text-[13px] font-semibold">
-                            {auth.user?.name}
+                            {auth.user?.displayName}
                         </p>
                         <p className="truncate text-[11px] text-neutral-500">
                             {workspaceLabel} · {currentScope}
@@ -545,7 +536,7 @@ export function OwnerWorkspaceShell({
                                 className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
                                 <PersonAvatar
-                                    name={auth.user?.name}
+                                    name={auth.user?.displayName}
                                     avatarUrl={avatarUrl}
                                     className="flex size-full items-center justify-center"
                                 />
@@ -557,7 +548,7 @@ export function OwnerWorkspaceShell({
                         >
                             <DropdownMenuLabel className="space-y-0.5">
                                 <span className="block truncate text-[13px] font-semibold">
-                                    {auth.user?.name}
+                                    {auth.user?.displayName}
                                 </span>
                                 <span className="block text-[11px] font-normal text-[#666]">
                                     {identityLabel} · {currentScope}
@@ -566,8 +557,8 @@ export function OwnerWorkspaceShell({
                             <DropdownMenuSeparator />
                             <DropdownMenuItem asChild>
                                 <Link href={editProfile()} className="min-h-10">
-                                    <UserRound className="size-4" /> Account
-                                    profile
+                                    <UserRound className="size-4" /> Account &amp;
+                                    preferences
                                 </Link>
                             </DropdownMenuItem>
                             {canSettings && (
@@ -576,7 +567,7 @@ export function OwnerWorkspaceShell({
                                         href={branchesIndex()}
                                         className="min-h-10"
                                     >
-                                        <Settings className="size-4" /> Settings
+                                        <Settings className="size-4" /> Branch settings
                                     </Link>
                                 </DropdownMenuItem>
                             )}
@@ -605,7 +596,7 @@ export function OwnerWorkspaceShell({
                 style={{
                     gridTemplateColumns: `repeat(${pinned.length + 1}, minmax(0, 1fr))`,
                 }}
-                className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-40 mx-auto grid h-[68px] max-w-[430px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
+                className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] theme-static z-40 mx-auto grid h-[68px] max-w-[430px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {pinned.map((destination) => (
                     <NavigationControl
@@ -613,7 +604,7 @@ export function OwnerWorkspaceShell({
                         destination={destination}
                         href={hrefFor(destination.id)}
                         active={destination.id === activeId}
-                        variant="compact"
+                        variant="dock"
                     />
                 ))}
                 <button
@@ -629,7 +620,7 @@ export function OwnerWorkspaceShell({
             </nav>
 
             <Dialog open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-                <DialogContent className="owner-surface top-auto bottom-0 max-h-[88dvh] w-full max-w-none translate-y-0 rounded-t-[20px] rounded-b-none border-0 bg-[#111111] p-0 text-white sm:max-w-none md:hidden [&>button]:top-3 [&>button]:right-3 [&>button]:text-white">
+                <DialogContent className="owner-surface top-auto bottom-0 flex max-h-[88dvh] w-full max-w-none translate-y-0 flex-col rounded-t-[20px] rounded-b-none border-0 bg-[#111111] p-0 text-white min-[1180px]:hidden sm:max-w-none md:top-0 md:left-0 md:h-dvh md:max-h-dvh md:w-[320px] md:translate-x-0 md:rounded-none [&>button]:top-3 [&>button]:right-3 [&>button]:text-white">
                     <DialogHeader className="border-b border-white/10 px-4 py-4 text-left">
                         <DialogTitle className="text-base font-semibold">
                             {workspaceLabel} navigation

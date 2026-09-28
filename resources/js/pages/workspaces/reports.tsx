@@ -493,6 +493,33 @@ export default function Reports({
                 >
                     <KpiGrid analytics={analytics} comparison={comparison} />
 
+                    <AnalyticsCard
+                        title="Period highlights"
+                        hint="Calculated from this period's figures — no estimates or projections"
+                    >
+                        <div className="grid gap-[9px] [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
+                            {analytics.highlights.map((highlight) => (
+                                <div
+                                    key={highlight.label}
+                                    className={`${insetClass} flex min-w-0 flex-col gap-1 px-[13px] py-3.5`}
+                                >
+                                    <span className={labelClass}>
+                                        {highlight.label}
+                                    </span>
+                                    <span className="text-[15px] font-bold tracking-[-0.01em] [overflow-wrap:anywhere]">
+                                        {highlight.value}
+                                    </span>
+                                    <span className="text-[11.5px] leading-[1.45] text-[#666] tabular-nums">
+                                        {highlight.amount !== null &&
+                                            `${peso(highlight.amount)} · `}
+                                        {highlight.detail}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </AnalyticsCard>
+
+
                     <div className="grid gap-3 min-[1100px]:grid-cols-2">
                         <AnalyticsCard
                             title="Sales by category"
@@ -1190,32 +1217,6 @@ export default function Reports({
                             </p>
                         </AnalyticsCard>
                     </div>
-
-                    <AnalyticsCard
-                        title="Period highlights"
-                        hint="Calculated from the figures above — no estimates or projections"
-                    >
-                        <div className="grid gap-[9px] [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
-                            {analytics.highlights.map((highlight) => (
-                                <div
-                                    key={highlight.label}
-                                    className={`${insetClass} flex min-w-0 flex-col gap-1 px-[13px] py-3.5`}
-                                >
-                                    <span className={labelClass}>
-                                        {highlight.label}
-                                    </span>
-                                    <span className="text-[15px] font-bold tracking-[-0.01em] [overflow-wrap:anywhere]">
-                                        {highlight.value}
-                                    </span>
-                                    <span className="text-[11.5px] leading-[1.45] text-[#666] tabular-nums">
-                                        {highlight.amount !== null &&
-                                            `${peso(highlight.amount)} · `}
-                                        {highlight.detail}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </AnalyticsCard>
 
                     {analytics.branches && (
                         <AnalyticsCard

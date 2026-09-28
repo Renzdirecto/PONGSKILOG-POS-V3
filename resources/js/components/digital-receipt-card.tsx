@@ -1,6 +1,8 @@
 import type { Ref } from 'react';
 import { pesos } from '@/lib/pos-money';
-import type { QrOrder, PublicReceipt } from '@/types/qr';
+import type { QrOrder } from '@/types/qr';
+import type { CanonicalReceipt } from '@/types/receipt';
+import { ReceiptDocument } from './receipt-document';
 import { qrPanel } from './customer-qr-product';
 
 export function QrItems({
@@ -53,99 +55,13 @@ export function QrItems({
     );
 }
 
+/** The digital receipt of the customer pages (receipt link, Customer QR, Pickup): the canonical ReceiptDocument card. */
 export function DigitalReceiptCard({
     receipt,
     ref,
 }: {
-    receipt: PublicReceipt;
-    ref?: Ref<HTMLDivElement>;
+    receipt: CanonicalReceipt;
+    ref?: Ref<HTMLElement>;
 }) {
-    return (
-        <div
-            ref={ref}
-            className="rounded-2xl border border-neutral-200 bg-white p-5"
-        >
-            <div className="text-center">
-                {receipt.branch.show_logo !== false && (
-                    <img
-                        src={
-                            receipt.branch.logo_url ??
-                            '/images/branding/logo.png'
-                        }
-                        alt="Pongskilog"
-                        className="mx-auto mb-3 h-10"
-                    />
-                )}
-                <h2 className="font-bold">{receipt.branch.name}</h2>
-                <p className="mt-1 text-[11px] text-neutral-500">
-                    {receipt.branch.address}
-                </p>
-                {receipt.branch.contact && (
-                    <p className="mt-1 text-[11px] text-neutral-500">
-                        {receipt.branch.contact}
-                    </p>
-                )}
-                <p className="mt-4 text-3xl font-bold">
-                    #{receipt.order_number}
-                </p>
-                <p className="mt-2 text-xs text-neutral-500">
-                    REF: {receipt.reference_number}
-                </p>
-                <span className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-bold ${receipt.commercial_status === 'voided' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-700'}`}>
-                    {receipt.commercial_status === 'voided' ? 'VOIDED' : 'PAID'}
-                </span>
-            </div>
-            <dl className="my-5 grid grid-cols-2 gap-2 text-xs">
-                <dt>Date</dt>
-                <dd className="text-right">
-                    {receipt.paid_at &&
-                        new Date(receipt.paid_at).toLocaleString()}
-                </dd>
-                <dt>Order type</dt>
-                <dd className="text-right">
-                    {receipt.order_type === 'dine_in' ? 'Dine in' : 'Take out'}
-                </dd>
-                {receipt.customer_label && (
-                    <>
-                        <dt>Name</dt>
-                        <dd className="text-right">{receipt.customer_label}</dd>
-                    </>
-                )}
-            </dl>
-            <QrItems order={receipt} />
-            <div className="mt-4 space-y-2 text-xs">
-                {receipt.payments.map((payment, index) => (
-                    <div key={index}>
-                        <div className="flex justify-between">
-                            <span>
-                                {payment.method === 'cash'
-                                    ? 'Cash'
-                                    : 'Cashless'}
-                            </span>
-                            <span>{pesos(payment.amount)}</span>
-                        </div>
-                        {payment.amount_received && (
-                            <>
-                                <div className="mt-1 flex justify-between text-neutral-500">
-                                    <span>Amount received</span>
-                                    <span>
-                                        {pesos(payment.amount_received)}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between text-neutral-500">
-                                    <span>Change</span>
-                                    <span>
-                                        {pesos(payment.change_amount ?? '0.00')}
-                                    </span>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                ))}
-            </div>
-            <p className="mt-5 text-center text-[11px] text-neutral-500">
-                {receipt.branch.footer || 'Salamat sa pag-order sa Pongskilog!'}
-            </p>
-        </div>
-    );
+    return <ReceiptDocument receipt={receipt} ref={ref} variant="card" />;
 }

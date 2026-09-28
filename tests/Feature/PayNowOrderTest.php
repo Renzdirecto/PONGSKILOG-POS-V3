@@ -7,6 +7,8 @@ use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
+use App\Events\CustomerCatalogChanged;
+use App\Events\InventoryChanged;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Models\Branch;
@@ -26,6 +28,7 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -66,7 +69,7 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
     $order = Order::query()->sole();
     $response->assertOk()->assertJsonPath('receipt.id', $order->id)->assertJsonPath('receipt.total', '235.00')
         ->assertJsonPath('receipt.payment_status', 'paid')->assertJsonPath('receipt.branch.name', $branch->name)
-        ->assertJsonPath('receipt.cashier', $user->name)->assertJsonPath('receipt.items.0.notes', 'Less salt')
+        ->assertJsonPath('receipt.cashier', $user->customerFacingName())->assertJsonPath('receipt.items.0.notes', 'Less salt')
         ->assertJsonMissingPath('receipt.payments.0.idempotency_key');
     expect($order->order_number)->toMatch('/\A[0-9]+\z/')
         ->and($order->reference_number)->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('mdy').'-0001')
@@ -332,7 +335,7 @@ test('full access super admin pays for the selected active branch without an ass
     $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
         ->postJson(route('pos.payments.store'), paymentPayload($product))
         ->assertOk()
-        ->assertJsonPath('receipt.cashier', $superAdmin->name)
+        ->assertJsonPath('receipt.cashier', $superAdmin->customerFacingName())
         ->assertJsonPath('receipt.total', '235.00');
 
     $order = Order::query()->sole();
@@ -538,3 +541,19 @@ test('private operational channels require the appropriate branch and permission
 })->with([
     ['cashier', 'pos', true], ['cashier', 'kitchen', false], ['kitchen_staff', 'kitchen', true], ['kitchen_staff', 'pos', false], ['cashier_kitchen', 'kitchen', true],
 ]);
+
+test('a paid order with several stocked products sends one Customer QR catalog signal, not one per product', function () {
+    [$branch, $user, $product] = paymentFixture('100.00');
+    $second = Product::factory()->create(['default_price' => '50.00']);
+    BranchProduct::factory()->for($branch)->for($second)->create(['tracks_inventory' => true]);
+    BranchInventory::factory()->for($branch)->for($second)->create(['on_hand' => 10]);
+    Event::fake([CustomerCatalogChanged::class, InventoryChanged::class]);
+    $payload = paymentPayload($product);
+    $payload['items'][] = ['product_id' => $second->id, 'quantity' => 2, 'notes' => '', 'modifiers' => []];
+
+    $this->actingAs($user)->postJson(route('pos.payments.store'), $payload)->assertOk();
+
+    Event::assertDispatchedTimes(CustomerCatalogChanged::class, 1);
+    Event::assertDispatchedTimes(InventoryChanged::class, 2);
+    expect(BranchInventory::query()->where('product_id', $second->id)->value('on_hand'))->toBe(8);
+});

@@ -209,166 +209,172 @@ export default function OperationsStock({
                             }
                         />
                     ) : (
-                        <div className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
-                            <table className="hidden w-full text-left min-[1040px]:table">
-                                <caption className="sr-only">
-                                    Ingredient stock today at{' '}
-                                    {operations.branch.name}
-                                </caption>
-                                <thead className="bg-[#fafafa]">
-                                    <tr>
-                                        {[
-                                            'Ingredient',
-                                            'Start',
-                                            'Consumed',
-                                            'Purchased',
-                                            'Wastage',
-                                            'Giveaway',
-                                            'Correction',
-                                            'Current',
-                                            'Target',
-                                            '',
-                                        ].map((label, index) => (
-                                            <th
-                                                key={label || 'actions'}
-                                                scope="col"
-                                                className={`px-3 py-2.5 ${opsLabelClass} ${index > 0 && index < 9 ? 'text-right' : ''}`}
-                                            >
-                                                {label || (
-                                                    <span className="sr-only">
-                                                        Actions
-                                                    </span>
-                                                )}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {list.map((ingredient) => {
-                                        const stock = ingredient.stock!;
-
-                                        return (
-                                            <tr
-                                                key={ingredient.id}
-                                                className="border-t border-[#f2f2f2]"
-                                            >
-                                                <td className="px-3 py-2.5">
-                                                    <span className="flex min-w-0 items-center gap-2.5">
-                                                        <IngredientIcon
-                                                            icon={
-                                                                ingredient.icon
-                                                            }
-                                                            size={34}
-                                                        />
-                                                        <span className="flex min-w-0 flex-col">
-                                                            <span
-                                                                className="max-w-[200px] truncate text-[13.5px] font-semibold"
-                                                                title={
-                                                                    ingredient.name
-                                                                }
-                                                            >
-                                                                {
-                                                                    ingredient.name
-                                                                }
-                                                            </span>
-                                                            <span className="max-w-[220px] truncate text-[11px] text-[#767676]">
-                                                                {
-                                                                    ingredient.base_unit
-                                                                }
-                                                                {ingredient
-                                                                    .plan_ids
-                                                                    .length > 1
-                                                                    ? ` · shared with ${ingredient.plan_ids
-                                                                          .filter(
-                                                                              (
-                                                                                  id,
-                                                                              ) =>
-                                                                                  id !==
-                                                                                  plan.id,
-                                                                          )
-                                                                          .map(
-                                                                              planName,
-                                                                          )
-                                                                          .join(
-                                                                              ', ',
-                                                                          )}`
-                                                                    : ''}
-                                                            </span>
+                        <div className="@container overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
+                            {/* The table needs the content area (not the viewport) to be wide; it still scrolls sideways, with Adjust pinned. */}
+                            <div className="hidden overflow-x-auto @min-[1000px]:block">
+                                <table className="w-full min-w-[960px] text-left">
+                                    <caption className="sr-only">
+                                        Ingredient stock today at{' '}
+                                        {operations.branch.name}
+                                    </caption>
+                                    <thead className="bg-[#fafafa]">
+                                        <tr>
+                                            {[
+                                                'Ingredient',
+                                                'Start',
+                                                'Consumed',
+                                                'Purchased',
+                                                'Wastage',
+                                                'Giveaway',
+                                                'Correction',
+                                                'Current',
+                                                'Target',
+                                                '',
+                                            ].map((label, index) => (
+                                                <th
+                                                    key={label || 'actions'}
+                                                    scope="col"
+                                                    className={`px-3 py-2.5 ${opsLabelClass} ${index > 0 && index < 9 ? 'text-right' : ''} ${index === 9 ? 'sticky right-0 bg-[#fafafa]' : ''}`}
+                                                >
+                                                    {label || (
+                                                        <span className="sr-only">
+                                                            Actions
                                                         </span>
-                                                    </span>
-                                                </td>
-                                                <NumberCell
-                                                    value={stock.start}
-                                                />
-                                                <NumberCell
-                                                    value={negate(
-                                                        stock.consumed,
                                                     )}
-                                                    tone="text-[#b91c1c]"
-                                                    signed
-                                                />
-                                                <NumberCell
-                                                    value={stock.purchased}
-                                                    tone="text-[#15803d]"
-                                                    signed
-                                                />
-                                                <NumberCell
-                                                    value={stock.wastage}
-                                                    tone="text-[#b45309]"
-                                                    signed
-                                                />
-                                                <NumberCell
-                                                    value={stock.giveaway}
-                                                    tone="text-[#be123c]"
-                                                    signed
-                                                />
-                                                <NumberCell
-                                                    value={stock.correction}
-                                                    tone="text-[#111]"
-                                                    signed
-                                                />
-                                                <td className="px-3 py-2.5 text-right">
-                                                    <span className="flex flex-col items-end gap-1">
-                                                        <span
-                                                            className={`text-[13.5px] font-bold whitespace-nowrap tabular-nums ${ingredient.status?.tone === 'red' ? 'text-[#b91c1c]' : ingredient.status?.tone === 'amber' ? 'text-[#b45309]' : ''}`}
-                                                        >
-                                                            {formatQuantity(
-                                                                stock.current,
-                                                                ingredient.base_unit,
-                                                            )}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {list.map((ingredient) => {
+                                            const stock = ingredient.stock!;
+
+                                            return (
+                                                <tr
+                                                    key={ingredient.id}
+                                                    className="border-t border-[#f2f2f2]"
+                                                >
+                                                    <td className="px-3 py-2.5">
+                                                        <span className="flex min-w-0 items-center gap-2.5">
+                                                            <IngredientIcon
+                                                                icon={
+                                                                    ingredient.icon
+                                                                }
+                                                                size={34}
+                                                            />
+                                                            <span className="flex min-w-0 flex-col">
+                                                                <span
+                                                                    className="max-w-[200px] truncate text-[13.5px] font-semibold"
+                                                                    title={
+                                                                        ingredient.name
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        ingredient.name
+                                                                    }
+                                                                </span>
+                                                                <span className="max-w-[220px] truncate text-[11px] text-[#767676]">
+                                                                    {
+                                                                        ingredient.base_unit
+                                                                    }
+                                                                    {ingredient
+                                                                        .plan_ids
+                                                                        .length >
+                                                                    1
+                                                                        ? ` · shared with ${ingredient.plan_ids
+                                                                              .filter(
+                                                                                  (
+                                                                                      id,
+                                                                                  ) =>
+                                                                                      id !==
+                                                                                      plan.id,
+                                                                              )
+                                                                              .map(
+                                                                                  planName,
+                                                                              )
+                                                                              .join(
+                                                                                  ', ',
+                                                                              )}`
+                                                                        : ''}
+                                                                </span>
+                                                            </span>
                                                         </span>
-                                                        <StatusChip
-                                                            ingredient={
-                                                                ingredient
+                                                    </td>
+                                                    <NumberCell
+                                                        value={stock.start}
+                                                    />
+                                                    <NumberCell
+                                                        value={negate(
+                                                            stock.consumed,
+                                                        )}
+                                                        tone="text-[#b91c1c]"
+                                                        signed
+                                                    />
+                                                    <NumberCell
+                                                        value={stock.purchased}
+                                                        tone="text-[#15803d]"
+                                                        signed
+                                                    />
+                                                    <NumberCell
+                                                        value={stock.wastage}
+                                                        tone="text-[#b45309]"
+                                                        signed
+                                                    />
+                                                    <NumberCell
+                                                        value={stock.giveaway}
+                                                        tone="text-[#be123c]"
+                                                        signed
+                                                    />
+                                                    <NumberCell
+                                                        value={stock.correction}
+                                                        tone="text-[#111]"
+                                                        signed
+                                                    />
+                                                    <td className="px-3 py-2.5 text-right">
+                                                        <span className="flex flex-col items-end gap-1">
+                                                            <span
+                                                                className={`text-[13.5px] font-bold whitespace-nowrap tabular-nums ${ingredient.status?.tone === 'red' ? 'text-[#b91c1c]' : ingredient.status?.tone === 'amber' ? 'text-[#b45309]' : ''}`}
+                                                            >
+                                                                {formatQuantity(
+                                                                    stock.current,
+                                                                    ingredient.base_unit,
+                                                                )}
+                                                            </span>
+                                                            <StatusChip
+                                                                ingredient={
+                                                                    ingredient
+                                                                }
+                                                            />
+                                                        </span>
+                                                    </td>
+                                                    <NumberCell
+                                                        value={
+                                                            ingredient.target
+                                                        }
+                                                    />
+                                                    <td className="sticky right-0 bg-white px-3 py-2.5 text-right">
+                                                        <button
+                                                            type="button"
+                                                            className={
+                                                                opsButtonClass
                                                             }
-                                                        />
-                                                    </span>
-                                                </td>
-                                                <NumberCell
-                                                    value={ingredient.target}
-                                                />
-                                                <td className="px-3 py-2.5 text-right">
-                                                    <button
-                                                        type="button"
-                                                        className={
-                                                            opsButtonClass
-                                                        }
-                                                        onClick={() =>
-                                                            setAdjusting(
-                                                                ingredient,
-                                                            )
-                                                        }
-                                                    >
-                                                        <Layers className="size-4" />{' '}
-                                                        Adjust
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                            <ul className="flex flex-col min-[1040px]:hidden">
+                                                            onClick={() =>
+                                                                setAdjusting(
+                                                                    ingredient,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Layers className="size-4" />{' '}
+                                                            Adjust
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <ul className="flex flex-col @min-[1000px]:hidden">
                                 {list.map((ingredient) => {
                                     const stock = ingredient.stock!;
 

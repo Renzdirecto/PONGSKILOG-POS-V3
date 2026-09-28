@@ -1,4 +1,8 @@
 import { update as saveQrSettings } from '@/routes/branches/qr-settings';
+import {
+    destroy as removeBranchImage,
+    store as uploadBranchImage,
+} from '@/routes/branches/image';
 import { qrHistory } from '@/routes/branches';
 import { qrRequest, qrError } from '@/lib/qr-http';
 import { Head, useForm, router } from '@inertiajs/react';
@@ -8,8 +12,8 @@ import {
     Plus,
     QrCode,
     Copy,
-    Check,
     ImagePlus,
+    Trash2,
 } from 'lucide-react';
 import { useRef, useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
@@ -26,6 +30,10 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { CustomerScreenMediaPanel } from '@/components/customer-screen-media-panel';
 import { CustomerScreenSettingsPanel } from '@/components/customer-screen-settings-panel';
+import {
+    ReceiptSettings,
+    SettingSwitch,
+} from '@/components/receipt-settings';
 import { SegmentedTabs } from '@/components/owner-analytics';
 import {
     OwnerPage,
@@ -40,6 +48,7 @@ import {
 import { store, update } from '@/routes/branches';
 import { toast } from 'sonner';
 import type { BranchSummary } from '@/types';
+import type { ReceiptLayoutSettings } from '@/types/receipt';
 
 type BranchStatus = 'active' | 'temporarily_closed' | 'inactive';
 type Branch = BranchSummary & {
@@ -56,6 +65,9 @@ type Branch = BranchSummary & {
     receipt_footer: string | null;
     receipt_show_logo: boolean;
     receipt_logo_url: string;
+    receipt_layout: ReceiptLayoutSettings;
+    /** The optional store photo (versioned URL), or null for the fallback. */
+    image_url: string | null;
     facebook_url: string | null;
     website_url: string | null;
 };
@@ -317,6 +329,7 @@ export default function Branches({
                                 key={branch.id}
                                 className={`${ownerPanelClass} flex min-w-0 flex-col gap-3 p-4`}
                             >
+                                <BranchPhoto branch={branch} />
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <span className="text-[10px] font-semibold tracking-[0.08em] text-[#767676] uppercase">
                                         {branch.code}
@@ -569,6 +582,7 @@ function BranchForm({
                     </p>
                 )}
             </div>
+            {branch && <BranchImageField branch={branch} />}
             <Button
                 type="submit"
                 disabled={form.processing}
@@ -591,45 +605,6 @@ type QrHistory = {
     waiting_retrieval: number;
     visits: { data: { visited_at: string }[]; last_page: number };
 };
-
-function SettingSwitch({
-    checked,
-    disabled,
-    onChange,
-    label,
-    description,
-}: {
-    checked: boolean;
-    disabled?: boolean;
-    onChange: (checked: boolean) => void;
-    label: string;
-    description?: string;
-}) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            onClick={() => onChange(!checked)}
-            className={`flex w-full items-center gap-3 rounded-[11px] border bg-white p-3 text-left disabled:opacity-50 ${checked ? 'border-[#111]' : 'border-neutral-200'}`}
-        >
-            <span
-                className={`flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 ${checked ? 'justify-end bg-[#111]' : 'justify-start bg-neutral-300'}`}
-            >
-                <span className="size-5 rounded-full bg-white" />
-            </span>
-            <span>
-                <span className="block text-xs font-semibold">{label}</span>
-                {description && (
-                    <span className="mt-1 block text-[11px] text-neutral-500">
-                        {description}
-                    </span>
-                )}
-            </span>
-        </button>
-    );
-}
 
 function BranchQrPanel({ branch }: { branch: Branch }) {
     const [tab, setTab] = useState<'qr' | 'history'>('qr');
@@ -930,286 +905,109 @@ function BranchQrPanel({ branch }: { branch: Branch }) {
     );
 }
 
-function ReceiptSettings({ branch }: { branch: Branch }) {
-    const [data, setData] = useState({
-        receipt_name: branch.receipt_name ?? branch.name,
-        receipt_address: branch.receipt_address ?? branch.address ?? '',
-        receipt_contact: branch.receipt_contact ?? branch.contact ?? '',
-        receipt_footer: branch.receipt_footer ?? 'Salamat po! Come again.',
-        receipt_show_logo: branch.receipt_show_logo,
-        facebook_url: branch.facebook_url ?? '',
-        website_url: branch.website_url ?? '',
-    });
-    const [saved, setSaved] = useState(data);
-    const [logo, setLogo] = useState<File | null>(null);
-    const [preview, setPreview] = useState<string | null>(null);
-    const [removeLogo, setRemoveLogo] = useState(false);
+/** The Branch's store photo, or a neutral fallback with its code when none was uploaded. */
+function BranchPhoto({ branch }: { branch: Branch }) {
+    return branch.image_url ? (
+        <img
+            src={branch.image_url}
+            alt={`${branch.name} store`}
+            loading="lazy"
+            className="h-28 w-full rounded-xl border border-neutral-200 object-cover"
+        />
+    ) : (
+        <div
+            aria-hidden
+            className="flex h-28 w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-neutral-500"
+        >
+            <Building2 className="size-6" />
+            <span className="text-[11px] font-semibold">{branch.code}</span>
+        </div>
+    );
+}
+
+/**
+ * Optional store photo: JPG, PNG or WebP up to 5 MB, checked and re-encoded by the server (the same pipeline as
+ * Product images). Saved immediately, separately from the Branch details form.
+ */
+function BranchImageField({ branch }: { branch: Branch }) {
+    const input = useRef<HTMLInputElement>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    const fileInput = useRef<HTMLInputElement>(null);
-    useEffect(() => {
-        if (!logo) {
-            setPreview(null);
-            return;
+    const run = async (request: () => Promise<unknown>, message: string) => {
+        if (busy) return;
+        setBusy(true);
+        setError('');
+        try {
+            await request();
+            toast.success(message);
+            router.reload({ only: ['branches'], onFinish: () => setBusy(false) });
+        } catch (reason) {
+            setError(qrError(reason).message);
+            setBusy(false);
         }
-        const url = URL.createObjectURL(logo);
-        setPreview(url);
-        return () => URL.revokeObjectURL(url);
-    }, [logo]);
-    const logoUrl =
-        preview ??
-        (removeLogo ? '/images/branding/logo.png' : branch.receipt_logo_url);
-    const dirty =
-        JSON.stringify(data) !== JSON.stringify(saved) || !!logo || removeLogo;
+    };
+
     return (
-        <div className="grid items-start gap-4 min-[1000px]:grid-cols-[1.15fr_1fr]">
-            <form
-                className={`${ownerPanelClass} space-y-4 p-5`}
-                onSubmit={async (event) => {
-                    event.preventDefault();
-                    if (busy) return;
-                    setBusy(true);
-                    setError('');
-                    try {
-                        const payload = new FormData();
-                        payload.set('_method', 'PUT');
-                        Object.entries(data).forEach(([key, value]) =>
-                            payload.set(
-                                key,
-                                typeof value === 'boolean'
-                                    ? value
-                                        ? '1'
-                                        : '0'
-                                    : value,
-                            ),
-                        );
-                        if (logo) payload.set('receipt_logo', logo);
-                        payload.set(
-                            'remove_receipt_logo',
-                            removeLogo ? '1' : '0',
-                        );
-                        await qrRequest(
-                            { ...saveQrSettings(branch.id), method: 'post' },
-                            payload,
-                        );
-                        setSaved(data);
-                        toast.success('Receipt settings saved');
-                        router.reload({
-                            only: ['branches'],
-                            onSuccess: () => {
-                                setLogo(null);
-                                setRemoveLogo(false);
-                            },
-                            onFinish: () => setBusy(false),
-                        });
-                    } catch (reason) {
-                        setError(qrError(reason).message);
-                        setBusy(false);
+        <div className="space-y-2">
+            <Label>Store photo (optional)</Label>
+            <BranchPhoto branch={branch} />
+            <input
+                ref={input}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                aria-label="Choose a store photo"
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) {
+                        setError('Choose an image of at most 5 MB.');
+                        return;
                     }
+                    const payload = new FormData();
+                    payload.set('image', file);
+                    void run(
+                        () => qrRequest(uploadBranchImage(branch.id), payload),
+                        'Store photo saved',
+                    );
                 }}
-            >
-                <div>
-                    <h2 className="text-sm font-bold">Receipt</h2>
-                    <p className="mt-1 text-xs text-neutral-500">
-                        Customer-visible information printed on every receipt.
-                    </p>
-                </div>
-                <fieldset
+            />
+            <div className="flex flex-wrap gap-2">
+                <Button
+                    type="button"
+                    variant="outline"
+                    className={`${actionClass} min-h-11`}
                     disabled={busy}
-                    className="space-y-4 disabled:opacity-60"
+                    onClick={() => input.current?.click()}
                 >
-                    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                        <div className="flex h-14 w-20 items-center justify-center rounded-lg bg-[#111] p-2">
-                            <img
-                                src={logoUrl}
-                                alt="Receipt logo"
-                                className="max-h-full max-w-full object-contain"
-                            />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold">
-                                Receipt logo
-                            </p>
-                            <p className="mt-1 text-[11px] leading-5 text-neutral-500">
-                                Printed above the business name. Defaults to the
-                                business logo.
-                            </p>
-                        </div>
-                        <input
-                            ref={fileInput}
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            className="hidden"
-                            aria-label="Replace receipt logo"
-                            onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (file) {
-                                    setLogo(file);
-                                    setRemoveLogo(false);
-                                    setData({
-                                        ...data,
-                                        receipt_show_logo: true,
-                                    });
-                                }
-                                event.target.value = '';
-                            }}
-                        />
-                        <button
-                            type="button"
-                            className={`${actionClass} inline-flex items-center gap-2`}
-                            onClick={() => fileInput.current?.click()}
-                        >
-                            <ImagePlus size={14} /> Replace
-                        </button>
-                        <button
-                            type="button"
-                            className={actionClass}
-                            onClick={() => {
-                                setLogo(null);
-                                setRemoveLogo(true);
-                                setData({ ...data, receipt_show_logo: false });
-                            }}
-                        >
-                            Remove
-                        </button>
-                    </div>
-                    <SettingSwitch
-                        checked={data.receipt_show_logo}
-                        label="Print logo on every receipt"
-                        onChange={(enabled) =>
-                            setData({ ...data, receipt_show_logo: enabled })
+                    {busy ? <Spinner /> : <ImagePlus className="size-3.5" />}
+                    {branch.image_url ? 'Replace photo' : 'Upload photo'}
+                </Button>
+                {branch.image_url && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className={`${actionClass} min-h-11`}
+                        disabled={busy}
+                        onClick={() =>
+                            void run(
+                                () => qrRequest(removeBranchImage(branch.id)),
+                                'Store photo removed',
+                            )
                         }
-                    />
-                    {(
-                        [
-                            ['receipt_name', 'Business / branch line', 150],
-                            ['receipt_address', 'Address', 500],
-                            ['receipt_contact', 'Contact', 100],
-                            ['receipt_footer', 'Footer text', 250],
-                        ] as const
-                    ).map(([key, label, maxLength]) => (
-                        <label
-                            key={key}
-                            className="flex flex-col gap-2 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase"
-                        >
-                            {label}
-                            <input
-                                className={`${controlClass} tracking-normal normal-case`}
-                                maxLength={maxLength}
-                                value={data[key]}
-                                onChange={(event) =>
-                                    setData({
-                                        ...data,
-                                        [key]: event.target.value,
-                                    })
-                                }
-                            />
-                        </label>
-                    ))}
-                </fieldset>
-                {error && (
-                    <p role="alert" className="text-sm text-red-700">
-                        {error}
-                    </p>
+                    >
+                        <Trash2 className="size-3.5" /> Remove
+                    </Button>
                 )}
-                <button
-                    disabled={busy || !dirty}
-                    className={`${primaryActionClass} inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-40`}
-                >
-                    <Check size={15} /> {busy ? 'Saving…' : 'Save changes'}
-                </button>
-                <p className="text-[11px] text-neutral-500">
-                    Printer selection stays with the terminal, not the business
-                    record.
-                </p>
-                <details className="border-t border-neutral-100 pt-3">
-                    <summary className="cursor-pointer text-xs font-semibold">
-                        Customer links
-                    </summary>
-                    <div className="mt-3 space-y-3">
-                        {(['facebook_url', 'website_url'] as const).map(
-                            (key) => (
-                                <label
-                                    key={key}
-                                    className="flex flex-col gap-2 text-xs"
-                                >
-                                    {key === 'facebook_url'
-                                        ? 'Facebook URL'
-                                        : 'Website URL'}
-                                    <input
-                                        type="url"
-                                        disabled={busy}
-                                        className={`${controlClass} tracking-normal normal-case`}
-                                        value={data[key]}
-                                        onChange={(event) =>
-                                            setData({
-                                                ...data,
-                                                [key]: event.target.value,
-                                            })
-                                        }
-                                    />
-                                </label>
-                            ),
-                        )}
-                    </div>
-                </details>
-            </form>
-            <section
-                className={`${ownerPanelClass} p-5`}
-                aria-label="Receipt preview"
+            </div>
+            <p
+                role={error ? 'alert' : undefined}
+                className={`text-xs ${error ? 'text-red-700' : 'text-neutral-600'}`}
             >
-                <h3 className="mb-4 text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
-                    Receipt preview · Sample
-                </h3>
-                <div className="rounded-md border border-neutral-200 bg-white p-4 text-[11px]">
-                    <div className="space-y-1 text-center">
-                        {data.receipt_show_logo && (
-                            <img
-                                src={logoUrl}
-                                alt="Receipt preview logo"
-                                className="mx-auto mb-3 h-10 max-w-40 object-contain"
-                            />
-                        )}
-                        <h4 className="text-sm font-bold">PONGSKILOG</h4>
-                        <p className="break-words">
-                            {data.receipt_name || branch.name}
-                        </p>
-                        <p className="break-words text-neutral-500">
-                            {data.receipt_address}
-                        </p>
-                        <p className="break-words text-neutral-500">
-                            {data.receipt_contact}
-                        </p>
-                    </div>
-                    <dl className="my-4 grid grid-cols-[auto_1fr] gap-1 border-y border-dashed border-neutral-300 py-3">
-                        <dt className="text-neutral-500">Order #</dt>
-                        <dd className="text-right font-semibold">1045</dd>
-                        <dt className="text-neutral-500">Date</dt>
-                        <dd className="text-right">Sep 07, 2026 8:32 PM</dd>
-                        <dt className="text-neutral-500">Cashier</dt>
-                        <dd className="text-right">Juan Dela Cruz</dd>
-                        <dt className="text-neutral-500">Customer / table</dt>
-                        <dd className="text-right">Table 4</dd>
-                    </dl>
-                    <div className="space-y-2 font-semibold">
-                        <div className="flex justify-between gap-3">
-                            <span>Tapsilog × 2</span>
-                            <span>₱190.00</span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                            <span>Bottled Water × 1</span>
-                            <span>₱20.00</span>
-                        </div>
-                    </div>
-                    <div className="my-4 flex justify-between border-y border-dashed border-neutral-300 py-3 text-sm font-bold">
-                        <span>TOTAL</span>
-                        <span>₱210.00</span>
-                    </div>
-                    <p className="text-center break-words text-neutral-500">
-                        {data.receipt_footer}
-                    </p>
-                </div>
-            </section>
+                {error ||
+                    'JPG, PNG or WebP up to 5 MB. Saved right away and resized for the web.'}
+            </p>
         </div>
     );
 }

@@ -22,6 +22,7 @@ use App\Models\StoreSession;
 use App\Models\User;
 use App\Models\VoidAuthorizationSetting;
 use App\Support\PosAccess;
+use App\Support\VoidPinGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -44,6 +45,7 @@ class VoidOrder
         private ApplyInventoryMovement $inventory,
         private AuditRecorder $audit,
         private RecordOrderIngredientUsage $ingredients,
+        private VoidPinGuard $pinGuard,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -54,6 +56,11 @@ class VoidOrder
             throw ValidationException::withMessages(['reason_text' => 'Describe the Void reason.']);
         }
         $data['idempotency_key'] = strtolower((string) $data['idempotency_key']);
+        /**
+         * Only an authorized initiator may try a PIN, and every wrong PIN is counted and audited outside the Void
+         * transaction (a rollback must not erase it); the locked re-check below still guards a concurrent PIN change.
+         */
+        $this->pinGuard->verify($this->access->authorize($initiator, $branch), $branch, $requestedOrder, (string) $data['authorization_pin']);
 
         return DB::transaction(function () use ($initiator, $branch, $requestedOrder, $data): Order {
             if (DB::getDriverName() === 'pgsql') {

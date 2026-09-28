@@ -1,10 +1,13 @@
 /** Readable Audit Trail action names shared by the Audit Trail and the Executive Dashboard. */
 const ACTION_LABELS: Record<string, string> = {
     'auth.login': 'User signed in',
+    'account.password_changed': 'Password changed',
+    'account.password_reset_by_link': 'Password reset by e-mail link',
     'order.created': 'Order created',
     'order.paid': 'Order paid',
     'order.voided': 'Order voided',
     'void_pin.configured': 'Void PIN configured',
+    'void.authorization_failed': 'Incorrect Void PIN entered',
     'staff.created': 'Staff account created',
     'staff.updated': 'Staff details updated',
     'staff.role_changed': 'Staff role changed',
@@ -21,6 +24,7 @@ const ACTION_LABELS: Record<string, string> = {
     'access.custom_role_updated': 'Custom role renamed or rescoped',
     'access.custom_role_permissions_updated': 'Custom role permissions changed',
     'access.custom_role_archived': 'Custom role archived',
+    'store_session.inventory_adjusted': 'Stock correction recorded',
     'notifications.push_enabled': 'Device notifications enabled',
     'notifications.push_disabled': 'Device notifications disabled',
     'customer_screen.paired': 'Customer screen paired',

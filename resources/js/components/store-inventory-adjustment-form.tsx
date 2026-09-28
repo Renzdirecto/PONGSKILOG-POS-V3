@@ -1,5 +1,11 @@
 import { http } from '@inertiajs/react';
-import { ArrowLeft, PackageMinus, Search } from 'lucide-react';
+import {
+    ArrowLeft,
+    ClipboardCheck,
+    PackageMinus,
+    PackagePlus,
+    Search,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -8,13 +14,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { createClientUuid } from '@/lib/client-uuid';
-import {
-    INVENTORY_ADJUSTMENT_REASONS,
-    inventoryAdjustmentError,
-    inventoryAdjustmentPreview,
-    type InventoryAdjustmentReason,
-} from '@/lib/store-inventory-adjustment';
 import { isBlank, requiredGroupOutline } from '@/lib/required-field';
+import {
+    STOCK_CORRECTION_REASONS,
+    stockCorrectionError,
+    stockCorrectionPreview,
+    stockCorrectionReasons,
+    type StockCorrectionDirection,
+    type StockCorrectionReason,
+} from '@/lib/store-inventory-adjustment';
 import { isExpenseWriteOnline } from '@/lib/store-session-expense';
 import { store } from '@/routes/store-session-inventory-adjustments';
 import type {
@@ -22,8 +30,28 @@ import type {
     StoreSessionInventoryAdjustment,
 } from '@/types';
 
-/** Stock used outside a normal sale: inventory-only, never a Store Expense or Cash/Cashless change. */
-export function StoreInventoryAdjustmentForm({
+const DIRECTIONS: {
+    value: StockCorrectionDirection;
+    label: string;
+    hint: string;
+}[] = [
+    {
+        value: 'decrease',
+        label: 'Remove stock',
+        hint: 'The shelf has less than the system shows',
+    },
+    {
+        value: 'increase',
+        label: 'Add stock',
+        hint: 'The shelf has more than the system shows',
+    },
+];
+
+/**
+ * Stock Correction: make the system Product stock match the physical count, up or down. Inventory-only — never a
+ * Store Expense, a purchase or a Cash/Cashless change. Free items are recorded as a Giveaway instead.
+ */
+export function StockCorrectionForm({
     session,
     onBack,
     onSaved,
@@ -32,9 +60,9 @@ export function StoreInventoryAdjustmentForm({
     onBack: () => void;
     onSaved: () => Promise<void>;
 }) {
-    const [reason, setReason] = useState<InventoryAdjustmentReason | null>(
-        null,
-    );
+    const [direction, setDirection] =
+        useState<StockCorrectionDirection>('decrease');
+    const [reason, setReason] = useState<StockCorrectionReason | null>(null);
     const [productId, setProductId] = useState('');
     const [quantity, setQuantity] = useState('1');
     const [note, setNote] = useState('');
@@ -53,13 +81,15 @@ export function StoreInventoryAdjustmentForm({
               )
             : session.restock_products;
     }, [search, session.restock_products]);
-    const preview = inventoryAdjustmentPreview(
+    const reasons = stockCorrectionReasons(direction);
+    const preview = stockCorrectionPreview(
         product?.on_hand ?? null,
+        direction,
         quantity,
     );
     const noteRequired = reason === 'other';
     const reasonLabel =
-        INVENTORY_ADJUSTMENT_REASONS.find((item) => item.value === reason)
+        STOCK_CORRECTION_REASONS.find((item) => item.value === reason)
             ?.label ?? '';
     const noteMissing = noteRequired && isBlank(note);
     const quantityMissing = !preview.valid;
@@ -78,10 +108,23 @@ export function StoreInventoryAdjustmentForm({
         };
     }
 
+    function changeDirection(next: StockCorrectionDirection) {
+        change(setDirection)(next);
+        /** A reason that cannot explain the new direction (e.g. Wastage when adding) must be chosen again. */
+        if (
+            reason !== null &&
+            !STOCK_CORRECTION_REASONS.find(
+                (item) => item.value === reason,
+            )?.directions.includes(next)
+        ) {
+            setReason(null);
+        }
+    }
+
     async function save() {
         if (!canSave || !product || !reason) return;
         if (!isExpenseWriteOnline()) {
-            setError('You are offline. Reconnect before adjusting inventory.');
+            setError('You are offline. Reconnect before correcting stock.');
             return;
         }
         setProcessing(true);
@@ -91,6 +134,7 @@ export function StoreInventoryAdjustmentForm({
                 ...store(),
                 data: {
                     idempotency_key: attempt,
+                    direction,
                     reason_code: reason,
                     product_id: product.id,
                     quantity: preview.quantity,
@@ -98,10 +142,10 @@ export function StoreInventoryAdjustmentForm({
                 },
                 headers: { Accept: 'application/json' },
             });
-            toast.success('Inventory adjustment recorded.');
+            toast.success('Stock correction recorded.');
             await onSaved();
         } catch (reasonError) {
-            setError(inventoryAdjustmentError(reasonError));
+            setError(stockCorrectionError(reasonError));
             setConfirming(false);
         } finally {
             setProcessing(false);
@@ -125,15 +169,44 @@ export function StoreInventoryAdjustmentForm({
                         Current Store Session
                     </p>
                     <DialogTitle className="text-base font-bold">
-                        Adjust inventory
+                        Stock correction
                     </DialogTitle>
                 </div>
             </header>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-4 pr-1">
                 <DialogDescription className="rounded-lg bg-neutral-100 px-3 py-2 text-xs leading-5 text-neutral-700">
-                    Record stock used outside a normal sale. This does not
-                    affect Cash or Cashless totals.
+                    Make the system stock match what is physically on the
+                    shelf. This does not affect Cash or Cashless totals. Record
+                    free items as a Giveaway, and purchases as a Store Purchase
+                    or Pamamalengke.
                 </DialogDescription>
+
+                <fieldset className="space-y-1.5">
+                    <legend className="text-sm font-medium">Correction</legend>
+                    <div className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-200 p-1">
+                        {DIRECTIONS.map((item) => (
+                            <button
+                                key={item.value}
+                                type="button"
+                                aria-pressed={direction === item.value}
+                                onClick={() => changeDirection(item.value)}
+                                className={`flex min-h-12 flex-col justify-center rounded-xl border px-3 py-1.5 text-left ${direction === item.value ? 'border-neutral-950 bg-neutral-950 text-white' : 'border-neutral-200 hover:bg-neutral-50'}`}
+                            >
+                                <span className="flex items-center gap-1.5 text-xs font-bold">
+                                    {item.value === 'increase' ? (
+                                        <PackagePlus className="size-4" />
+                                    ) : (
+                                        <PackageMinus className="size-4" />
+                                    )}
+                                    {item.label}
+                                </span>
+                                <span className="text-[10.5px] leading-4 opacity-75">
+                                    {item.hint}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </fieldset>
 
                 <fieldset
                     className="space-y-1.5"
@@ -146,7 +219,7 @@ export function StoreInventoryAdjustmentForm({
                     <div
                         className={`grid grid-cols-2 gap-2 rounded-xl border p-1 sm:grid-cols-3 ${requiredGroupOutline(reason === null)}`}
                     >
-                        {INVENTORY_ADJUSTMENT_REASONS.map((item) => (
+                        {reasons.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -201,7 +274,10 @@ export function StoreInventoryAdjustmentForm({
                                     key={item.id}
                                     type="button"
                                     aria-pressed={productId === item.id}
-                                    disabled={item.on_hand < 1}
+                                    disabled={
+                                        direction === 'decrease' &&
+                                        item.on_hand < 1
+                                    }
                                     onClick={() =>
                                         change(setProductId)(item.id)
                                     }
@@ -212,7 +288,7 @@ export function StoreInventoryAdjustmentForm({
                                             {item.name}
                                         </span>
                                         <span className="block text-[11px] opacity-70">
-                                            Current stock: {item.on_hand}
+                                            System stock: {item.on_hand}
                                         </span>
                                     </span>
                                 </button>
@@ -224,13 +300,17 @@ export function StoreInventoryAdjustmentForm({
                             id="adjust-product-required"
                             className="text-xs text-red-700"
                         >
-                            Required · choose the product that left stock
+                            Required · choose the product to correct
                         </p>
                     )}
                 </div>
 
                 <div className="space-y-1.5">
-                    <Label htmlFor="adjust-quantity">Quantity</Label>
+                    <Label htmlFor="adjust-quantity">
+                        {direction === 'increase'
+                            ? 'Quantity to add'
+                            : 'Quantity to remove'}
+                    </Label>
                     <Input
                         id="adjust-quantity"
                         value={quantity}
@@ -240,7 +320,11 @@ export function StoreInventoryAdjustmentForm({
                         inputMode="numeric"
                         type="number"
                         min="1"
-                        max={product?.on_hand ?? undefined}
+                        max={
+                            direction === 'decrease'
+                                ? (product?.on_hand ?? undefined)
+                                : 1_000_000
+                        }
                         step="1"
                         aria-invalid={quantityMissing}
                         aria-describedby={
@@ -283,7 +367,7 @@ export function StoreInventoryAdjustmentForm({
                             noteMissing ? 'adjust-note-required' : undefined
                         }
                         className={`w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 ${noteMissing ? 'border-red-700' : 'border-input'}`}
-                        placeholder="e.g. Free drink given due to delayed order."
+                        placeholder="e.g. Counted 18 bottles on the shelf at closing."
                     />
                     {noteMissing && (
                         <p
@@ -301,10 +385,12 @@ export function StoreInventoryAdjustmentForm({
                         className="overflow-hidden rounded-xl border border-neutral-200 text-sm tabular-nums"
                     >
                         {[
-                            ['Current stock', String(product.on_hand)],
+                            ['System stock now', String(product.on_hand)],
                             [
-                                'Adjustment',
-                                preview.valid ? `−${preview.quantity}` : '—',
+                                'Correction',
+                                preview.valid
+                                    ? `${preview.delta > 0 ? '+' : '−'}${preview.quantity}`
+                                    : '—',
                             ],
                             [
                                 'Stock after',
@@ -317,7 +403,7 @@ export function StoreInventoryAdjustmentForm({
                             >
                                 <dt className="text-xs">{label}</dt>
                                 <dd
-                                    className={`font-bold ${index === 1 && preview.valid ? 'text-red-700' : ''}`}
+                                    className={`font-bold ${index === 1 && preview.valid ? (preview.delta > 0 ? 'text-emerald-700' : 'text-red-700') : ''}`}
                                 >
                                     {value}
                                 </dd>
@@ -331,9 +417,10 @@ export function StoreInventoryAdjustmentForm({
                         role="status"
                         className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"
                     >
-                        <span className="font-bold">{product.name}</span> will
-                        decrease from {product.on_hand} to {preview.after}.
-                        Reason: {reasonLabel}.
+                        <span className="font-bold">{product.name}</span> will{' '}
+                        {preview.delta > 0 ? 'increase' : 'decrease'} from{' '}
+                        {product.on_hand} to {preview.after}. Reason:{' '}
+                        {reasonLabel}.
                     </p>
                 )}
                 {error && (
@@ -366,11 +453,11 @@ export function StoreInventoryAdjustmentForm({
                             {processing ? (
                                 <Spinner />
                             ) : (
-                                <PackageMinus className="size-4" />
+                                <ClipboardCheck className="size-4" />
                             )}
                             {processing
-                                ? 'Saving adjustment…'
-                                : 'Confirm adjustment'}
+                                ? 'Saving correction…'
+                                : 'Confirm correction'}
                         </Button>
                     </div>
                 ) : (
@@ -380,8 +467,8 @@ export function StoreInventoryAdjustmentForm({
                         disabled={!canSave}
                         className="min-h-12 w-full rounded-xl bg-neutral-950 text-white hover:bg-black"
                     >
-                        <PackageMinus className="size-4" />
-                        Save inventory adjustment
+                        <ClipboardCheck className="size-4" />
+                        Save stock correction
                     </Button>
                 )}
             </footer>
@@ -398,13 +485,16 @@ const adjustmentTime = new Intl.DateTimeFormat('en-PH', {
 });
 
 /** Stock-only history row; it deliberately shows no peso value. */
-export function InventoryAdjustmentRow({
+export function StockCorrectionRow({
     adjustment,
     compact = false,
 }: {
     adjustment: StoreSessionInventoryAdjustment;
     compact?: boolean;
 }) {
+    const increase = adjustment.direction === 'increase';
+    const Icon = increase ? PackagePlus : PackageMinus;
+
     return (
         <div
             className={`flex items-center gap-3 px-3 ${compact ? 'py-2.5' : 'min-h-16 py-2.5'}`}
@@ -412,7 +502,7 @@ export function InventoryAdjustmentRow({
             <span
                 className={`flex shrink-0 items-center justify-center bg-violet-50 text-violet-700 ${compact ? 'size-8 rounded-lg' : 'size-9 rounded-xl'}`}
             >
-                <PackageMinus className="size-4" />
+                <Icon className="size-4" />
             </span>
             <span className="min-w-0 flex-1">
                 <span
@@ -426,7 +516,7 @@ export function InventoryAdjustmentRow({
                 </span>
                 <span className="mt-1 flex flex-wrap gap-1">
                     <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-800 uppercase">
-                        Stock adjustment · {adjustment.reason_label}
+                        Stock correction · {adjustment.reason_label}
                     </span>
                 </span>
                 {adjustment.note && (
@@ -439,7 +529,8 @@ export function InventoryAdjustmentRow({
                 <span
                     className={`block font-bold text-violet-700 tabular-nums ${compact ? 'text-xs' : 'text-sm'}`}
                 >
-                    −{adjustment.quantity}
+                    {increase ? '+' : '−'}
+                    {adjustment.quantity}
                 </span>
                 <span className="text-[9px] font-semibold tracking-wide text-neutral-500 uppercase">
                     Stock only

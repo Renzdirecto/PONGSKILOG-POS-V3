@@ -29,6 +29,7 @@ import { connectivityCopy, lastSyncedText } from '@/lib/pwa-connectivity';
 import { installGuidance } from '@/lib/pwa-install';
 import { pwaRuntime } from '@/lib/pwa-runtime';
 import type { PushState } from '@/lib/pwa-push';
+import type { ReleaseInfo } from '@/lib/release';
 
 const ACTION =
     'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-[13px] font-semibold focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50';
@@ -86,7 +87,7 @@ function Section({
  * Install PONGSKILOG, turn device notifications on or off, and see the connection and version status. Nothing here
  * grants access: the server authorizes every page and every notification recipient.
  */
-export function PwaAppDialog() {
+export function PwaAppDialog({ release }: { release: ReleaseInfo | null }) {
     const ui = usePwaUi();
     const install = usePwaInstall();
     const push = usePwaPush();
@@ -211,6 +212,23 @@ export function PwaAppDialog() {
                     </Section>
 
                     <Section title="Version">
+                        <dl
+                            aria-label="Release"
+                            className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-xl bg-neutral-100 px-3 py-2.5 text-[12px] text-neutral-700"
+                        >
+                            <dt className="font-semibold">App</dt>
+                            <dd className="truncate">
+                                {release?.name ?? 'PONGSKILOG POS'}
+                            </dd>
+                            <dt className="font-semibold">Version</dt>
+                            <dd className="truncate tabular-nums">
+                                {release?.version ?? 'Unknown'}
+                            </dd>
+                            <dt className="font-semibold">Build</dt>
+                            <dd className="truncate font-mono tabular-nums">
+                                {release?.build ?? 'Not set'}
+                            </dd>
+                        </dl>
                         {update.available ? (
                             <>
                                 <p>

@@ -4,6 +4,7 @@ use App\Actions\Orders\CommitPayLaterOrder;
 use App\Actions\Orders\CreatePosDraftOrder;
 use App\Actions\Orders\EditCommittedOrder;
 use App\Actions\Orders\VoidOrder;
+use App\Enums\PermissionOverrideEffect;
 use App\Events\AuditLogRecorded;
 use App\Events\CustomerTrackingChanged;
 use App\Events\DisplayOrdersChanged;
@@ -13,17 +14,20 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\Order;
+use App\Models\Permission;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Models\VoidAuthorizationSetting;
 use App\Support\ActiveBranchContext;
+use App\Support\VoidPinGuard;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -318,3 +322,61 @@ test('void rolls back every critical effect when a critical write fails', functi
     'Order state update' => ['order', "CREATE TRIGGER fail_void_order_update BEFORE UPDATE ON orders WHEN NEW.commercial_status = 'voided' BEGIN SELECT RAISE(FAIL, 'injected order failure'); END"],
     'audit creation' => ['audit', "CREATE TRIGGER fail_void_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'order.voided' BEGIN SELECT RAISE(FAIL, 'injected audit failure'); END"],
 ]);
+
+test('wrong Void PINs are audited, lock Void approval for the account and alert every Super Admin once', function () {
+    $order = voidOrderFixture($this);
+    $http = $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id]);
+
+    for ($attempt = 1; $attempt <= VoidPinGuard::ACCOUNT_ATTEMPTS; $attempt++) {
+        RateLimiter::clear(md5('void'.$this->cashier->id));
+        $http->postJson(route('pos.transactions.void', $order), voidPayload($this, $order, ['authorization_pin' => sprintf('%04d', $attempt)]))
+            ->assertUnprocessable()->assertJsonValidationErrors(['authorization' => 'Authorization could not be verified.']);
+    }
+    RateLimiter::clear(md5('void'.$this->cashier->id));
+
+    /** Locked: even the right PIN is refused, and nothing is voided. */
+    $http->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['authorization' => 'Too many incorrect Void PINs. Void approval is locked for 15 minutes.']);
+
+    expect($order->fresh()->commercial_status->value)->toBe('active')
+        ->and(AuditLog::query()->where('action', 'void.authorization_failed')->where('user_id', $this->cashier->id)->count())->toBe(VoidPinGuard::ACCOUNT_ATTEMPTS)
+        ->and(AuditLog::query()->where('action', 'void.authorization_failed')->latest('id')->first()->metadata)->toMatchArray(['account_failures' => 5, 'locked' => true])
+        ->and(json_encode(AuditLog::query()->where('action', 'void.authorization_failed')->pluck('metadata')))->not->toContain('0005')
+        ->and($this->superAdmin->notifications()->where('type', 'admin.security')->count())->toBe(1);
+    $this->assertDatabaseCount('order_voids', 0);
+});
+
+test('setting a new Void PIN ends the lockout', function () {
+    $order = voidOrderFixture($this);
+    $http = $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id]);
+    for ($attempt = 1; $attempt <= VoidPinGuard::ACCOUNT_ATTEMPTS; $attempt++) {
+        RateLimiter::clear(md5('void'.$this->cashier->id));
+        $http->postJson(route('pos.transactions.void', $order), voidPayload($this, $order, ['authorization_pin' => '0000']))->assertUnprocessable();
+    }
+
+    $this->actingAs($this->superAdmin)->put(route('workspaces.void-orders.pin.update'), ['pin' => '4321', 'pin_confirmation' => '4321'])->assertSessionHasNoErrors();
+    RateLimiter::clear(md5('void'.$this->cashier->id));
+
+    $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id])
+        ->postJson(route('pos.transactions.void', $order), voidPayload($this, $order, ['authorization_pin' => '4321']))
+        ->assertOk();
+});
+
+test('a DENY on transactions.view blocks the POS transaction detail, settlement, void and invoice routes', function () {
+    $order = voidOrderFixture($this);
+    $this->cashier->permissionOverrides()->create([
+        'permission_id' => Permission::query()->where('name', 'transactions.view')->value('id'),
+        'effect' => PermissionOverrideEffect::Deny,
+    ]);
+    $http = $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id]);
+
+    $http->getJson(route('pos.transactions.show', $order))->assertForbidden();
+    $http->postJson(route('pos.orders.settlements.store', $order), ['idempotency_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'cash_received' => '100.00'])->assertForbidden();
+    $http->postJson(route('pos.transactions.void', $order), voidPayload($this, $order))->assertForbidden();
+
+    expect($order->fresh()->commercial_status->value)->toBe('active')
+        ->and($order->payments()->count())->toBe(0)
+        ->and(AuditLog::query()->where('action', 'void.authorization_failed')->count())->toBe(0);
+    $this->assertDatabaseCount('order_voids', 0);
+});

@@ -5,6 +5,7 @@ namespace App\Actions\Orders;
 use App\Actions\Inventory\ApplyInventoryMovement;
 use App\Actions\Operations\RecordOrderIngredientUsage;
 use App\Enums\InventoryMovementType;
+use App\Events\CustomerCatalogChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Category;
@@ -58,6 +59,7 @@ class ApplyOrderInventory
             ->get();
 
         $products = $this->catalog->productsForOrder($branch, $productIds)->keyBy('id');
+        $movedStock = false;
         foreach ($quantities as $productId => $quantity) {
             $product = $products->get($productId);
             if ($product === null || ! $product->is_active || ! $product->category->is_active
@@ -65,6 +67,7 @@ class ApplyOrderInventory
                 throw ValidationException::withMessages(['items' => 'A product is no longer available. Refresh the catalog before trying again.']);
             }
             if ($this->catalog->resolveLoaded($product)['tracked']) {
+                $movedStock = true;
                 $this->inventory->execute(
                     $branch,
                     $product,
@@ -73,8 +76,14 @@ class ApplyOrderInventory
                     $reason,
                     $user,
                     $order->id,
+                    signalCustomerCatalog: false,
                 );
             }
+        }
+
+        /** One Customer QR catalog signal for the whole order, not one per stocked Product (they broadcast synchronously). */
+        if ($movedStock) {
+            CustomerCatalogChanged::dispatch($branch->id);
         }
 
         $this->ingredients->commit($order, $branch, $user, $products);

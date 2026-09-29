@@ -22,9 +22,13 @@ import {
     OwnerWorkspaceShell,
 } from '@/components/owner-workspace-shell';
 import { SuperAdminShell } from '@/components/super-admin-shell';
-import { StoreSessionDetailsDialog } from '@/components/store-session-details-dialog';
+import { StoreStatusControl } from '@/components/store-status-control';
+import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
 import { useStoreClosedRealtime } from '@/hooks/use-store-closed-realtime';
-import { UserContextRealtime } from '@/hooks/use-user-context-realtime';
+import {
+    handleRevalidationException,
+    UserContextRealtime,
+} from '@/hooks/use-user-context-realtime';
 import { StoreSessionDetailsContext } from '@/hooks/use-store-session-details';
 import {
     cashier,
@@ -56,8 +60,18 @@ import type {
     StoreClosedRealtimeEvent,
     StoreContext,
 } from '@/types';
-import { useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+/**
+ * Loaded on first open: the Store Session surface (expenses, stock corrections, giveaways, Close Store) is heavy and most
+ * page visits never open it, so it stays out of the main bundle.
+ */
+const StoreSessionDetailsDialog = lazy(() =>
+    import('@/components/store-session-details-dialog').then((module) => ({
+        default: module.StoreSessionDetailsDialog,
+    })),
+);
 
 type SharedProps = {
     auth: Auth;
@@ -65,7 +79,7 @@ type SharedProps = {
     storeContext: StoreContext;
     workspace?: string;
     readyOrders?: PosReadyOrder[];
-    qrWaitingCount?: number;
+    qrWaitingCount?: number | null;
     surface?: string;
 };
 
@@ -73,12 +87,23 @@ function StoreClosedListener({
     branchId,
     channel,
     onClosed,
+    onOpened,
 }: {
     branchId: string;
     channel: 'pos' | 'kitchen';
     onClosed: (event: StoreClosedRealtimeEvent) => void;
+    onOpened: () => void;
 }) {
-    useStoreClosedRealtime(branchId, channel, onClosed);
+    useStoreClosedRealtime(branchId, channel, onClosed, onOpened);
+
+    return null;
+}
+
+const QR_WAITING_COUNT_PROPS = ['qrWaitingCount'];
+
+/** Keeps the shared QR Orders badge current on every Store Operations page (POS, Dashboard, Kitchen, History). */
+function QrWaitingCountListener({ branchId }: { branchId: string }) {
+    usePosQrRealtime(branchId, QR_WAITING_COUNT_PROPS);
 
     return null;
 }
@@ -184,6 +209,10 @@ export default function WorkspaceLayout({
     }, [storeSessionRequest]);
 
     if (isOperational) {
+        /** The current-session details (and their expense / correction / giveaway actions) need both, server-side too. */
+        const canViewStoreSession =
+            auth.permissions.includes('pos.access') &&
+            auth.permissions.includes('store_expenses.manage');
         const storeClosedChannel = auth.permissions.includes('pos.access')
             ? 'pos'
             : auth.permissions.includes('kitchen.access')
@@ -197,7 +226,19 @@ export default function WorkspaceLayout({
                     'The Store was closed. Operational actions are now disabled.',
                 );
             }
-            router.reload();
+            router.reload({
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
+        };
+        /** Another device opened the Store: reload this page into its open state (the opener is already there). */
+        const handleStoreOpened = () => {
+            if (!page.props.storeContext?.isOpen) {
+                router.reload({
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
+                });
+            }
         };
         const openStoreSessionDetails = async () => {
             const openingState = openStoreSessionDialogState(
@@ -216,6 +257,7 @@ export default function WorkspaceLayout({
         const navigation = [
             {
                 label: 'Dashboard',
+                short: 'Home',
                 icon: LayoutDashboard,
                 available: auth.permissions.includes('pos.access'),
                 href: cashierDashboard(),
@@ -223,6 +265,7 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'POS',
+                short: 'POS',
                 icon: UtensilsCrossed,
                 available: auth.permissions.includes('pos.access'),
                 href: cashier(),
@@ -230,6 +273,7 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'QR Orders',
+                short: 'QR',
                 icon: QrCode,
                 available: auth.permissions.includes('pos.access'),
                 href: cashier({ query: { view: 'qr' } }),
@@ -237,6 +281,7 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'Kitchen',
+                short: 'Kitchen',
                 icon: ChefHat,
                 available: auth.permissions.includes('kitchen.access'),
                 href: kitchen(),
@@ -244,6 +289,7 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'History',
+                short: 'History',
                 icon: ReceiptText,
                 available: auth.permissions.includes('transactions.view'),
                 href: transactionHistory(),
@@ -251,6 +297,7 @@ export default function WorkspaceLayout({
             },
             {
                 label: 'Display',
+                short: 'Display',
                 icon: MonitorUp,
                 available: canOpenCustomerDisplay(auth.permissions),
                 href: customerDisplay(),
@@ -261,6 +308,7 @@ export default function WorkspaceLayout({
                 ? [
                       {
                           label: 'Reports',
+                          short: 'Reports',
                           icon: BarChart3,
                           available: true,
                           href: reports(),
@@ -272,7 +320,7 @@ export default function WorkspaceLayout({
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111]">
                 {userContextRealtime}
-                <aside className="hidden w-[94px] shrink-0 flex-col md:flex">
+                <aside className="theme-static hidden w-[94px] shrink-0 flex-col md:flex">
                     <div className="flex h-[72px] shrink-0 items-center justify-center border-b border-white/10 px-3">
                         <img
                             src="/images/branding/logo.png"
@@ -313,6 +361,11 @@ export default function WorkspaceLayout({
                 </aside>
                 <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#fafafa]">
                     <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 min-[1180px]:h-[66px] min-[1180px]:px-4">
+                        <img
+                            src="/images/branding/logo.png"
+                            alt="PONGSKILOG"
+                            className="theme-static size-9 shrink-0 rounded-full bg-[#111] object-contain p-1 md:hidden"
+                        />
                         <div className="min-w-0 flex-1">
                             <h1 className="truncate text-[15px] font-bold">
                                 {isDashboard
@@ -332,38 +385,12 @@ export default function WorkspaceLayout({
                             </p>
                         </div>
                         <PwaStatus />
-                        {page.props.storeContext?.isOpen &&
-                        (isPos || isDashboard) ? (
-                            <button
-                                type="button"
-                                aria-label="View current Store Session details"
-                                title="View current Store Session details"
-                                onClick={openStoreSessionDetails}
-                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2 text-[9px] font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100 focus-visible:ring-2 focus-visible:ring-green-700 focus-visible:outline-none md:px-[11px] md:text-[11.5px]"
-                            >
-                                <span className="size-[7px] rounded-full bg-green-700" />
-                                <span className="hidden sm:inline">STORE</span>{' '}
-                                OPEN
-                            </button>
-                        ) : page.props.storeContext?.isOpen ? (
-                            <span
-                                aria-label="Store open"
-                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2 text-[9px] font-semibold text-green-700 md:px-[11px] md:text-[11.5px]"
-                            >
-                                <span className="size-[7px] rounded-full bg-green-700" />
-                                <span className="hidden sm:inline">STORE</span>{' '}
-                                OPEN
-                            </span>
-                        ) : (
-                            <span
-                                aria-label="Store closed"
-                                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2 text-[9px] font-semibold text-neutral-500 md:px-[11px] md:text-[11.5px]"
-                            >
-                                <span className="size-[7px] rounded-full bg-neutral-400" />
-                                <span className="hidden sm:inline">STORE</span>{' '}
-                                CLOSED
-                            </span>
-                        )}
+                        <StoreStatusControl
+                            storeContext={page.props.storeContext}
+                            branchName={branchContext.current?.name ?? null}
+                            canViewSession={canViewStoreSession}
+                            onViewSession={openStoreSessionDetails}
+                        />
                         {branchContext.selectableBranches.length > 1 && (
                             <BranchSwitcher
                                 branchContext={branchContext}
@@ -381,6 +408,7 @@ export default function WorkspaceLayout({
                             <PosReadyNotifications
                                 branchId={branchContext.current.id}
                                 orders={page.props.readyOrders ?? []}
+                                aboveCart={!isQr}
                             />
                         )}
                         {isSuperAdmin && (
@@ -418,43 +446,53 @@ export default function WorkspaceLayout({
                         <PosProfileControls auth={auth} />
                     </header>
                     {storeSessionDialogOpen && branchContext.current && (
-                        <StoreSessionDetailsDialog
-                            open
-                            onOpenChange={setStoreSessionDialogOpen}
-                            branchId={branchContext.current.id}
-                            session={storeSession}
-                            loadState={storeSessionLoadState}
-                            refreshSession={refreshStoreSession}
-                            canCloseStore={auth.permissions.includes(
-                                'store.open_close',
-                            )}
-                            canOpenKitchen={auth.permissions.includes(
-                                'kitchen.access',
-                            )}
-                            canOpenHistory={auth.permissions.includes(
-                                'transactions.view',
-                            )}
-                            onStoreClosing={(id) => {
-                                ownClosedSessionId.current = id;
-                            }}
-                            onStoreClosed={(result) => {
-                                ownClosedSessionId.current =
-                                    result.store_session.id;
-                                setStoreSession(null);
-                            }}
-                        />
+                        <Suspense fallback={null}>
+                            <StoreSessionDetailsDialog
+                                open
+                                onOpenChange={setStoreSessionDialogOpen}
+                                branchId={branchContext.current.id}
+                                session={storeSession}
+                                loadState={storeSessionLoadState}
+                                refreshSession={refreshStoreSession}
+                                canCloseStore={auth.permissions.includes(
+                                    'store.open_close',
+                                )}
+                                canOpenKitchen={auth.permissions.includes(
+                                    'kitchen.access',
+                                )}
+                                canOpenHistory={auth.permissions.includes(
+                                    'transactions.view',
+                                )}
+                                onStoreClosing={(id) => {
+                                    ownClosedSessionId.current = id;
+                                }}
+                                onStoreClosed={(result) => {
+                                    ownClosedSessionId.current =
+                                        result.store_session.id;
+                                    setStoreSession(null);
+                                }}
+                            />
+                        </Suspense>
                     )}
+                    {branchContext.current &&
+                        auth.permissions.includes('pos.access') && (
+                            <QrWaitingCountListener
+                                branchId={branchContext.current.id}
+                            />
+                        )}
                     {branchContext.current && storeClosedChannel && (
                         <StoreClosedListener
                             branchId={branchContext.current.id}
                             channel={storeClosedChannel}
                             onClosed={handleStoreClosed}
+                            onOpened={handleStoreOpened}
                         />
                     )}
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto pb-[calc(max(12px,env(safe-area-inset-bottom))+64px)] md:pb-0">
                         <StoreSessionDetailsContext.Provider
                             value={
-                                page.props.storeContext?.isOpen
+                                page.props.storeContext?.isOpen &&
+                                canViewStoreSession
                                     ? openStoreSessionDetails
                                     : null
                             }
@@ -467,24 +505,27 @@ export default function WorkspaceLayout({
                         style={{
                             gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
                         }}
-                        className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
+                        className="theme-static fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-30 mx-auto grid h-16 max-w-[620px] gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-xl md:hidden"
                     >
                         {navigation.map(
-                            ({ label, icon: Icon, href, active }) => (
+                            ({ label, short, icon: Icon, href, active }) => (
                                 <Link
                                     key={label}
                                     href={href}
                                     preserveState
                                     preserveScroll
+                                    aria-label={label}
                                     aria-current={active ? 'page' : undefined}
-                                    className={`flex flex-col items-center justify-center gap-1 rounded-xl text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
+                                    className={`relative flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 text-center text-[10px] font-semibold ${active ? 'bg-white text-neutral-950' : 'text-white/65'}`}
                                 >
-                                    <Icon className="size-5" />
-                                    {label}
+                                    <Icon className="size-5 shrink-0" />
+                                    <span className="max-w-full truncate">
+                                        {short}
+                                    </span>
                                     {label === 'QR Orders' &&
                                         (page.props.qrWaitingCount ?? 0) >
                                             0 && (
-                                            <span className="rounded-full bg-red-700 px-1.5 text-[9px] leading-4 text-white">
+                                            <span className="absolute top-1 right-1 min-w-4 rounded-full bg-red-700 px-1 text-center text-[9px] leading-4 text-white">
                                                 {page.props.qrWaitingCount}
                                             </span>
                                         )}
@@ -536,7 +577,7 @@ export default function WorkspaceLayout({
                         <div className="ml-auto flex items-center gap-2 sm:ml-0">
                             <div className="hidden text-right md:block">
                                 <p className="text-sm font-semibold">
-                                    {auth.user.name}
+                                    {auth.user.displayName}
                                 </p>
                                 <p className="text-xs text-neutral-500">
                                     {auth.roleLabel ?? roleLabel(auth.roles[0])}

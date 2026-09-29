@@ -70,12 +70,13 @@ class CurrentStoreSessionExpenses
             'expense_count' => $count,
             'expenses_truncated' => $count > 50,
             'restock_products' => $products,
-            /** Stock-only records: listed with the session history but never part of the money totals. */
+            /** Stock Corrections: stock-only records listed with the session history, never part of the money totals. */
             'inventory_adjustments' => $adjustments->with(['createdBy:id,name', 'product:id,name'])
                 ->latest('created_at')->latest('id')->limit(50)->get()
                 ->map(fn (StoreSessionInventoryAdjustment $adjustment): array => [
                     'id' => $adjustment->id,
                     'product_name' => $adjustment->product->name,
+                    'direction' => $adjustment->direction->value,
                     'quantity' => $adjustment->quantity,
                     'reason_code' => $adjustment->reason_code->value,
                     'reason_label' => $adjustment->reason_code->label(),

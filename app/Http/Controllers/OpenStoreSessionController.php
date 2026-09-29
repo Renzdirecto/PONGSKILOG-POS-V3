@@ -35,6 +35,7 @@ class OpenStoreSessionController extends Controller
             $request->string('opening_cashless_amount')->toString(),
         );
 
-        return to_route('workspaces.cashier');
+        /** The shared Store status control opens the Store from any Store Operations page and stays on it. */
+        return redirect()->back(fallback: route('workspaces.cashier'));
     }
 }

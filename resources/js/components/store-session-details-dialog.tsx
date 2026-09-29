@@ -4,10 +4,10 @@ import {
     Banknote,
     Camera,
     ChevronRight,
+    ClipboardCheck,
     FileImage,
     Gift,
     LockKeyhole,
-    PackageMinus,
     PackagePlus,
     Plus,
     ReceiptText,
@@ -35,8 +35,8 @@ import {
     StoreGiveawayForm,
 } from '@/components/store-giveaway-form';
 import {
-    InventoryAdjustmentRow,
-    StoreInventoryAdjustmentForm,
+    StockCorrectionForm,
+    StockCorrectionRow,
 } from '@/components/store-inventory-adjustment-form';
 import { sessionActivity } from '@/lib/store-inventory-adjustment';
 import { useStoreExpenseRealtime } from '@/hooks/use-store-expense-realtime';
@@ -692,7 +692,7 @@ export function StoreSessionDetailsDialog({
                                                 <Plus className="size-4" /> Add expense / purchase
                                             </Button>
                                             <Button type="button" variant="outline" onClick={() => setView('adjust')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
-                                                <PackageMinus className="size-4" /> Adjust inventory
+                                                <ClipboardCheck className="size-4" /> Stock correction
                                             </Button>
                                             <Button type="button" variant="outline" onClick={() => setView('giveaway')} disabled={!isExpenseWriteOnline()} className="min-h-11 w-full rounded-xl px-3 sm:w-auto">
                                                 <Gift className="size-4" /> Record giveaway
@@ -718,13 +718,13 @@ export function StoreSessionDetailsDialog({
                                     {session.expenses.length === 0 && (session.inventory_adjustments ?? []).length === 0 && (session.giveaways ?? []).length === 0 ? (
                                         <div className="flex min-h-36 flex-col items-center justify-center gap-2 p-6 text-center text-neutral-500">
                                             <ReceiptText className="size-6" />
-                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses, stock adjustments or giveaways recorded for this Store Session.</p>
+                                            <p className="text-sm font-semibold text-neutral-700">No purchases, expenses, stock corrections or giveaways recorded for this Store Session.</p>
                                         </div>
                                     ) : (
                                         <ul className="divide-y divide-neutral-100">
                                             {sessionActivity(session.expenses, session.inventory_adjustments, session.giveaways ?? []).map((entry) => entry.kind === 'adjustment' ? (
                                                 <li key={`adjustment-${entry.item.id}`}>
-                                                    <InventoryAdjustmentRow adjustment={entry.item} />
+                                                    <StockCorrectionRow adjustment={entry.item} />
                                                 </li>
                                             ) : entry.kind === 'giveaway' ? (
                                                 <li key={`giveaway-${entry.item.id}`}>
@@ -761,7 +761,7 @@ export function StoreSessionDetailsDialog({
                                     )}
                                     {(session.expenses_truncated || session.inventory_adjustment_count > 50 || (session.giveaway_count ?? 0) > 50) && (
                                         <p className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-500">
-                                            Showing the newest 50 of {session.expense_count} expenses, {session.inventory_adjustment_count} stock adjustments and {session.giveaway_count ?? 0} giveaways.
+                                            Showing the newest 50 of {session.expense_count} expenses, {session.inventory_adjustment_count} stock corrections and {session.giveaway_count ?? 0} giveaways.
                                         </p>
                                     )}
                                 </section>
@@ -803,7 +803,7 @@ export function StoreSessionDetailsDialog({
                     />
                 )}
                 {view === 'adjust' && session && (
-                    <StoreInventoryAdjustmentForm
+                    <StockCorrectionForm
                         session={session}
                         onBack={() => setView('overview')}
                         onSaved={async () => {

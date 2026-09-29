@@ -14,6 +14,7 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<string, string> = {
     access: 'Access',
     staff: 'Staff',
     stock: 'Stock',
+    security: 'Security',
 };
 
 export function notificationCategoryLabel(category: string): string {

@@ -49,6 +49,7 @@ import {
     pesos,
 } from '@/lib/pos-money';
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
 import { useUpdateBlocker } from '@/hooks/use-pwa';
 import { useCustomerScreenCart } from '@/hooks/use-customer-screen-cart';
@@ -100,7 +101,7 @@ export function CashierPos({
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
     const realtimeStatus = usePosCatalogRealtime(branch.id);
-    usePosQrRealtime(branch.id);
+    usePosQrRealtime(branch.id, ['loadedQr']);
     const loadedQr = usePage().props.loadedQr as StaffQrOrder | null;
     const qrView =
         new URL(usePage().url, 'http://localhost').searchParams.get('view') ===
@@ -352,7 +353,12 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('paid');
-            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
+            router.reload({
+                only: ['catalog', 'loadedQr', 'storeContext'],
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -462,7 +468,12 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('payLaterSuccess');
-            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
+            router.reload({
+                only: ['catalog', 'loadedQr', 'storeContext'],
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -610,6 +621,9 @@ export function CashierPos({
                         onFinish: () =>
                             router.reload({
                                 only: ['loadedQr', 'qrWaitingCount'],
+                                preserveUrl: true,
+                                onHttpException: handleRevalidationException,
+                                onNetworkError: () => false,
                             }),
                     });
                 }}

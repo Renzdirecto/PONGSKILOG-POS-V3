@@ -59,7 +59,7 @@ class StoreSessionCloseController extends Controller
         abort_if($branch === null, 403);
 
         $result = $close->execute($user, $branch, $request->validated());
-        $session = $result['session']->load('closedBy:id,name');
+        $session = $result['session']->load('openedBy:id,name', 'closedBy:id,name');
 
         return response()->json([
             'replayed' => $result['replayed'],
@@ -68,6 +68,7 @@ class StoreSessionCloseController extends Controller
                 'status' => $session->status->value,
                 'branch' => ['code' => $branch->code, 'name' => $branch->name],
                 'opened_at' => $session->opened_at->toIso8601String(),
+                'opened_by' => ['name' => $session->openedBy?->name],
                 'closed_at' => $session->closed_at?->toIso8601String(),
                 'closed_by' => ['name' => $session->closedBy?->name],
                 'opening_cash_amount' => $session->opening_cash_amount,

@@ -34,6 +34,7 @@ import {
     purchaseUnitLabel,
 } from '@/components/operations-ui';
 import { createClientUuid } from '@/lib/client-uuid';
+import { requiredGroupOutline } from '@/lib/required-field';
 import {
     boughtLines,
     checklistStorageKey,
@@ -58,6 +59,7 @@ import type {
 import operationsRoutes from '@/routes/operations';
 import type {
     EarlierPurchase,
+    FundingSession,
     ManualEntry,
     MarketPlan,
     OperationsContext,
@@ -73,6 +75,7 @@ type Props = {
     manual: ManualEntry[];
     summary: OperationsSummaryProps;
     earlier: EarlierPurchase[];
+    funding_sessions: FundingSession[];
 };
 
 export default function OperationsPamamalengke(props: Props) {
@@ -855,6 +858,7 @@ export default function OperationsPamamalengke(props: Props) {
             {summaryOpen && (
                 <SummaryDialog
                     open
+                    branchLabel={operations.branch?.code ?? null}
                     onClose={() => setSummaryOpen(false)}
                     planName={plan.name}
                     summary={props.summary}
@@ -898,7 +902,7 @@ export default function OperationsPamamalengke(props: Props) {
                     planId={plan.id}
                     planName={plan.name}
                     branchName={branch.name}
-                    hasOpenSession={operations.has_open_store_session === true}
+                    fundingSessions={props.funding_sessions}
                     bought={bought}
                     left={items.filter(
                         (item) => !bought.some((line) => line.key === item.key),
@@ -1280,7 +1284,7 @@ function ConfirmDialog({
     planId,
     planName,
     branchName,
-    hasOpenSession,
+    fundingSessions,
     bought,
     left,
     checklist,
@@ -1293,7 +1297,7 @@ function ConfirmDialog({
     planId: string;
     planName: string;
     branchName: string;
-    hasOpenSession: boolean;
+    fundingSessions: FundingSession[];
     bought: ReturnType<typeof boughtLines>;
     left: ChecklistItem[];
     checklist: ChecklistState;
@@ -1305,6 +1309,14 @@ function ConfirmDialog({
 }) {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
+    /** The open session is the usual funder; with the Store closed the buyer must pick one explicitly. */
+    const [fundingId, setFundingId] = useState<string | null>(
+        () =>
+            fundingSessions.find((session) => session.status === 'open')?.id ??
+            null,
+    );
+    const funding =
+        fundingSessions.find((session) => session.id === fundingId) ?? null;
     const missingCost = bought.filter((item) => item.totalCents === null);
     const total = bought.reduce((sum, item) => sum + (item.totalCents ?? 0), 0);
     const estimate = bought.reduce(
@@ -1323,9 +1335,10 @@ function ConfirmDialog({
     });
 
     const confirm = () => {
-        if (!hasOpenSession) {
+        if (funding === null) {
             setErrors({
-                store: `Open the Store at ${branchName} first. A pamamalengke purchase is saved as a Store Purchase of the open Store Session.`,
+                funding_store_session_id:
+                    'Choose the Store Session that paid for this purchase.',
             });
 
             return;
@@ -1344,6 +1357,8 @@ function ConfirmDialog({
             operationsRoutes.pamamalengke.confirm.url(planId),
             {
                 idempotency_key: key,
+                funding_store_session_id: funding.id,
+                funding_session_status: funding.status,
                 payment_source: checklist.paymentSource,
                 items: bought.map((item) => ({
                     type: item.type,
@@ -1359,7 +1374,14 @@ function ConfirmDialog({
             {
                 preserveScroll: true,
                 onSuccess: () => onClose(),
-                onError: (next) => setErrors(next),
+                onError: (next) => {
+                    setErrors(next);
+                    /** A session that closed meanwhile: refetch the choices so the buyer picks again. */
+                    if (next.funding_store_session_id) {
+                        setFundingId(null);
+                        router.reload({ only: ['funding_sessions'] });
+                    }
+                },
                 onFinish: () => setBusy(false),
             },
         );
@@ -1396,7 +1418,7 @@ function ConfirmDialog({
                             type="button"
                             className={`${opsPrimaryClass} flex-1`}
                             onClick={confirm}
-                            disabled={busy || !hasOpenSession}
+                            disabled={busy || funding === null}
                         >
                             <Check className="size-4" /> Confirm pamamalengke
                         </button>
@@ -1405,15 +1427,24 @@ function ConfirmDialog({
             }
         >
             <div className="flex flex-col gap-4">
-                {!hasOpenSession && (
+                <FundingSessionPicker
+                    branchName={branchName}
+                    sessions={fundingSessions}
+                    value={fundingId}
+                    onChange={(id) => {
+                        setFundingId(id);
+                        setErrors({});
+                    }}
+                />
+                {fundingSessions.length === 0 && (
                     <p
                         role="status"
                         className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
                     >
-                        The Store at {branchName} is closed. A confirmed
-                        pamamalengke is saved as a Store Purchase of the open
-                        Store Session, so a Cashier must open the Store first.
-                        Your checklist stays on this device.
+                        {branchName} has no Store Session yet. A purchase is
+                        counted toward the Store Session that paid for it, so
+                        open the Store once first. Your checklist stays on this
+                        device.
                     </p>
                 )}
                 <ul className="overflow-hidden rounded-xl border border-[#e5e5e5]">
@@ -1508,11 +1539,9 @@ function ConfirmDialog({
                         ]}
                     />
                     <span className="text-[11.5px] leading-5 text-[#767676]">
-                        A Store Purchase reduces the expected closing{' '}
-                        {checklist.paymentSource === 'cash'
-                            ? 'Cash'
-                            : 'Cashless'}{' '}
-                        of the open Store Session.
+                        {funding?.status === 'closed'
+                            ? `Kept with the purchase for reference. The closed session's counted ${checklist.paymentSource === 'cash' ? 'Cash' : 'Cashless'} and Close Store result stay unchanged.`
+                            : `A Store Purchase reduces the expected closing ${checklist.paymentSource === 'cash' ? 'Cash' : 'Cashless'} of the open Store Session.`}
                     </span>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -1545,11 +1574,17 @@ function ConfirmDialog({
                                       .join(' · ')
                                 : 'No ingredient stock changes. Manual items only.',
                         ],
-                        [
-                            ShoppingCart,
-                            `Existing Store Purchase / Expense · ${formatPeso(total)}`,
-                            'Saved once in the existing Store Session expenses. Pamamalengke keeps no ledger of its own.',
-                        ],
+                        funding?.status === 'closed'
+                            ? [
+                                  ShoppingCart,
+                                  `Allocated to ${funding.label} · ${formatPeso(total)}`,
+                                  'Counted toward that closed Store Session for profitability. No expense is added, so its Close Store result never changes.',
+                              ]
+                            : [
+                                  ShoppingCart,
+                                  `Store Purchase / Expense · ${formatPeso(total)}`,
+                                  'Saved once in the open Store Session expenses. Pamamalengke keeps no ledger of its own.',
+                              ],
                         [
                             ListChecks,
                             'Purchase history',
@@ -1591,5 +1626,84 @@ function ConfirmDialog({
                 </Link>
             </div>
         </OperationsDialog>
+    );
+}
+
+/**
+ * The Store Session that paid for the run (Phase 20). The open session records it as a Store Purchase; a closed one
+ * receives an allocation only, so its sealed Close Store result never changes.
+ */
+function FundingSessionPicker({
+    branchName,
+    sessions,
+    value,
+    onChange,
+}: {
+    branchName: string;
+    sessions: FundingSession[];
+    value: string | null;
+    onChange: (id: string) => void;
+}) {
+    if (sessions.length === 0) {
+        return null;
+    }
+    const missing = value === null;
+
+    return (
+        <fieldset
+            className="flex flex-col gap-1.5"
+            aria-invalid={missing || undefined}
+            aria-describedby={missing ? 'funding-session-required' : undefined}
+        >
+            <legend className={`${opsLabelClass} pb-1.5`}>
+                Paid by Store Session
+            </legend>
+            <div
+                role="radiogroup"
+                aria-label={`Store Session of ${branchName} that paid`}
+                className={`flex max-h-56 flex-col gap-1 overflow-y-auto rounded-xl border p-1 ${requiredGroupOutline(missing)}`}
+            >
+                {sessions.map((session) => {
+                    const selected = session.id === value;
+
+                    return (
+                        <button
+                            key={session.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => onChange(session.id)}
+                            className={`flex min-h-12 w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left ${selected ? 'bg-[#111] text-white' : 'hover:bg-[#f7f7f7]'}`}
+                        >
+                            <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold tabular-nums">
+                                {session.label}
+                                <span
+                                    className={`rounded px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide uppercase ${session.status === 'open' ? 'bg-emerald-100 text-emerald-800' : selected ? 'bg-white/15 text-white' : 'bg-[#f2f2f2] text-[#555]'}`}
+                                >
+                                    {session.status === 'open'
+                                        ? 'Open now'
+                                        : 'Closed'}
+                                </span>
+                            </span>
+                            <span
+                                className={`text-[11.5px] leading-4 ${selected ? 'text-white/80' : 'text-[#767676]'}`}
+                            >
+                                {session.status === 'open'
+                                    ? 'Saved as a Store Purchase of this session.'
+                                    : 'Allocation only · its Close Store result stays unchanged.'}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+            {missing && (
+                <p
+                    id="funding-session-required"
+                    className="text-xs text-[#b91c1c]"
+                >
+                    Required · choose the Store Session that paid
+                </p>
+            )}
+        </fieldset>
     );
 }

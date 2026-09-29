@@ -73,16 +73,17 @@ class OrderSnapshots
             if ($preserveSnapshot && $state['availability_reason'] === 'not_in_branch' && $line['quantity'] > $existing->quantity) {
                 throw ValidationException::withMessages(["items.$index.quantity" => $product->name.' is no longer sold at this Branch. Keep or reduce its quantity.']);
             }
-            $itemId = (string) Str::uuid();
+            /** Time-ordered ids (UUIDv7, monotonic in a request): receipts list items and options in entry order. */
+            $itemId = (string) Str::uuid7();
             $base = ExactMoney::cents($preserveSnapshot ? $existing->unit_price : $state['effective_price']);
             $unit = $base;
             if ($preserveSnapshot) {
-                foreach ($existing->modifiers as $modifier) {
+                foreach ($existing->modifiers->sortBy('id') as $modifier) {
                     if ($modifier->semantic_role_snapshot !== ModifierSemanticRole::Instruction->value) {
                         $unit = ExactMoney::add($unit, ExactMoney::cents($modifier->price_delta_snapshot));
                     }
                     $modifiers[] = [
-                        'id' => (string) Str::uuid(), 'order_item_id' => $itemId,
+                        'id' => (string) Str::uuid7(), 'order_item_id' => $itemId,
                         'modifier_option_id' => $modifier->modifier_option_id,
                         'modifier_group_id_snapshot' => $modifier->modifier_group_id_snapshot,
                         'group_name_snapshot' => $modifier->group_name_snapshot,
@@ -112,7 +113,7 @@ class OrderSnapshots
                     $unit = ExactMoney::add($unit, ExactMoney::cents($option->price_delta));
                 }
                 $modifiers[] = [
-                    'id' => (string) Str::uuid(), 'order_item_id' => $itemId,
+                    'id' => (string) Str::uuid7(), 'order_item_id' => $itemId,
                     'modifier_option_id' => $option->id, 'modifier_group_id_snapshot' => $group->id, 'group_name_snapshot' => $group->name,
                     'semantic_role_snapshot' => $group->semantic_role?->value,
                     'option_name_snapshot' => $option->name,

@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { LogOut } from 'lucide-react';
+import { LogOut, UserRound } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -9,6 +9,7 @@ import {
 import { PersonAvatar } from '@/components/person-avatar';
 import { PwaAppMenuItem } from '@/components/pwa-app-dialog';
 import { logout } from '@/routes';
+import { edit as editProfile } from '@/routes/profile';
 import { identitySubtitle } from '@/lib/management-navigation';
 import type { Auth } from '@/types';
 
@@ -25,7 +26,7 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
             .join(' / ');
     const avatar = (
         <PersonAvatar
-            name={auth.user?.name}
+            name={auth.user?.displayName}
             avatarUrl={auth.user?.avatarUrl}
             className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-950 text-xs font-bold text-white"
         />
@@ -42,7 +43,7 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
                     >
                         {avatar}
                         <span className="hidden max-w-36 truncate text-[12.5px] font-semibold md:block">
-                            {auth.user?.name}
+                            {auth.user?.displayName}
                         </span>
                     </button>
                 </DropdownMenuTrigger>
@@ -53,13 +54,13 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
                 >
                     <div className="flex items-center gap-3 border-b border-neutral-200 p-4">
                         <PersonAvatar
-                            name={auth.user?.name}
+                            name={auth.user?.displayName}
                             avatarUrl={auth.user?.avatarUrl}
                             className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-950 text-[15px] font-bold text-white"
                         />
                         <div className="min-w-0">
                             <p className="text-[13px] font-semibold wrap-anywhere">
-                                {auth.user?.name}
+                                {auth.user?.displayName}
                             </p>
                             <p className="text-[11px] text-neutral-500">
                                 {identitySubtitle(auth.user?.position, role)}
@@ -67,6 +68,15 @@ export function PosProfileControls({ auth }: { auth: Auth }) {
                         </div>
                     </div>
                     <div className="p-2">
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href={editProfile()}
+                                className="flex h-11 w-full items-center gap-2 rounded-lg px-3 text-[13px] font-semibold"
+                            >
+                                <UserRound className="size-4" />
+                                Account &amp; preferences
+                            </Link>
+                        </DropdownMenuItem>
                         <PwaAppMenuItem className="flex h-11 w-full items-center gap-2 rounded-lg px-3 text-[13px] font-semibold" />
                         <DropdownMenuItem asChild>
                             <Link

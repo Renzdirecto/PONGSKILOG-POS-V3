@@ -8,7 +8,12 @@ import {
     createRealtimeRefresh,
 } from '@/lib/realtime-refresh';
 
-export function usePosQrRealtime(branchId: string) {
+/**
+ * Customer QR signals of the Branch POS channel reload the given props: the shell keeps the shared QR Orders badge
+ * (`qrWaitingCount`) current on every Store Operations page; the POS reloads its own loaded QR order.
+ */
+export function usePosQrRealtime(branchId: string, props: string[]) {
+    const only = props.join(',');
     const connection = useConnectionStatus();
     const previousConnection = useRef(connection);
     const hasConnected = useRef(connection === 'connected');
@@ -18,14 +23,16 @@ export function usePosQrRealtime(branchId: string) {
             createRealtimeRefresh(
                 (finish) =>
                     router.reload({
-                        only: ['qrWaitingCount', 'loadedQr'],
+                        only: only.split(','),
+                        /** A background reload never moves the page (e.g. POS ↔ QR Orders switched meanwhile). */
+                        preserveUrl: true,
                         onHttpException: handleRevalidationException,
                         onNetworkError: () => false,
                         onFinish: finish,
                     }),
                 35,
             ),
-        [branchId],
+        [branchId, only],
     );
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.pos`,

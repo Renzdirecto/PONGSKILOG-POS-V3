@@ -19,7 +19,8 @@ import {
 } from '@/components/ui/dialog';
 import { QrItems } from '@/components/customer-qr-tracking';
 import { qrButton, qrPanel, qrPrimary } from '@/components/customer-qr-product';
-import { qrError, qrRequest } from '@/lib/qr-http';
+import { qrAborted, qrError, qrRequest } from '@/lib/qr-http';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { pesos } from '@/lib/pos-money';
 import {
     createBranchEventGuard,
@@ -35,6 +36,11 @@ type Queue = {
     last_page: number;
     total: number;
 };
+
+/** The query a queue answers: a result is shown only while its tab, search and page are still the current ones. */
+export function qrQueueKey(archived: boolean, search: string, page: number) {
+    return `${archived ? 'archived' : 'waiting'}|${search.trim()}|${page}`;
+}
 export function StaffQrOrders({
     branchId,
     hasCurrentCart,
@@ -70,32 +76,47 @@ export function StaffQrOrders({
     const [search, setSearch] = useState('');
     const [archived, setArchived] = useState(false);
     const [page, setPage] = useState(1);
-    const [queue, setQueue] = useState<Queue | null>(null);
+    const [result, setResult] = useState<{
+        key: string;
+        orders: Queue;
+    } | null>(null);
+    const queryKey = qrQueueKey(archived, search, page);
+    /** Never another tab's (or an older search's) cards: they would carry the wrong actions. */
+    const queue = result?.key === queryKey ? result.orders : null;
+    const inflight = useRef<AbortController | null>(null);
+    const lastSearch = useRef(search);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<StaffQrOrder | null>(null);
     const [deleting, setDeleting] = useState<StaffQrOrder | null>(null);
     const submitting = useRef(false);
-    const requestVersion = useRef(0);
+    /** The newest query wins: a superseded request is aborted and its late answer ignored. */
     const fetchQueue = useCallback(async () => {
-        const version = ++requestVersion.current;
+        inflight.current?.abort();
+        const controller = new AbortController();
+        inflight.current = controller;
         setLoading(true);
         try {
             const response = await qrRequest<{ orders: Queue }>(
                 index({ query: { search, archived: archived ? 1 : 0, page } }),
+                undefined,
+                controller.signal,
             );
-            if (version === requestVersion.current) {
-                setQueue(response.orders);
+            if (inflight.current === controller) {
+                setResult({ key: queryKey, orders: response.orders });
                 setError('');
             }
         } catch (reason) {
-            if (version === requestVersion.current)
+            if (inflight.current === controller && !qrAborted(reason))
                 setError(qrError(reason).message);
         } finally {
-            if (version === requestVersion.current) setLoading(false);
+            if (inflight.current === controller) {
+                inflight.current = null;
+                setLoading(false);
+            }
         }
-    }, [search, archived, page]);
+    }, [search, archived, page, queryKey]);
     const refresh = useMemo(
         () =>
             createRealtimeRefresh((finish) => {
@@ -126,12 +147,16 @@ export function StaffQrOrders({
     );
     useEffect(() => {
         refresh.activate();
-        refresh.schedule(160);
+        /** Tabs and pages load at once; typing a search waits for a pause. */
+        const typing = lastSearch.current !== search;
+        lastSearch.current = search;
+        refresh.schedule(typing ? 300 : 0);
         return () => {
             refresh.dispose();
-            requestVersion.current++;
+            inflight.current?.abort();
+            inflight.current = null;
         };
-    }, [refresh]);
+    }, [refresh, search]);
     useEffect(() => {
         if (connection === 'connected') refresh.schedule(0);
         const retry = () => refresh.schedule(0);
@@ -163,7 +188,12 @@ export function StaffQrOrders({
             onLoad(response.order);
         } catch (reason) {
             setError(qrError(reason).message);
-            router.reload({ only: ['loadedQr'] });
+            router.reload({
+                only: ['loadedQr'],
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
             refresh.schedule(0);
         } finally {
             submitting.current = false;
@@ -272,122 +302,142 @@ export function StaffQrOrders({
                     Archived
                 </button>
             </div>
-            {loading && !queue ? (
-                <div
-                    role="status"
-                    className="grid animate-pulse gap-3 min-[760px]:grid-cols-2"
-                >
-                    {[0, 1, 2].map((id) => (
-                        <div
-                            key={id}
-                            className="h-56 rounded-2xl bg-neutral-100"
-                        />
-                    ))}
-                </div>
-            ) : queue?.data.length ? (
+            {queue === null ? (
+                error && !loading ? null : (
+                    <div
+                        role="status"
+                        aria-label="Loading QR orders"
+                        className="grid animate-pulse gap-3 min-[760px]:grid-cols-2"
+                    >
+                        {[0, 1, 2].map((id) => (
+                            <div
+                                key={id}
+                                className="h-56 rounded-2xl bg-neutral-100"
+                            />
+                        ))}
+                    </div>
+                )
+            ) : queue.data.length ? (
                 <div className="grid gap-3 min-[760px]:grid-cols-2 min-[1300px]:grid-cols-3">
-                    {queue.data.map((order) => (
-                        <article
-                            key={order.id}
-                            className={`${qrPanel} flex flex-col gap-3 overflow-hidden`}
-                        >
-                            <div className="flex items-start justify-between gap-2">
-                                <div>
-                                    <h2 className="text-[17px] font-bold text-red-700">
-                                        {qrIdentity(order)}
-                                    </h2>
-                                    {order.customer_label && (
-                                        <p className="mt-1 text-[13px] font-semibold text-black">
-                                            {order.customer_label}
+                    {queue.data.map((order) => {
+                        /** Badge and actions follow the order itself, never the selected tab. */
+                        const orderArchived =
+                            order.commercial_status === 'archived_unclaimed';
+
+                        return (
+                            <article
+                                key={order.id}
+                                className={`${qrPanel} flex flex-col gap-3 overflow-hidden`}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <h2 className="text-[17px] font-bold text-red-700">
+                                            {qrIdentity(order)}
+                                        </h2>
+                                        {order.customer_label && (
+                                            <p className="mt-1 text-[13px] font-semibold text-black">
+                                                {order.customer_label}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <span
+                                        className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${orderArchived ? 'border-neutral-200 bg-neutral-100 text-neutral-600' : order.order_type === 'dine_in' ? 'border-green-200 bg-green-50 text-green-800' : 'border-sky-200 bg-sky-50 text-sky-800'}`}
+                                    >
+                                        {orderArchived
+                                            ? 'ARCHIVED'
+                                            : order.order_type === 'dine_in'
+                                              ? 'DINE IN'
+                                              : 'TAKE OUT'}
+                                    </span>
+                                </div>
+                                <p className="text-[11px] text-neutral-500">
+                                    Order Time:{' '}
+                                    {new Date(
+                                        order.submitted_at,
+                                    ).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                    })}{' '}
+                                    · {qrElapsed(order.submitted_at, now)}{' '}
+                                    {order.table_name &&
+                                        `· ${order.table_name}`}
+                                </p>
+                                <div className="flex-1 space-y-1 text-xs">
+                                    {order.items.slice(0, 4).map((item) => (
+                                        <div
+                                            key={item.id}
+                                            className="flex justify-between gap-2"
+                                        >
+                                            <span>
+                                                {item.quantity}×{' '}
+                                                {item.display_name ?? item.name}
+                                            </span>
+                                            <span>
+                                                {pesos(item.line_total)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                    {order.items.length > 4 && (
+                                        <p className="text-neutral-500">
+                                            +{order.items.length - 4} more items
                                         </p>
                                     )}
                                 </div>
-                                <span
-                                    className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${archived ? 'border-neutral-200 bg-neutral-100 text-neutral-600' : order.order_type === 'dine_in' ? 'border-green-200 bg-green-50 text-green-800' : 'border-sky-200 bg-sky-50 text-sky-800'}`}
-                                >
-                                    {archived
-                                        ? 'ARCHIVED'
-                                        : order.order_type === 'dine_in'
-                                          ? 'DINE IN'
-                                          : 'TAKE OUT'}
-                                </span>
-                            </div>
-                            <p className="text-[11px] text-neutral-500">
-                                Order Time:{' '}
-                                {new Date(
-                                    order.submitted_at,
-                                ).toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                })}{' '}
-                                · {qrElapsed(order.submitted_at, now)}{' '}
-                                {order.table_name && `· ${order.table_name}`}
-                            </p>
-                            <div className="flex-1 space-y-1 text-xs">
-                                {order.items.slice(0, 4).map((item) => (
-                                    <div
-                                        key={item.id}
-                                        className="flex justify-between gap-2"
-                                    >
-                                        <span>
-                                            {item.quantity}×{' '}
-                                            {item.display_name ?? item.name}
-                                        </span>
-                                        <span>{pesos(item.line_total)}</span>
-                                    </div>
-                                ))}
-                                {order.items.length > 4 && (
-                                    <p className="text-neutral-500">
-                                        +{order.items.length - 4} more items
-                                    </p>
-                                )}
-                            </div>
-                            <div className="flex justify-between border-t border-neutral-100 pt-3 text-sm font-bold">
-                                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] text-red-700">
-                                    UNPAID
-                                </span>
-                                <span>{pesos(order.total)}</span>
-                            </div>
-                            <div className="-mx-3 -mb-3 flex flex-wrap gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
-                                {!archived && (
-                                    <button
-                                        className={`${qrPrimary} h-[46px] flex-1`}
-                                        disabled={busy || hasCurrentCart}
-                                        onClick={() => claim(order)}
-                                    >
-                                        <ShoppingCart size={16} />
-                                        {busy ? 'Loading\u2026' : 'LOAD'}
-                                    </button>
-                                )}
-                                <button
-                                    className={`${qrButton} h-[46px] flex-1`}
-                                    onClick={() => setSelected(order)}
-                                >
-                                    <Eye size={16} />
-                                    VIEW
-                                </button>
-                                {archived ? (
+                                <div className="flex justify-between border-t border-neutral-100 pt-3 text-sm font-bold">
+                                    <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] text-red-700">
+                                        UNPAID
+                                    </span>
+                                    <span>{pesos(order.total)}</span>
+                                </div>
+                                <div className="-mx-3 -mb-3 flex flex-wrap gap-2 border-t border-neutral-200 bg-neutral-50 px-3 py-2.5">
+                                    {!orderArchived && (
+                                        <button
+                                            className={`${qrPrimary} h-[46px] flex-1`}
+                                            disabled={busy || hasCurrentCart}
+                                            onClick={() => claim(order)}
+                                        >
+                                            <ShoppingCart size={16} />
+                                            {busy ? 'Loading\u2026' : 'LOAD'}
+                                        </button>
+                                    )}
                                     <button
                                         className={`${qrButton} h-[46px] flex-1`}
-                                        disabled={busy}
-                                        onClick={() => restoreOrder(order)}
+                                        onClick={() => setSelected(order)}
                                     >
-                                        <RotateCcw size={16} />
-                                        RESTORE
+                                        <Eye size={16} />
+                                        VIEW
                                     </button>
-                                ) : (
-                                    <button
-                                        className={`${qrButton} h-[46px] text-red-700`}
-                                        disabled={busy}
-                                        onClick={() => setDeleting(order)}
-                                    >
-                                        <Trash2 size={16} />
-                                        DELETE
-                                    </button>
-                                )}
-                            </div>
-                        </article>
-                    ))}
+                                    {orderArchived ? (
+                                        order.restorable ? (
+                                            <button
+                                                className={`${qrButton} h-[46px] flex-1`}
+                                                disabled={busy}
+                                                onClick={() =>
+                                                    restoreOrder(order)
+                                                }
+                                            >
+                                                <RotateCcw size={16} />
+                                                RESTORE
+                                            </button>
+                                        ) : (
+                                            <span className="flex min-h-[46px] flex-1 items-center justify-center text-center text-[11px] text-neutral-500">
+                                                From an earlier Store Session
+                                            </span>
+                                        )
+                                    ) : (
+                                        <button
+                                            className={`${qrButton} h-[46px] text-red-700`}
+                                            disabled={busy}
+                                            onClick={() => setDeleting(order)}
+                                        >
+                                            <Trash2 size={16} />
+                                            DELETE
+                                        </button>
+                                    )}
+                                </div>
+                            </article>
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="py-16 text-center">
@@ -456,7 +506,11 @@ export function StaffQrOrders({
                     }}
                 >
                     <DialogContent className="pos-surface max-h-[90dvh] overflow-y-auto rounded-2xl bg-white text-neutral-950">
-                        {deleting && <div className="flex size-[46px] items-center justify-center rounded-xl bg-red-50 text-red-700"><Trash2 size={22}/></div>}
+                        {deleting && (
+                            <div className="flex size-[46px] items-center justify-center rounded-xl bg-red-50 text-red-700">
+                                <Trash2 size={22} />
+                            </div>
+                        )}
                         <DialogTitle>
                             {deleting
                                 ? `Delete ${qrIdentity(deleting)}?`

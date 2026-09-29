@@ -1,23 +1,9 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+{{-- Appearance is Light (default) or Dark from this device's choice; customer-facing pages are locked Light. --}}
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'light') === 'dark']) @if ($appearanceLocked ?? false) data-appearance-lock="light" @endif>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-
-        {{-- Inline script to detect system dark mode preference and apply it immediately --}}
-        <script>
-            (function() {
-                const appearance = '{{ $appearance ?? "system" }}';
-
-                if (appearance === 'system') {
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-                    if (prefersDark) {
-                        document.documentElement.classList.add('dark');
-                    }
-                }
-            })();
-        </script>
 
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
@@ -26,7 +12,7 @@
             }
 
             html.dark {
-                background-color: oklch(0.145 0 0);
+                background-color: #0e0e10;
             }
 
             /* Installed-app startup screen: only when launched as an app, removed as soon as React renders. */

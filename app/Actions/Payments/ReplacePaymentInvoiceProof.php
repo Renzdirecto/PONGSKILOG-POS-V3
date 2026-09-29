@@ -3,6 +3,7 @@
 namespace App\Actions\Payments;
 
 use App\Actions\Audit\AuditRecorder;
+use App\Enums\CommercialStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
@@ -23,7 +24,7 @@ class ReplacePaymentInvoiceProof
     public function execute(User $actor, Branch $branch, Payment $payment, UploadedFile $invoice): PaymentInvoiceProof
     {
         $actor = $this->access->authorize($actor, $branch);
-        $payment = Payment::query()->where('branch_id', $branch->id)->whereKey($payment->id)->firstOrFail();
+        $payment = $this->visiblePayment($branch, $payment);
         if ($payment->method !== PaymentMethod::Cashless) {
             throw ValidationException::withMessages(['invoice' => 'Invoice proof is only available for cashless payment rows.']);
         }
@@ -72,10 +73,21 @@ class ReplacePaymentInvoiceProof
         }
     }
 
+    /**
+     * A payment of this Branch whose Order is not voided: a voided sale is a Super Admin record only, so its invoice
+     * proof can no longer be replaced or removed (404, like its receipt).
+     */
+    public function visiblePayment(Branch $branch, Payment $payment): Payment
+    {
+        return Payment::query()->where('branch_id', $branch->id)->whereKey($payment->id)
+            ->whereHas('order', fn ($order) => $order->where('commercial_status', '!=', CommercialStatus::Voided->value))
+            ->firstOrFail();
+    }
+
     public function delete(User $actor, Branch $branch, Payment $payment): void
     {
         $actor = $this->access->authorize($actor, $branch);
-        $payment = Payment::query()->where('branch_id', $branch->id)->whereKey($payment->id)->firstOrFail();
+        $payment = $this->visiblePayment($branch, $payment);
         $openSession = $branch->storeSessions()->where('status', StoreSessionStatus::Open)->first();
         if ($openSession === null || $payment->store_session_id !== $openSession->id) {
             throw ValidationException::withMessages(['invoice' => 'Proofs for an earlier or closed store session are read-only.']);

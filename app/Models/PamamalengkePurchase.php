@@ -9,13 +9,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Metadata of one confirmed pamamalengke run. The money itself is the linked canonical Store Session expense;
- * this record adds recommended vs actual quantities and the Ingredient restocks.
+ * One confirmed pamamalengke run: recommended vs actual quantities, costs and the Ingredient restocks.
  *
+ * `store_session_id` is the funding Store Session the buyer chose (Phase 20). Funded by the OPEN session, the money is
+ * that session's canonical Store Purchase (`store_session_expense_id`) and counts in its Close Store reconciliation.
+ * Funded by a CLOSED session it is a profitability allocation only: no expense row exists and the sealed close result
+ * is never changed. The run's amount is always the sum of its item line totals (equal to the expense when one exists).
+ *
+ * @property string $store_session_id
+ * @property string|null $store_session_expense_id
+ * @property string $payment_source
  * @property string|null $estimated_total
  */
 #[Fillable([
-    'branch_id', 'store_session_id', 'operation_plan_id', 'store_session_expense_id', 'estimated_total',
+    'branch_id', 'store_session_id', 'operation_plan_id', 'store_session_expense_id', 'payment_source', 'estimated_total',
     'estimate_complete', 'note', 'created_by_user_id', 'idempotency_key', 'intent_hash',
 ])]
 class PamamalengkePurchase extends Model
@@ -50,6 +57,12 @@ class PamamalengkePurchase extends Model
     public function expense(): BelongsTo
     {
         return $this->belongsTo(StoreSessionExpense::class, 'store_session_expense_id');
+    }
+
+    /** @return BelongsTo<StoreSession, $this> */
+    public function fundingSession(): BelongsTo
+    {
+        return $this->belongsTo(StoreSession::class, 'store_session_id');
     }
 
     /** @return BelongsTo<User, $this> */

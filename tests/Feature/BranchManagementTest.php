@@ -129,10 +129,21 @@ test('duplicate codes cannot be created or assigned to another branch', function
     expect($branch->fresh()->code)->toBe('QAVE');
 });
 
+test('a Branch cannot leave Active while its Store Session is open', function (BranchStatus $status) {
+    $branch = Branch::factory()->create(['code' => 'MAIN', 'name' => 'Main']);
+    StoreSession::factory()->for($branch)->create();
+
+    $this->actingAs(branchManager())->put(route('branches.update', $branch), branchInput(['code' => 'MAIN', 'name' => 'Main', 'status' => $status->value]))
+        ->assertSessionHasErrors(['status' => 'Close the Store at Main before changing the Branch from Active.']);
+
+    expect($branch->fresh()->status)->toBe(BranchStatus::Active);
+})->with([BranchStatus::TemporarilyClosed, BranchStatus::Inactive]);
+
 test('status changes preserve identity hours and session truth', function (BranchStatus $status) {
     $hours = ['monday' => ['open' => '08:00', 'close' => '21:00']];
     $branch = Branch::factory()->create(['code' => 'MAIN', 'operating_hours' => $hours]);
-    $session = StoreSession::factory()->for($branch)->create();
+    /** Leaving Active needs a closed Store; an Active Branch keeps its open session untouched. */
+    $session = $status === BranchStatus::Active ? StoreSession::factory()->for($branch)->create() : StoreSession::factory()->for($branch)->closed()->create();
     $originalSession = $session->fresh()->getAttributes();
 
     $this->actingAs(branchManager())->put(route('branches.update', $branch), branchInput([
@@ -147,7 +158,7 @@ test('status changes preserve identity hours and session truth', function (Branc
     $this->assertDatabaseCount('branches', 1);
     $this->assertDatabaseCount('store_sessions', 1);
     $this->get(route('branches.index'))->assertInertia(fn (Assert $page) => $page
-        ->where('branches.0.status', $status->value)->where('branches.0.store_is_open', true));
+        ->where('branches.0.status', $status->value)->where('branches.0.store_is_open', $status === BranchStatus::Active));
 })->with(BranchStatus::cases());
 
 test('branch listing uses bounded queries and exposes only core fields and current state', function () {

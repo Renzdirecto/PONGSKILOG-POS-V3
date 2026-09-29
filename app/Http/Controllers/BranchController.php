@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audit\AuditRecorder;
+use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerCatalogChanged;
 use App\Http\Requests\StoreBranchRequest;
@@ -10,6 +11,8 @@ use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\ReceiptDocument;
+use App\Support\ReceiptLayout;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -19,6 +22,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -40,7 +44,7 @@ class BranchController extends Controller
 
         $branches = Branch::query()
             ->when($scopeBranch !== null, fn (Builder $query) => $query->whereKey($scopeBranch?->id))
-            ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])
+            ->select(['id', 'code', 'name', 'status', 'address', 'contact', 'kiosk_code', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path', 'receipt_layout', 'image_path'])
             ->withExists(['storeSessions as store_is_open' => fn (Builder $query) => $query->where('status', StoreSessionStatus::Open)])
             ->orderBy('name')->orderBy('code')->get();
 
@@ -50,7 +54,14 @@ class BranchController extends Controller
                 new RendererStyle(320), new SvgImageBackEnd,
             ));
 
-            return [...$branch->toArray(), 'receipt_logo_url' => $branch->receipt_logo_path ? route('branches.receipt-logo', $branch, false).'?v='.md5($branch->receipt_logo_path) : '/images/branding/logo.png', 'qr_url' => $url, 'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url))];
+            return [
+                ...$branch->makeHidden('image_path')->toArray(),
+                'receipt_logo_url' => ReceiptDocument::logoUrl($branch),
+                'receipt_layout' => ReceiptLayout::normalize($branch->receipt_layout),
+                'image_url' => BranchImageController::url($branch),
+                'qr_url' => $url,
+                'qr_image' => 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($url)),
+            ];
         }), 'scope' => [
             'mode' => $scopeBranch === null ? 'business' : 'branch',
             'can_create' => $user->can('create', Branch::class),
@@ -85,8 +96,17 @@ class BranchController extends Controller
             $actor = $request->user();
             abort_unless($actor instanceof User, 401);
             $branch = Branch::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
+            $validated = $request->validated();
+            /**
+             * A Branch that is not Active refuses every Store Session action (Close Store, settlement, expenses), so
+             * leaving Active with an open session would strand its Pay Later orders and cash drawer. Close the Store first.
+             */
+            if (isset($validated['status']) && $validated['status'] !== BranchStatus::Active->value
+                && $branch->storeSessions()->where('status', StoreSessionStatus::Open)->exists()) {
+                throw ValidationException::withMessages(['status' => 'Close the Store at '.$branch->name.' before changing the Branch from Active.']);
+            }
             $before = $this->auditSnapshot($branch);
-            $branch->update($request->validated());
+            $branch->update($validated);
             $audit->record(
                 branch: $branch,
                 actor: $actor,

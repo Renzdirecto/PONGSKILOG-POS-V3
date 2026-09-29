@@ -303,6 +303,7 @@ test('stock-only store session adjustments are not counted as expenses', functio
         ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
         ->postJson(route('store-session-inventory-adjustments.store'), [
             'idempotency_key' => (string) Str::uuid(),
+            'direction' => 'decrease',
             'reason_code' => 'wastage',
             'product_id' => $scenario->product->id,
             'quantity' => 3,

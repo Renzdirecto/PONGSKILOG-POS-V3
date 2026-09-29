@@ -6,6 +6,7 @@ use App\Actions\Audit\AuditRecorder;
 use App\Actions\StoreSessions\RecordStoreSessionExpense;
 use App\Enums\IngredientMovementType;
 use App\Enums\StoreSessionStatus;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\BranchIngredientStock;
 use App\Models\Ingredient;
@@ -26,17 +27,21 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Confirms one pamamalengke run for the selected Branch and Plan, atomically:
+ * Confirms one pamamalengke run for the selected Branch and Plan, atomically. The Store does not have to be open: the
+ * buyer chooses the funding Store Session of the same Branch (Phase 20).
  *
- * 1. writes ONE canonical Store Purchase / Expense through RecordStoreSessionExpense::persist(), under the same
- *    OPEN Store Session rule and shared session lock as every Store expense (no alternate expense path);
+ * 1. Funded by the OPEN session: writes ONE canonical Store Purchase / Expense through
+ *    RecordStoreSessionExpense::persist() under that session's shared lock (no alternate expense path), so it reduces
+ *    the session's expected closing Cash or Cashless. Funded by a CLOSED session: no expense row — the purchase is a
+ *    profitability allocation to that session and its sealed Close Store result never changes.
  * 2. appends one exact base-unit restock movement per bought Ingredient (actual quantity × purchase-unit size);
- * 3. saves recommended vs actual quantities and costs as purchase metadata linked to that expense;
+ * 3. saves recommended vs actual quantities and costs as purchase metadata (linked to the expense when there is one);
  * 4. updates each Ingredient's latest purchase-unit cost for future estimates only (past cost snapshots never move);
  * 5. clears the confirmed manual items and skip marks, and audits the run.
  *
- * Manual items share the expense but never touch Ingredient stock. A retry with the same idempotency key returns the
- * original run and writes nothing; a different payload under that key is rejected.
+ * Manual items share the run but never touch Ingredient stock. A retry with the same idempotency key returns the
+ * original run and writes nothing; a different payload under that key is rejected. If the chosen session closed
+ * between choosing and confirming, the confirmation is rejected instead of silently changing how it is recorded.
  */
 class ConfirmPamamalengke
 {
@@ -57,6 +62,9 @@ class ConfirmPamamalengke
 
         return [
             'idempotency_key' => ['required', 'uuid'],
+            'funding_store_session_id' => ['required', 'uuid'],
+            /** The status the buyer saw; a session that closed in between is rejected, never silently re-routed. */
+            'funding_session_status' => ['required', Rule::in(['open', 'closed'])],
             'payment_source' => ['required', Rule::in(['cash', 'cashless'])],
             'note' => ['nullable', 'string', 'max:200'],
             'items' => ['required', 'array', 'min:1', 'max:100'],
@@ -78,25 +86,31 @@ class ConfirmPamamalengke
         $branch = $this->access->mutableBranch($actor);
         $this->access->ownedBy($plan, $branch);
         $input['note'] = is_string($input['note'] ?? null) && trim($input['note']) !== '' ? trim($input['note']) : null;
-        /** @var array{idempotency_key: string, payment_source: string, note: string|null, items: list<array{type: string, ingredient_id?: string|null, entry_id?: string|null, name?: string|null, unit?: string|null, actual_quantity: string, actual_unit_cost: string, note?: string|null}>} $data */
+        /** @var array{idempotency_key: string, funding_store_session_id: string, funding_session_status: string, payment_source: string, note: string|null, items: list<array{type: string, ingredient_id?: string|null, entry_id?: string|null, name?: string|null, unit?: string|null, actual_quantity: string, actual_unit_cost: string, note?: string|null}>} $data */
         $data = Validator::make($input, self::rules(), [
+            'funding_store_session_id.required' => 'Choose the Store Session that paid for this purchase.',
+            'funding_session_status.required' => 'Choose the Store Session that paid for this purchase.',
             'items.required' => 'Mark at least one item as bought.',
             'items.*.actual_quantity.regex' => 'Enter a quantity with no more than four decimal places.',
             'items.*.actual_unit_cost.regex' => 'Enter a unit cost with no more than two decimal places.',
             'items.*.actual_unit_cost.required' => 'Enter the unit cost of every bought item.',
         ])->validate();
         $key = strtolower($data['idempotency_key']);
+        $fundingId = strtolower($data['funding_store_session_id']);
+        $expectOpen = $data['funding_session_status'] === 'open';
         $lines = $this->normalize($data['items']);
         $intent = hash('sha256', json_encode([
             'branch_id' => $branch->id,
             'plan_id' => $plan->id,
             'actor_id' => $actor->id,
+            'funding_store_session_id' => $fundingId,
+            'funding_session_status' => $data['funding_session_status'],
             'payment_source' => $data['payment_source'],
             'note' => $data['note'],
             'items' => $lines,
         ], JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($actor, $branch, $plan, $data, $key, $lines, $intent): PamamalengkePurchase {
+        return DB::transaction(function () use ($actor, $branch, $plan, $data, $key, $fundingId, $expectOpen, $lines, $intent): PamamalengkePurchase {
             if (DB::getDriverName() === 'pgsql') {
                 DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ['pamamalengke:'.$key]);
             }
@@ -112,26 +126,33 @@ class ConfirmPamamalengke
                 abort(409, 'This confirmation key belongs to another Store Purchase.');
             }
             /**
-             * Branch → Plan → Store Session → balances: Plan writers (save, archive, setup copy) lock the Branch before the
-             * Plan, and POS commits lock the Branch before the Session; Close Store takes the Session exclusively.
+             * Branch → Plan → funding Store Session → balances: Plan writers (save, archive, setup copy) lock the Branch
+             * before the Plan, and POS commits lock the Branch before the Session; Close Store takes the OPEN Session
+             * exclusively, so an OPEN funding session cannot close while this purchase is written into it.
              */
             $branch = $this->movements->lockBranch($branch);
             $plan = OperationPlan::query()->whereKey($plan->id)->whereNull('archived_at')->sharedLock()->first()
                 ?? throw ValidationException::withMessages(['plan' => 'This Plan is archived.']);
-            $session = StoreSession::query()->where('branch_id', $branch->id)->where('status', StoreSessionStatus::Open)->sharedLock()->first();
-            if ($session === null) {
-                throw ValidationException::withMessages(['store' => 'Open the Store at '.$branch->name.' first. A pamamalengke purchase is saved as a Store Purchase of the open Store Session.']);
+            /** Scoped to this Branch: a forged or foreign session id is simply not found. */
+            $session = StoreSession::query()->where('branch_id', $branch->id)->whereKey($fundingId)->sharedLock()->first()
+                ?? throw ValidationException::withMessages(['funding_store_session_id' => 'Choose a Store Session of '.$branch->name.' that paid for this purchase.']);
+            $open = $session->status === StoreSessionStatus::Open;
+            if ($open !== $expectOpen) {
+                throw ValidationException::withMessages(['funding_store_session_id' => $expectOpen
+                    ? 'That Store Session was closed while you were confirming. Its Close Store result is final, so choose the funding Store Session again.'
+                    : 'That Store Session is open. Choose the funding Store Session again.']);
             }
 
             $priced = $this->price($branch, $plan, $lines);
             $total = array_sum(array_column($priced, 'line_cents'));
             if ($total <= 0) {
-                throw ValidationException::withMessages(['items' => 'The actual total must be more than ₱0.00 to save a Store Purchase.']);
+                throw ValidationException::withMessages(['items' => 'The actual total must be more than ₱0.00 to save a purchase.']);
             }
             $estimateKnown = ! in_array(null, array_column($priced, 'estimate_cents'), true);
             $estimate = array_sum(array_map(fn (array $line): int => $line['estimate_cents'] ?? 0, $priced));
 
-            $expense = $this->expenses->persist($branch, $session, $actor, [
+            /** Only the OPEN session's drawer paid it now: a closed session's reconciliation is sealed. */
+            $expense = ! $open ? null : $this->expenses->persist($branch, $session, $actor, [
                 'description' => mb_substr('Pamamalengke · '.$plan->name.' plan', 0, 150),
                 'amount' => ExactMoney::decimal($total),
                 'payment_source' => $data['payment_source'],
@@ -144,7 +165,8 @@ class ConfirmPamamalengke
                 'branch_id' => $branch->id,
                 'store_session_id' => $session->id,
                 'operation_plan_id' => $plan->id,
-                'store_session_expense_id' => $expense->id,
+                'store_session_expense_id' => $expense?->id,
+                'payment_source' => $data['payment_source'],
                 'estimated_total' => ExactMoney::decimal($estimate),
                 'estimate_complete' => $estimateKnown,
                 'note' => $data['note'],
@@ -163,7 +185,7 @@ class ConfirmPamamalengke
                     $movement = $this->movements->execute($branch, $line['ingredient']->id, IngredientMovementType::PurchaseRestock, $line['base_quantity'], [
                         'operation_plan_id' => $plan->id,
                         'pamamalengke_purchase_id' => $purchase->id,
-                        'store_session_expense_id' => $expense->id,
+                        'store_session_expense_id' => $expense?->id,
                         'reason' => 'Pamamalengke · '.$plan->name.' plan',
                         'created_by_user_id' => $actor->id,
                     ], $stocks->get($line['ingredient']->id));
@@ -206,7 +228,9 @@ class ConfirmPamamalengke
                 auditableId: $purchase->id,
                 after: [
                     'operation_plan_id' => $plan->id,
-                    'store_session_expense_id' => $expense->id,
+                    'funding_store_session_id' => $session->id,
+                    'funding_session_status' => $open ? 'open' : 'closed',
+                    'store_session_expense_id' => $expense?->id,
                     'actual_total' => ExactMoney::decimal($total),
                     'estimated_total' => $estimateKnown ? ExactMoney::decimal($estimate) : null,
                     'payment_source' => $data['payment_source'],
@@ -217,6 +241,10 @@ class ConfirmPamamalengke
 
             if ($restocks !== []) {
                 $this->realtime->ingredientsChanged($branch, 'purchase_restock');
+            }
+            /** An expense already signals reports (StoreExpenseRecorded); an allocation changes Operations figures too. */
+            if ($expense === null) {
+                ReportsChanged::dispatch((string) $branch->id, 'pamamalengke.allocated');
             }
 
             return $purchase->load('items');

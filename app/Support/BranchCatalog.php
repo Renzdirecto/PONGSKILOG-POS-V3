@@ -30,7 +30,8 @@ class BranchCatalog
      *     products: list<array{id: string, name: string, description: string|null, category_id: string, category_name: string, effective_price: string, is_available: bool, availability_reason: string|null, stock_status: string, tracks_inventory: bool, on_hand: int|null, recipe: CatalogAvailability|null, image_url: string|null, has_modifiers: bool, modifier_groups?: list<array<string, mixed>>}>
      * }
      *
-     * `$imageExpiresAt` lengthens the signed image URLs for long-lived screens (the customer Menu); default 5 minutes.
+     * `$imageExpiresAt` lengthens the signed image URLs for long-lived screens (the customer Menu); by default they stay
+     * valid for ProductImages::URL_MINUTES.
      */
     public function browse(Branch $branch, bool $customization = false, ?DateTimeInterface $imageExpiresAt = null): array
     {
@@ -61,6 +62,9 @@ class BranchCatalog
             ->filter(fn (Product $product): bool => (bool) $product->getAttribute('has_recipe'))
             ->map(fn (Product $product): string => $product->id))->values()->all());
 
+        /** Every card image of the catalog is signed in one pass (stable URLs, one cache read). */
+        $imageUrls = $this->images->safeCardUrls($categories->flatMap(fn (Category $category) => $category->products), $imageExpiresAt);
+
         foreach ($categories as $category) {
             foreach ($category->products as $product) {
                 $product->setRelation('category', $category);
@@ -89,7 +93,7 @@ class BranchCatalog
                     'tracks_inventory' => $state['tracked'],
                     'on_hand' => $state['tracked'] ? $state['on_hand'] : null,
                     'recipe' => $recipe,
-                    'image_url' => $this->images->safeCardUrl($product, $imageExpiresAt),
+                    'image_url' => $imageUrls[$product->id] ?? null,
                     'has_modifiers' => (bool) $product->getAttribute('has_modifiers'),
                     ...($customization ? ['modifier_groups' => $this->modifiers($product)] : []),
                 ];

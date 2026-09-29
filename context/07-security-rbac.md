@@ -773,3 +773,19 @@ Supersedes "shared Operations definitions are business-wide only" and "no row = 
 - **Rate limits (named, own counters):** POS screen routes 240/min/account (pairing 10), Buzz 30/min/account, media writes 60/min/account, public screen 120/min/IP (pairing code/reset 10), pickup 120/min/IP, pickup opt-in 10/min per link + 30/min/IP.
 - **Upload safety:** images must decode (GD) and are re-encoded (no original stored); MP4 must have `ftyp` + a readable `mvhd` ≤ 60 s and not be HEVC-only; ≤ 10 MB / 50 MB; server-generated paths; signed temporary URLs only.
 - **Audit:** `customer_screen.paired`, `customer_screen.unpaired`, `customer_screen.reset_on_screen`, `customer_screen_media.created|updated|deleted|reordered` (no tokens, codes or file paths).
+
+## Phase 20 — final RBAC, isolation and security pass — 2026-09-28
+
+The route/controller/action review found no cross-Branch leak through forged ids (every action re-derives the active Branch and re-authorizes on each call). Fixed:
+
+- **Named throttles only.** Every throttle is a named limiter registered in `RateLimits` with its own counter (per account for staff routes; per device cookie with a per-IP ceiling for Customer QR; per link/IP for public receipts and pickup). An un-named `throttle:X,Y` shared one counter per account across routes, so 240 recipe-capacity checks could starve Void (5/min) or Close Store (10/min); `RateLimitIsolationTest` proves heavy traffic on one route cannot consume another's limit and that no route uses an un-named throttle.
+- **Account recovery.** Forgot/reset password and password confirmation are throttled; the forgot-password answer is identical for known and unknown emails (no enumeration); reset links are built from `APP_URL`, never from the request Host (no host-header poisoning). A password change (Security page) or a reset by link ends other sessions/devices of the account and is audited.
+- **Void PIN brute force.** `VoidPinGuard`: 5 wrong PINs per account or 15 across accounts lock Void approval for the rest of a 15-minute window; wrong PINs are audited (`void.authorization_failed`), a lock sends a `security` admin alert, and a new PIN clears it. The PIN is checked before any Order work.
+- **Transactions permission.** A DENY of `transactions.view` now also blocks the POS transaction detail, settlement, void and invoice-proof read/delete routes (edit and upload already required it). Receipt sharing re-checks POS access. Invoice proofs of voided orders answer 404.
+- **Self-service profile.** Staff edit only their Preferred Name, photo and appearance; legal name, email, employee ID, position, role, Branches and status stay with staff administration (self email change removed). Changes are audited.
+- **Branch Settings.** A Branch cannot leave Active while its Store is open. The Branch photo follows Branch Settings authorization (`BranchPolicy::update`) for upload/removal and Branch access (`view`) for reading; uploads go through the checked, re-encoding image pipeline. Receipt layouts are validated server-side (known blocks only, bounded plain text, no HTML).
+- **Transport and headers.** Web responses send `X-Frame-Options: SAMEORIGIN`, `nosniff`, `Referrer-Policy` and HSTS over HTTPS; invoice/receipt/image streams send `nosniff`. Reverb client events are disabled and allowed origins come from `REVERB_ALLOWED_ORIGINS`. The local disk no longer serves signed `/storage` URLs.
+- **Health.** `/health` is read-only, throttled, sessionless and returns only check states, timings and the release name/SHA.
+- **Customer-facing pages** (QR, kiosk, receipts, customer screen, pickup, customer display) always render in Light appearance.
+
+Secrets/build scan (Phase 20 final QA): no committed secrets, keys, tunnel hostnames or LAN addresses in tracked files or the production build; `.env` is untracked.

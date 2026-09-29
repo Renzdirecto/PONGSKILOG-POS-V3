@@ -80,7 +80,7 @@ test('each figure-changing action signals the reports channel on its own', funct
     }, 'store.closed'],
     'manual stock adjustment' => [fn (StoreCloseScenario $scenario) => app(AdjustInventory::class)->execute(reportsChannelUser('owner'), $scenario->branch, $scenario->product, -3, 'Recount'), 'inventory.adjusted'],
     'store session stock adjustment' => [fn (StoreCloseScenario $scenario) => app(RecordStoreSessionInventoryAdjustment::class)->execute($scenario->cashier, $scenario->branch, [
-        'idempotency_key' => (string) Str::uuid(), 'reason_code' => 'damaged', 'product_id' => $scenario->product->id, 'quantity' => 2,
+        'idempotency_key' => (string) Str::uuid(), 'direction' => 'decrease', 'reason_code' => 'damaged', 'product_id' => $scenario->product->id, 'quantity' => 2,
     ]), 'inventory.adjusted'],
 ]);
 

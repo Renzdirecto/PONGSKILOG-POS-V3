@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\AuditLog;
+use App\Models\PushSubscription;
 use App\Models\User;
+use App\Support\PushDevice;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
@@ -77,6 +80,26 @@ test('password can be updated', function () {
         ->assertRedirect(route('security.edit'));
 
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+});
+
+test('a password change keeps this browser, drops other devices push subscriptions and is audited without the password', function () {
+    $user = User::factory()->create();
+    $thisDevice = PushDevice::newId();
+    $current = PushSubscription::factory()->for($user)->create(['device_hash' => PushDevice::hash($thisDevice)]);
+    $other = PushSubscription::factory()->for($user)->create(['device_hash' => PushDevice::hash(PushDevice::newId())]);
+
+    $this->actingAs($user)->withCookie(PushDevice::COOKIE, $thisDevice)->from(route('security.edit'))
+        ->put(route('user-password.update'), [
+            'current_password' => 'password', 'password' => 'new-password', 'password_confirmation' => 'new-password',
+        ])->assertSessionHasNoErrors();
+
+    expect(PushSubscription::query()->whereKey($current->id)->exists())->toBeTrue()
+        ->and(PushSubscription::query()->whereKey($other->id)->exists())->toBeFalse();
+    $audit = AuditLog::query()->where('action', 'account.password_changed')->sole();
+    expect($audit->user_id)->toBe($user->id)
+        ->and(json_encode([$audit->before, $audit->after, $audit->metadata]))->not->toContain('new-password');
+    $this->get(route('profile.edit'))->assertOk();
+    $this->assertAuthenticatedAs($user);
 });
 
 test('correct password must be provided to update password', function () {

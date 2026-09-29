@@ -2,12 +2,17 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\BranchStatus;
+use App\Enums\CommercialStatus;
+use App\Enums\OrderSource;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
+use App\Models\Order;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\EffectivePermissions;
+use App\Support\ReleaseInfo;
 use App\Support\StoreState;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -71,13 +76,17 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => fn (): array => $this->authProps($user),
             'branchContext' => fn (): array => $this->branchContextProps($user, $currentBranch()),
-            'storeContext' => fn (): array => $this->storeContextProps($currentBranch()),
+            'storeContext' => fn (): array => $this->storeContextProps($currentBranch(), $user),
+            /** Customer QR orders waiting at the selected Branch: the QR Orders badge of every Store Operations page. */
+            'qrWaitingCount' => fn (): ?int => $this->qrWaitingCount($user, $currentBranch()),
             'notificationCenter' => fn (): ?array => $this->notificationCenterProps($user),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            /** The running release (APP_VERSION + deployed commit) so support can tell which build a device runs. */
+            'release' => ReleaseInfo::current(),
         ];
     }
 
-    /** @return array{user: array{id: int, name: string, email: string, position: string|null, avatarUrl: string|null}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
+    /** @return array{user: array{id: int, name: string, preferredName: string|null, displayName: string, email: string, position: string|null, avatarUrl: string|null}|null, roles: list<string>, roleLabel: string|null, permissions: list<string>} */
     private function authProps(?User $user): array
     {
         if ($user === null) {
@@ -95,6 +104,9 @@ class HandleInertiaRequests extends Middleware
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
+                /** Display only (greetings, shells); the full name stays the account's identity. */
+                'preferredName' => $user->preferred_name,
+                'displayName' => $user->displayName(),
                 'email' => $user->email,
                 'position' => $user->position,
                 /** Versioned by the stored path, so a new picture shows after a realtime revalidation. */
@@ -153,8 +165,14 @@ class HandleInertiaRequests extends Middleware
         ];
     }
 
-    /** @return array{status: 'open'|'closed'|null, isOpen: bool, branchId: string|null} */
-    private function storeContextProps(?Branch $branch): array
+    /**
+     * The shared Store status of the selected Branch. `canOpen` mirrors Open Store's own authorization (POS access, Open /
+     * Close Store, a cashier-operations role, operational access to an Active Branch) so every Store Operations page can
+     * offer the one Open Store control only to accounts the server will accept; the server still decides.
+     *
+     * @return array{status: 'open'|'closed'|null, isOpen: bool, branchId: string|null, canOpen: bool}
+     */
+    private function storeContextProps(?Branch $branch, ?User $user): array
     {
         $status = $branch === null ? null : $this->storeState->status($branch);
 
@@ -162,7 +180,25 @@ class HandleInertiaRequests extends Middleware
             'status' => $status?->value,
             'isOpen' => $status === StoreSessionStatus::Open,
             'branchId' => $branch === null ? null : (string) $branch->getKey(),
+            'canOpen' => $branch !== null && $user !== null && $status !== StoreSessionStatus::Open
+                && $branch->status === BranchStatus::Active
+                && $user->hasPermission('pos.access') && $user->hasPermission('store.open_close')
+                && $user->hasCashierOperationsRole() && $user->hasOperationalBranchAccess($branch),
         ];
+    }
+
+    /** Submitted, unclaimed Customer QR orders of the open Store Session; null for accounts without the POS. */
+    private function qrWaitingCount(?User $user, ?Branch $branch): ?int
+    {
+        if ($user === null || $branch === null || ! $user->hasPermission('pos.access')) {
+            return null;
+        }
+
+        return Order::query()->where('branch_id', $branch->id)
+            ->where('source', OrderSource::CustomerQr)->where('commercial_status', CommercialStatus::Submitted)
+            ->whereNull('loaded_by_user_id')
+            ->whereIn('store_session_id', $branch->storeSessions()->where('status', StoreSessionStatus::Open)->select('id'))
+            ->count();
     }
 
     /** @return array{id: string, name: string, code: string} */

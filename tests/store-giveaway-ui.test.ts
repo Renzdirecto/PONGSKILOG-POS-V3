@@ -23,7 +23,7 @@ const dialog = source('components/store-session-details-dialog.tsx');
 const productDialog = source('components/pos-product-dialog.tsx');
 const expense = dialog;
 const adjustment = source('components/store-inventory-adjustment-form.tsx');
-const openStore = source('components/cashier-store.tsx');
+const openStore = source('components/open-store-form.tsx');
 const recipes = source('pages/operations/recipes.tsx');
 
 test('required controls are red until valid, then neutral gray; optional ones never use it', () => {
@@ -87,9 +87,9 @@ test('a Recipe Size without a recipe is red with "Recipe required"; configured s
     );
 });
 
-test('Record giveaway is a third Store Session action next to expenses and adjustments', () => {
+test('Record giveaway is a third Store Session action next to expenses and stock corrections', () => {
     assert.match(dialog, /Add expense \/ purchase/);
-    assert.match(dialog, /Adjust inventory/);
+    assert.match(dialog, /Stock correction/);
     assert.match(dialog, /<Gift className="size-4" \/> Record giveaway/);
     assert.match(
         dialog,

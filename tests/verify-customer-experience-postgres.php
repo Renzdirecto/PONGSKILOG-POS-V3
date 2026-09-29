@@ -187,11 +187,13 @@ try {
     cxVerify(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'A: fresh migration failed.');
     $migrations = collect(glob(database_path('migrations/*.php')) ?: [])->map(fn (string $path): string => basename($path))->sort()->values();
     $position = $migrations->search(fn (string $name): bool => str_ends_with($name, 'create_customer_experience_tables.php'));
-    cxVerify($position !== false && str_ends_with((string) $migrations->last(), 'add_customer_screen_settings_to_branches_table.php'), 'A: the Phase 19.6 migrations are not the latest.');
-    cxVerify(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true, '--no-interaction' => true]) === 0
+    $settingsPosition = $migrations->search(fn (string $name): bool => str_ends_with($name, 'add_customer_screen_settings_to_branches_table.php'));
+    cxVerify($position !== false && $settingsPosition !== false && $settingsPosition > $position, 'A: the Phase 19.6 migrations were not found in order.');
+    /** Later phases' migrations (verified by their own harnesses) roll back first, then exactly the settings migration. */
+    cxVerify(Artisan::call('migrate:rollback', ['--step' => $migrations->count() - $settingsPosition, '--force' => true, '--no-interaction' => true]) === 0
         && collect($settings)->every(fn (string $column): bool => ! DB::getSchemaBuilder()->hasColumn('branches', $column))
         && collect($tables)->every(fn (string $table): bool => DB::getSchemaBuilder()->hasTable($table)), 'A: settings rollback was not exact.');
-    cxVerify(Artisan::call('migrate:rollback', ['--step' => $migrations->count() - 1 - $position, '--force' => true, '--no-interaction' => true]) === 0
+    cxVerify(Artisan::call('migrate:rollback', ['--step' => $settingsPosition - $position, '--force' => true, '--no-interaction' => true]) === 0
         && collect($tables)->every(fn (string $table): bool => ! DB::getSchemaBuilder()->hasTable($table)), 'A: rollback left a table behind.');
     $legacyBranch = (string) Str::uuid();
     DB::table('branches')->insert(['id' => $legacyBranch, 'code' => 'CXOLD', 'kiosk_code' => 'CXOLD', 'name' => 'Existing Branch', 'status' => 'active', 'created_at' => now(), 'updated_at' => now()]);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { QrLine, QrOrder, QrReceipt } from '../resources/js/types/qr.ts';
+import type { QrLine, QrOrder } from '../resources/js/types/qr.ts';
 
 // Node's native TypeScript runner requires explicit extensions; Vite resolves these in the app.
 registerHooks({
@@ -16,7 +16,7 @@ registerHooks({
         );
     },
 });
-const { qrLineCents, qrStatus, canStartQrOrder, receiptText, mergeQrLine } =
+const { qrLineCents, qrStatus, canStartQrOrder, mergeQrLine } =
     await import('../resources/js/lib/qr-order.ts');
 
 const line: QrLine = {
@@ -116,44 +116,6 @@ test('Pay Later tracks kitchen progress without falsely claiming payment or perm
         'Archived / Unclaimed',
     );
 });
-test('receipt download contains persisted line names instructions and tender change', () => {
-    const receipt = {
-        branch: { name: 'Main' },
-        order_number: '1048',
-        paid_at: '2026-09-22T08:00:00Z',
-        order_type: 'take_out',
-        total: '190.00',
-        items: [
-            {
-                name: 'Tapsilog',
-                display_name: 'Large Tapsilog',
-                quantity: 2,
-                line_total: '190.00',
-                notes: 'Less salt',
-                modifiers: [
-                    { name: 'Large', semantic_role: 'size' },
-                    { name: 'Scrambled', semantic_role: 'instruction' },
-                ],
-            },
-        ],
-        payments: [
-            {
-                method: 'cash',
-                amount: '190.00',
-                amount_received: '200.00',
-                change_amount: '10.00',
-            },
-        ],
-    } as QrReceipt;
-    const text = receiptText(receipt);
-    assert.match(text, /Order number : #1048/);
-    assert.match(text, /2x Large Tapsilog/);
-    assert.match(text, /Instructions: Scrambled/);
-    assert.match(text, /Note: Less salt/);
-    assert.match(text, /Change : ₱10.00/);
-    assert.doesNotMatch(text, /cashier|idempotency|token_hash/);
-});
-
 test('QR display transitions from provisional to official identity and elapsed time is local', async () => {
     const { qrIdentity, qrElapsed } =
         await import('../resources/js/lib/qr-order.ts');

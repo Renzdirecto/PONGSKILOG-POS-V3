@@ -185,134 +185,144 @@ export default function OperationsIngredients({
                     }
                 />
             ) : (
-                <div className="overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
-                    <table className="hidden w-full text-left min-[980px]:table">
-                        <thead className="bg-[#fafafa]">
-                            <tr>
-                                {[
-                                    'Ingredient',
-                                    'Stock / target',
-                                    'Purchase unit',
-                                    'Replenishment rule',
-                                    'Used in',
-                                    'Status',
-                                    '',
-                                ].map((label) => (
-                                    <th
-                                        key={label || 'actions'}
-                                        scope="col"
-                                        className={`px-3.5 py-2.5 ${opsLabelClass}`}
+                <div className="@container overflow-hidden rounded-2xl border border-[#e5e5e5] bg-white">
+                    <div className="hidden overflow-x-auto @min-[900px]:block">
+                        <table className="w-full min-w-[860px] text-left">
+                            <thead className="bg-[#fafafa]">
+                                <tr>
+                                    {[
+                                        'Ingredient',
+                                        'Stock / target',
+                                        'Purchase unit',
+                                        'Replenishment rule',
+                                        'Used in',
+                                        'Status',
+                                        '',
+                                    ].map((label) => (
+                                        <th
+                                            key={label || 'actions'}
+                                            scope="col"
+                                            className={`px-3.5 py-2.5 ${opsLabelClass}`}
+                                        >
+                                            {label || (
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
+                                            )}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {list.map((ingredient) => (
+                                    <tr
+                                        key={ingredient.id}
+                                        className="border-t border-[#f2f2f2] align-middle"
                                     >
-                                        {label || (
-                                            <span className="sr-only">
-                                                Actions
-                                            </span>
-                                        )}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {list.map((ingredient) => (
-                                <tr
-                                    key={ingredient.id}
-                                    className="border-t border-[#f2f2f2] align-middle"
-                                >
-                                    <td className="px-3.5 py-3">
-                                        <span className="flex min-w-0 items-center gap-2.5">
-                                            <IngredientIcon
-                                                icon={ingredient.icon}
-                                            />
-                                            <span className="flex min-w-0 flex-col">
-                                                <span
-                                                    className="max-w-[220px] truncate text-[13.5px] font-semibold"
-                                                    title={ingredient.name}
-                                                >
-                                                    {ingredient.name}
-                                                </span>
-                                                <span className="text-[11px] text-[#767676]">
-                                                    Base unit:{' '}
-                                                    {ingredient.base_unit}
+                                        <td className="px-3.5 py-3">
+                                            <span className="flex min-w-0 items-center gap-2.5">
+                                                <IngredientIcon
+                                                    icon={ingredient.icon}
+                                                />
+                                                <span className="flex min-w-0 flex-col">
+                                                    <span
+                                                        className="max-w-[220px] truncate text-[13.5px] font-semibold"
+                                                        title={ingredient.name}
+                                                    >
+                                                        {ingredient.name}
+                                                    </span>
+                                                    <span className="text-[11px] text-[#767676]">
+                                                        Base unit:{' '}
+                                                        {ingredient.base_unit}
+                                                    </span>
                                                 </span>
                                             </span>
-                                        </span>
-                                    </td>
-                                    <td className="w-[180px] px-3.5 py-3">
-                                        <span className="flex flex-col gap-1.5">
-                                            <span className="text-[13px] whitespace-nowrap tabular-nums">
-                                                <strong>
-                                                    {ingredient.stock
-                                                        ?.current ?? '—'}
-                                                </strong>
-                                                <span className="text-[#8a8a8a]">
-                                                    {' '}
-                                                    /{' '}
-                                                    {formatQuantity(
-                                                        ingredient.target,
-                                                        ingredient.base_unit,
+                                        </td>
+                                        <td className="w-[180px] px-3.5 py-3">
+                                            <span className="flex flex-col gap-1.5">
+                                                <span className="text-[13px] whitespace-nowrap tabular-nums">
+                                                    <strong>
+                                                        {ingredient.stock
+                                                            ?.current ?? '—'}
+                                                    </strong>
+                                                    <span className="text-[#8a8a8a]">
+                                                        {' '}
+                                                        /{' '}
+                                                        {formatQuantity(
+                                                            ingredient.target,
+                                                            ingredient.base_unit,
+                                                        )}
+                                                    </span>
+                                                </span>
+                                                <StockBar
+                                                    ingredient={ingredient}
+                                                />
+                                            </span>
+                                        </td>
+                                        <td className="px-3.5 py-3">
+                                            <span className="flex flex-col">
+                                                <span className="text-[12.5px] font-semibold">
+                                                    {purchaseUnitLabel(
+                                                        ingredient,
                                                     )}
                                                 </span>
+                                                <CostLine
+                                                    ingredient={ingredient}
+                                                />
                                             </span>
-                                            <StockBar ingredient={ingredient} />
-                                        </span>
-                                    </td>
-                                    <td className="px-3.5 py-3">
-                                        <span className="flex flex-col">
-                                            <span className="text-[12.5px] font-semibold">
-                                                {purchaseUnitLabel(ingredient)}
+                                        </td>
+                                        <td className="max-w-[200px] px-3.5 py-3 text-xs leading-5 text-[#555]">
+                                            {ingredient.rule_label}
+                                        </td>
+                                        <td className="px-3.5 py-3">
+                                            <span className="flex flex-wrap gap-1">
+                                                {ingredient.plan_ids.map(
+                                                    (id) => (
+                                                        <Chip
+                                                            key={id}
+                                                            tone={
+                                                                id === planId
+                                                                    ? 'dark'
+                                                                    : 'plain'
+                                                            }
+                                                        >
+                                                            {planName(id)}
+                                                        </Chip>
+                                                    ),
+                                                )}
                                             </span>
-                                            <CostLine ingredient={ingredient} />
-                                        </span>
-                                    </td>
-                                    <td className="max-w-[200px] px-3.5 py-3 text-xs leading-5 text-[#555]">
-                                        {ingredient.rule_label}
-                                    </td>
-                                    <td className="px-3.5 py-3">
-                                        <span className="flex flex-wrap gap-1">
-                                            {ingredient.plan_ids.map((id) => (
-                                                <Chip
-                                                    key={id}
-                                                    tone={
-                                                        id === planId
-                                                            ? 'dark'
-                                                            : 'plain'
+                                        </td>
+                                        <td className="px-3.5 py-3">
+                                            {ingredient.status ? (
+                                                <StatusChip
+                                                    ingredient={ingredient}
+                                                />
+                                            ) : (
+                                                <Chip tone="outline">
+                                                    Choose a branch
+                                                </Chip>
+                                            )}
+                                        </td>
+                                        <td className="px-3.5 py-3 text-right">
+                                            {canEdit && (
+                                                <button
+                                                    type="button"
+                                                    className={opsButtonClass}
+                                                    onClick={() =>
+                                                        setEditing(ingredient)
                                                     }
                                                 >
-                                                    {planName(id)}
-                                                </Chip>
-                                            ))}
-                                        </span>
-                                    </td>
-                                    <td className="px-3.5 py-3">
-                                        {ingredient.status ? (
-                                            <StatusChip
-                                                ingredient={ingredient}
-                                            />
-                                        ) : (
-                                            <Chip tone="outline">
-                                                Choose a branch
-                                            </Chip>
-                                        )}
-                                    </td>
-                                    <td className="px-3.5 py-3 text-right">
-                                        {canEdit && (
-                                            <button
-                                                type="button"
-                                                className={opsButtonClass}
-                                                onClick={() =>
-                                                    setEditing(ingredient)
-                                                }
-                                            >
-                                                <Pencil className="size-4" />{' '}
-                                                Edit
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <ul className="flex flex-col min-[980px]:hidden">
+                                                    <Pencil className="size-4" />{' '}
+                                                    Edit
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <ul className="flex flex-col @min-[900px]:hidden">
                         {list.map((ingredient) => (
                             <li
                                 key={ingredient.id}

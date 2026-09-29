@@ -4,7 +4,9 @@ namespace App\Providers;
 
 use App\Actions\Fortify\ResetUserPassword;
 use App\Models\User;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Auth\PasswordBroker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -12,8 +14,10 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
+use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
+use Laravel\Fortify\Http\Responses\SuccessfulPasswordResetLinkRequestResponse;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -22,7 +26,14 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        /**
+         * Never reveal whether an e-mail belongs to a staff account (or is throttled): every reset-link request gets
+         * the same answer. The link itself is only ever sent to a real account's address.
+         */
+        $this->app->bind(
+            FailedPasswordResetLinkRequestResponse::class,
+            fn (): SuccessfulPasswordResetLinkRequestResponse => new SuccessfulPasswordResetLinkRequestResponse(PasswordBroker::RESET_LINK_SENT),
+        );
     }
 
     /**
@@ -41,6 +52,13 @@ class FortifyServiceProvider extends ServiceProvider
     private function configureActions(): void
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
+
+        /**
+         * Reset links are built from APP_URL, never from the request's Host header: a forged Host would otherwise send
+         * a real reset token to a look-alike site (Host header poisoning). APP_URL must be the canonical address.
+         */
+        ResetPassword::createUrlUsing(fn (User $user, string $token): string => rtrim((string) config('app.url'), '/')
+            .route('password.reset', ['token' => $token, 'email' => $user->getEmailForPasswordReset()], false));
 
         Fortify::authenticateUsing(function (Request $request): ?User {
             $user = User::query()

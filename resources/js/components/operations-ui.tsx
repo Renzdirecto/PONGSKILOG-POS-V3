@@ -1,6 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
 import {
-    Banknote,
     Check,
     ChevronDown,
     Citrus,
@@ -20,9 +19,11 @@ import {
     Soup,
     UtensilsCrossed,
     ChartColumn,
+    Copy,
+    ImageDown,
 } from 'lucide-react';
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useRef, useState } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { OwnerPage } from '@/components/owner-ui';
 import {
     Dialog,
@@ -41,14 +42,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useReportsRealtimeRefresh } from '@/hooks/use-reports-realtime-refresh';
 import {
+    businessDateLabel,
     divideProfit,
     formatDelta,
     formatPeso,
     formatQuantity,
+    pamamalengkeShareText,
     planQuery,
     stockPercent,
     unitLabel,
 } from '@/lib/operations';
+import type { ShoppingListLine } from '@/lib/operations';
+import { receiptPng } from '@/lib/receipt-png';
 import operationsRoutes from '@/routes/operations';
 import type {
     EarlierPurchase,
@@ -80,8 +85,8 @@ export const OPERATIONS_PAGES: {
     { key: 'plans', label: 'Pamalengke Plans', short: 'Plans' },
     { key: 'overview', label: 'Overview', short: 'Overview' },
     { key: 'ingredients', label: 'Ingredients', short: 'Ingredients' },
-    { key: 'recipes', label: 'Recipes', short: 'Recipes' },
     { key: 'stock', label: 'Ingredient Stock', short: 'Stock' },
+    { key: 'recipes', label: 'Recipes', short: 'Recipes' },
     { key: 'pamamalengke', label: 'Pamamalengke', short: 'Pamamalengke' },
     { key: 'purchases', label: 'Purchases', short: 'Purchases' },
 ];
@@ -484,7 +489,7 @@ export function OperationsShell({
 const OPERATIONS_IGNORED_REASONS = ['kitchen.status_changed'] as const;
 
 const liveProps: Record<OperationsPageKey, string[]> = {
-    plans: ['cards', 'summary', 'shared', 'outside', 'products'],
+    plans: ['cards', 'shared', 'products'],
     overview: [
         'figures',
         'business_date',
@@ -730,14 +735,15 @@ function KeyValue({
 }
 
 /**
- * View summary: the Pamamalengke list estimate and today's Sales & profit, all computed on the server. The Cash view
- * is never labelled profit, Store-wide expenses appear only in the All plans (business) scope, and the Profit divider
- * is a calculator that writes nothing.
+ * View summary: the Pamamalengke list estimate and today's Sales & profit, all computed on the server. Profit is the
+ * COGS-based estimate (the old "cash after purchases" view duplicated it and was never reconciliation), Store-wide
+ * expenses appear only in the All plans (business) scope, and the Profit divider is a calculator that writes nothing.
  */
 export function SummaryDialog({
     open,
     onClose,
     planName,
+    branchLabel = null,
     summary,
     auto,
     manual,
@@ -748,6 +754,8 @@ export function SummaryDialog({
     open: boolean;
     onClose: () => void;
     planName: string;
+    /** The Branch code printed on the shopper list; null for All Branches (no list). */
+    branchLabel?: string | null;
     summary: OperationsSummaryProps;
     auto:
         | { name: string; quantity: string; estimate_cents: number | null }[]
@@ -779,6 +787,57 @@ export function SummaryDialog({
     const unknown =
         (auto ?? []).filter((item) => item.estimate_cents === null).length +
         manual.filter((item) => item.estimate_cents === null).length;
+    const card = useRef<HTMLDivElement>(null);
+    const [shareStatus, setShareStatus] = useState('');
+    const [exporting, setExporting] = useState(false);
+    const lines: ShoppingListLine[] = [
+        ...(auto ?? []),
+        ...manual.map((item) => ({
+            name: item.name,
+            quantity: formatQuantity(item.quantity, item.unit),
+            estimate_cents: item.estimate_cents,
+        })),
+    ];
+    const actualSoFar =
+        shopping && shopping.checked > 0 ? shopping.actual_cents : null;
+    const shareName = `Pamamalengke-${branchLabel ?? 'Branch'}-${summary.business_date}`;
+    const copyText = async () => {
+        const text = pamamalengkeShareText({
+            branch: branchLabel ?? '',
+            plan: planName,
+            date: summary.business_date,
+            lines,
+            estimate_cents: autoEstimate + manualEstimate,
+            actual_cents: actualSoFar,
+        });
+        try {
+            await navigator.clipboard.writeText(text);
+            setShareStatus('List copied. Paste it in a message to the shopper.');
+        } catch {
+            setShareStatus(
+                'Copy was blocked by this browser. Export the image instead.',
+            );
+        }
+    };
+    const exportImage = async () => {
+        if (!card.current || exporting) return;
+        setExporting(true);
+        try {
+            const url = URL.createObjectURL(await receiptPng(card.current));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${shareName}.png`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            setShareStatus('Image saved.');
+        } catch {
+            setShareStatus('The image could not be created. Please try again.');
+        } finally {
+            setExporting(false);
+        }
+    };
     const shares = divideProfit(
         figures?.operating_profit_cents ?? 0,
         split === 'custom' ? Number(custom) : Number(split),
@@ -820,50 +879,46 @@ export function SummaryDialog({
                             </p>
                         ) : (
                             <>
-                                {auto.length > 0 && (
-                                    <SummaryList
-                                        tone="auto"
-                                        rows={auto.map((item) => ({
-                                            name: item.name,
-                                            qty: item.quantity,
-                                            estimate: item.estimate_cents,
-                                        }))}
-                                    />
-                                )}
-                                {manual.length > 0 && (
-                                    <SummaryList
-                                        tone="manual"
-                                        rows={manual.map((item) => ({
-                                            name: item.name,
-                                            qty: formatQuantity(
-                                                item.quantity,
-                                                item.unit,
-                                            ),
-                                            estimate: item.estimate_cents,
-                                        }))}
-                                    />
-                                )}
-                                {auto.length === 0 && manual.length === 0 && (
-                                    <p className="text-[12.5px] text-[#767676]">
-                                        Nothing is on the list for the next run.
+                                <ShoppingListCard
+                                    ref={card}
+                                    branch={branchLabel ?? ''}
+                                    plan={planName}
+                                    date={summary.business_date}
+                                    lines={lines}
+                                    estimateCents={autoEstimate + manualEstimate}
+                                    unknown={unknown}
+                                    actualCents={actualSoFar}
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        className={opsButtonClass}
+                                        onClick={() => void copyText()}
+                                    >
+                                        <Copy className="size-4" /> Copy as
+                                        text
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={opsButtonClass}
+                                        disabled={exporting}
+                                        onClick={() => void exportImage()}
+                                    >
+                                        <ImageDown className="size-4" />{' '}
+                                        {exporting
+                                            ? 'Exporting…'
+                                            : 'Export as image'}
+                                    </button>
+                                </div>
+                                {shareStatus && (
+                                    <p
+                                        role="status"
+                                        className="text-[11.5px] text-[#555]"
+                                    >
+                                        {shareStatus}
                                     </p>
                                 )}
                             </>
-                        )}
-                        <div className="flex items-center gap-2.5 rounded-xl bg-[#fbf6e9] p-3">
-                            <span className="flex-1 text-[13px] font-bold">
-                                Estimated market cost
-                            </span>
-                            <span className="text-[19px] font-bold tabular-nums">
-                                {formatPeso(autoEstimate + manualEstimate)}
-                            </span>
-                        </div>
-                        {unknown > 0 && (
-                            <p className="text-[11.5px] text-[#b45309]">
-                                {unknown} item
-                                {unknown === 1 ? ' has' : 's have'} no known
-                                cost, so the estimate is incomplete.
-                            </p>
                         )}
                         {shopping && shopping.checked > 0 && (
                             <div className="grid grid-cols-2 gap-2">
@@ -906,7 +961,11 @@ export function SummaryDialog({
                                             </span>
                                             <span className="text-[11.5px] text-[#767676]">
                                                 {run.items} items ·{' '}
-                                                {run.expense_reference}
+                                                {run.funding.recorded_as ===
+                                                'store_purchase'
+                                                    ? run.funding
+                                                          .expense_reference
+                                                    : `Allocated to ${run.funding.label}`}
                                             </span>
                                         </span>
                                         <span className="flex flex-col items-end tabular-nums">
@@ -945,45 +1004,6 @@ export function SummaryDialog({
                             </p>
                         ) : (
                             <>
-                                <section
-                                    aria-label="Cash view"
-                                    className="flex flex-col gap-1 rounded-xl border border-[#e5e5e5] p-3"
-                                >
-                                    <span className="flex items-center gap-2 text-sm font-bold">
-                                        <Banknote className="size-4" /> Cash
-                                        view
-                                    </span>
-                                    <KeyValue
-                                        label="Sales today"
-                                        value={formatPeso(figures.sales_cents)}
-                                        sub="Sales value, Pay Later included"
-                                    />
-                                    <KeyValue
-                                        label="Pamamalengke today"
-                                        value={`−${formatPeso(figures.pamamalengke_cents)}`}
-                                        sub="Paid today, including stock still on the shelf"
-                                    />
-                                    {scope === 'all' && (
-                                        <KeyValue
-                                            label="Other store expenses"
-                                            value={`−${formatPeso(figures.other_expenses_cents)}`}
-                                            sub="Other Store Purchases / Expenses today"
-                                        />
-                                    )}
-                                    <KeyValue
-                                        label="Cash after purchases"
-                                        value={formatPeso(
-                                            figures.cash_after_cents,
-                                        )}
-                                        kind="total"
-                                    />
-                                    <p className="pt-1 text-[11.5px] leading-5 text-[#666]">
-                                        This is the cash remaining after today's
-                                        purchases and expenses. Purchased stock
-                                        may still remain in inventory, so this
-                                        is not true profit.
-                                    </p>
-                                </section>
                                 <section
                                     aria-label="Profit view"
                                     className="flex flex-col gap-1 rounded-xl border border-[#e5e5e5] p-3"
@@ -1220,45 +1240,94 @@ export function SummaryDialog({
     );
 }
 
-function SummaryList({
-    tone,
-    rows,
+/**
+ * The next market run as a shopper sees it (and the Export as image source): Branch, plan, date, the list with its
+ * estimates and the totals. Always light paper; nothing about staff, sessions or expenses.
+ */
+function ShoppingListCard({
+    ref,
+    branch,
+    plan,
+    date,
+    lines,
+    estimateCents,
+    unknown,
+    actualCents,
 }: {
-    tone: 'auto' | 'manual';
-    rows: { name: string; qty: string; estimate: number | null }[];
+    ref: Ref<HTMLDivElement>;
+    branch: string;
+    plan: string;
+    date: string;
+    lines: ShoppingListLine[];
+    estimateCents: number;
+    unknown: number;
+    actualCents: number | null;
 }) {
     return (
-        <div className="flex flex-col">
-            <span className="flex items-center gap-2 pb-1">
-                <span
-                    className={`size-2 rounded-full ${tone === 'auto' ? 'bg-[#c8962e]' : 'bg-[#111]'}`}
-                />
-                <span className={opsLabelClass}>
-                    {tone === 'auto' ? 'Auto' : 'Manual'}
-                </span>
-            </span>
-            {rows.map((row) => (
-                <div
-                    key={`${row.name}-${row.qty}`}
-                    className="flex items-center gap-2.5 border-b border-[#f2f2f2] py-2"
-                >
-                    <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="text-[13px] font-semibold">
-                            {row.name}
-                        </span>
-                        <span className="text-[11.5px] text-[#767676] tabular-nums">
-                            {row.qty}
-                        </span>
+        <div
+            ref={ref}
+            className="theme-static flex flex-col gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 text-[#111]"
+        >
+            <div className="flex flex-col gap-0.5 border-b border-dashed border-[#d8d8d8] pb-2.5">
+                <p className="text-[15px] font-bold tracking-[-0.01em]">
+                    PONGSKILOG — {branch}
+                </p>
+                <p className="text-[12.5px] text-[#555]">
+                    Pamamalengke · {plan} plan · {businessDateLabel(date)}
+                </p>
+            </div>
+            {lines.length === 0 ? (
+                <p className="text-[12.5px] text-[#767676]">
+                    Nothing is on the list for the next run.
+                </p>
+            ) : (
+                <ul className="flex flex-col">
+                    {lines.map((line) => (
+                        <li
+                            key={`${line.name}-${line.quantity}`}
+                            className="flex items-baseline gap-2.5 border-b border-[#f2f2f2] py-1.5 last:border-b-0"
+                        >
+                            <span className="min-w-0 flex-1 text-[13px] wrap-anywhere">
+                                <span className="font-semibold">{line.name}</span>{' '}
+                                — {line.quantity}
+                            </span>
+                            <span
+                                className={`text-[12.5px] whitespace-nowrap tabular-nums ${line.estimate_cents === null ? 'text-[#b45309]' : 'text-[#555]'}`}
+                            >
+                                {line.estimate_cents === null
+                                    ? 'Cost unknown'
+                                    : formatPeso(line.estimate_cents)}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            <div className="flex flex-col gap-1 rounded-lg bg-[#fbf6e9] p-2.5">
+                <p className="flex items-baseline justify-between gap-2.5">
+                    <span className="text-[13px] font-bold">
+                        Estimated total
                     </span>
-                    <span
-                        className={`text-[13px] font-semibold whitespace-nowrap tabular-nums ${row.estimate === null ? 'text-[#b45309]' : ''}`}
-                    >
-                        {row.estimate === null
-                            ? 'Cost unknown'
-                            : formatPeso(row.estimate)}
+                    <span className="text-[17px] font-bold tabular-nums">
+                        {formatPeso(estimateCents)}
                     </span>
-                </div>
-            ))}
+                </p>
+                {actualCents !== null && (
+                    <p className="flex items-baseline justify-between gap-2.5">
+                        <span className="text-[12.5px] font-semibold">
+                            Actual so far
+                        </span>
+                        <span className="text-[14px] font-bold tabular-nums">
+                            {formatPeso(actualCents)}
+                        </span>
+                    </p>
+                )}
+                {unknown > 0 && (
+                    <p className="text-[11.5px] text-[#8a5a00]">
+                        {unknown} item{unknown === 1 ? ' has' : 's have'} no
+                        known cost, so the estimate is incomplete.
+                    </p>
+                )}
+            </div>
         </div>
     );
 }

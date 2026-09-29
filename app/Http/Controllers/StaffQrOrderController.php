@@ -47,9 +47,15 @@ class StaffQrOrderController extends Controller
                 $sequence = preg_match('/^(?:QR-)?0*(\d+)$/i', trim($data['search']), $matches) ? (int) $matches[1] : null;
                 $query->where(fn ($query) => $query->when($sequence !== null, fn ($query) => $query->where('qr_sequence', $sequence))
                     ->orWhereRaw('LOWER(customer_label) LIKE ?', [$search])->orWhereRaw('LOWER(table_name_snapshot) LIKE ?', [$search]));
-            })->orderBy('submitted_at')->orderBy('id');
+            })
+            /** Waiting: first come, first served. Archived: the most recently archived first. */
+            ->when($archived, fn ($query) => $query->orderByDesc('archived_at')->orderByDesc('id'), fn ($query) => $query->orderBy('submitted_at')->orderBy('id'));
         $orders = $query->with(['items.modifiers', 'branchTable', 'createdBy'])->paginate(30);
-        $orders->through(fn (Order $order): array => $this->summary->qr($order));
+        /** Only an archived order of the open Store Session can be restored (RestoreCustomerQrOrder re-checks everything). */
+        $orders->through(fn (Order $order): array => [
+            ...$this->summary->qr($order),
+            'restorable' => $archived && $store !== null && $order->store_session_id === $store->id,
+        ]);
 
         return response()->json(['orders' => $orders])->header('Cache-Control', 'no-store');
     }

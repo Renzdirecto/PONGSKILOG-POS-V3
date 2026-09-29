@@ -15,7 +15,10 @@ import {
     parseMoney,
     parseQuantity,
     parseSignedQuantity,
+    pamamalengkeShareText,
     planQuery,
+    productsSoldLine,
+    productsSoldSizes,
     readChecklist,
     unitLabel,
     writeChecklist,
@@ -124,11 +127,10 @@ test('the profit divider is a display-only calculator with no hidden centavos', 
     );
 });
 
-test('cash view is never labelled profit and the profit view is marked estimated', () => {
-    assert.match(ui, /Cash after purchases/);
-    assert.match(
+test('the summary shows one estimated profit view and no duplicate cash view', () => {
+    assert.doesNotMatch(
         ui,
-        /Purchased stock may still remain in inventory, so this is not true profit\./,
+        /Cash after purchases|aria-label="Cash view"|cash_after_cents/,
     );
     assert.match(
         ui,
@@ -321,7 +323,7 @@ test('the active plan lives in the URL and every page shares one shell', () => {
 });
 
 test('plans, recipes and ingredients tell the truth about missing data', () => {
-    assert.match(plans, /A plan does not hold stock of its own\./);
+    assert.doesNotMatch(plans, /What a plan holds|Today across plans/);
     assert.match(plans, /No Pamalengke Plans yet\./);
     assert.match(plans, /moves it for future sales only/);
     assert.match(recipes, /Recipe required for \$\{sizeLabel\}/);
@@ -339,8 +341,23 @@ test('the shopping checklist blocks Confirm truthfully and keeps a stable retry 
     assert.match(market, /value: 'shop', label:[\s\S]*Shopping checklist/);
     assert.match(market, /Add manual item/);
     assert.match(market, /Mark at least one item as bought\./);
-    assert.match(market, /The Store at \{branchName\} is closed\./);
-    assert.match(market, /disabled=\{busy \|\| !hasOpenSession\}/);
+    assert.doesNotMatch(
+        market,
+        /hasOpenSession|The Store at \{branchName\} is closed\./,
+    );
+    assert.match(market, /disabled=\{busy \|\| funding === null\}/);
+    assert.match(
+        market,
+        /funding_store_session_id: funding\.id,\s*funding_session_status: funding\.status,/,
+    );
+    assert.match(
+        market,
+        /Allocation only · its Close Store result stays unchanged\./,
+    );
+    assert.match(
+        market,
+        /router\.reload\(\{ only: \['funding_sessions'\] \}\)/,
+    );
     assert.match(market, /checklist\.idempotencyKey \?\? createClientUuid\(\)/);
     assert.match(market, /Not available/);
     assert.match(market, /Actual total/);
@@ -380,7 +397,7 @@ test('important actions keep 44px touch targets and never overflow the page', ()
 test('a live signal reloads every operations prop that recipes, sales and assortment changes can alter', () => {
     assert.match(
         ui,
-        /plans: \['cards', 'summary', 'shared', 'outside', 'products'\]/,
+        /plans: \['cards', 'shared', 'products'\]/,
     );
     assert.match(ui, /recipes: \['products', 'ingredients'\]/);
     assert.match(ui, /'market', 'recipes', 'consumption'/);
@@ -390,4 +407,76 @@ test('a live signal reloads every operations prop that recipes, sales and assort
 test('the owner and custom role shell has no placeholder notification control', () => {
     assert.doesNotMatch(shell, /coming later/i);
     assert.doesNotMatch(shell, /aria-label="Notifications"/);
+});
+
+test('the Overview leads with Products Sold by category and size, then the market, consumption, attention and movements', () => {
+    const order = [
+        'aria-labelledby="products-sold"',
+        'aria-labelledby="next-run"',
+        'aria-labelledby="consumption"',
+        'aria-labelledby="attention"',
+        'aria-labelledby="recent-moves"',
+    ].map((marker) => overview.indexOf(marker));
+    assert.ok(order.every((position) => position > 0));
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
+    assert.doesNotMatch(overview, /Top-selling products/);
+    assert.match(overview, /\{category\.name\} · Products sold/);
+    assert.equal(
+        productsSoldSizes([
+            { name: 'Large', quantity: 10 },
+            { name: 'Medium', quantity: 6 },
+            { name: 'Small', quantity: 10 },
+        ]),
+        '10 Large | 6 Medium | 10 Small',
+    );
+    assert.equal(
+        productsSoldLine({ name: 'Lemon Yakult', size: 'Large', quantity: 1 }),
+        '1× Large Lemon Yakult',
+    );
+    assert.equal(
+        productsSoldLine({ name: 'Tapsilog', size: null, quantity: 3 }),
+        '3× Tapsilog',
+    );
+});
+
+test('the Pamamalengke summary copies a shopper list as text and exports the same card as an image', () => {
+    assert.equal(
+        pamamalengkeShareText({
+            branch: 'MAIN',
+            plan: 'Silog',
+            date: '2026-09-28',
+            lines: [
+                { name: 'Chicken', quantity: '5 kg', estimate_cents: 125000 },
+                { name: 'Oil', quantity: '4 bottles', estimate_cents: null },
+            ],
+            estimate_cents: 125000,
+            actual_cents: 98000,
+        }),
+        [
+            'PONGSKILOG — MAIN',
+            'Pamamalengke · Silog plan',
+            'Sep 28, 2026',
+            '',
+            'Chicken — 5 kg',
+            'Oil — 4 bottles',
+            '',
+            'Estimated total: ₱1,250.00 (1 item without a known cost)',
+            'Actual so far: ₱980.00',
+        ].join('\n'),
+    );
+    assert.match(
+        pamamalengkeShareText({
+            branch: 'MAIN',
+            plan: 'Drinks',
+            date: '2026-09-28',
+            lines: [],
+            estimate_cents: 0,
+        }),
+        /Nothing on the list\.\n\nEstimated total: ₱0\.00$/,
+    );
+    assert.match(ui, /Copy as text/);
+    assert.match(ui, /Export as image/);
+    assert.match(ui, /await receiptPng\(card\.current\)/);
+    assert.match(ui, /function ShoppingListCard/);
+    assert.match(ui, /theme-static flex flex-col gap-3 rounded-xl/);
 });

@@ -27,7 +27,7 @@ import { DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { InventoryAdjustmentRow } from '@/components/store-inventory-adjustment-form';
+import { StockCorrectionRow } from '@/components/store-inventory-adjustment-form';
 import { useStoreCloseRealtime } from '@/hooks/use-store-close-realtime';
 import { GiveawayRow } from '@/components/store-giveaway-form';
 import { sessionActivity } from '@/lib/store-inventory-adjustment';
@@ -73,6 +73,39 @@ const kitchenLabels = {
     preparing: 'Preparing',
     ready: 'Ready',
 } as const;
+
+/** How the Store Session began: shown while reviewing and confirming the close so the count starts from the right float. */
+function SessionOpening({
+    session,
+}: {
+    session: StoreClosePreview['store_session'];
+}) {
+    return (
+        <section
+            aria-label="Store Session opening"
+            className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-3 sm:grid-cols-4"
+        >
+            {[
+                ['Opened', manilaTime.format(new Date(session.opened_at))],
+                ['Opened by', session.opened_by.name],
+                ['Opening Cash', formatDecimalPeso(session.opening_cash_amount)],
+                [
+                    'Opening Cashless',
+                    formatDecimalPeso(session.opening_cashless_amount),
+                ],
+            ].map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                    <p className="text-[10px] font-semibold tracking-wider text-neutral-500 uppercase">
+                        {label}
+                    </p>
+                    <p className="truncate text-sm font-bold tabular-nums">
+                        {value}
+                    </p>
+                </div>
+            ))}
+        </section>
+    );
+}
 
 function useBrowserOnline(): boolean {
     const [online, setOnline] = useState(isBrowserOnline);
@@ -496,7 +529,7 @@ function SessionPurchases({
                         Cashless{' '}
                         {formatDecimalPeso(session.expense_totals.cashless)}
                         {session.inventory_adjustment_count > 0 &&
-                            ` · ${session.inventory_adjustment_count} stock ${session.inventory_adjustment_count === 1 ? 'adjustment' : 'adjustments'}`}
+                            ` · ${session.inventory_adjustment_count} stock ${session.inventory_adjustment_count === 1 ? 'correction' : 'corrections'}`}
                     </span>
                 </span>
                 <ChevronDown
@@ -513,7 +546,7 @@ function SessionPurchases({
                     (session.inventory_adjustments ?? []).length === 0 &&
                     (session.giveaways ?? []).length === 0 ? (
                         <p className="py-3 text-center text-xs text-neutral-500">
-                            No purchases, expenses, stock adjustments or
+                            No purchases, expenses, stock corrections or
                             giveaways recorded for this Store Session.
                         </p>
                     ) : (
@@ -525,7 +558,7 @@ function SessionPurchases({
                             ).map((entry) =>
                                 entry.kind === 'adjustment' ? (
                                     <li key={`adjustment-${entry.item.id}`}>
-                                        <InventoryAdjustmentRow
+                                        <StockCorrectionRow
                                             adjustment={entry.item}
                                             compact
                                         />
@@ -775,6 +808,13 @@ export function StoreCloseFlow({
     if (stage === 'closed' && result) {
         const closed = result.store_session;
         const rows: [string, string][] = [
+            ['Opened at', manilaTime.format(new Date(closed.opened_at))],
+            ['Opened by', closed.opened_by.name ?? '—'],
+            ['Opening Cash', formatDecimalPeso(closed.opening_cash_amount)],
+            [
+                'Opening Cashless',
+                formatDecimalPeso(closed.opening_cashless_amount),
+            ],
             ['Closed at', manilaTime.format(new Date(closed.closed_at))],
             ['Closed by', closed.closed_by.name ?? '—'],
             ['Closing Cash', formatDecimalPeso(closed.closing_cash_amount)],
@@ -873,6 +913,7 @@ export function StoreCloseFlow({
                     </div>
                 </header>
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
+                    <SessionOpening session={preview.store_session} />
                     <ChannelSummary
                         label="Cash"
                         description="Physical cash payments"
@@ -1048,6 +1089,8 @@ export function StoreCloseFlow({
                         {loadError}
                     </div>
                 )}
+
+                {preview && <SessionOpening session={preview.store_session} />}
 
                 {!preview && refreshing && (
                     <div

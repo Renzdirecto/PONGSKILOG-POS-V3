@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Enums\ModifierSemanticRole;
-use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\Ingredient;
@@ -18,7 +17,6 @@ use App\Models\ProductModifierEffect;
 use App\Models\ProductModifierEffectLine;
 use App\Models\Recipe;
 use App\Models\RecipeLine;
-use App\Models\StoreSession;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +38,7 @@ class OperationsWorkspace
         private ProductSizes $sizes,
         private ProductImages $images,
         private RecipeCapacity $capacity,
+        private PamamalengkeFunding $funding,
     ) {}
 
     /** @return EloquentCollection<int, OperationPlan> the Branch's active Plans (none for All Branches) */
@@ -108,8 +107,6 @@ class OperationsWorkspace
                 'ingredient_count' => (int) ($ingredientCounts[$plan->id] ?? 0),
             ])->values()->all(),
             'active_plan_id' => $active?->id,
-            'has_open_store_session' => $branch === null ? null
-                : StoreSession::query()->where('branch_id', $branch->id)->where('status', StoreSessionStatus::Open)->exists(),
         ];
     }
 
@@ -120,13 +117,12 @@ class OperationsWorkspace
     public function plansPage(?Branch $branch, EloquentCollection $plans): array
     {
         $rows = $this->stock->rows($branch);
-        $summary = $this->summary->today($branch);
         $branchId = $branch?->id;
         $memberships = OperationPlanProduct::query()->where('branch_id', $branchId)->get(['operation_plan_id', 'product_id']);
         $recipeProducts = Recipe::query()->where('branch_id', $branchId)->distinct()->pluck('product_id')->flip();
         $direct = $this->directResaleProducts($branchId, $memberships->map(fn (OperationPlanProduct $membership): string => $membership->product_id)->values()->all());
 
-        $cards = $plans->map(function (OperationPlan $plan) use ($rows, $memberships, $recipeProducts, $direct, $summary): array {
+        $cards = $plans->map(function (OperationPlan $plan) use ($rows, $memberships, $recipeProducts, $direct): array {
             $productIds = $memberships->where('operation_plan_id', $plan->id)->pluck('product_id')->all();
             $need = array_values(array_filter($productIds, fn (string $id): bool => ! $direct->has($id)));
             $withRecipe = array_values(array_filter($need, fn (string $id): bool => $recipeProducts->has($id)));
@@ -145,14 +141,9 @@ class OperationsWorkspace
                 'to_buy' => $market['available'] ? count($market['auto']) : null,
                 'suggested_cents' => $market['available'] ? $market['estimate_cents'] : null,
                 'suggested_unknown' => $market['unknown'],
-                'figures' => $summary['plans'][$plan->id] ?? null,
             ];
         })->values()->all();
 
-        $outsideQuery = fn () => Product::query()->where('is_active', true)
-            ->whereIn('id', BranchProduct::query()->where('branch_id', $branchId)->select('product_id'))
-            ->whereNotIn('id', OperationPlanProduct::query()->where('branch_id', $branchId)->select('product_id'));
-        $outside = $outsideQuery()->orderBy('name')->limit(3)->pluck('name');
         $shared = null;
         foreach ($rows as $row) {
             if (count($row['plan_ids']) > 1) {
@@ -163,11 +154,6 @@ class OperationsWorkspace
 
         return [
             'cards' => $cards,
-            'summary' => $this->presentSummary($summary),
-            'outside' => [
-                'count' => $outsideQuery()->count(),
-                'examples' => $outside->all(),
-            ],
             'shared' => $shared === null ? null : [
                 ...$this->presentIngredient($shared),
                 'plan_ids' => $shared['plan_ids'],
@@ -241,8 +227,10 @@ class OperationsWorkspace
             'quantity' => ExactQuantity::display(ExactQuantity::parse($line->quantity)),
         ])->values()->all();
 
+        $imageUrls = $this->images->safeCardUrls($products);
+
         return [
-            'products' => $products->map(function (Product $product) use ($branch, $resolved, $recipes, $effects, $configurations, $availability, $present): array {
+            'products' => $products->map(function (Product $product) use ($branch, $resolved, $recipes, $effects, $configurations, $availability, $present, $imageUrls): array {
                 /** @var BranchProduct $configuration */
                 $configuration = $configurations->get($product->id);
                 $tracked = $configuration->tracks_inventory;
@@ -281,7 +269,7 @@ class OperationsWorkspace
                     'name' => $product->name,
                     'category' => $product->category?->name,
                     'is_active' => $product->is_active,
-                    'image_url' => $this->images->safeCardUrl($product),
+                    'image_url' => $imageUrls[$product->id] ?? null,
                     'no_recipe_needed' => $noRecipeNeeded,
                     /** Only this Branch's own Product stock tracking can block its Ingredient recipe mode. */
                     'tracks_product_stock' => $tracked,
@@ -327,7 +315,33 @@ class OperationsWorkspace
             'manual' => $this->manualEntries($branch, $plan),
             'summary' => $this->presentSummary($summary, $plan),
             'earlier' => $this->purchasesToday($branch, $plan),
+            /** The Store Sessions that may fund the next confirmation: the open one first, then recent closed ones. */
+            'funding_sessions' => $branch === null ? [] : $this->funding->options($branch),
         ];
+    }
+
+    /**
+     * How a run was funded, for the history: the Store Purchase of the session that was open when it was confirmed,
+     * or an allocation to a closed session (no expense, sealed Close Store result).
+     *
+     * @return array{session_id: string, label: string, recorded_as: 'store_purchase'|'allocation', expense_reference: string|null}
+     */
+    private function fundingOf(PamamalengkePurchase $purchase): array
+    {
+        $session = $purchase->fundingSession;
+
+        return [
+            'session_id' => $purchase->store_session_id,
+            'label' => $session === null ? '' : PamamalengkeFunding::label($session),
+            'recorded_as' => $purchase->store_session_expense_id === null ? 'allocation' : 'store_purchase',
+            'expense_reference' => $purchase->store_session_expense_id === null ? null : 'EXP-'.strtoupper(substr($purchase->store_session_expense_id, 0, 8)),
+        ];
+    }
+
+    /** A run's actual amount: the exact sum of its item line totals (equal to its expense when one exists). */
+    private function purchaseCents(PamamalengkePurchase $purchase): int
+    {
+        return $purchase->items->sum(fn (PamamalengkePurchaseItem $item): int => ExactMoney::cents((string) $item->line_total));
     }
 
     /** @return array<string, mixed> */
@@ -337,18 +351,24 @@ class OperationsWorkspace
             ->when($branch !== null, fn ($query) => $query->where('pamamalengke_purchases.branch_id', $branch?->id))
             ->when($plan !== null, fn ($query) => $query->where('pamamalengke_purchases.operation_plan_id', $plan?->id));
         $since = IngredientStockReport::startOfToday();
+        /** A run's actual amount is the sum of its items: closed-session allocations have no expense row. */
         $totals = (clone $query)
             ->where('pamamalengke_purchases.created_at', '>=', $since->subDays(6))
-            ->join('store_session_expenses', 'store_session_expenses.id', '=', 'pamamalengke_purchases.store_session_expense_id')
-            ->get([
+            ->select([
                 'pamamalengke_purchases.created_at',
                 'pamamalengke_purchases.estimated_total',
                 'pamamalengke_purchases.estimate_complete',
-                DB::raw('CAST(ROUND(store_session_expenses.amount * 100) AS BIGINT) AS actual_cents'),
-            ]);
+            ])
+            ->selectSub(
+                DB::table('pamamalengke_purchase_items')
+                    ->selectRaw('CAST(ROUND(COALESCE(SUM(line_total), 0) * 100) AS BIGINT)')
+                    ->whereColumn('pamamalengke_purchase_items.pamamalengke_purchase_id', 'pamamalengke_purchases.id'),
+                'actual_cents',
+            )
+            ->get();
         $today = $totals->filter(fn ($row): bool => $row->created_at >= $since);
         $week = $totals->filter(fn ($row): bool => $row->created_at >= $since->subDays(6));
-        $paginator = $query->select('pamamalengke_purchases.*')->with(['items.ingredient:id,base_unit', 'expense:id,amount,payment_source,created_at', 'plan:id,name', 'createdBy:id,name', 'branch:id,code,name'])
+        $paginator = $query->select('pamamalengke_purchases.*')->with(['items.ingredient:id,base_unit', 'plan:id,name', 'createdBy:id,name', 'branch:id,code,name', 'fundingSession:id,opened_at,closed_at'])
             ->orderByDesc('created_at')->orderByDesc('id')
             ->paginate(15, ['*'], 'page', $page)->withQueryString();
 
@@ -367,10 +387,10 @@ class OperationsWorkspace
                 'branch' => $purchase->branch?->only(['id', 'code', 'name']),
                 'plan' => $purchase->plan?->only(['id', 'name']),
                 'bought_by' => $purchase->createdBy?->name,
-                'payment_source' => $purchase->expense?->payment_source,
+                'payment_source' => $purchase->payment_source,
                 'expense_id' => $purchase->store_session_expense_id,
-                'expense_reference' => 'EXP-'.strtoupper(substr($purchase->store_session_expense_id, 0, 8)),
-                'actual_cents' => ExactMoney::cents((string) $purchase->expense?->amount),
+                'funding' => $this->fundingOf($purchase),
+                'actual_cents' => $this->purchaseCents($purchase),
                 'estimate_cents' => $purchase->estimated_total === null ? null : ExactMoney::cents((string) $purchase->estimated_total),
                 'estimate_complete' => $purchase->estimate_complete,
                 'note' => $purchase->note,
@@ -571,18 +591,17 @@ class OperationsWorkspace
             ->when($branch !== null, fn ($query) => $query->where('branch_id', $branch?->id))
             ->where('operation_plan_id', $plan->id)
             ->where('created_at', '>=', IngredientStockReport::startOfToday())
-            ->with(['expense:id,amount', 'createdBy:id,name'])
-            ->withCount('items')
+            ->with(['items:id,pamamalengke_purchase_id,line_total', 'createdBy:id,name', 'fundingSession:id,opened_at,closed_at'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (PamamalengkePurchase $purchase): array => [
                 'id' => $purchase->id,
                 'created_at' => $purchase->created_at?->toIso8601String(),
-                'items' => (int) $purchase->getAttribute('items_count'),
+                'items' => $purchase->items->count(),
                 'bought_by' => $purchase->createdBy?->name,
-                'expense_reference' => 'EXP-'.strtoupper(substr($purchase->store_session_expense_id, 0, 8)),
+                'funding' => $this->fundingOf($purchase),
                 'estimate_cents' => $purchase->estimate_complete && $purchase->estimated_total !== null ? ExactMoney::cents((string) $purchase->estimated_total) : null,
-                'actual_cents' => ExactMoney::cents((string) $purchase->expense?->amount),
+                'actual_cents' => $this->purchaseCents($purchase),
             ])->all();
     }
 

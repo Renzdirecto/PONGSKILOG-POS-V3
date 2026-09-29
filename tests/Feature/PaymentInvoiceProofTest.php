@@ -63,3 +63,17 @@ test('cash payments invalid files and closed sessions cannot mutate invoice proo
     $this->withHeader('Accept', 'application/json')->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->image('late.jpg', 640, 480)])->assertUnprocessable();
     $this->assertDatabaseCount('payment_invoice_proofs', 0);
 });
+
+test('a voided order invoice proof can no longer be viewed, replaced or removed', function () {
+    $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id]);
+    $this->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->image('first.jpg', 640, 480)])->assertOk();
+    $path = $this->payment->invoiceProof()->sole()->path;
+    $this->order->forceFill(['commercial_status' => 'voided', 'voided_at' => now()])->saveQuietly();
+
+    $this->get(route('pos.payments.invoice.show', $this->payment))->assertNotFound();
+    $this->post(route('pos.payments.invoice.store', $this->payment), ['invoice' => UploadedFile::fake()->image('late.jpg', 640, 480)])->assertNotFound();
+    $this->delete(route('pos.payments.invoice.destroy', $this->payment))->assertNotFound();
+
+    Storage::disk('local')->assertExists($path);
+    expect($this->payment->invoiceProof()->sole()->path)->toBe($path);
+});

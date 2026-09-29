@@ -82,11 +82,16 @@ test('signed receipt is public private and carries only customer receipt fields 
         ->assertJsonPath('receipt.branch.name', 'Receipt branch')->assertJsonPath('receipt.branch.address', 'Receipt address')
         ->assertJsonPath('receipt.branch.contact', '09170000000')->assertJsonPath('receipt.branch.footer', 'Thank you!')
         ->assertJsonPath('receipt.branch.show_logo', true)->assertJsonPath('receipt.payments.0.amount', '100.00');
-    expect(array_keys($public->json('receipt')))->toEqualCanonicalizing(['order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type', 'customer_label', 'table_name', 'items', 'subtotal', 'total', 'branch', 'payments']);
+    expect(array_keys($public->json('receipt')))->toEqualCanonicalizing(['order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type', 'customer_label', 'table_name', 'items', 'subtotal', 'total', 'branch', 'payments', 'layout', 'cashier', 'money', 'commercial_status', 'payment_status']);
     expect(array_keys($public->json('receipt.payments.0')))->toEqualCanonicalizing(['method', 'amount', 'amount_received', 'change_amount']);
+    expect(array_keys($public->json('receipt.layout')))->toEqualCanonicalizing(['blocks', 'separator', 'header_text', 'custom_rows', 'order_qr']);
+    expect(array_keys($public->json('receipt.money')))->toEqualCanonicalizing(['paid', 'refunded', 'balance']);
+    expect($public->json('receipt.cashier'))->toBe($order->payments()->sole()->createdBy->customerFacingName());
     expect($public->json('receipt.branch.logo_url'))->toContain('/branches/'.$order->branch_id.'/receipt-logo?v=');
+    expect($public->json('receipt.layout.blocks'))->toContain('logo');
     $order->branch->update(['receipt_show_logo' => false]);
-    $this->getJson($path)->assertOk()->assertJsonPath('receipt.branch.show_logo', false);
+    $hidden = $this->getJson($path)->assertOk()->assertJsonPath('receipt.branch.show_logo', false);
+    expect($hidden->json('receipt.layout.blocks'))->not->toContain('logo');
 });
 
 test('signature rejects unsigned URLs changed signatures order paths and expiry values', function () {

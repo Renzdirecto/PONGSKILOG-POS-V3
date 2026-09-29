@@ -8,6 +8,7 @@ use App\Enums\OrderSource;
 use App\Events\CustomerCatalogChanged;
 use App\Models\Branch;
 use App\Models\User;
+use App\Support\ReceiptLayout;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,7 +34,12 @@ class BranchQrSettingsController extends Controller
             'receipt_show_logo' => ['sometimes', 'boolean'],
             'receipt_logo' => ['sometimes', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:max_width=2000,max_height=2000'],
             'remove_receipt_logo' => ['sometimes', 'boolean'],
+            /** Receipt blocks, order, header text and custom rows (JSON, as the form is multipart): ReceiptLayout. */
+            'receipt_layout' => ['sometimes', 'json', 'max:4000'],
         ]);
+        if (array_key_exists('receipt_layout', $data)) {
+            $data['receipt_layout'] = ReceiptLayout::validate(json_decode((string) $data['receipt_layout'], true));
+        }
         $uploaded = $request->file('receipt_logo')?->store('receipt-logos/'.$branch->id, 's3');
         abort_if($uploaded === false, 503, 'The receipt logo could not be saved.');
         $remove = $request->boolean('remove_receipt_logo');
@@ -76,11 +82,19 @@ class BranchQrSettingsController extends Controller
         return response()->json(['saved' => true]);
     }
 
-    public function logo(Branch $branch): StreamedResponse
+    /**
+     * The public receipt logo. Receipt links carry `?v=` (a hash of the stored path), so a matching request is cached
+     * by browsers for a year: a new logo gets a new path and therefore a new URL.
+     */
+    public function logo(Request $request, Branch $branch): StreamedResponse
     {
         abort_unless($branch->receipt_logo_path && Storage::disk('s3')->exists($branch->receipt_logo_path), 404);
+        $versioned = hash_equals(md5($branch->receipt_logo_path), (string) $request->query('v'));
 
-        return Storage::disk('s3')->response($branch->receipt_logo_path, null, ['Cache-Control' => 'no-cache', 'X-Content-Type-Options' => 'nosniff']);
+        return Storage::disk('s3')->response($branch->receipt_logo_path, null, [
+            'Cache-Control' => $versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function history(Request $request, Branch $branch): JsonResponse
@@ -104,7 +118,7 @@ class BranchQrSettingsController extends Controller
         return $branch->only([
             'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name',
             'receipt_address', 'receipt_contact', 'receipt_footer',
-            'receipt_show_logo', 'receipt_logo_path',
+            'receipt_show_logo', 'receipt_logo_path', 'receipt_layout',
         ]);
     }
 }

@@ -34,6 +34,7 @@ use App\Models\OrderRecipeSnapshot;
 use App\Models\PamamalengkePurchase;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Models\StoreSession;
 use App\Models\StoreSessionExpense;
 use App\Models\StoreSessionGiveaway;
 use App\Models\StoreSessionGiveawayReversal;
@@ -134,7 +135,8 @@ if ($worker) {
     try {
         $result = match ($action) {
             'confirm' => app(ConfirmPamamalengke::class)->execute($user, OperationPlan::query()->findOrFail($argv[8]), [
-                'idempotency_key' => $key, 'payment_source' => 'cash',
+                'idempotency_key' => $key, 'payment_source' => 'cash', 'funding_session_status' => 'open',
+                'funding_store_session_id' => StoreSession::query()->where('branch_id', $branch->id)->where('status', 'open')->value('id'),
                 'items' => [['type' => 'ingredient', 'ingredient_id' => $argv[9], 'actual_quantity' => '2', 'actual_unit_cost' => '10.00']],
             ])->id,
             'sale' => app(PayNowOrder::class)->execute($user, $branch, [
@@ -157,7 +159,7 @@ if ($worker) {
                 ...($argv[8] === 'none' ? ['restock' => false] : ['restock' => true, 'product_id' => $argv[8], 'quantity' => 2]),
             ])->id,
             'store_adjust' => app(RecordStoreSessionInventoryAdjustment::class)->execute($user, $branch, [
-                'idempotency_key' => $key, 'reason_code' => 'damaged', 'product_id' => $argv[8], 'quantity' => 1, 'note' => null,
+                'idempotency_key' => $key, 'direction' => 'decrease', 'reason_code' => 'damaged', 'product_id' => $argv[8], 'quantity' => 1, 'note' => null,
             ])->id,
             'settle' => app(SettlePayLaterOrder::class)->execute($user, $branch, Order::query()->findOrFail($argv[8]), [
                 'idempotency_key' => $key, 'payment_method' => 'cash', 'cash_received' => '9999.00', 'cashless_amount' => null,
@@ -314,6 +316,7 @@ try {
     session([ActiveBranchContext::SESSION_KEY => $ops->branch->id]);
     $purchase = app(ConfirmPamamalengke::class)->execute($ops->owner, $ops->silog, [
         'idempotency_key' => (string) Str::uuid(), 'payment_source' => 'cashless',
+        'funding_store_session_id' => $ops->session->id, 'funding_session_status' => 'open',
         'items' => [
             ['type' => 'ingredient', 'ingredient_id' => $ops->ingredients['water']->id, 'actual_quantity' => '0.5', 'actual_unit_cost' => '44.00'],
             ['type' => 'manual', 'name' => 'Dishwashing liquid', 'unit' => 'pouch', 'actual_quantity' => '1', 'actual_unit_cost' => '89.00'],

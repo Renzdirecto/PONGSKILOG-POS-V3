@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
-export type ResolvedAppearance = 'light' | 'dark';
-export type Appearance = ResolvedAppearance | 'system';
+/**
+ * Appearance (Phase 20): Light or Dark, chosen per device, default Light. There is no "system" mode: a device follows
+ * what its staff member chose, never the OS. Customer-facing screens are always Light (`setAppearanceLock`).
+ */
+export type Appearance = 'light' | 'dark';
+export type ResolvedAppearance = Appearance;
 
 export type UseAppearanceReturn = {
     readonly appearance: Appearance;
@@ -9,16 +13,10 @@ export type UseAppearanceReturn = {
     readonly updateAppearance: (mode: Appearance) => void;
 };
 
+const STORAGE_KEY = 'appearance';
 const listeners = new Set<() => void>();
-let currentAppearance: Appearance = 'system';
-
-const prefersDark = (): boolean => {
-    if (typeof window === 'undefined') {
-        return false;
-    }
-
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-};
+let currentAppearance: Appearance = 'light';
+let lockedLight = false;
 
 const setCookie = (name: string, value: string, days = 365): void => {
     if (typeof document === 'undefined') {
@@ -29,27 +27,34 @@ const setCookie = (name: string, value: string, days = 365): void => {
     document.cookie = `${name}=${value};path=/;max-age=${maxAge};SameSite=Lax`;
 };
 
-const getStoredAppearance = (): Appearance => {
-    if (typeof window === 'undefined') {
-        return 'system';
+/** A stored legacy "system" (or anything unknown) is Light; storage may be unavailable in private modes. */
+const readStoredAppearance = (): Appearance => {
+    try {
+        return window.localStorage.getItem(STORAGE_KEY) === 'dark'
+            ? 'dark'
+            : 'light';
+    } catch {
+        return 'light';
     }
-
-    return (localStorage.getItem('appearance') as Appearance) || 'system';
 };
 
-const isDarkMode = (appearance: Appearance): boolean => {
-    return appearance === 'dark' || (appearance === 'system' && prefersDark());
+const storeAppearance = (mode: Appearance): void => {
+    try {
+        window.localStorage.setItem(STORAGE_KEY, mode);
+    } catch {
+        // The cookie below still carries the choice to the server.
+    }
+    setCookie(STORAGE_KEY, mode);
 };
 
-const applyTheme = (appearance: Appearance): void => {
+const applyTheme = (): void => {
     if (typeof document === 'undefined') {
         return;
     }
+    const dark = !lockedLight && currentAppearance === 'dark';
 
-    const isDark = isDarkMode(appearance);
-
-    document.documentElement.classList.toggle('dark', isDark);
-    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
 };
 
 const subscribe = (callback: () => void) => {
@@ -60,56 +65,40 @@ const subscribe = (callback: () => void) => {
 
 const notify = (): void => listeners.forEach((listener) => listener());
 
-const mediaQuery = (): MediaQueryList | null => {
-    if (typeof window === 'undefined') {
-        return null;
+export function setAppearanceLock(locked: boolean): void {
+    if (lockedLight !== locked) {
+        lockedLight = locked;
+        applyTheme();
     }
-
-    return window.matchMedia('(prefers-color-scheme: dark)');
-};
-
-const handleSystemThemeChange = (): void => applyTheme(currentAppearance);
+}
 
 export function initializeTheme(): void {
     if (typeof window === 'undefined') {
         return;
     }
 
-    if (!localStorage.getItem('appearance')) {
-        localStorage.setItem('appearance', 'system');
-        setCookie('appearance', 'system');
-    }
-
-    currentAppearance = getStoredAppearance();
-    applyTheme(currentAppearance);
-
-    // Set up system theme change listener
-    mediaQuery()?.addEventListener('change', handleSystemThemeChange);
+    lockedLight = document.documentElement.dataset.appearanceLock === 'light';
+    currentAppearance = readStoredAppearance();
+    applyTheme();
 }
 
 export function useAppearance(): UseAppearanceReturn {
     const appearance: Appearance = useSyncExternalStore(
         subscribe,
         () => currentAppearance,
-        () => 'system',
+        () => 'light',
     );
-
-    const resolvedAppearance: ResolvedAppearance = isDarkMode(appearance)
-        ? 'dark'
-        : 'light';
 
     const updateAppearance = (mode: Appearance): void => {
         currentAppearance = mode;
-
-        // Store in localStorage for client-side persistence...
-        localStorage.setItem('appearance', mode);
-
-        // Store in cookie for SSR...
-        setCookie('appearance', mode);
-
-        applyTheme(mode);
+        storeAppearance(mode);
+        applyTheme();
         notify();
     };
 
-    return { appearance, resolvedAppearance, updateAppearance } as const;
+    return {
+        appearance,
+        resolvedAppearance: appearance,
+        updateAppearance,
+    } as const;
 }

@@ -1,4 +1,5 @@
 import type { OrderSummary, OrderType, CartLine, PosProduct } from './pos';
+import type { CanonicalReceipt } from './receipt';
 export type QrProduct = Omit<
     PosProduct,
     'on_hand' | 'tracks_inventory' | 'stock_status'
@@ -36,23 +37,8 @@ export type QrOrder = {
         >[];
     })[];
 };
-export type QrReceipt = QrOrder & {
-    branch: {
-        name: string;
-        code: string;
-        address: string | null;
-        contact: string | null;
-        footer?: string | null;
-        show_logo?: boolean;
-        logo_url?: string;
-    };
-    payments: {
-        method: string;
-        amount: string;
-        amount_received: string | null;
-        change_amount: string | null;
-    }[];
-};
+/** The Customer QR session's receipt: its tracking projection plus the canonical receipt document. */
+export type QrReceipt = Omit<QrOrder, keyof CanonicalReceipt> & CanonicalReceipt;
 export type StaffQrOrder = OrderSummary & {
     source: 'customer_qr';
     qr_number: string | null;
@@ -62,22 +48,11 @@ export type StaffQrOrder = OrderSummary & {
     archive_reason: string | null;
     branch_table_id: string | null;
     version: number;
+    /** Archived tab only: whether Restore can apply (the order belongs to the open Store Session). */
+    restorable?: boolean;
 };
 
-export type PublicReceipt = Pick<
-    QrReceipt,
-    | 'order_number'
-    | 'reference_number'
-    | 'paid_at'
-    | 'receipt_expires_at'
-    | 'order_type'
-    | 'commercial_status'
-    | 'voided_at'
-    | 'customer_label'
-    | 'table_name'
-    | 'items'
-    | 'subtotal'
-    | 'total'
-    | 'branch'
-    | 'payments'
->;
+/** The shared receipt link / Pickup receipt: the canonical receipt document and when the link expires. */
+export type PublicReceipt = CanonicalReceipt & {
+    receipt_expires_at: string | null;
+};

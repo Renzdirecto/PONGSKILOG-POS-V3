@@ -6,11 +6,12 @@ import {
     MonitorSmartphone,
     UtensilsCrossed,
 } from 'lucide-react';
-import { useEcho } from '@laravel/echo-react';
+import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
     useSyncExternalStore,
 } from 'react';
@@ -35,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input';
 import type { CustomerScreenControl as Control } from '@/lib/customer-screen';
 import { qrError } from '@/lib/qr-http';
+import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 import {
     createBranchEventGuard,
     createRealtimeRefresh,
@@ -113,6 +115,25 @@ export function CustomerScreenControl({ branchId }: { branchId: string }) {
 
         return () => refresh.dispose();
     }, [refresh]);
+    /** Status signals may have been missed while disconnected: refetch once after a reconnect. */
+    const connection = useConnectionStatus();
+    const previousConnection = useRef(connection);
+    const hasConnected = useRef(connection === 'connected');
+    useEffect(() => {
+        if (
+            shouldRefetchCatalogAfterConnectionChange(
+                previousConnection.current,
+                connection,
+                hasConnected.current,
+            )
+        ) {
+            refresh.schedule(0);
+        }
+        if (connection === 'connected') {
+            hasConnected.current = true;
+        }
+        previousConnection.current = connection;
+    }, [connection, refresh]);
     const accept = useMemo(() => createBranchEventGuard(branchId), [branchId]);
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.pos`,

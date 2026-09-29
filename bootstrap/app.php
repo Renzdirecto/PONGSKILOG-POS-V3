@@ -1,11 +1,13 @@
 <?php
 
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ServiceWorkerController;
 use App\Http\Middleware\EnsureActiveBranchContext;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -23,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             /** The PWA service worker: at the root for a whole-app scope, outside the web middleware (no session). */
             Route::get('sw.js', ServiceWorkerController::class)->name('pwa.service-worker');
+            /** Readiness for monitoring (no session or cookies); `/up` stays the liveness probe for deploys. */
+            Route::get('health', HealthController::class)->middleware('throttle:health')->name('health');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -45,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            SecurityHeaders::class,
         ]);
 
         $middleware->alias([

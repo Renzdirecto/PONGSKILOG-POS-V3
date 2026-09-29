@@ -38,7 +38,7 @@ Cashier may view allowed information but cannot:
 - Save Pay Later
 - Void
 - Delete
-- Adjust inventory
+- Stock correction (was Adjust inventory)
 - Record Store Purchase
 - Perform other operational CRUD
 

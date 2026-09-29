@@ -21,7 +21,6 @@ export type OperationsContext = {
     branch: { id: string; name: string; code: string } | null;
     plans: OperationsPlan[];
     active_plan_id: string | null;
-    has_open_store_session: boolean | null;
     /** How much Operations setup the selected Branch has (all zero for All Branches or a new Branch). */
     setup: {
         plans: number;
@@ -103,15 +102,24 @@ export type OperationsFigures = {
     pamamalengke_cents: number;
     non_stock_cents: number;
     other_expenses_cents: number;
-    cash_after_cents: number;
     operating_profit_cents: number;
     incomplete: boolean;
-    products: {
+    /** Today's sales by Catalog category → Product × size, from the Order lines' own snapshots. */
+    products_sold: ProductsSoldCategory[];
+};
+
+export type ProductsSoldCategory = {
+    category_id: string;
+    name: string;
+    quantity: number;
+    sales_cents: number;
+    sizes: { name: string; quantity: number }[];
+    lines: {
         product_id: string;
         name: string;
+        size: string | null;
         quantity: number;
         sales_cents: number;
-        state: string;
     }[];
 };
 
@@ -150,12 +158,32 @@ export type ManualEntry = {
     note: string | null;
 };
 
+/**
+ * How a Pamamalengke run was funded (Phase 20): the Store Purchase of the session that was open when it was confirmed,
+ * or an allocation to a closed session (no expense; its Close Store result never changes).
+ */
+export type PurchaseFunding = {
+    session_id: string;
+    label: string;
+    recorded_as: 'store_purchase' | 'allocation';
+    expense_reference: string | null;
+};
+
+/** A Store Session that may fund the next confirmation: the open one first, then recent closed ones. */
+export type FundingSession = {
+    id: string;
+    status: 'open' | 'closed';
+    label: string;
+    opened_at: string;
+    closed_at: string | null;
+};
+
 export type EarlierPurchase = {
     id: string;
     created_at: string | null;
     items: number;
     bought_by: string | null;
-    expense_reference: string;
+    funding: PurchaseFunding;
     estimate_cents: number | null;
     actual_cents: number;
 };
@@ -241,9 +269,9 @@ export type PurchaseRun = {
     branch: { id: string; code: string; name: string } | null;
     plan: { id: string; name: string } | null;
     bought_by: string | null;
-    payment_source: 'cash' | 'cashless' | null;
-    expense_id: string;
-    expense_reference: string;
+    payment_source: 'cash' | 'cashless';
+    expense_id: string | null;
+    funding: PurchaseFunding;
     actual_cents: number;
     estimate_cents: number | null;
     estimate_complete: boolean;

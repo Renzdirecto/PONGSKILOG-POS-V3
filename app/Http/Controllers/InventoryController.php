@@ -79,16 +79,18 @@ class InventoryController extends Controller
             $inventoryState->filterProducts($query, $branch, $filters['stock_status']);
         }
 
-        $products = $query->orderBy('products.name')->orderBy('products.id')
-            ->paginate(24)->withQueryString()->appends(['branch_id' => $branch?->id])
-            ->through(function (Product $product) use ($images, $inventoryState): array {
+        $page = $query->orderBy('products.name')->orderBy('products.id')
+            ->paginate(24)->withQueryString()->appends(['branch_id' => $branch?->id]);
+        $imageUrls = $images->safeCardUrls($page->getCollection());
+        $products = $page
+            ->through(function (Product $product) use ($imageUrls, $inventoryState): array {
                 $balance = $product->inventoryBalances->first();
 
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
                     'category_name' => $product->category->name,
-                    'image_url' => $images->safeCardUrl($product),
+                    'image_url' => $imageUrls[$product->id] ?? null,
                     'last_updated_at' => $balance?->updated_at?->toIso8601String(),
                     ...$inventoryState->resolve($product->branchProducts->first(), $balance),
                 ];

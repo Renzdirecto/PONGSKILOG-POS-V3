@@ -1,56 +1,46 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router } from '@inertiajs/react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import {
     POS_CATALOG_REALTIME_EVENTS,
     shouldRefetchCatalogAfterConnectionChange,
     type PosCatalogRealtimeEvent,
 } from '@/lib/pos-catalog-realtime';
+import { createRealtimeRefresh } from '@/lib/realtime-refresh';
 
 const REFRESH_DEBOUNCE_MS = 160;
 
+/**
+ * Keeps the POS catalog (availability, stock) current: one reload at a time with one trailing reload for signals that
+ * arrive meanwhile, a fixed debounce (a burst of signals cannot postpone it forever), nothing after unmount, and a
+ * revoked session sent to the workspace instead of an error dialog.
+ */
 export function usePosCatalogRealtime(branchId: string) {
     const connectionStatus = useConnectionStatus();
-    const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const refreshInFlight = useRef(false);
-    const refreshQueued = useRef(false);
     const previousStatus = useRef(connectionStatus);
     const hasConnected = useRef(connectionStatus === 'connected');
-
-    const scheduleRefresh = useCallback((delay = REFRESH_DEBOUNCE_MS) => {
-        if (refreshTimer.current !== null) {
-            clearTimeout(refreshTimer.current);
-        }
-
-        refreshTimer.current = setTimeout(() => {
-            refreshTimer.current = null;
-
-            if (refreshInFlight.current) {
-                refreshQueued.current = true;
-
-                return;
-            }
-
-            refreshInFlight.current = true;
-            router.reload({
-                only: ['catalog'],
-                onFinish: () => {
-                    refreshInFlight.current = false;
-
-                    if (refreshQueued.current) {
-                        refreshQueued.current = false;
-                        scheduleRefresh(0);
-                    }
-                },
-            });
-        }, delay);
-    }, []);
+    const refresh = useMemo(
+        () =>
+            createRealtimeRefresh(
+                (finish) =>
+                    router.reload({
+                        only: ['catalog'],
+                        preserveUrl: true,
+                        onHttpException: handleRevalidationException,
+                        onNetworkError: () => false,
+                        onFinish: finish,
+                    }),
+                REFRESH_DEBOUNCE_MS,
+            ),
+        [branchId],
+    );
 
     useEcho<PosCatalogRealtimeEvent>(
         `branch.${branchId}.inventory`,
         [...POS_CATALOG_REALTIME_EVENTS],
-        () => scheduleRefresh(),
-        [branchId, scheduleRefresh],
+        () => refresh.schedule(),
+        [branchId, refresh],
     );
 
     useEffect(() => {
@@ -61,7 +51,7 @@ export function usePosCatalogRealtime(branchId: string) {
                 hasConnected.current,
             )
         ) {
-            scheduleRefresh(0);
+            refresh.schedule(0);
         }
 
         if (connectionStatus === 'connected') {
@@ -69,16 +59,13 @@ export function usePosCatalogRealtime(branchId: string) {
         }
 
         previousStatus.current = connectionStatus;
-    }, [connectionStatus, scheduleRefresh]);
+    }, [connectionStatus, refresh]);
 
-    useEffect(
-        () => () => {
-            if (refreshTimer.current !== null) {
-                clearTimeout(refreshTimer.current);
-            }
-        },
-        [],
-    );
+    useEffect(() => {
+        refresh.activate();
+
+        return () => refresh.dispose();
+    }, [refresh]);
 
     return connectionStatus;
 }

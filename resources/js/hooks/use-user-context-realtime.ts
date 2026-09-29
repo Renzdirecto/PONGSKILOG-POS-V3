@@ -35,16 +35,35 @@ export function handleRevalidationException(response: {
  * Position, picture and Branch selector update in place. If the page is no longer allowed, the account goes to its
  * workspace (the server picks the landing page or Branch picker); if the session ended, to login. No polling.
  */
+/**
+ * After a reconnect only the shared context is revalidated (the URL is still re-authorized), and devices spread it over
+ * a few seconds: when the realtime server restarts, every open screen reconnects at once and must not reload whole
+ * pages together. A `user.context_changed` signal still reloads the whole page.
+ */
+export const RECONNECT_CONTEXT_PROPS = [
+    'auth',
+    'branchContext',
+    'storeContext',
+    'notificationCenter',
+    'qrWaitingCount',
+];
+export const RECONNECT_JITTER_MS = 3000;
+
 export function useUserContextRealtime(userId: number): void {
     const connectionStatus = useConnectionStatus();
     const previousStatus = useRef(connectionStatus);
     const hasConnected = useRef(connectionStatus === 'connected');
+    /** A context signal asks for a whole-page revalidation; a reconnect only for the shared context. */
+    const fullReload = useRef(false);
 
     const refresh = useMemo(
         () =>
             createRealtimeRefresh((onFinish) => {
                 let cancel: (() => void) | undefined;
+                const full = fullReload.current;
+                fullReload.current = false;
                 router.reload({
+                    ...(full ? {} : { only: RECONNECT_CONTEXT_PROPS }),
                     onCancelToken: (token) => {
                         cancel = token.cancel;
                     },
@@ -68,6 +87,7 @@ export function useUserContextRealtime(userId: number): void {
         [USER_CONTEXT_EVENT],
         (event) => {
             if (acceptEvent(event)) {
+                fullReload.current = true;
                 scheduleRefresh();
             }
         },
@@ -82,7 +102,7 @@ export function useUserContextRealtime(userId: number): void {
                 hasConnected.current,
             )
         ) {
-            scheduleRefresh(0);
+            scheduleRefresh(Math.round(Math.random() * RECONNECT_JITTER_MS));
         }
         if (connectionStatus === 'connected') {
             hasConnected.current = true;

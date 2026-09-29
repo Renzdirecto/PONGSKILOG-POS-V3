@@ -12,9 +12,12 @@ import {
     LayoutGrid,
     Leaf,
     ListChecks,
+    LogOut,
     Menu,
     MonitorUp,
     PackageSearch,
+    PanelLeftClose,
+    PanelLeftOpen,
     QrCode,
     ReceiptText,
     Settings,
@@ -31,6 +34,7 @@ import {
 import { PersonAvatar } from '@/components/person-avatar';
 import { PwaAppMenuItem } from '@/components/pwa-app-dialog';
 import { PwaStatus } from '@/components/pwa-status';
+import { useManagementSidebar } from '@/hooks/use-management-sidebar';
 import { identitySubtitle } from '@/lib/management-navigation';
 import { useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
@@ -152,6 +156,8 @@ function DestinationControl({
     active,
     hasBranch,
     compact = false,
+    dock = false,
+    rail = false,
     unread = null,
     onNavigate,
 }: {
@@ -159,6 +165,10 @@ function DestinationControl({
     active: boolean;
     hasBranch: boolean;
     compact?: boolean;
+    /** The collapsed desktop sidebar: icon only, named by aria-label and a tooltip. */
+    rail?: boolean;
+    /** The mobile dock tile: fills the dock's height so the active pill never overflows it. */
+    dock?: boolean;
     unread?: number | null;
     onNavigate?: () => void;
 }) {
@@ -166,13 +176,33 @@ function DestinationControl({
     const blocked = destination.requiresBranch && !hasBranch;
     const badge =
         destination.id === 'notifications' ? unreadBadgeLabel(unread) : null;
-    const className = compact
-        ? `relative flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-1 text-center text-[10px] leading-tight font-semibold transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${active ? 'bg-white text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`
-        : `flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none min-[1180px]:min-h-[42px] ${active ? 'bg-white font-semibold text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`;
-    const content = (
+    const className = rail
+        ? `relative mx-auto flex size-11 items-center justify-center rounded-[10px] transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${active ? 'bg-white text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`
+        : compact
+          ? `relative flex ${dock ? 'h-full min-w-0 gap-1 rounded-[14px] px-0.5' : 'h-[70px] gap-1.5 rounded-xl px-1'} w-full flex-col items-center justify-center text-center text-[10px] leading-tight font-semibold transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${active ? 'bg-white text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`
+          : `flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none min-[1180px]:min-h-[42px] ${active ? 'bg-white font-semibold text-[#111111]' : 'text-white/70 hover:bg-white/10 hover:text-white'}`;
+    const content = rail ? (
         <>
             <Icon className="size-[18px] shrink-0" aria-hidden="true" />
-            <span className={compact ? '' : 'min-w-0 flex-1 truncate'}>
+            {badge !== null && (
+                <span
+                    aria-hidden="true"
+                    className="absolute top-1.5 right-1.5 size-2 rounded-full bg-red-600"
+                />
+            )}
+        </>
+    ) : (
+        <>
+            <Icon className="size-[18px] shrink-0" aria-hidden="true" />
+            <span
+                className={
+                    compact
+                        ? dock
+                            ? 'max-w-full truncate'
+                            : ''
+                        : 'min-w-0 flex-1 truncate'
+                }
+            >
                 {compact ? destination.shortLabel : destination.label}
             </span>
             {!compact && badge !== null && (
@@ -203,7 +233,11 @@ function DestinationControl({
             <button
                 type="button"
                 disabled
-                title={branchRequiredReason}
+                title={
+                    rail
+                        ? `${destination.label}. ${branchRequiredReason}`
+                        : branchRequiredReason
+                }
                 aria-label={`${destination.label}. ${branchRequiredReason}`}
                 className={`${className} cursor-not-allowed opacity-45`}
             >
@@ -217,10 +251,13 @@ function DestinationControl({
             href={href}
             aria-current={active ? 'page' : undefined}
             aria-label={
-                badge === null
-                    ? undefined
-                    : `${destination.label}, ${badge} unread`
+                badge !== null
+                    ? `${destination.label}, ${badge} unread`
+                    : rail
+                      ? destination.label
+                      : undefined
             }
+            title={rail ? destination.label : undefined}
             className={className}
             onClick={onNavigate}
         >
@@ -271,7 +308,7 @@ function CollapsibleNavigation({
                             aria-expanded={isExpanded}
                             aria-controls={regionId}
                             onClick={() => onToggle(section.id)}
-                            className={`flex w-full items-center gap-2 rounded-lg px-2.5 text-left text-[10px] font-semibold tracking-[0.1em] uppercase transition hover:bg-white/5 hover:text-white/70 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${touch ? 'min-h-11' : 'min-h-9'} ${containsActive ? 'text-white/70' : 'text-white/40'}`}
+                            className={`flex w-full items-center gap-2 rounded-lg px-2.5 text-left text-[10.5px] font-bold tracking-[0.12em] uppercase transition hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none ${touch ? 'min-h-11' : 'min-h-9'} ${containsActive ? 'text-white' : 'text-white/80'}`}
                         >
                             <span className="min-w-0 flex-1 truncate">
                                 {section.label}
@@ -360,6 +397,7 @@ function SuperAdminShellFrame({
     const { auth, branchContext } = page.props;
     const unreadLabel = unreadBadgeLabel(unread);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [collapsed, toggleCollapsed] = useManagementSidebar();
     const activeId = activeSuperAdminDestination({
         component: page.component,
         url: page.url,
@@ -404,78 +442,186 @@ function SuperAdminShellFrame({
 
     return (
         <div className="owner-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111] print:block print:h-auto print:overflow-visible print:bg-white print:p-0">
-            <aside className="hidden w-[248px] shrink-0 flex-col bg-[#111111] min-[1180px]:flex print:hidden!">
-                <Link
-                    href={superAdmin()}
-                    className="flex h-[72px] shrink-0 items-center border-b border-white/10 px-4 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
+            <aside
+                data-collapsed={collapsed}
+                className={`theme-static hidden shrink-0 flex-col overflow-hidden bg-[#111111] transition-[width] duration-200 ease-out motion-reduce:transition-none min-[1180px]:flex print:hidden! ${collapsed ? 'w-[76px]' : 'w-[248px]'}`}
+            >
+                <div
+                    className={`flex h-[72px] shrink-0 items-center border-b border-white/10 ${collapsed ? 'justify-center px-2' : 'justify-between gap-2 pr-3 pl-4'}`}
                 >
-                    <img
-                        src="/images/branding/logo.png"
-                        alt="PONGSKILOG"
-                        className="w-[168px]"
-                    />
-                </Link>
-                <div className="border-b border-white/10 p-3">
-                    <div className="flex h-14 items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-3">
-                        <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-white/10 text-white">
-                            <ShieldCheck className="size-[18px]" />
-                        </span>
-                        <span className="min-w-0">
-                            <span className="block text-[10px] font-semibold tracking-[0.1em] text-white/40 uppercase">
-                                Super Admin
+                    {!collapsed && (
+                        <Link
+                            href={superAdmin()}
+                            className="rounded-md focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                        >
+                            <img
+                                src="/images/branding/logo.png"
+                                alt="PONGSKILOG"
+                                className="w-[168px]"
+                            />
+                        </Link>
+                    )}
+                    <button
+                        type="button"
+                        onClick={toggleCollapsed}
+                        aria-expanded={!collapsed}
+                        aria-controls="super-admin-sidebar-navigation"
+                        aria-label={
+                            collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                        }
+                        title={
+                            collapsed ? 'Expand sidebar' : 'Collapse sidebar'
+                        }
+                        className="flex size-10 shrink-0 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                    >
+                        {collapsed ? (
+                            <PanelLeftOpen
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                        ) : (
+                            <PanelLeftClose
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                        )}
+                    </button>
+                </div>
+                <div
+                    className={`border-b border-white/10 ${collapsed ? 'flex justify-center px-2 py-3' : 'p-3'}`}
+                >
+                    {collapsed ? (
+                        <span
+                            title="Super Admin Control Center"
+                            className="flex size-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white"
+                        >
+                            <ShieldCheck
+                                className="size-[18px]"
+                                aria-hidden="true"
+                            />
+                            <span className="sr-only">
+                                Super Admin Control Center
                             </span>
-                            <span className="block truncate text-sm font-semibold text-white">
-                                Control Center
-                            </span>
                         </span>
-                    </div>
+                    ) : (
+                        <div className="flex h-14 items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-3">
+                            <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-white/10 text-white">
+                                <ShieldCheck className="size-[18px]" />
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-[10px] font-semibold tracking-[0.1em] text-white/40 uppercase">
+                                    Super Admin
+                                </span>
+                                <span className="block truncate text-sm font-semibold text-white">
+                                    Control Center
+                                </span>
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <nav
+                    id="super-admin-sidebar-navigation"
                     aria-label="Super Admin navigation"
-                    className="owner-hide-scrollbar flex-1 overflow-y-auto px-2.5 py-3"
+                    className={`owner-hide-scrollbar flex-1 overflow-x-hidden overflow-y-auto py-3 ${collapsed ? 'px-2' : 'px-2.5'}`}
                 >
-                    <CollapsibleNavigation
-                        groups={groups}
-                        activeId={activeId}
-                        expanded={expanded}
-                        onToggle={toggleSection}
-                        hasBranch={hasBranch}
-                        unread={unread}
-                        idPrefix="super-admin-sidebar"
-                    />
+                    {collapsed ? (
+                        groups.map(
+                            ({ section, destinations: items }, index) => (
+                                <div
+                                    key={section.id}
+                                    role="group"
+                                    aria-label={section.label}
+                                    className="mb-2 flex flex-col gap-1"
+                                >
+                                    {index > 0 && (
+                                        <hr
+                                            aria-hidden="true"
+                                            className="mx-auto mb-1 w-8 border-white/15"
+                                        />
+                                    )}
+                                    {items.map((destination) => (
+                                        <DestinationControl
+                                            key={destination.id}
+                                            destination={destination}
+                                            active={destination.id === activeId}
+                                            hasBranch={hasBranch}
+                                            unread={unread}
+                                            rail
+                                        />
+                                    ))}
+                                </div>
+                            ),
+                        )
+                    ) : (
+                        <CollapsibleNavigation
+                            groups={groups}
+                            activeId={activeId}
+                            expanded={expanded}
+                            onToggle={toggleSection}
+                            hasBranch={hasBranch}
+                            unread={unread}
+                            idPrefix="super-admin-sidebar"
+                        />
+                    )}
                 </nav>
                 <div className="border-t border-white/10 p-3">
-                    <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
-                        <PersonAvatar
-                            name={auth.user?.name}
-                            avatarUrl={auth.user?.avatarUrl}
-                            fallback="Super Admin"
-                            className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
-                        />
-                        <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-semibold">
-                                {auth.user?.name}
+                    {collapsed ? (
+                        <div className="flex flex-col items-center gap-2 text-white">
+                            <span
+                                title={auth.user?.displayName ?? 'Super Admin'}
+                                className="flex size-[34px] items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                            >
+                                <PersonAvatar
+                                    name={auth.user?.displayName}
+                                    avatarUrl={auth.user?.avatarUrl}
+                                    fallback="Super Admin"
+                                    className="flex size-full items-center justify-center"
+                                />
                             </span>
-                            <span className="block truncate text-[11px] text-white/60">
-                                {identitySubtitle(
-                                    auth.user?.position,
-                                    'Super Admin',
-                                )}
+                            <Link
+                                href={logout()}
+                                method="post"
+                                as="button"
+                                aria-label="Log out"
+                                title="Log out"
+                                className="flex size-10 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                            >
+                                <LogOut className="size-4" aria-hidden="true" />
+                            </Link>
+                        </div>
+                    ) : (
+                        <div className="flex min-h-14 items-center gap-3 rounded-[10px] px-3 text-white">
+                            <PersonAvatar
+                                name={auth.user?.displayName}
+                                avatarUrl={auth.user?.avatarUrl}
+                                fallback="Super Admin"
+                                className="flex size-[34px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold"
+                            />
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold">
+                                    {auth.user?.displayName}
+                                </span>
+                                <span className="block truncate text-[11px] text-white/60">
+                                    {identitySubtitle(
+                                        auth.user?.position,
+                                        'Super Admin',
+                                    )}
+                                </span>
                             </span>
-                        </span>
-                        <Link
-                            href={logout()}
-                            method="post"
-                            as="button"
-                            className="min-h-11 rounded-lg px-2 text-[11px] font-semibold text-white/70 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
-                        >
-                            Log out
-                        </Link>
-                    </div>
+                            <Link
+                                href={logout()}
+                                method="post"
+                                as="button"
+                                className="min-h-11 rounded-lg px-2 text-[11px] font-semibold text-white/70 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                            >
+                                Log out
+                            </Link>
+                        </div>
+                    )}
                 </div>
             </aside>
 
-            <aside className="hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
+            <aside className="theme-static hidden w-24 shrink-0 flex-col bg-[#111111] min-[1180px]:hidden! md:flex print:hidden!">
                 <Link
                     href={superAdmin()}
                     className="flex h-[82px] flex-col items-center justify-center gap-1 border-b border-white/10 px-2 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-inset"
@@ -528,7 +674,7 @@ function SuperAdminShellFrame({
                         className="flex size-11 items-center justify-center overflow-hidden rounded-full bg-white/12 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
                     >
                         <PersonAvatar
-                            name={auth.user?.name}
+                            name={auth.user?.displayName}
                             avatarUrl={auth.user?.avatarUrl}
                             fallback="Super Admin"
                             className="flex size-full items-center justify-center"
@@ -551,7 +697,7 @@ function SuperAdminShellFrame({
                     </div>
                     <div className="hidden min-w-0 flex-1 text-right md:block">
                         <p className="truncate text-[13px] font-semibold">
-                            {auth.user?.name}
+                            {auth.user?.displayName}
                         </p>
                         <p className="truncate text-[11px] text-neutral-500">
                             {identitySubtitle(
@@ -590,7 +736,7 @@ function SuperAdminShellFrame({
                                 className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#111] text-xs font-bold text-white focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:ring-offset-2 focus-visible:outline-none"
                             >
                                 <PersonAvatar
-                                    name={auth.user?.name}
+                                    name={auth.user?.displayName}
                                     avatarUrl={auth.user?.avatarUrl}
                                     fallback="Super Admin"
                                     className="flex size-full items-center justify-center"
@@ -603,7 +749,7 @@ function SuperAdminShellFrame({
                         >
                             <DropdownMenuLabel className="space-y-0.5">
                                 <span className="block truncate text-[13px] font-semibold">
-                                    {auth.user?.name}
+                                    {auth.user?.displayName}
                                 </span>
                                 <span className="block text-[11px] font-normal text-[#666]">
                                     {identitySubtitle(
@@ -617,7 +763,7 @@ function SuperAdminShellFrame({
                             <DropdownMenuItem asChild>
                                 <Link href={editProfile()} className="min-h-10">
                                     <UserRound className="size-4" /> Account
-                                    profile
+                                    &amp; preferences
                                 </Link>
                             </DropdownMenuItem>
                             <PwaAppMenuItem />
@@ -642,7 +788,7 @@ function SuperAdminShellFrame({
 
             <nav
                 aria-label="Mobile Super Admin navigation"
-                className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
+                className="theme-static fixed right-[max(12px,env(safe-area-inset-right))] bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))] z-40 mx-auto grid h-[68px] max-w-[430px] grid-cols-4 gap-1 rounded-[20px] bg-[#111111] p-1.5 shadow-2xl md:hidden print:hidden"
             >
                 {pinned.map((destination) => (
                     <DestinationControl
@@ -651,6 +797,7 @@ function SuperAdminShellFrame({
                         active={destination.id === activeId}
                         hasBranch={hasBranch}
                         compact
+                        dock
                     />
                 ))}
                 <button

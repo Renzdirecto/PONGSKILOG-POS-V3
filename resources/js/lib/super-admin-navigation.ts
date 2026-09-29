@@ -209,8 +209,8 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
                 'Ingredients',
                 'operations.ingredients',
             ],
-            ['ops-recipes', 'Recipes', 'Recipes', 'operations.recipes'],
             ['ops-stock', 'Ingredient Stock', 'Stock', 'operations.stock'],
+            ['ops-recipes', 'Recipes', 'Recipes', 'operations.recipes'],
             [
                 'ops-pamamalengke',
                 'Pamamalengke',

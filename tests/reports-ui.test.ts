@@ -107,7 +107,7 @@ test('the report only displays server money and exposes no mutation', () => {
         );
         assert.doesNotMatch(
             file,
-            /Close Store<\/|Void<\/|Add expense|Adjust inventory|Settle/,
+            /Close Store<\/|Void<\/|Add expense|Stock correction|Settle/,
         );
     }
     assert.match(page, /const peso = formatDecimalPeso;/);
@@ -271,4 +271,13 @@ test('report filter chips, reset and the custom range fit phones with 44px targe
     assert.equal(page.match(/className="w-\[128px\] min-w-0 /g)?.length, 2);
     assert.match(page, /Choosing Cash, Cashless\s+or Split leaves out unpaid Pay Later orders\./);
     assert.match(page, /hidden overflow-x-auto rounded-\[13px\] border border-\[#efefef\] md:block">\s+<table/);
+});
+
+test('Period highlights come immediately after the KPI cards', () => {
+    const kpis = page.indexOf('<KpiGrid analytics={analytics} comparison={comparison} />');
+    const highlights = page.indexOf('title="Period highlights"');
+    const categories = page.indexOf('title="Sales by category"');
+    assert.ok(kpis > 0 && kpis < highlights && highlights < categories);
+    assert.match(page, /Calculated from this period's figures/);
+    assert.doesNotMatch(page, /Calculated from the figures above/);
 });

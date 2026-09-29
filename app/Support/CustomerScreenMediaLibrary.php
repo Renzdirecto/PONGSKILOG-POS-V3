@@ -43,7 +43,10 @@ class CustomerScreenMediaLibrary
 
     public const URL_MINUTES = 60;
 
-    public function __construct(private ProductImageProcessor $images) {}
+    /** Each upload gets a new path, so its bytes never change: devices may keep them as long as they like. */
+    private const STORED_MEDIA_OPTIONS = ['CacheControl' => 'public, max-age=31536000, immutable'];
+
+    public function __construct(private ProductImageProcessor $images, private SignedUrls $signedUrls) {}
 
     /**
      * Validates and stores an upload; returns the attributes of the new media row (not yet saved).
@@ -65,7 +68,7 @@ class CustomerScreenMediaLibrary
                 throw new RuntimeException('Could not read the uploaded video.');
             }
             try {
-                $stored = Storage::disk('s3')->put($path, $stream);
+                $stored = Storage::disk('s3')->put($path, $stream, self::STORED_MEDIA_OPTIONS + ['ContentType' => 'video/mp4']);
             } finally {
                 if (is_resource($stream)) {
                     fclose($stream);
@@ -84,7 +87,7 @@ class CustomerScreenMediaLibrary
             throw ValidationException::withMessages(['file' => $exception->validator->errors()->all()]);
         }
         $path = $directory.'/display.webp';
-        if (! Storage::disk('s3')->put($path, $contents)) {
+        if (! Storage::disk('s3')->put($path, $contents, self::STORED_MEDIA_OPTIONS + ['ContentType' => 'image/webp'])) {
             throw new RuntimeException('Could not store the advertisement image.');
         }
 
@@ -98,21 +101,45 @@ class CustomerScreenMediaLibrary
 
     public function url(CustomerScreenMedia $media, DateTimeInterface $expiresAt): ?string
     {
-        if (preg_match('#\Acustomer-screen/'.preg_quote($media->branch_id, '#').'/[0-9a-f-]{36}/(display\.webp|video\.mp4)\z#', $media->path) !== 1) {
-            report(new RuntimeException('Invalid customer screen media path.'));
+        return $this->urls([$media], $expiresAt)[$media->getKey()] ?? null;
+    }
 
-            return null;
+    /**
+     * Stable signed links of several media in one pass (the same link for the whole time window, so screens and the
+     * browser cache reuse downloaded ads). A foreign or malformed path gets null (reported), never a link.
+     *
+     * @param  iterable<CustomerScreenMedia>  $media
+     * @return array<string, string|null> media id => URL
+     */
+    public function urls(iterable $media, DateTimeInterface $expiresAt): array
+    {
+        $paths = [];
+        $urls = [];
+        foreach ($media as $item) {
+            $urls[(string) $item->getKey()] = null;
+            if (preg_match('#\Acustomer-screen/'.preg_quote($item->branch_id, '#').'/[0-9a-f-]{36}/(display\.webp|video\.mp4)\z#', $item->path) !== 1) {
+                report(new RuntimeException('Invalid customer screen media path.'));
+
+                continue;
+            }
+            $paths[(string) $item->getKey()] = $item->path;
+        }
+        if ($paths === []) {
+            return $urls;
         }
 
         try {
-            $disk = Storage::disk('s3');
-
-            return $disk->providesTemporaryUrls() ? $disk->temporaryUrl($media->path, $expiresAt) : null;
+            $signed = $this->signedUrls->many(array_values($paths), SignedUrls::minutesUntil($expiresAt, self::URL_MINUTES));
         } catch (Throwable $exception) {
             report($exception);
 
-            return null;
+            return $urls;
         }
+        foreach ($paths as $id => $path) {
+            $urls[$id] = $signed[$path] ?? null;
+        }
+
+        return $urls;
     }
 
     /**
@@ -124,8 +151,10 @@ class CustomerScreenMediaLibrary
     {
         $expiresAt = now()->addMinutes(self::URL_MINUTES);
         $items = [];
-        foreach (CustomerScreenMedia::query()->where('branch_id', $branch->getKey())->where('is_active', true)->orderBy('sort_order')->orderBy('created_at')->orderBy('id')->limit(self::MAX_ITEMS)->get() as $media) {
-            $url = $this->url($media, $expiresAt);
+        $playlist = CustomerScreenMedia::query()->where('branch_id', $branch->getKey())->where('is_active', true)->orderBy('sort_order')->orderBy('created_at')->orderBy('id')->limit(self::MAX_ITEMS)->get();
+        $urls = $this->urls($playlist, $expiresAt);
+        foreach ($playlist as $media) {
+            $url = $urls[$media->getKey()] ?? null;
             if ($url === null) {
                 continue;
             }

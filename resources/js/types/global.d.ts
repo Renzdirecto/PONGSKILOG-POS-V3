@@ -1,3 +1,4 @@
+import type { ReleaseInfo } from '@/lib/release';
 import type { Auth, BranchContext } from '@/types/auth';
 
 declare module 'react' {
@@ -13,6 +14,7 @@ declare module '@inertiajs/core' {
             auth: Auth;
             branchContext: BranchContext;
             sidebarOpen: boolean;
+            release: ReleaseInfo;
             [key: string]: unknown;
         };
     }

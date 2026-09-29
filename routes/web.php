@@ -5,6 +5,7 @@ use App\Http\Controllers\ActiveBranchController;
 use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\BranchAssortmentController;
 use App\Http\Controllers\BranchController;
+use App\Http\Controllers\BranchImageController;
 use App\Http\Controllers\BranchProductController;
 use App\Http\Controllers\BranchQrSettingsController;
 use App\Http\Controllers\BranchSelectionController;
@@ -65,21 +66,25 @@ use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
-Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:60,1')->name('receipt.show');
+/** Every throttle is a named limiter with its own counter (App\Support\RateLimits); never an un-named throttle:X,Y. */
+Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:public-receipt')->name('receipt.show');
 Route::get('branches/{branch}/receipt-logo', [BranchQrSettingsController::class, 'logo'])->whereUuid('branch')->name('branches.receipt-logo');
 
-Route::get('kiosk/{branch:kiosk_code}', CustomerQrController::class)->middleware('throttle:60,1')->name('kiosk.show');
+Route::get('kiosk/{branch:kiosk_code}', CustomerQrController::class)->middleware('throttle:customer-qr-page')->name('kiosk.show');
 
 Route::get('qr/{branch}', [CustomerQrController::class, 'legacy'])
-    ->whereUuid('branch')->middleware('throttle:60,1')->name('qr.show');
+    ->whereUuid('branch')->middleware('throttle:customer-qr-page')->name('qr.show');
 
-Route::prefix('qr/{branch}')->whereUuid('branch')->middleware('throttle:120,1')->group(function (): void {
-    Route::post('orders', [CustomerQrOrderController::class, 'store'])->middleware('throttle:15,1')->name('qr.orders.store');
-    Route::post('recipe-capacity', [CustomerQrOrderController::class, 'capacity'])->name('qr.recipe-capacity');
-    Route::get('orders/{tracking}', [CustomerQrOrderController::class, 'show'])->name('qr.orders.show');
-    Route::get('orders/{tracking}/receipt', [CustomerQrOrderController::class, 'receipt'])->name('qr.orders.receipt');
-    Route::post('new-order', [CustomerQrOrderController::class, 'reset'])->name('qr.reset');
-    Route::post('broadcasting/auth', [CustomerQrOrderController::class, 'authorizeChannel'])->name('qr.broadcasting.auth');
+/** Customer QR is limited per QR ordering session (cookie) with a high per-IP ceiling for a shared store Wi-Fi. */
+Route::prefix('qr/{branch}')->whereUuid('branch')->group(function (): void {
+    Route::post('orders', [CustomerQrOrderController::class, 'store'])->middleware('throttle:customer-qr-submit')->name('qr.orders.store');
+    Route::middleware('throttle:customer-qr')->group(function (): void {
+        Route::post('recipe-capacity', [CustomerQrOrderController::class, 'capacity'])->name('qr.recipe-capacity');
+        Route::get('orders/{tracking}', [CustomerQrOrderController::class, 'show'])->name('qr.orders.show');
+        Route::get('orders/{tracking}/receipt', [CustomerQrOrderController::class, 'receipt'])->name('qr.orders.receipt');
+        Route::post('new-order', [CustomerQrOrderController::class, 'reset'])->name('qr.reset');
+        Route::post('broadcasting/auth', [CustomerQrOrderController::class, 'authorizeChannel'])->name('qr.broadcasting.auth');
+    });
 });
 
 /**
@@ -113,7 +118,10 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('dashboard', '/workspace')->name('dashboard');
 
     Route::get('branches/select', BranchSelectionController::class)->name('branches.select');
-    Route::put('branches/{branch}/qr-settings', [BranchQrSettingsController::class, 'update'])->name('branches.qr-settings.update');
+    Route::put('branches/{branch}/qr-settings', [BranchQrSettingsController::class, 'update'])->middleware('throttle:branch-settings')->name('branches.qr-settings.update');
+    Route::get('branches/{branch}/image', [BranchImageController::class, 'show'])->whereUuid('branch')->name('branches.image.show');
+    Route::post('branches/{branch}/image', [BranchImageController::class, 'store'])->whereUuid('branch')->middleware('throttle:branch-settings')->name('branches.image.store');
+    Route::delete('branches/{branch}/image', [BranchImageController::class, 'destroy'])->whereUuid('branch')->middleware('throttle:branch-settings')->name('branches.image.destroy');
     Route::get('branches/{branch}/qr-history', [BranchQrSettingsController::class, 'history'])->name('branches.qr-history');
     /** Settings › Customer Screen advertisements: Branch-local settings (BranchPolicy::update), checked in the controller. */
     Route::prefix('branches/{branch}/customer-screen-media')->whereUuid('branch')->name('branches.customer-screen-media.')->group(function (): void {
@@ -125,53 +133,62 @@ Route::middleware(['auth'])->group(function () {
     });
     Route::get('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'show'])->whereUuid('branch')->name('branches.customer-screen-settings.show');
     Route::put('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'update'])->whereUuid('branch')->middleware('throttle:customer-screen-media')->name('branches.customer-screen-settings.update');
-    Route::resource('branches', BranchController::class)->only(['index', 'store', 'update']);
+    Route::resource('branches', BranchController::class)->only(['index']);
+    Route::resource('branches', BranchController::class)->only(['store', 'update'])->middleware('throttle:branch-settings');
     Route::middleware('can:inventory.manage')->group(function () {
         Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
         Route::get('inventory/{branch}/{product}/movements', [InventoryController::class, 'movements'])->name('inventory.movements.index');
-        Route::post('inventory/{branch}/{product}/adjustments', [InventoryController::class, 'store'])->name('inventory.adjustments.store');
+        Route::post('inventory/{branch}/{product}/adjustments', [InventoryController::class, 'store'])->middleware('throttle:inventory-adjustments')->name('inventory.adjustments.store');
     });
     /** Products page and Branch configuration: business-wide or Branch-scoped products.manage (the Branch is checked server-side). */
     Route::middleware('can:products.manage')->group(function () {
         Route::get('products', [ProductController::class, 'index'])->name('products.index');
-        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->name('products.branches.update');
-        Route::post('products/branch-assortment', [BranchAssortmentController::class, 'store'])->middleware('throttle:30,1')->name('products.branch-assortment.store');
-        Route::delete('products/branch-assortment', [BranchAssortmentController::class, 'destroy'])->middleware('throttle:30,1')->name('products.branch-assortment.destroy');
-        Route::get('products/branch-assortment/copy', [BranchAssortmentController::class, 'preview'])->name('products.branch-assortment.copy.preview');
-        Route::post('products/branch-assortment/copy', [BranchAssortmentController::class, 'copy'])->middleware('throttle:20,1')->name('products.branch-assortment.copy');
+        Route::put('products/{product}/branches/{branch}', [BranchProductController::class, 'update'])->middleware('throttle:catalog-writes')->name('products.branches.update');
+        Route::post('products/branch-assortment', [BranchAssortmentController::class, 'store'])->middleware('throttle:branch-assortment')->name('products.branch-assortment.store');
+        Route::delete('products/branch-assortment', [BranchAssortmentController::class, 'destroy'])->middleware('throttle:branch-assortment')->name('products.branch-assortment.destroy');
+        Route::get('products/branch-assortment/copy', [BranchAssortmentController::class, 'preview'])->middleware('throttle:copy-previews')->name('products.branch-assortment.copy.preview');
+        Route::post('products/branch-assortment/copy', [BranchAssortmentController::class, 'copy'])->middleware('throttle:branch-copy')->name('products.branch-assortment.copy');
     });
     /** Shared Product definitions (identity, image, Categories, Modifier Groups) change every Branch: business-wide only. */
     Route::middleware('can:catalog.define')->group(function () {
-        Route::resource('products', ProductController::class)->only(['store', 'update']);
-        Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update']);
-        Route::put('modifier-groups/{modifierGroup}/products', [ModifierGroupController::class, 'updateProducts'])->name('modifier-groups.products.update');
-        Route::resource('modifier-groups', ModifierGroupController::class)->only(['index', 'store', 'update']);
-        Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
-        Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:20,1')->name('products.image.store');
-        Route::delete('products/{product}/image', [ProductImageController::class, 'destroy'])->name('products.image.destroy');
+        Route::get('categories', [CategoryController::class, 'index'])->name('categories.index');
+        Route::get('modifier-groups', [ModifierGroupController::class, 'index'])->name('modifier-groups.index');
+        Route::middleware('throttle:catalog-writes')->group(function () {
+            Route::resource('products', ProductController::class)->only(['store', 'update']);
+            Route::resource('categories', CategoryController::class)->only(['store', 'update']);
+            Route::put('modifier-groups/{modifierGroup}/products', [ModifierGroupController::class, 'updateProducts'])->name('modifier-groups.products.update');
+            Route::resource('modifier-groups', ModifierGroupController::class)->only(['store', 'update']);
+            Route::resource('modifier-options', ModifierOptionController::class)->only(['store', 'update']);
+            Route::delete('products/{product}/image', [ProductImageController::class, 'destroy'])->name('products.image.destroy');
+        });
+        Route::post('products/{product}/image', [ProductImageController::class, 'store'])->middleware('throttle:product-images')->name('products.image.store');
     });
-    Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
-        ->name('branch-context.update');
-    Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])
-        ->name('branch-context.destroy');
+    Route::middleware('throttle:branch-context')->group(function () {
+        Route::put('branch-context/{branch}', [ActiveBranchController::class, 'update'])
+            ->name('branch-context.update');
+        Route::delete('branch-context', [ActiveBranchController::class, 'destroy'])
+            ->name('branch-context.destroy');
+    });
 
     Route::get('workspaces/super-admin', SuperAdminDashboardController::class)
         ->middleware('permission:access_control.manage')->name('workspaces.super-admin');
 
     Route::prefix('workspaces/super-admin')->name('super-admin.')->middleware('permission:access_control.manage')->group(function () {
         Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
-        Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('staff.store');
+        Route::post('staff', [StaffController::class, 'store'])->middleware('throttle:staff-admin')->name('staff.store');
         Route::get('staff/{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('staff.avatar');
-        Route::put('staff/{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('staff.update');
-        Route::put('staff/{user}/password', [StaffController::class, 'password'])->whereNumber('user')->middleware('throttle:10,1')->name('staff.password');
+        Route::put('staff/{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:staff-admin')->name('staff.update');
+        Route::put('staff/{user}/password', [StaffController::class, 'password'])->whereNumber('user')->middleware('throttle:staff-password')->name('staff.password');
 
         Route::get('notifications', [NotificationController::class, 'index'])->name('notifications');
-        Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount'])->middleware('throttle:120,1')->name('notifications.unread-count');
-        Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
-        Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification')->name('notifications.read');
+        Route::middleware('throttle:notifications')->group(function () {
+            Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+            Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+            Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification')->name('notifications.read');
+        });
 
         Route::get('access-control', [AccessControlController::class, 'index'])->name('access-control');
-        Route::middleware('throttle:30,1')->group(function () {
+        Route::middleware('throttle:access-control')->group(function () {
             Route::put('access-control/roles/{role}', [AccessControlController::class, 'updateRole'])->where('role', '[a-z_]+')->name('access-control.roles.update');
             Route::post('access-control/custom-roles', [AccessControlController::class, 'storeCustomRole'])->name('access-control.custom-roles.store');
             Route::put('access-control/custom-roles/{role}', [AccessControlController::class, 'updateCustomRole'])->whereNumber('role')->name('access-control.custom-roles.update');
@@ -189,7 +206,7 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:void_orders.manage')
         ->name('workspaces.void-orders');
     Route::put('workspaces/void-orders/pin', SetVoidAuthorizationPinController::class)
-        ->middleware(['permission:void_orders.manage', 'throttle:5,1'])
+        ->middleware(['permission:void_orders.manage', 'throttle:void-pin'])
         ->name('workspaces.void-orders.pin.update');
 
     Route::get('workspaces/owner', OwnerDashboardController::class)
@@ -199,7 +216,7 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:reports.view')
         ->name('workspaces.reports');
     Route::get('workspaces/reports/export', [ReportsController::class, 'export'])
-        ->middleware(['permission:reports.view', 'throttle:20,1'])
+        ->middleware(['permission:reports.view', 'throttle:reports-export'])
         ->name('workspaces.reports.export');
 
     Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
@@ -220,7 +237,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('pamamalengke', [OperationsController::class, 'pamamalengke'])->name('pamamalengke');
         Route::get('purchases', [OperationsController::class, 'purchases'])->name('purchases');
 
-        Route::middleware('throttle:60,1')->group(function () {
+        Route::middleware('throttle:operations-writes')->group(function () {
             Route::post('plans', [OperationPlanController::class, 'store'])->name('plans.store');
             Route::put('plans/{plan}', [OperationPlanController::class, 'update'])->whereUuid('plan')->name('plans.update');
             Route::post('plans/{plan}/archive', [OperationPlanController::class, 'archive'])->whereUuid('plan')->name('plans.archive');
@@ -236,17 +253,17 @@ Route::middleware(['auth'])->group(function () {
             Route::delete('pamamalengke/manual-items/{entry}', [PamamalengkeController::class, 'destroyManual'])->whereUuid('entry')->name('pamamalengke.manual.destroy');
             Route::put('pamamalengke/{plan}/skips/{ingredient}', [PamamalengkeController::class, 'skip'])->whereUuid(['plan', 'ingredient'])->name('pamamalengke.skip');
         });
-        Route::get('setup-copy', [OperationsSetupCopyController::class, 'preview'])->name('setup-copy.preview');
-        Route::post('setup-copy', [OperationsSetupCopyController::class, 'store'])->middleware('throttle:20,1')->name('setup-copy.store');
+        Route::get('setup-copy', [OperationsSetupCopyController::class, 'preview'])->middleware('throttle:copy-previews')->name('setup-copy.preview');
+        Route::post('setup-copy', [OperationsSetupCopyController::class, 'store'])->middleware('throttle:operations-setup-copy')->name('setup-copy.store');
         Route::post('pamamalengke/{plan}/confirm', [PamamalengkeController::class, 'confirm'])
-            ->whereUuid('plan')->middleware('throttle:20,1')->name('pamamalengke.confirm');
+            ->whereUuid('plan')->middleware('throttle:pamamalengke-confirm')->name('pamamalengke.confirm');
     });
 
     Route::prefix('workspaces/staff')->name('staff.')->middleware('permission:staff.manage')->group(function () {
         Route::get('/', [StaffController::class, 'index'])->name('index');
-        Route::post('/', [StaffController::class, 'store'])->middleware('throttle:20,1')->name('store');
+        Route::post('/', [StaffController::class, 'store'])->middleware('throttle:staff-admin')->name('store');
         Route::get('{user}/avatar', [StaffController::class, 'avatar'])->whereNumber('user')->name('avatar');
-        Route::put('{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:30,1')->name('update');
+        Route::put('{user}', [StaffController::class, 'update'])->whereNumber('user')->middleware('throttle:staff-admin')->name('update');
     });
 
     Route::get('workspaces/cashier', CashierWorkspaceController::class)
@@ -258,34 +275,41 @@ Route::middleware(['auth'])->group(function () {
     Route::get('workspaces/transaction-history', [TransactionHistoryController::class, 'index'])
         ->middleware(['permission:transactions.view', 'branch'])->name('workspaces.transaction-history');
 
-    Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware('permission:pos.access')->name('pos.payments.store');
+    Route::post('pos/payments', [PosPaymentController::class, 'store'])->middleware(['permission:pos.access', 'throttle:pos-payments'])->name('pos.payments.store');
 
     Route::middleware(['permission:pos.access', 'branch'])->group(function () {
-        Route::post('pos/orders/{order}/receipt-share', [ReceiptShareController::class, 'store'])->whereUuid('order')->name('pos.orders.receipt-share');
-        Route::post('pos/qr-orders/{order}/cancel-load', [StaffQrOrderController::class, 'cancelLoad'])->whereUuid('order')->name('pos.qr-orders.cancel-load');
-        Route::post('pos/qr-orders/{order}/restore', [StaffQrOrderController::class, 'restore'])->whereUuid('order')->name('pos.qr-orders.restore');
+        Route::post('pos/orders/{order}/receipt-share', [ReceiptShareController::class, 'store'])->whereUuid('order')->middleware('throttle:receipt-share')->name('pos.orders.receipt-share');
         Route::get('pos/qr-orders', [StaffQrOrderController::class, 'index'])->name('pos.qr-orders.index');
-        Route::post('pos/qr-orders/{order}/load', [StaffQrOrderController::class, 'load'])->whereUuid('order')->name('pos.qr-orders.load');
-        Route::delete('pos/qr-orders/{order}', [StaffQrOrderController::class, 'destroy'])->whereUuid('order')->name('pos.qr-orders.destroy');
-        Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
-        Route::post('pos/recipe-capacity', PosRecipeCapacityController::class)->middleware('throttle:240,1')->name('pos.recipe-capacity');
-        Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
-        Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->name('pos.orders.pay-later.store');
-        Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->name('pos.orders.settlements.store');
+        Route::middleware('throttle:pos-qr-orders')->group(function () {
+            Route::post('pos/qr-orders/{order}/cancel-load', [StaffQrOrderController::class, 'cancelLoad'])->whereUuid('order')->name('pos.qr-orders.cancel-load');
+            Route::post('pos/qr-orders/{order}/restore', [StaffQrOrderController::class, 'restore'])->whereUuid('order')->name('pos.qr-orders.restore');
+            Route::post('pos/qr-orders/{order}/load', [StaffQrOrderController::class, 'load'])->whereUuid('order')->name('pos.qr-orders.load');
+            Route::delete('pos/qr-orders/{order}', [StaffQrOrderController::class, 'destroy'])->whereUuid('order')->name('pos.qr-orders.destroy');
+        });
+        Route::middleware('throttle:pos-orders')->group(function () {
+            Route::post('pos/orders/reservations', PosOrderReservationController::class)->name('pos.orders.reservations.store');
+            Route::post('pos/orders/drafts', [PosDraftOrderController::class, 'store'])->name('pos.orders.store');
+        });
+        Route::post('pos/recipe-capacity', PosRecipeCapacityController::class)->middleware('throttle:pos-recipe-capacity')->name('pos.recipe-capacity');
+        Route::post('pos/orders/{order}/pay-later', [PosPayLaterController::class, 'store'])->whereUuid('order')->middleware('throttle:pos-payments')->name('pos.orders.pay-later.store');
         Route::get('pos/orders/{order}', [PosDraftOrderController::class, 'show'])->whereUuid('order')->name('pos.orders.show');
-        Route::get('pos/transactions/{order}', [TransactionHistoryController::class, 'show'])->whereUuid('order')->name('pos.transactions.show');
-        Route::patch('pos/transactions/{order}', CommittedOrderEditController::class)->whereUuid('order')->name('pos.transactions.update');
-        Route::post('pos/transactions/{order}/void', VoidOrderController::class)
-            ->whereUuid('order')
-            ->middleware('throttle:5,1')
-            ->name('pos.transactions.void');
-        Route::post('pos/order-adjustments/{adjustment}/allocation', OrderAdjustmentAllocationController::class)
-            ->whereUuid('adjustment')
-            ->middleware('permission:transactions.view')
-            ->name('pos.order-adjustments.allocation.store');
-        Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->name('pos.payments.invoice.store');
-        Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
-        Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->name('pos.payments.invoice.destroy');
+        /** Committed-order history, settlement, edits, voids and invoice proofs are Transactions features: a DENY on transactions.view blocks them. */
+        Route::middleware('permission:transactions.view')->group(function () {
+            Route::post('pos/orders/{order}/settlements', [PosPayLaterSettlementController::class, 'store'])->whereUuid('order')->middleware('throttle:pos-payments')->name('pos.orders.settlements.store');
+            Route::get('pos/transactions/{order}', [TransactionHistoryController::class, 'show'])->whereUuid('order')->name('pos.transactions.show');
+            Route::patch('pos/transactions/{order}', CommittedOrderEditController::class)->whereUuid('order')->middleware('throttle:pos-order-edits')->name('pos.transactions.update');
+            Route::post('pos/transactions/{order}/void', VoidOrderController::class)
+                ->whereUuid('order')
+                ->middleware('throttle:void')
+                ->name('pos.transactions.void');
+            Route::post('pos/order-adjustments/{adjustment}/allocation', OrderAdjustmentAllocationController::class)
+                ->whereUuid('adjustment')
+                ->middleware('throttle:pos-payments')
+                ->name('pos.order-adjustments.allocation.store');
+            Route::post('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'store'])->whereUuid('payment')->middleware('throttle:invoice-proofs')->name('pos.payments.invoice.store');
+            Route::get('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'show'])->whereUuid('payment')->name('pos.payments.invoice.show');
+            Route::delete('pos/payments/{payment}/invoice', [PaymentInvoiceProofController::class, 'destroy'])->whereUuid('payment')->middleware('throttle:invoice-proofs')->name('pos.payments.invoice.destroy');
+        });
 
         /** Phase 19.6: this POS station's customer screen (X-POS-Station header) and Buzz Customer on Ready orders. */
         Route::prefix('pos/customer-screen')->name('pos.customer-screen.')->middleware('throttle:pos-customer-screen')->group(function (): void {
@@ -300,11 +324,11 @@ Route::middleware(['auth'])->group(function () {
 
     Route::patch('orders/{order}/kitchen-status', KitchenStatusController::class)
         ->whereUuid('order')
-        ->middleware('branch')
+        ->middleware(['branch', 'throttle:kitchen-status'])
         ->name('orders.kitchen-status.update');
 
     Route::post('store-sessions/open', OpenStoreSessionController::class)
-        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
+        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch', 'throttle:store-open'])
         ->name('store-sessions.open');
     Route::get('store-sessions/current', CurrentStoreSessionController::class)
         ->middleware(['permission:pos.access', 'permission:store_expenses.manage'])
@@ -313,23 +337,23 @@ Route::middleware(['auth'])->group(function () {
         ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch'])
         ->name('store-sessions.close.show');
     Route::post('store-sessions/current/close', [StoreSessionCloseController::class, 'store'])
-        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch', 'throttle:10,1'])
+        ->middleware(['permission:pos.access', 'permission:store.open_close', 'branch', 'throttle:store-close'])
         ->name('store-sessions.close.store');
     Route::post('store-sessions/current/expenses', [StoreSessionExpenseController::class, 'store'])
-        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:20,1'])
+        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:store-expenses'])
         ->name('store-session-expenses.store');
     Route::post('store-sessions/current/inventory-adjustments', StoreSessionInventoryAdjustmentController::class)
-        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->middleware(['permission:store_expenses.manage', 'branch', 'throttle:stock-corrections'])
         ->name('store-session-inventory-adjustments.store');
     Route::get('store-sessions/current/giveaway-catalog', [StoreSessionGiveawayController::class, 'catalog'])
         ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch'])
         ->name('store-session-giveaways.catalog');
     Route::post('store-sessions/current/giveaways', [StoreSessionGiveawayController::class, 'store'])
-        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:giveaways'])
         ->name('store-session-giveaways.store');
     Route::post('store-session-giveaways/{giveaway}/reversal', [StoreSessionGiveawayController::class, 'reverse'])
         ->whereUuid('giveaway')
-        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:30,1'])
+        ->middleware(['permission:pos.access', 'permission:store_expenses.manage', 'branch', 'throttle:giveaways'])
         ->name('store-session-giveaways.reverse');
     Route::get('store-session-expenses/{expense}/receipt', StoreSessionExpenseReceiptController::class)
         ->whereUuid('expense')
@@ -344,7 +368,7 @@ Route::middleware(['auth'])->group(function () {
         ->name('workspaces.customer-display');
 
     /** This browser's Web Push subscription for the signed-in, active account (PWA Phase 1). */
-    Route::prefix('pwa/push-subscription')->name('pwa.push-subscription.')->middleware('throttle:30,1')->group(function (): void {
+    Route::prefix('pwa/push-subscription')->name('pwa.push-subscription.')->middleware('throttle:push-subscription')->group(function (): void {
         Route::get('/', [PushSubscriptionController::class, 'show'])->name('show');
         Route::post('/', [PushSubscriptionController::class, 'store'])->name('store');
         Route::delete('/', [PushSubscriptionController::class, 'destroy'])->name('destroy');

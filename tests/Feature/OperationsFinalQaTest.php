@@ -102,3 +102,23 @@ test('the operations summary uses a fixed number of queries however many orders 
 
     expect($count())->toBe($before);
 });
+
+test('Products Sold groups a plan\'s sales by category with size counts from the order snapshots', function () {
+    $this->ops->setStock('yakult', '50');
+    $drinks = $this->ops->lemonYakult->category;
+    $this->ops->coke->update(['category_id' => $drinks->id]);
+    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 2, 'l'), $this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 3, 'l'), $this->ops->line($this->ops->coke, 1), $this->ops->line($this->ops->tapsilog, 1)]);
+    $this->ops->void($this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 5, 'm')]));
+    $this->ops->sizes['l']->update(['name' => 'Grande']);
+    $this->ops->lemonYakult->update(['name' => 'Renamed today']);
+
+    $sold = app(OperationsSummary::class)->today($this->ops->branch)['plans'][$this->ops->drinks->id]['products_sold'];
+
+    expect($sold)->toHaveCount(1)
+        ->and($sold[0]['name'])->toBe($drinks->name)
+        ->and($sold[0]['quantity'])->toBe(7)
+        ->and($sold[0]['sizes'])->toBe([['name' => 'Large', 'quantity' => 5], ['name' => 'Medium', 'quantity' => 1]])
+        ->and(array_map(fn (array $line): array => [$line['quantity'], $line['size'], $line['name']], $sold[0]['lines']))
+        ->toBe([[5, 'Large', 'Lemon Yakult'], [1, null, 'Coke Mismo'], [1, 'Medium', 'Lemon Yakult']]);
+});

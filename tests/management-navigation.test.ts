@@ -9,8 +9,7 @@ import {
     managementLandingDestination,
     managementNavigation,
     pinnedManagementDestinations,
-    restoredSidebarCollapsed,
-    storedSidebarValue,
+    sidebarPreferenceCookie,
 } from '../resources/js/lib/management-navigation.ts';
 import { staffPositionLabel } from '../resources/js/lib/staff-admin.ts';
 
@@ -23,8 +22,8 @@ const operationsPages = [
     'Pamalengke Plans',
     'Overview',
     'Ingredients',
-    'Recipes',
     'Ingredient Stock',
+    'Recipes',
     'Pamamalengke',
     'Purchases',
 ];
@@ -168,11 +167,28 @@ test('management pages resolve to their destination; store operations never mark
 });
 
 test('the desktop sidebar collapses through an accessible toggle and remembers the choice on this device', () => {
-    assert.equal(restoredSidebarCollapsed('collapsed'), true);
-    assert.equal(restoredSidebarCollapsed(null), false);
-    assert.equal(restoredSidebarCollapsed('garbage'), false);
-    assert.equal(storedSidebarValue(true), 'collapsed');
-    assert.equal(storedSidebarValue(false), 'expanded');
+    assert.equal(
+        sidebarPreferenceCookie(true),
+        'sidebar_state=false; path=/; max-age=31536000; SameSite=Lax',
+    );
+    assert.match(sidebarPreferenceCookie(false), /^sidebar_state=true;/);
+    const superAdminShell = source('components/super-admin-shell.tsx');
+    const hook = source('hooks/use-management-sidebar.ts');
+    assert.match(hook, /useState\(sidebarOpen === false\)/);
+    assert.match(hook, /document\.cookie = sidebarPreferenceCookie\(next\)/);
+    for (const managementShell of [shell, superAdminShell]) {
+        assert.match(
+            managementShell,
+            /const \[collapsed, toggleCollapsed\] = useManagementSidebar\(\);/,
+        );
+        assert.doesNotMatch(managementShell, /localStorage/);
+    }
+    assert.match(superAdminShell, /collapsed \? 'w-\[76px\]' : 'w-\[248px\]'/);
+    assert.match(
+        superAdminShell,
+        /text-\[10\.5px\] font-bold tracking-\[0\.12em\] uppercase/,
+    );
+    assert.match(shell, /aria-label="Expand navigation"/);
     assert.match(shell, /aria-expanded=\{!collapsed\}/);
     assert.match(shell, /collapsed \? 'Expand sidebar' : 'Collapse sidebar'/);
     assert.match(

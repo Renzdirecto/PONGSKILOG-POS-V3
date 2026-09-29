@@ -4,6 +4,7 @@ import { PwaFloatingStatus } from '@/components/pwa-status';
 import { usePwaConnectivity, usePwaUi } from '@/hooks/use-pwa';
 import type { ConnectivityPhase } from '@/lib/pwa-connectivity';
 import { pwaRuntime } from '@/lib/pwa-runtime';
+import type { ReleaseInfo } from '@/lib/release';
 
 const ANNOUNCEMENTS: Record<ConnectivityPhase, string> = {
     offline:
@@ -39,9 +40,11 @@ function PwaAnnouncer() {
 export function PwaRuntime({
     component,
     signedIn,
+    release,
 }: {
     component: string;
     signedIn: boolean;
+    release: ReleaseInfo | null;
 }) {
     const ui = usePwaUi();
 
@@ -58,7 +61,7 @@ export function PwaRuntime({
         <>
             <PwaAnnouncer />
             <PwaFloatingStatus />
-            <PwaAppDialog />
+            <PwaAppDialog release={release} />
         </>
     );
 }

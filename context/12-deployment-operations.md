@@ -188,6 +188,10 @@ Use environment-managed secrets in Railway/Supabase.
 
 Rotate compromised secrets.
 
+### Production transactional mail
+
+Production transactional mail uses Resend (`MAIL_MAILER=resend`) through Laravel's built-in transport and the official `resend/resend-php` SDK. The sender domain is verified in Resend; `MAIL_FROM_ADDRESS` must use that domain. Keep `RESEND_API_KEY` in the server-side environment only, never in Git or any `VITE_*` variable. Existing sender, queue, and mail behavior remain unchanged; local development defaults to the log mailer.
+
 ---
 
 ## 10. CI/CD

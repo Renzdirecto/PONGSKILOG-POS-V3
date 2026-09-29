@@ -1294,11 +1294,11 @@ Baseline gates (checked only when actually verified):
 - [ ] 430px QA
 - [ ] Tablet QA
 - [ ] Desktop QA
-- [ ] Staging validation — no staging environment available (steps: `12-deployment-operations.md` §32)
+- [ ] Staging validation — DEFERRED / optional future environment, outside the active release flow (steps: `12-deployment-operations.md` §32)
 - [ ] Backup / restore verification — not performed (steps: `12-deployment-operations.md` §32)
 - [ ] Production health checks — `/health` implemented and tested locally; production check pending deployment
-- [ ] CI green — CI runs on pushes/PRs to `dev`/`staging`/`main` only; it has not run for this branch (no PR)
-- [ ] Production readiness approved — not approved (manual, staging and release-stage gates open)
+- [ ] CI green — CI runs on pushes/PRs to `dev`/`production`, with existing `staging` coverage retained for the deferred environment; verify the relevant PR run before promotion
+- [ ] Production readiness approved — not approved (manual and release-stage gates open; staging deferred)
 
 Accepted Phase 20 corrections (implemented + automated tests; device/visual acceptance is part of the user's manual QA):
 
@@ -1333,7 +1333,7 @@ Accepted Phase 20 corrections (implemented + automated tests; device/visual acce
 
 Verification (details in `11-testing-qa.md` › Phase 20): complete Laravel suite **2,301 passed / 17,293 assertions, 0 failures, 0 errors, 0 skipped** (definitive run after correcting two stale test contracts found by the first full run); frontend 352/352; lint, TypeScript (app + service worker), production build, Pint, PHPStan 0; all 20 PostgreSQL harnesses including the new Phase 20 harness; Phase 20 migrations fresh/rollback/reapply on SQLite and PostgreSQL and forward-applied to the local development database; dependency audits clean; secret/debug scan clean. Manual/browser QA was not performed by the agent.
 
-Known limits / deferred: the unreachable starter-kit shell (`pages/dashboard.tsx`, `AppLayout` family) is left in place (not a runtime path); `Model::preventLazyLoading` not enabled (would need a full N+1 sweep); per-Product catalog events are still one queued broadcast per Product × Branch (only the synchronous Customer QR signal was collapsed); connection-pooling settings are recommendations until validated on staging.
+Known limits / deferred: the unreachable starter-kit shell (`pages/dashboard.tsx`, `AppLayout` family) is left in place (not a runtime path); `Model::preventLazyLoading` not enabled (would need a full N+1 sweep); per-Product catalog events are still one queued broadcast per Product × Branch (only the synchronous Customer QR signal was collapsed); connection-pooling settings are recommendations until validated in an isolated non-production environment.
 
 ---
 

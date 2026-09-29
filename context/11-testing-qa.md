@@ -698,7 +698,7 @@ Phase 19.6B must test:
 - One push per accepted Buzz, supported vibration behavior, 5-second server cooldown, maximum attempts, replay/idempotency, concurrent clicks/workers, retry/failure cleanup, and no Kitchen/order-state mutation on delivery failure
 - Event-driven behavior with no polling and no sensitive token/subscription/order data in logs, push payloads, or realtime events
 
-Phase 20 repeats the full RBAC, Branch/station isolation, concurrency, realtime reconnect, responsive/device, staging, backup/restore, health-check, CI, and production-readiness gates with Phase 19.6 included.
+Phase 20 repeats the full RBAC, Branch/station isolation, concurrency, realtime reconnect, responsive/device, backup/restore, health-check, CI, and production-readiness gates with Phase 19.6 included. Staging validation is DEFERRED / optional future work; the active branch flow is `feature/* → dev → production`.
 
 ### Phase 19.6 implementation QA — Customer Experience Expansion (2026-09-27)
 

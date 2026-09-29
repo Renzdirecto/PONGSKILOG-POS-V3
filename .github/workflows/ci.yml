@@ -4,13 +4,13 @@ on:
   pull_request:
     branches:
       - dev
-      - staging
-      - main
+      - staging # Deferred environment; retain existing validation coverage.
+      - production
   push:
     branches:
       - dev
-      - staging
-      - main
+      - staging # Deferred environment; retain existing validation coverage.
+      - production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

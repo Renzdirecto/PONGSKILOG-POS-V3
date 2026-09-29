@@ -32,7 +32,7 @@ GitHub + GitHub Actions
 Use:
 
 - Local Development
-- Staging
+- Staging — DEFERRED / optional future environment
 - Production
 
 Each environment must have separate:
@@ -192,7 +192,11 @@ Rotate compromised secrets.
 
 ## 10. CI/CD
 
-GitHub Actions should validate protected development/release branches.
+The canonical branch flow is `feature/* → dev → production`. Feature PRs target `dev`; reviewed release promotions target `production`. The `staging` branch is preserved but DEFERRED / optional future work, outside the active release flow.
+
+`production` initially preserves the exact history of the former release branch (`main`); renaming the branch does not promote `dev` or deploy the application.
+
+GitHub Actions validates pushes and pull requests targeting `dev` and `production`. Existing `staging` CI coverage is retained for future use.
 
 Required checks:
 
@@ -212,7 +216,7 @@ Production deployment should originate only from reviewed/approved code.
 Rules:
 
 - Review migrations
-- Test on staging
+- Test in an isolated non-production environment (staging is deferred)
 - Prefer additive/forward-compatible changes
 - Avoid destructive schema changes during live branch operations
 
@@ -252,7 +256,7 @@ Avoid high-risk deployments during peak service.
 
 For significant release:
 
-1. Verify staging
+1. Verify release acceptance in an isolated non-production environment
 2. Review active branch/store activity
 3. Apply safe schema changes
 4. Deploy application
@@ -614,7 +618,7 @@ Documentation only: no Railway or Cloudflare setting was changed.
 
 ## 32. Phase 20 Final Production Hardening — operations notes (not deployed)
 
-Nothing in this section has been exercised against a real staging or production environment. Staging validation, backup/restore verification and production health checks remain **PENDING** release-stage actions (tracker).
+Nothing in this section has been exercised against a real staging or production environment. Staging validation is **DEFERRED** / optional future work. Backup/restore verification and production health checks remain **PENDING** release-stage actions (tracker).
 
 **Migrations (additive; run `php artisan migrate --force` before switching traffic).**
 - `2026_09_27_165552` Stock Correction: `store_session_inventory_adjustments.direction` (`decrease` default, so legacy rows stay correct) and the widened reason CHECK. Rollback refuses while new-reason or increase rows exist.
@@ -632,19 +636,19 @@ Nothing in this section has been exercised against a real staging or production 
 
 **Security configuration.** `APP_ENV=production`, `APP_DEBUG=false`, `composer install --no-dev`; `APP_URL` = the public HTTPS origin (password-reset links are built from it, never from the request Host); `SESSION_SECURE_COOKIE=true`; `TRUSTED_PROXIES` set for the platform proxy; a real `MAIL_MAILER` (the `log` mailer would write reset links into logs). Every web response carries `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and, over HTTPS, HSTS. All throttles are named limiters (`RateLimits`) stored in the cache store — use Redis so limits hold across instances.
 
-**Storage.** Product images, advertisements, Branch photos and receipt logos live on the private `s3` disk. Signed links are now stable per time window (30 min Products, 60 min advertisements) and cached, and new uploads carry `Cache-Control: public, max-age=31536000, immutable`, so devices stop re-downloading images after every sale. Invoice proofs, Store expense receipts and staff photos use `PAYMENT_PROOFS_DISK` / `STORE_EXPENSE_RECEIPTS_DISK` / `STAFF_AVATARS_DISK` (default `local`): the container disk is **not persistent on Railway** — set them to `s3` (or mount a persistent volume) before staging.
+**Storage.** Product images, advertisements, Branch photos and receipt logos live on the private `s3` disk. Signed links are now stable per time window (30 min Products, 60 min advertisements) and cached, and new uploads carry `Cache-Control: public, max-age=31536000, immutable`, so devices stop re-downloading images after every sale. Invoice proofs, Store expense receipts and staff photos use `PAYMENT_PROOFS_DISK` / `STORE_EXPENSE_RECEIPTS_DISK` / `STAFF_AVATARS_DISK` (default `local`): the container disk is **not persistent on Railway** — set them to `s3` (or mount a persistent volume) before deployment.
 
 **Database connection pooling (recommendation — not validated against real Supabase/Railway).**
-- Web requests (short transactions): Supabase's transaction pooler (Supavisor, port 6543) is compatible with the application's locking — every `FOR UPDATE` / `FOR SHARE` and `pg_advisory_xact_lock` is transaction-scoped and no request relies on session state. PDO uses server-side prepared statements by default; with transaction pooling enable emulated prepares for the web connection (a `PDO::ATTR_EMULATE_PREPARES` option on a dedicated connection) and verify on staging before production.
+- Web requests (short transactions): Supabase's transaction pooler (Supavisor, port 6543) is compatible with the application's locking — every `FOR UPDATE` / `FOR SHARE` and `pg_advisory_xact_lock` is transaction-scoped and no request relies on session state. PDO uses server-side prepared statements by default; with transaction pooling enable emulated prepares for the web connection (a `PDO::ATTR_EMULATE_PREPARES` option on a dedicated connection) and verify in an isolated non-production environment before production.
 - Queue workers, the scheduler and Reverb (long-lived processes): the session pooler (port 5432) or a direct connection.
 - Migrations: always the direct (or session) connection — DDL, the constraint swaps and CHECK rebuilds must not run through the transaction pooler.
 - Size: (web PHP workers × instances) + queue workers + scheduler + Reverb must stay below the pooler/database connection limit of the plan, with headroom for migrations and the SQL console. Local development keeps its direct local PostgreSQL connection.
 
-**Backup and restore (PENDING — perform on staging, then record the result).**
+**Backup and restore (PENDING — perform in an isolated non-production environment, then record the result).**
 1. Confirm automated PostgreSQL backups (Supabase daily backups / PITR per plan) and their retention.
-2. Restore the latest backup into a scratch project; point a staging build at it; run `php artisan migrate:status` (no pending, no drift).
+2. Restore the latest backup into a scratch project; point an isolated validation build at it; run `php artisan migrate:status` (no pending, no drift).
 3. Spot-check business history: a closed Store Session's reconciliation snapshot, Payments, inventory and ingredient movements, Pamamalengke purchases and Audit entries for one day.
 4. Object storage: confirm bucket versioning or a scheduled copy; restore one product image, one advertisement and one invoice proof and open them through the app.
 5. Rollback/redeploy: redeploy the previous release (additive migrations stay; never `migrate:rollback` on production data without the guards above) and confirm `/health` is `ok`.
 
-**Staging readiness (PENDING).** Separate from production: database, Redis, Reverb app id/key/secret, VAPID keys, bucket, `APP_KEY`, session cookie domain and `APP_VERSION=v1.0.0-rc.N` + SHA. Then run the Phase 20 manual QA checklist (`11-testing-qa.md`) against staging.
+**Staging readiness (DEFERRED / optional future environment).** Separate from production: database, Redis, Reverb app id/key/secret, VAPID keys, bucket, `APP_KEY`, session cookie domain and `APP_VERSION=v1.0.0-rc.N` + SHA. Then run the Phase 20 manual QA checklist (`11-testing-qa.md`) against staging.

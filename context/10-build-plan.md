@@ -589,7 +589,7 @@ Exit criteria:
 - Staging acceptance complete
 - Deployment/rollback procedures ready
 
-Status (2026-09-28): implementation and automated QA complete on `feature/final-production-hardening`; user manual QA, CI (runs on the PR), staging acceptance, backup/restore verification and production health checks are still open — see `13-progress-tracker.md` › Phase 20.
+Status (2026-09-28): implementation and automated QA complete on `feature/final-production-hardening`; user manual QA, CI (runs on the PR), backup/restore verification and production health checks are still open; staging acceptance is DEFERRED (optional future environment) — see `13-progress-tracker.md` › Phase 20.
 
 ---
 

@@ -15,6 +15,12 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'payment_proofs_disk' => env('PAYMENT_PROOFS_DISK', 'local'),
+
+    'staff_avatars_disk' => env('STAFF_AVATARS_DISK', 'local'),
+
+    'store_expense_receipts_disk' => env('STORE_EXPENSE_RECEIPTS_DISK', env('PAYMENT_PROOFS_DISK', 'local')),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -33,7 +39,8 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            /** Private files (payment proofs, expense receipts) are streamed only by authorized controllers. */
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

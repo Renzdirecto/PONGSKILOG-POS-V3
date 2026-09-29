@@ -12,10 +12,7 @@ import {
     SaveButton,
     TextField,
 } from '@/components/catalog-ui';
-import {
-    CategoryIcon,
-    categoryIconChoices,
-} from '@/components/category-icon';
+import { CategoryIcon, categoryIconChoices } from '@/components/category-icon';
 import { InventoryPagination } from '@/components/inventory-ui';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
@@ -62,10 +59,7 @@ export default function Categories({ categories, filters }: Props) {
     }, [viewMode]);
 
     return (
-        <CatalogPage
-            tab="Categories"
-            counts={{ Categories: categories.total }}
-        >
+        <CatalogPage tab="Categories" counts={{ Categories: categories.total }}>
             <CategoryFilters key={JSON.stringify(filters)} filters={filters} />
             <div className="flex items-center justify-between gap-2 text-[12px] text-[#666]">
                 <p role="status">{categories.total} categories</p>
@@ -341,9 +335,7 @@ function CategoryForm({
                                 type="button"
                                 aria-label={choice.label}
                                 title={choice.label}
-                                aria-pressed={
-                                    form.data.icon_key === choice.key
-                                }
+                                aria-pressed={form.data.icon_key === choice.key}
                                 onClick={() =>
                                     form.setData('icon_key', choice.key)
                                 }
@@ -354,7 +346,7 @@ function CategoryForm({
                         ))}
                     </div>
                     {form.errors.icon_key && (
-                        <p className="text-xs text-red-700">
+                        <p role="alert" className="text-xs text-red-700">
                             {form.errors.icon_key}
                         </p>
                     )}
@@ -372,7 +364,10 @@ function CategoryForm({
                     onChange={(value) => form.setData('is_active', value)}
                 />
             </fieldset>
-            <FormErrors errors={form.errors} />
+            <FormErrors
+                errors={form.errors}
+                inline={['name', 'icon_key', 'sort_order']}
+            />
             <SaveButton
                 processing={form.processing}
                 label={category ? 'Save changes' : 'Add category'}

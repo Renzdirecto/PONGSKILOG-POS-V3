@@ -234,7 +234,12 @@ test('authenticated inertia props expose only minimal identity and branch contex
         ->where('auth.user', [
             'id' => $user->id,
             'name' => $user->name,
+            /** Phase 20: the optional Preferred Name and the friendly display name (Preferred Name, else the legal name). */
+            'preferredName' => null,
+            'displayName' => $user->name,
             'email' => $user->email,
+            'position' => null,
+            'avatarUrl' => null,
         ])
         ->where('auth.roles', ['cashier'])
         ->where('auth.permissions', [

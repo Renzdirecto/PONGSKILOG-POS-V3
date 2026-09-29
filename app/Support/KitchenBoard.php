@@ -2,8 +2,10 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\ModifierSemanticRole;
+use App\Enums\OrderType;
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\Order;
@@ -53,23 +55,6 @@ class KitchenBoard
             ->limit(100)
             ->get();
 
-        $countsByStatus = $this->ordersForSession($branch, $session)
-            ->selectRaw('kitchen_status, count(*) as aggregate')
-            ->groupBy('kitchen_status')
-            ->pluck('aggregate', 'kitchen_status');
-
-        $counts = [
-            'all' => (int) $countsByStatus->only([
-                KitchenStatus::Kitchen->value,
-                KitchenStatus::Preparing->value,
-                KitchenStatus::Ready->value,
-            ])->sum(),
-            'kitchen' => (int) ($countsByStatus[KitchenStatus::Kitchen->value] ?? 0),
-            'preparing' => (int) ($countsByStatus[KitchenStatus::Preparing->value] ?? 0),
-            'ready' => (int) ($countsByStatus[KitchenStatus::Ready->value] ?? 0),
-            'done' => (int) ($countsByStatus[KitchenStatus::Done->value] ?? 0),
-        ];
-
         return [
             'is_open' => true,
             'tickets' => array_values($activeOrders
@@ -78,17 +63,35 @@ class KitchenBoard
                 ->map($this->kitchenTicket(...))
                 ->values()
                 ->all()),
-            'counts' => $counts,
+            'counts' => $this->countsForSession($branch, $session),
         ];
     }
 
-    /** @return array{is_open: bool, preparing: list<string>, ready: list<string>} */
+    /**
+     * Kitchen ticket counts for the current OPEN Store Session without loading tickets.
+     *
+     * @return array{all: int, kitchen: int, preparing: int, ready: int, done: int}
+     */
+    public function counts(Branch $branch): array
+    {
+        $session = $this->openSession($branch);
+
+        return $session === null ? $this->emptyCounts() : $this->countsForSession($branch, $session);
+    }
+
+    /**
+     * The Customer Display board: order numbers (with their order type, for the Dine In / Take Out colors) in the
+     * board's own order, and the Dine In / Take Out counts of its "Preparing" column — the active queue `queue()` ranks —
+     * taken from the same rows, never from a second query.
+     *
+     * @return array{is_open: bool, preparing: list<array{number: string, order_type: string}>, ready: list<array{number: string, order_type: string}>, counts: array{dine_in: int, take_out: int}}
+     */
     public function customerDisplay(Branch $branch): array
     {
         $session = $this->openSession($branch);
 
         if ($session === null) {
-            return ['is_open' => false, 'preparing' => [], 'ready' => []];
+            return ['is_open' => false, 'preparing' => [], 'ready' => [], 'counts' => ['dine_in' => 0, 'take_out' => 0]];
         }
 
         $numbers = $this->ordersForSession($branch, $session)
@@ -99,13 +102,82 @@ class KitchenBoard
             ])
             ->orderBy('committed_at')
             ->orderBy('id')
-            ->get(['order_number', 'kitchen_status'])
+            ->get(['order_number', 'order_type', 'kitchen_status'])
             ->groupBy(fn (Order $order): string => $order->kitchen_status === KitchenStatus::Ready ? 'ready' : 'preparing');
+        $preparing = $numbers->get('preparing', collect());
+        $waitingByType = $preparing->countBy(fn (Order $order): string => $order->order_type->value);
 
         return [
             'is_open' => true,
-            'preparing' => $this->numberList($numbers->get('preparing', collect())),
+            'preparing' => $this->numberList($preparing),
             'ready' => $this->numberList($numbers->get('ready', collect())),
+            'counts' => [
+                'dine_in' => (int) $waitingByType->get(OrderType::DineIn->value, 0),
+                'take_out' => (int) $waitingByType->get(OrderType::TakeOut->value, 0),
+            ],
+        ];
+    }
+
+    /** How many queue rows a customer-facing queue list shows at most. */
+    public const QUEUE_WINDOW = 10;
+
+    /**
+     * The one queue-position authority (Phase 19.6) used by the customer screen's order confirmation and the pickup
+     * page. The active queue is the Customer Display "Preparing" column: committed orders of the OPEN Store Session
+     * still in Kitchen or Preparing, in the board's own order (committed_at, id). Ready, Done, voided, archived,
+     * uncommitted and earlier-session orders are not in it.
+     *
+     * - `overall_position`: the order's place among every active order (Dine In and Take Out together);
+     * - `type_position`: its place among active orders of its own type only;
+     * - `rows`: at most `$window` rows with their true absolute positions, always including this order (the first rows
+     *   when it is near the front, otherwise the rows leading up to it and one after).
+     *
+     * Positions are null once the order itself is not waiting (Ready, Done, voided) or its Store Session is not the open
+     * one; the rows then still show the current queue. One query reads the queue (four small columns), whatever its
+     * length. No customer names, tables, items or ids are returned.
+     *
+     * @return array{overall_position: int|null, type_position: int|null, total: int, rows: list<array{position: int, order_number: string, order_type: string, current: bool}>}
+     */
+    public function queue(Order $order, int $window = self::QUEUE_WINDOW): array
+    {
+        $empty = ['overall_position' => null, 'type_position' => null, 'total' => 0, 'rows' => []];
+        $branch = $order->relationLoaded('branch') ? $order->branch : $order->branch()->first();
+        $session = $branch === null ? null : $this->openSession($branch);
+        if ($branch === null || $session === null) {
+            return $empty;
+        }
+        $active = $this->ordersForSession($branch, $session)
+            ->whereIn('kitchen_status', [KitchenStatus::Kitchen, KitchenStatus::Preparing])
+            ->orderBy('committed_at')
+            ->orderBy('id')
+            ->get(['id', 'order_number', 'order_type', 'committed_at']);
+
+        $overall = null;
+        $typePosition = null;
+        $sameType = 0;
+        foreach ($active->values() as $index => $row) {
+            if ($row->order_type === $order->order_type) {
+                $sameType++;
+            }
+            if ($row->getKey() === $order->getKey()) {
+                $overall = $index + 1;
+                $typePosition = $sameType;
+            }
+        }
+        $total = $active->count();
+        $window = max(1, $window);
+        $start = $overall === null || $overall <= $window ? 1 : min($overall - $window + 2, $total - $window + 1);
+
+        return [
+            'overall_position' => $overall,
+            'type_position' => $typePosition,
+            'total' => $total,
+            'rows' => array_values($active->slice($start - 1, $window)->values()->map(fn (Order $row, int $offset): array => [
+                'position' => $start + $offset,
+                'order_number' => (string) $row->order_number,
+                'order_type' => $row->order_type->value,
+                'current' => $row->getKey() === $order->getKey(),
+            ])->all()),
         ];
     }
 
@@ -123,6 +195,9 @@ class KitchenBoard
             ->with([
                 ...$this->kitchenRelations(),
                 'payments:id,order_id,method',
+                'pickupToken' => fn ($query) => $query
+                    ->select(['id', 'order_id', 'expires_at', 'buzz_count', 'last_buzzed_at'])
+                    ->withExists('pushSubscription'),
             ])
             ->orderBy('committed_at')
             ->orderBy('id')
@@ -175,6 +250,7 @@ class KitchenBoard
             ->whereBelongsTo($branch)
             ->whereBelongsTo($session, 'storeSession')
             ->whereNotNull('committed_at')
+            ->whereIn('commercial_status', [CommercialStatus::Active, CommercialStatus::Completed])
             ->whereHas('kitchenTicket');
     }
 
@@ -233,6 +309,11 @@ class KitchenBoard
                 ->values()
                 ->all(),
             'total' => $order->total,
+            'buzz' => app(PickupBuzzPolicy::class)->state(
+                $order,
+                $order->pickupToken,
+                (bool) $order->pickupToken?->getAttribute('push_subscription_exists'),
+            ),
         ];
     }
 
@@ -264,14 +345,38 @@ class KitchenBoard
 
     /**
      * @param  Collection<int, Order>  $orders
-     * @return list<string>
+     * @return list<array{number: string, order_type: string}>
      */
     private function numberList(Collection $orders): array
     {
         return array_values($orders
-            ->map(fn (Order $order): string => '#'.$order->order_number)
+            ->map(fn (Order $order): array => [
+                'number' => '#'.$order->order_number,
+                'order_type' => $order->order_type->value,
+            ])
             ->values()
             ->all());
+    }
+
+    /** @return array{all: int, kitchen: int, preparing: int, ready: int, done: int} */
+    private function countsForSession(Branch $branch, StoreSession $session): array
+    {
+        $countsByStatus = $this->ordersForSession($branch, $session)
+            ->selectRaw('kitchen_status, count(*) as aggregate')
+            ->groupBy('kitchen_status')
+            ->pluck('aggregate', 'kitchen_status');
+
+        return [
+            'all' => (int) $countsByStatus->only([
+                KitchenStatus::Kitchen->value,
+                KitchenStatus::Preparing->value,
+                KitchenStatus::Ready->value,
+            ])->sum(),
+            'kitchen' => (int) ($countsByStatus[KitchenStatus::Kitchen->value] ?? 0),
+            'preparing' => (int) ($countsByStatus[KitchenStatus::Preparing->value] ?? 0),
+            'ready' => (int) ($countsByStatus[KitchenStatus::Ready->value] ?? 0),
+            'done' => (int) ($countsByStatus[KitchenStatus::Done->value] ?? 0),
+        ];
     }
 
     /** @return array{all: int, kitchen: int, preparing: int, ready: int, done: int} */

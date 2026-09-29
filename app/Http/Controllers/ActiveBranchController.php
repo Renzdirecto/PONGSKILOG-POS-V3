@@ -21,6 +21,12 @@ class ActiveBranchController extends Controller
 
         $activeBranchContext->set($user, $branch);
 
+        /** An optional same-application path (e.g. a Branch's Product settings); anything else lands on the workspace. */
+        $target = $request->input('redirect');
+        if (is_string($target) && strlen($target) <= 2000 && preg_match('#\A/(?![/\\\\])[^\s\\\\]*\z#', $target) === 1) {
+            return redirect($target);
+        }
+
         return to_route('workspace');
     }
 

@@ -1,3 +1,4 @@
+import type { CanonicalReceipt, ReceiptPayment } from './receipt';
 import type { CashierCatalog } from './catalog';
 
 export type PosProduct = CashierCatalog['products'][number];
@@ -57,10 +58,17 @@ export type PayLaterOrder = OrderSummary & {
     cashier: string;
 };
 
+export type AdditionalQrItem = {
+    product_id: string;
+    quantity: number;
+    notes: string;
+    modifiers: CartLine['modifiers'];
+};
 export type PayLaterAttempt = {
     order_id: string;
     idempotency_key: string;
     qr_metadata?: { customer_label: string; branch_table_id: string | null };
+    qr_additional_items?: AdditionalQrItem[];
     order_type?: OrderType;
     customer_label?: string;
     branch_table_id?: string | null;
@@ -82,6 +90,7 @@ export type PaymentInput = {
 export type PaymentAttempt = PaymentInput & {
     idempotency_key: string;
     qr_metadata?: { customer_label: string; branch_table_id: string | null };
+    qr_additional_items?: AdditionalQrItem[];
     draft_order_id?: string;
     reserved_order_id?: string;
     order_type?: OrderType;
@@ -94,24 +103,31 @@ export type PaymentAttempt = PaymentInput & {
         modifiers: CartLine['modifiers'];
     }[];
 };
-export type PaidReceipt = OrderSummary & {
-    payment_status: 'paid';
+/**
+ * The staff receipt (POS print, Transaction History reprint, edit and settlement responses): the canonical receipt
+ * document plus the staff-only ids, statuses, balances and invoice proofs.
+ */
+export type ReceiptSummary = Omit<
+    CanonicalReceipt,
+    'items' | 'payments' | 'commercial_status' | 'payment_status'
+> & {
+    id: string;
+    items: OrderSummary['items'];
+    commercial_status: 'active' | 'completed' | 'voided';
+    voided_at: string | null;
+    payment_status: 'paid' | 'unpaid' | 'partial';
+    amount_paid: string;
+    adjustment_total: string;
+    outstanding: string;
     store_session_id: string;
+    payments: (ReceiptPayment & {
+        id: string;
+        payment_group_id: string | null;
+        payment_context: string | null;
+        invoice: { name: string; url: string } | null;
+    })[];
+};
+export type PaidReceipt = ReceiptSummary & {
+    payment_status: 'paid';
     paid_at: string;
-    cashier: string;
-    branch: {
-        name: string;
-        code: string;
-        address: string | null;
-        contact: string | null;
-        footer?: string | null;
-        show_logo?: boolean;
-        logo_url?: string;
-    };
-    payments: {
-        method: 'cash' | 'cashless';
-        amount: string;
-        amount_received: string | null;
-        change_amount: string | null;
-    }[];
 };

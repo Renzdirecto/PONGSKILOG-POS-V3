@@ -6,9 +6,16 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useRecipeCapacity } from '@/hooks/use-recipe-capacity';
 import { qrLineCents } from '@/lib/qr-order';
 import { createClientUuid } from '@/lib/client-uuid';
 import { pesos } from '@/lib/pos-money';
+import {
+    configurationProblem,
+    optionAvailability,
+    sizeAvailability,
+} from '@/lib/recipe-availability';
+import type { CapacitySelection } from '@/lib/recipe-availability';
 import type { QrLine, QrProduct } from '@/types/qr';
 
 export const qrButton =
@@ -50,6 +57,8 @@ export function CustomerQrProduct({
     onClose,
     onSave,
     onTrack,
+    capacityUrl = null,
+    otherLines = [],
 }: {
     product: QrProduct;
     initial?: QrLine;
@@ -57,11 +66,29 @@ export function CustomerQrProduct({
     onClose: () => void;
     onSave: (line: QrLine) => void;
     onTrack: () => void;
+    /** Server check of Recipe ingredient stock for this configuration (customers never see serving counts). */
+    capacityUrl?: string | null;
+    otherLines?: CapacitySelection[];
 }) {
     const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+    /** Required groups start on their first options, preferring a Size the branch can make now. */
+    const sizeBlocked = (optionId: string) =>
+        (sizeAvailability(product.recipe, optionId)?.state ?? 'available') !==
+        'available';
     const defaultChoices = () =>
         (product.modifier_groups ?? []).flatMap((group) =>
-            group.options
+            [...group.options]
+                .sort(
+                    (left, right) =>
+                        Number(
+                            group.semantic_role === 'size' &&
+                                sizeBlocked(left.id),
+                        ) -
+                        Number(
+                            group.semantic_role === 'size' &&
+                                sizeBlocked(right.id),
+                        ),
+                )
                 .slice(0, group.min_select)
                 .map((option) => ({
                     group_id: group.id,
@@ -72,6 +99,17 @@ export function CustomerQrProduct({
         initial?.modifiers ?? defaultChoices(),
     );
     const [notes, setNotes] = useState(initial?.notes ?? '');
+    const { capacity } = useRecipeCapacity(
+        product.recipe && !locked ? capacityUrl : null,
+        {
+            lines: otherLines,
+            focus: { product_id: product.id, quantity, modifiers },
+        },
+        JSON.stringify(product.recipe ?? null),
+    );
+    const recipeProblem = configurationProblem(capacity, quantity)
+        ? 'This choice can’t be made right now. Try another size, fewer add-ons, or a smaller quantity.'
+        : null;
     const groups = product.modifier_groups ?? [];
     const staleChoices = modifiers.some(
         (mod) =>
@@ -216,20 +254,31 @@ export function CustomerQrProduct({
                                                         option.id &&
                                                     mod.group_id === group.id,
                                             );
+                                            const availability =
+                                                optionAvailability(
+                                                    product,
+                                                    capacity,
+                                                    option.id,
+                                                    group.semantic_role ===
+                                                        'size',
+                                                    group.semantic_role ===
+                                                        'instruction',
+                                                );
                                             return (
                                                 <button
                                                     key={option.id}
                                                     aria-pressed={selected}
                                                     disabled={
                                                         !selected &&
-                                                        group.selection_type ===
-                                                            'multiple' &&
-                                                        modifiers.filter(
-                                                            (mod) =>
-                                                                mod.group_id ===
-                                                                group.id,
-                                                        ).length >=
-                                                            group.max_select
+                                                        (availability.unavailable ||
+                                                            (group.selection_type ===
+                                                                'multiple' &&
+                                                                modifiers.filter(
+                                                                    (mod) =>
+                                                                        mod.group_id ===
+                                                                        group.id,
+                                                                ).length >=
+                                                                    group.max_select))
                                                     }
                                                     className={`${qrButton} justify-between ${selected ? 'border-neutral-950 bg-neutral-950 text-white' : ''}`}
                                                     onClick={() =>
@@ -263,7 +312,17 @@ export function CustomerQrProduct({
                                                         )
                                                     }
                                                 >
-                                                    <span>{option.name}</span>
+                                                    <span className="flex flex-col items-start">
+                                                        {option.name}
+                                                        {availability.unavailable && (
+                                                            <span className="text-[10.5px] font-medium text-red-700">
+                                                                {availability.label ===
+                                                                'Out of stock'
+                                                                    ? 'Out of stock'
+                                                                    : 'Unavailable'}
+                                                            </span>
+                                                        )}
+                                                    </span>
                                                     {group.semantic_role !==
                                                         'instruction' &&
                                                         option.price_delta !==
@@ -281,6 +340,14 @@ export function CustomerQrProduct({
                                     </div>
                                 </fieldset>
                             ))}
+                            {valid && recipeProblem && (
+                                <p
+                                    role="alert"
+                                    className="rounded-xl bg-red-50 p-3 text-xs text-red-800"
+                                >
+                                    {recipeProblem}
+                                </p>
+                            )}
                             <label className="flex flex-col gap-2 text-sm font-semibold">
                                 Special instructions
                                 <span className="text-xs font-normal text-neutral-500">
@@ -324,7 +391,11 @@ export function CustomerQrProduct({
                     ) : (
                         <button
                             className={`${qrPrimary} w-full justify-between`}
-                            disabled={!product.is_available || !valid}
+                            disabled={
+                                !product.is_available ||
+                                !valid ||
+                                recipeProblem !== null
+                            }
                             onClick={() =>
                                 onSave({
                                     ...line,

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        <meta name="theme-color" content="#111111">
+        <meta name="robots" content="noindex">
+        <title>Offline - PONGSKILOG</title>
+        <link rel="icon" href="/images/branding/icons/icon-192.png" type="image/png">
+        <style>
+            :root {
+                color-scheme: dark;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            html,
+            body {
+                margin: 0;
+                min-height: 100%;
+                background: #111111;
+                color: #ffffff;
+                font-family: Poppins, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            }
+
+            main {
+                display: flex;
+                min-height: 100dvh;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 14px;
+                padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+                    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+                text-align: center;
+            }
+
+            img {
+                width: 96px;
+                height: 96px;
+                border-radius: 50%;
+            }
+
+            .brand {
+                margin: 0;
+                font-size: 13px;
+                font-weight: 700;
+                letter-spacing: 0.14em;
+                color: rgb(255 255 255 / 70%);
+            }
+
+            h1 {
+                margin: 4px 0 0;
+                font-size: 26px;
+                font-weight: 800;
+                letter-spacing: -0.01em;
+            }
+
+            p {
+                margin: 0;
+                max-width: 340px;
+                font-size: 15px;
+                line-height: 1.5;
+                color: rgb(255 255 255 / 72%);
+            }
+
+            button {
+                margin-top: 10px;
+                min-height: 48px;
+                min-width: 180px;
+                border: 0;
+                border-radius: 14px;
+                background: #ffffff;
+                color: #111111;
+                font: inherit;
+                font-size: 15px;
+                font-weight: 700;
+                cursor: pointer;
+            }
+
+            button:focus-visible {
+                outline: 3px solid #f5c542;
+                outline-offset: 3px;
+            }
+
+            .note {
+                font-size: 12.5px;
+                color: rgb(255 255 255 / 55%);
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <img src="/images/branding/pongskilog-emblem.png" alt="" width="96" height="96">
+            <p class="brand">PONGSKILOG</p>
+            <h1>You're offline.</h1>
+            <p>Reconnect to continue.</p>
+            <button type="button" id="retry">Reconnect</button>
+            <p class="note" role="status" aria-live="polite" id="status">
+                Orders, payments and store operations need an internet connection. Nothing is saved while offline.
+            </p>
+        </main>
+        <script>
+            (function () {
+                var retry = document.getElementById('retry');
+                var status = document.getElementById('status');
+
+                function reconnect() {
+                    status.textContent = 'Reconnecting…';
+                    window.location.reload();
+                }
+
+                retry.addEventListener('click', reconnect);
+                window.addEventListener('online', reconnect);
+            })();
+        </script>
+    </body>
+</html>

@@ -13,17 +13,19 @@ use App\Models\ModifierOption;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
 use App\Models\Product;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class OrderSnapshots
 {
-    public function __construct(private BranchCatalog $catalog) {}
+    public function __construct(private BranchCatalog $catalog, private RecipeCapacity $recipes) {}
 
-    /** @param array{order_type: string, branch_table_id?: string|null, customer_label?: string|null, items: list<array{product_id: string, quantity: int, notes?: string|null, modifiers: list<array{group_id: string, option_id: string}>}>} $data
+    /** @param array{order_type: string, branch_table_id?: string|null, customer_label?: string|null, items: list<array{existing_order_item_id?: string|null, product_id: string, quantity: int, notes?: string|null, modifiers: list<array{group_id: string, option_id: string}>}>} $data
+     * @param  Collection<int, OrderItem>|null  $existingItems
      * @return array{attributes: array<string, mixed>, items: list<array<string, mixed>>, modifiers: list<array<string, mixed>>}
      */
-    public function prepare(Branch $branch, array $data, string $orderId, bool $lockCatalog = false): array
+    public function prepare(Branch $branch, array $data, string $orderId, bool $lockCatalog = false, ?Collection $existingItems = null): array
     {
         if ($lockCatalog) {
             $ids = array_values(array_unique(array_column($data['items'], 'product_id')));
@@ -57,19 +59,45 @@ class OrderSnapshots
                 throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
             }
             $state = $this->catalog->resolveLoaded($product);
-            if ($state['tracked'] && $requested[$product->id] > $state['on_hand']) {
+            $existing = $existingItems?->firstWhere('id', $line['existing_order_item_id'] ?? null);
+            $existingOptionIds = $existing?->modifiers->pluck('modifier_option_id')->sort()->values()->all();
+            $requestedOptionIds = collect($line['modifiers'])->pluck('option_id')->sort()->values()->all();
+            $preserveSnapshot = $existing !== null && $existing->product_id === $product->id && $existingOptionIds === $requestedOptionIds;
+            if ($existingItems === null && ! $preserveSnapshot && $state['tracked'] && $requested[$product->id] > $state['on_hand']) {
                 throw ValidationException::withMessages(["items.$index.quantity" => "Insufficient stock for {$product->name}. Reduce the total quantity in the cart."]);
             }
-            if (! $state['is_available']) {
+            if (! $preserveSnapshot && ! $state['is_available']) {
                 throw ValidationException::withMessages(["items.$index.product_id" => 'This product is no longer available. Remove it or refresh the catalog.']);
             }
-            $itemId = (string) Str::uuid();
-            $base = ExactMoney::cents($state['effective_price']);
+            /** A retained line of a Product removed from this Branch may stay or shrink, never sell more units. */
+            if ($preserveSnapshot && $state['availability_reason'] === 'not_in_branch' && $line['quantity'] > $existing->quantity) {
+                throw ValidationException::withMessages(["items.$index.quantity" => $product->name.' is no longer sold at this Branch. Keep or reduce its quantity.']);
+            }
+            /** Time-ordered ids (UUIDv7, monotonic in a request): receipts list items and options in entry order. */
+            $itemId = (string) Str::uuid7();
+            $base = ExactMoney::cents($preserveSnapshot ? $existing->unit_price : $state['effective_price']);
             $unit = $base;
+            if ($preserveSnapshot) {
+                foreach ($existing->modifiers->sortBy('id') as $modifier) {
+                    if ($modifier->semantic_role_snapshot !== ModifierSemanticRole::Instruction->value) {
+                        $unit = ExactMoney::add($unit, ExactMoney::cents($modifier->price_delta_snapshot));
+                    }
+                    $modifiers[] = [
+                        'id' => (string) Str::uuid7(), 'order_item_id' => $itemId,
+                        'modifier_option_id' => $modifier->modifier_option_id,
+                        'modifier_group_id_snapshot' => $modifier->modifier_group_id_snapshot,
+                        'group_name_snapshot' => $modifier->group_name_snapshot,
+                        'semantic_role_snapshot' => $modifier->semantic_role_snapshot,
+                        'option_name_snapshot' => $modifier->option_name_snapshot,
+                        'price_delta_snapshot' => $modifier->price_delta_snapshot,
+                        'quantity' => 1,
+                    ];
+                }
+            }
             $groups = $product->modifierGroups->keyBy('id');
             $selected = [];
             $counts = [];
-            foreach ($line['modifiers'] as $selection) {
+            foreach ($preserveSnapshot ? [] : $line['modifiers'] as $selection) {
                 $group = $groups->get($selection['group_id']);
                 $option = $group?->options->firstWhere('id', $selection['option_id']);
                 if ($group === null || $option === null || isset($selected[$selection['option_id']])) {
@@ -85,7 +113,7 @@ class OrderSnapshots
                     $unit = ExactMoney::add($unit, ExactMoney::cents($option->price_delta));
                 }
                 $modifiers[] = [
-                    'id' => (string) Str::uuid(), 'order_item_id' => $itemId,
+                    'id' => (string) Str::uuid7(), 'order_item_id' => $itemId,
                     'modifier_option_id' => $option->id, 'modifier_group_id_snapshot' => $group->id, 'group_name_snapshot' => $group->name,
                     'semantic_role_snapshot' => $group->semantic_role?->value,
                     'option_name_snapshot' => $option->name,
@@ -93,7 +121,7 @@ class OrderSnapshots
                     'quantity' => 1,
                 ];
             }
-            foreach ($groups as $group) {
+            foreach ($preserveSnapshot ? [] : $groups as $group) {
                 $count = $counts[$group->id] ?? 0;
                 if ($count < $group->min_select || $count > $group->max_select
                     || ($group->selection_type === ModifierSelectionType::Single && $count > 1)) {
@@ -104,10 +132,20 @@ class OrderSnapshots
             $subtotal = ExactMoney::add($subtotal, $lineTotal);
             $items[] = [
                 'id' => $itemId, 'order_id' => $orderId, 'product_id' => $product->id,
-                'product_name_snapshot' => $product->name, 'unit_price' => ExactMoney::decimal($base),
+                'product_name_snapshot' => $preserveSnapshot ? $existing->product_name_snapshot : $product->name, 'unit_price' => ExactMoney::decimal($base),
                 'quantity' => $line['quantity'], 'line_total' => ExactMoney::decimal($lineTotal),
                 'notes' => $line['notes'] ?? null, 'created_at' => now(), 'updated_at' => now(),
             ];
+        }
+        /**
+         * New orders (POS drafts and sales, Customer QR submissions) must fit current Recipe Ingredient stock across the
+         * whole order. Committed-order edits are checked on their net delta when the edit is applied.
+         */
+        $recipeLines = array_values(array_filter($data['items'], fn (array $line): bool => (bool) $products->get($line['product_id'])?->getAttribute('has_recipe')));
+        if ($existingItems === null && $recipeLines !== []) {
+            $this->recipes->assertOrderFits($branch, array_map(fn (array $line): array => [
+                'product_id' => $line['product_id'], 'quantity' => $line['quantity'], 'modifiers' => $line['modifiers'],
+            ], $recipeLines));
         }
 
         return ['attributes' => [

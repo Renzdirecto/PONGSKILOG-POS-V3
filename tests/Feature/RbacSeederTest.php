@@ -21,6 +21,7 @@ test('all frozen roles and lean permissions are seeded', function () {
         'customer_display.launch',
         'inventory.manage',
         'kitchen.access',
+        'operations.manage',
         'pos.access',
         'products.manage',
         'qr_orders.access',
@@ -39,8 +40,8 @@ test('rerunning the seeder does not duplicate rbac records', function () {
     $this->seed(RbacSeeder::class);
 
     expect(Role::query()->count())->toBe(5);
-    expect(DB::table('permissions')->count())->toBe(15);
-    expect(DB::table('role_permissions')->count())->toBe(35);
+    expect(DB::table('permissions')->count())->toBe(16);
+    expect(DB::table('role_permissions')->count())->toBe(37);
 });
 
 test('cashier receives only operational permissions', function () {
@@ -110,6 +111,7 @@ test('owner receives management permissions without super admin controls', funct
 
     expect($permissions)->toBe([
         'inventory.manage',
+        'operations.manage',
         'products.manage',
         'reports.view',
         'settings.manage',
@@ -128,7 +130,7 @@ test('super admin receives every seeded permission', function () {
 
     $superAdmin = Role::query()->where('name', 'super_admin')->firstOrFail();
 
-    expect($superAdmin->permissions()->count())->toBe(15);
+    expect($superAdmin->permissions()->count())->toBe(16);
     expect($superAdmin->permissions()->pluck('name')->sort()->values()->all())
         ->toBe(DB::table('permissions')->pluck('name')->sort()->values()->all());
 });

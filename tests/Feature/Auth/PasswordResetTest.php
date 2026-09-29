@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\AuditLog;
+use App\Models\PushSubscription;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Notification;
@@ -44,7 +46,8 @@ test('reset password screen can be rendered', function () {
 test('password can be reset with valid token', function () {
     Notification::fake();
 
-    $user = User::factory()->create();
+    $user = User::factory()->create(['remember_token' => 'old-remember-token']);
+    $subscription = PushSubscription::factory()->for($user)->create();
 
     $this->post(route('password.email'), ['email' => $user->email]);
 
@@ -62,6 +65,11 @@ test('password can be reset with valid token', function () {
 
         return true;
     });
+
+    /** Whoever used the old password is signed out everywhere, and the reset is audited. */
+    expect($user->fresh()->remember_token)->not->toBe('old-remember-token')
+        ->and(PushSubscription::query()->whereKey($subscription->id)->exists())->toBeFalse()
+        ->and(AuditLog::query()->where('action', 'account.password_reset_by_link')->where('user_id', $user->id)->exists())->toBeTrue();
 });
 
 test('password cannot be reset with invalid token', function () {

@@ -97,6 +97,12 @@ test('cash cashless and split settle a pay later order without repeating invento
     }
 
     $this->postJson(route('pos.orders.settlements.store', $order), $payload)->assertExactJson($response->json());
+    $this->assertDatabaseHas('audit_logs', [
+        'auditable_id' => $order->id,
+        'user_id' => $user->id,
+        'action' => 'order.settled',
+        'idempotency_key' => strtolower($payload['idempotency_key']),
+    ]);
     expect($order->fresh()->version)->toBe(3)
         ->and($balance->fresh()->on_hand)->toBe(4)
         ->and($order->inventoryMovements()->count())->toBe($movementCount)
@@ -207,7 +213,7 @@ test('foreign orders and non cashier roles cannot settle pay later', function (s
     $case === 'foreign' ? $response->assertNotFound() : $response->assertForbidden();
     expect($order->fresh()->payment_status)->toBe(PaymentStatus::Unpaid);
     $this->assertDatabaseCount('payments', 0);
-})->with(['foreign', 'kitchen_staff', 'owner', 'super_admin']);
+})->with(['foreign', 'kitchen_staff', 'owner']);
 
 test('forged server owned settlement fields are rejected', function (string $field) {
     [, $user, , , , $order] = settlementFixture();

@@ -3,6 +3,10 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Support\PickupPushGateway;
+use App\Support\PushGateway;
+use App\Support\RateLimits;
+use App\Support\WebPushGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +21,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(PushGateway::class, WebPushGateway::class);
+        $this->app->bind(PickupPushGateway::class, WebPushGateway::class);
     }
 
     /**
@@ -26,11 +31,23 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        RateLimits::register();
 
         Gate::define('products.manage', function (User $user): bool {
             $user = $user->exists ? User::query()->whereKey($user->getKey())->first() : null;
 
             return $user !== null && $user->is_active && $user->hasPermission('products.manage');
+        });
+
+        /**
+         * The shared Product definitions (Product identity, image, Category and Modifier Groups) affect every Branch, so
+         * only business-wide Product management edits them. A Branch-scoped products.manage manages its Branch
+         * assortment and configuration only (UpsertBranchProduct, ConfigureBranchAssortment).
+         */
+        Gate::define('catalog.define', function (User $user): bool {
+            $user = $user->exists ? User::query()->whereKey($user->getKey())->first() : null;
+
+            return $user !== null && $user->is_active && $user->hasPermission('products.manage') && $user->hasBusinessWideScope();
         });
 
         Gate::define('inventory.manage', function (User $user): bool {

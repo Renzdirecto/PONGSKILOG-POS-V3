@@ -2,16 +2,18 @@
 
 namespace App\Support;
 
+use App\Enums\CommercialStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\ReceiptAudience;
 use App\Models\Branch;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderItemModifier;
-use App\Models\Payment;
+use Illuminate\Support\Arr;
 
 class CustomerQrProjection
 {
-    public function __construct(private BranchCatalog $catalog) {}
+    public function __construct(private BranchCatalog $catalog, private ReceiptDocument $receipts) {}
 
     /** @return array<string, mixed> */
     public function catalog(Branch $branch): array
@@ -19,6 +21,11 @@ class CustomerQrProjection
         $catalog = $this->catalog->browse($branch, customization: true);
         $catalog['products'] = array_map(function (array $product): array {
             unset($product['on_hand'], $product['tracks_inventory']);
+            /** Customers see whether each Size can be made, never Branch serving counts. */
+            if ($product['recipe'] !== null) {
+                $product['recipe']['capacity'] = null;
+                $product['recipe']['sizes'] = array_map(fn (array $size): array => [...$size, 'capacity' => null], $product['recipe']['sizes']);
+            }
             $product['stock_status'] = $product['availability_reason'] === 'out_of_stock' ? 'out_of_stock' : ($product['is_available'] ? 'available' : 'unavailable');
             $product['availability_reason'] = $product['is_available'] ? null : $product['stock_status'];
 
@@ -43,12 +50,12 @@ class CustomerQrProjection
             'ready_at' => $order->ready_at?->toIso8601String(),
             'order_type' => $order->order_type->value, 'customer_label' => $order->customer_label,
             'table_name' => $order->table_name_snapshot, 'subtotal' => $order->subtotal, 'total' => $order->total,
-            'commercial_status' => $order->commercial_status->value, 'payment_status' => $order->payment_status->value,
+            'commercial_status' => $order->commercial_status->value, 'voided_at' => $order->voided_at?->toIso8601String(), 'payment_status' => $order->payment_status->value,
             'payment_term' => $order->payment_term?->value, 'kitchen_status' => $order->kitchen_status->value,
             'submitted_at' => $order->submitted_at?->toIso8601String(), 'committed_at' => $order->committed_at?->toIso8601String(),
             'completed_at' => $order->completed_at?->toIso8601String(), 'archived_at' => $order->archived_at?->toIso8601String(),
             'paid_at' => $paidAt?->toIso8601String(), 'receipt_expires_at' => $expiresAt?->toIso8601String(),
-            'receipt_available' => $expiresAt !== null && $expiresAt->gt(now()),
+            'receipt_available' => $order->commercial_status !== CommercialStatus::Voided && $expiresAt !== null && $expiresAt->gt(now()),
             'version' => $order->version,
             'items' => $order->items->map(fn (OrderItem $item): array => [
                 ...OperationalItemName::fromOrderItem($item), 'quantity' => $item->quantity,
@@ -62,20 +69,36 @@ class CustomerQrProjection
         ];
     }
 
-    /** @return array<string, mixed> */
-    public function receipt(Order $order): array
+    /**
+     * The customer-facing receipt (the canonical `ReceiptDocument`, rendered by `DigitalReceiptCard`), shared by the
+     * signed POS receipt link (SharedLink) and the Take Out pickup page (Pickup: no customer name, table or notes).
+     * Only paid, non-voided orders within the receipt window.
+     *
+     * @return array<string, mixed>
+     */
+    public function publicReceipt(Order $order, ReceiptAudience $audience = ReceiptAudience::SharedLink): array
+    {
+        abort_unless(filled($order->order_number) && filled($order->reference_number), 404);
+
+        return Arr::only($this->receipt($order, $audience), [
+            'order_number', 'reference_number', 'paid_at', 'receipt_expires_at', 'order_type',
+            'customer_label', 'table_name', 'items', 'subtotal', 'total', 'branch', 'payments',
+            'layout', 'cashier', 'money', 'commercial_status', 'payment_status',
+        ]);
+    }
+
+    /**
+     * The Customer QR session's own receipt: its tracking projection plus the canonical receipt document.
+     *
+     * @return array<string, mixed>
+     */
+    public function receipt(Order $order, ReceiptAudience $audience = ReceiptAudience::Customer): array
     {
         $projection = $this->order($order);
+        abort_if($order->commercial_status === CommercialStatus::Voided, 404);
         abort_unless($order->payment_status === PaymentStatus::Paid, 404);
         abort_unless($projection['receipt_available'], 410, 'Receipt expired. Receipts are available for 24 hours after payment.');
-        $order->loadMissing('branch');
 
-        return [...$projection, 'branch' => ['name' => $order->branch->receipt_name ?? $order->branch->name, 'code' => $order->branch->code,
-            'address' => $order->branch->receipt_address ?? $order->branch->address, 'contact' => $order->branch->receipt_contact ?? $order->branch->contact,
-            'footer' => $order->branch->receipt_footer, 'show_logo' => $order->branch->receipt_show_logo, 'logo_url' => $order->branch->receipt_logo_path ? route('branches.receipt-logo', $order->branch, false).'?v='.md5($order->branch->receipt_logo_path) : '/images/branding/logo.png'],
-            'payments' => $order->payments->map(fn (Payment $payment): array => [
-                'method' => $payment->method->value, 'amount' => $payment->amount,
-                'amount_received' => $payment->amount_received, 'change_amount' => $payment->change_amount,
-            ])->all()];
+        return [...$projection, ...$this->receipts->for($order, $audience)];
     }
 }

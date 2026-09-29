@@ -2,21 +2,29 @@
 
 namespace App\Actions\Inventory;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\InventoryMovementType;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 
 class AdjustInventory
 {
-    public function __construct(private ApplyInventoryMovement $applyMovement) {}
+    public function __construct(private ApplyInventoryMovement $applyMovement, private AuditRecorder $audit) {}
 
     public function execute(User $user, Branch $branch, Product $product, int $quantityDelta, string $reason): InventoryMovement
     {
         Gate::forUser($user)->authorize('inventory.manage');
+        /** Branch-scoped Inventory managers adjust only their assigned Branches. */
+        if (! $user->canAccessBranch($branch)) {
+            throw new AuthorizationException('This account may not adjust stock at this Branch.');
+        }
 
         $reason = trim($reason);
 
@@ -28,13 +36,33 @@ class AdjustInventory
             'reason' => ['required', 'string', 'max:1000'],
         ])->validate();
 
-        return $this->applyMovement->execute(
-            branch: $branch,
-            product: $product,
-            movementType: InventoryMovementType::ManualAdjustment,
-            quantityDelta: $quantityDelta,
-            reason: $reason,
-            actor: $user,
-        );
+        return DB::transaction(function () use ($user, $branch, $product, $quantityDelta, $reason): InventoryMovement {
+            /** Branch FOR SHARE before the Product rows: POS commits hold it FOR UPDATE, and the movement insert needs a KEY SHARE on it. */
+            $branch = Branch::query()->whereKey($branch->getKey())->sharedLock()->firstOrFail();
+            $movement = $this->applyMovement->execute(
+                branch: $branch,
+                product: $product,
+                movementType: InventoryMovementType::ManualAdjustment,
+                quantityDelta: $quantityDelta,
+                reason: $reason,
+                actor: $user,
+            );
+            $this->audit->record(
+                branch: $branch,
+                actor: $user,
+                module: 'inventory',
+                action: 'inventory.adjusted',
+                auditableType: Product::class,
+                auditableId: $product->id,
+                metadata: [
+                    'movement_id' => $movement->id,
+                    'quantity_delta' => $quantityDelta,
+                    'reason' => $reason,
+                ],
+            );
+            ReportsChanged::dispatch((string) $branch->id, 'inventory.adjusted');
+
+            return $movement;
+        });
     }
 }

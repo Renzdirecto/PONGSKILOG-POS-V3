@@ -4,13 +4,13 @@ on:
   pull_request:
     branches:
       - dev
-      - staging
-      - main
+      - staging # Deferred environment; retain existing validation coverage.
+      - production
   push:
     branches:
       - dev
-      - staging
-      - main
+      - staging # Deferred environment; retain existing validation coverage.
+      - production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -80,6 +80,9 @@ jobs:
 
       - name: Run frontend lint checks
         run: npm run check:frontend
+
+      - name: Run frontend behavioral tests
+        run: npm run test:frontend
 
       - name: Run TypeScript checks
         run: npm run types:check

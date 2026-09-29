@@ -631,90 +631,138 @@ inspect 360/390/430px phones, iPad Mini 768/1024px sidebar, tablet and desktop.
 
 ## Phase 12 — Transaction History & Editing
 
-- [ ] Transaction list
-- [ ] Search
-- [ ] Filters
-- [ ] Transaction detail
-- [ ] Pay Later settlement from history
-- [ ] Edit committed order
-- [ ] Inventory delta calculation
-- [ ] Inventory compensating movement
-- [ ] Higher-total delta payment
-- [ ] Higher-total Pay Later delta
-- [ ] Lower-total correction
-- [ ] Receipt actions
-- [ ] Edit audit trail
-- [ ] Kitchen update after relevant edit
-- [ ] Cashless / Split invoice proof capture
-- [ ] Camera / image upload for invoice proof
-- [ ] Persist invoice proof against payment/transaction
-- [ ] View invoice proof in transaction detail
-- [ ] Replace/remove invoice proof with authorization
+- [x] Transaction list
+- [x] Search
+- [x] Filters
+- [x] Transaction detail
+- [x] Pay Later settlement from history
+- [x] Edit committed order
+- [x] Inventory delta calculation
+- [x] Inventory compensating movement
+- [x] Higher-total delta payment
+- [x] Higher-total Pay Later delta
+- [x] Lower-total correction
+- [x] Receipt actions
+- [x] Edit audit trail
+- [x] Kitchen update after relevant edit
+- [x] Cashless / Split invoice proof capture
+- [x] Camera / image upload for invoice proof
+- [x] Persist invoice proof against payment/transaction
+- [x] View invoice proof in transaction detail
+- [x] Replace/remove invoice proof with authorization
 
-Phase 6 provides the post-payment visual placeholder only. Actual Cashless/Split proof capture, private storage and authorized viewing are deferred to Phase 12. The proof attaches to the Cashless Payment leg: Cash-only payments have none, while Split attaches it only to the Cashless leg. Phase 12 must support camera or file upload, keep images private, require authorization to view or change them, and treat them as manual proof rather than payment-gateway verification; no fake provider confirmation is permitted.
+The Phase 6 placeholder is now replaced by Phase 12 proof management. The proof attaches to the Cashless Payment row: Cash-only payments have none, while Split attaches it only to the Cashless leg. Camera or file upload is supported, images remain private and authorization-gated, and proofs are manual evidence rather than payment-gateway verification.
+
+**Phase 12 is complete on `feature/transaction-history`.** The cashier-only, branch-scoped History workspace, versioned committed-order editing, net inventory deltas, append-only reconciliation, balance settlement, grouped Payment attempts, private Cashless invoice proofs, canonical edit/proof audits, and compact POS/Kitchen invalidations are implemented. Void remains disabled for Phase 13. User manual device/visual QA and the final implementation audit are accepted.
 
 ---
 
 ## Phase 13 — Void & Audit
 
-- [ ] Void authorization
-- [ ] Void reason
-- [ ] Re-auth / protected confirmation
-- [ ] Compensating inventory restoration
-- [ ] Original order retained
-- [ ] Payment history retained
-- [ ] Audit Trail
-- [ ] Super Admin Void Orders
-- [ ] Void authorization tests
+- [x] Void authorization
+- [x] Void reason
+- [x] Re-auth / protected confirmation
+- [x] Compensating inventory restoration
+- [x] Original order retained
+- [x] Payment history retained
+- [x] Audit Trail
+- [x] Super Admin Void Orders
+- [x] Void authorization tests
+
+Phase 13 final release-gate implementation (2026-09-23):
+
+- The accepted approval model is one global four-digit PIN configured by an authenticated active Super Admin, stored only as a hash. The configuring Super Admin is the authorizer; the active assigned Cashier/Cashier+Kitchen operator is the distinct initiator. Wrong/missing PIN, inactive or no-longer-Super-Admin PIN owner, and self-authorization fail safely. PostgreSQL advisory serialization protects concurrent first-time and replacement configuration while the database unique scope preserves one global row.
+- Void follows the Store Session shared → Order exclusive → remaining locks order in one transaction. It retains the complete Order/Payment/Kitchen history, appends one OrderVoid and canonical audit, increments version, and restores only the net negative `sale`, `pay_later_commit`, and `order_edit_delta` ledger effect through sorted `void_restore` movements. Exact retry is side-effect-free and changed intent conflicts.
+- Normal Cashier History/detail and every receipt path deny voided Orders. KDS, Customer Display, and Customer QR tracking refetch authoritative safe state through compact after-commit invalidations. Audit Trail and Void Orders remain read-only, 30-per-page, Super Admin-only registers; the private audit channel applies the same permission boundary.
+- The canonical recorder now drives committed-edit and invoice-proof audits and recursively redacts PIN/password/secret/token/credential keys. Frozen current audit obligations now cover successful login, Store Open/opening balances, Pay Now, Pay Later, settlement, edit/correction context, Void, PIN changes, manual inventory adjustment, invoice-proof changes, Branch changes, and implemented Branch QR/receipt settings. Audit models reject normal update/delete operations. Catalog Product/Category/Group/Option/image and branch-product configuration mutations are explicitly deferred audit expansion because the frozen audit list does not require catalog changes; no future Phase 14/15/17 entries were fabricated.
+- Isolated PostgreSQL verification covers same-key and competing Void, Void versus edit/settlement/Kitchen, reverse Product restoration order, the future Store Close Session boundary, concurrent PIN changes, and fresh/rollback/reapply schema cleanup. Focused failure injection verifies inventory restoration, OrderVoid creation, Order update, and audit failure each roll back all effects and emit no success invalidation.
+- `cashier@gmail.com` remains `cashier_kitchen` on MAIN. Local/testing seeders retain their production guards and idempotent, preservation-first behavior; no Void PIN is seeded. User manual UI acceptance remains the visual authority, with final source review performed against the decoded standalone templates rather than a new broad browser pass.
+
+**Phase 13 is complete.** This does not mark Phase 14, Phase 15, Phase 17, or the full Phase 18 workspace complete.
 
 ---
 
 ## Phase 14 — Store Purchases / Expenses
 
-- [ ] Current Store Session expense list
-- [ ] Add Store Purchase / Expense
-- [ ] Description
-- [ ] Amount
-- [ ] Cash payment source
-- [ ] Cashless payment source
-- [ ] Note / reason
-- [ ] Optional receipt image
-- [ ] Optional inventory product link
-- [ ] Optional quantity
-- [ ] Restock inventory movement
-- [ ] Cash closing-balance effect
-- [ ] Cashless closing-balance effect
-- [ ] Store Session/user trace
+- [x] Current Store Session expense list
+- [x] Add Store Purchase / Expense
+- [x] Description
+- [x] Amount
+- [x] Cash payment source
+- [x] Cashless payment source
+- [x] Note / reason
+- [x] Optional receipt image
+- [x] Optional inventory product link
+- [x] Optional quantity
+- [x] Restock inventory movement
+- [x] Cash closing-balance effect
+- [x] Cashless closing-balance effect
+- [x] Store Session/user trace
+
+Phase 14 implementation completed on `feature/store-expenses` (2026-09-23). Cashier Store Purchases / Expenses now open from the existing `LIVE / STORE OPEN` Current Store Session control, not a new navigation destination. The reusable session dialog provides exact server totals, newest-first current-session history, read-only detail, and an offline-safe add flow with optional private receipt and one explicit tracked-Product restock. Cash and Cashless classification is persisted separately for future Phase 15 expected-balance calculations; Phase 15 Close Store/reconciliation remains unimplemented.
+
+The write derives the active Branch and OPEN Store Session, takes the shared Session boundary, uses stable UUID/hash idempotency, reauthorizes and locks inventory inputs, calls `ApplyInventoryMovement`, appends canonical Audit evidence, cleans failed uploads, and emits compact rescued after-commit realtime invalidation. Focused Laravel, frontend, isolated migration, and independent-worker PostgreSQL integrity/concurrency gates passed. Standalone parity and responsive behavior were source-reviewed; final device/visual acceptance is USER MANUAL QA. Phase 15, Phase 16 full workspace, Phase 17, and Phase 18 remain incomplete.
+
+Delivery verification: the focused Store Session/inventory/Audit/realtime regression slice passed **245 tests / 1,473 assertions**, followed by **26 tests / 145 assertions** after the PHPStan-driven projection typing correction. The complete frontend behavior suite passed **75 tests**. Pint, PHPStan with zero errors, frontend lint with zero warnings across 135 files, TypeScript, production build, and whitespace checks passed. Disposable SQLite and isolated PostgreSQL fresh/rollback/reapply passed; PostgreSQL independent workers passed exact replay, changed-intent conflict, same-Product and different-Product restocks, and the exclusive future Close Store boundary. The temporary databases/schemas were removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** No Supabase access/reset, dependency change, Phase 15 action, broad browser sweep, or PR was performed. Status: **READY FOR USER MANUAL QA**.
+
+Final release-gate audit completed on 2026-09-23 with USER MANUAL QA accepted. The audit corrected two blocking edge cases: expense writes now depend on real browser connectivity rather than Echo/Reverb connection state, and optional restock quantities are capped at 1,000,000 on both client and server. Inactive user/branch-assignment denials and an independent-worker concurrent Cash/Cashless projection race were added to the regression coverage. The complete final gates passed: **1,319 Laravel tests / 8,710 assertions** and **76 frontend tests**, with zero failures, errors, or skips; Pint, PHPStan, frontend lint, TypeScript, production build, and whitespace checks also passed. Isolated SQLite and PostgreSQL fresh/rollback/reapply passed, including exact replay, changed-intent conflict, same-Product and different-Product restocks, exact concurrent Cash/Cashless totals, and the exclusive Close Store boundary. All temporary databases/schemas were removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** Supabase was not accessed or reset, no dependency or Phase 15 change was made, and no PR was opened. Status: **READY FOR PR**.
 
 ---
 
 ## Phase 15 — Close Store & Reconciliation
 
-- [ ] Close Store entry point
-- [ ] Block unresolved UNPAID / PAY LATER
-- [ ] Block Kitchen non-DONE orders
-- [ ] Allow unclaimed QR without blocking
-- [ ] Opening Cash summary
-- [ ] Opening Cashless summary
-- [ ] Cash sales
-- [ ] Cashless sales
-- [ ] Split breakdown
-- [ ] Store purchases/expenses summary
-- [ ] Relevant adjustments / void effects
-- [ ] Expected Closing Cash
-- [ ] Expected Closing Cashless
-- [ ] Closing Cash input
-- [ ] Closing Cashless input
-- [ ] Cash variance
-- [ ] Cashless variance
-- [ ] Shortage blocks normal close
-- [ ] Overage requires note
-- [ ] Archive remaining unclaimed QR
-- [ ] Atomic Store Close transaction
-- [ ] Store Close audit
-- [ ] `store.closed` broadcast after commit
-- [ ] Customer QR switches to Store Closed
-- [ ] Concurrent Close Store protection
+- [x] Close Store entry point
+- [x] Block unresolved UNPAID / PAY LATER
+- [x] Block Kitchen non-DONE orders
+- [x] Allow unclaimed QR without blocking
+- [x] Opening Cash summary
+- [x] Opening Cashless summary
+- [x] Cash sales
+- [x] Cashless sales
+- [x] Split breakdown
+- [x] Store purchases/expenses summary
+- [x] Relevant adjustments / void effects
+- [x] Expected Closing Cash
+- [x] Expected Closing Cashless
+- [x] Closing Cash input
+- [x] Closing Cashless input
+- [x] Cash variance
+- [x] Cashless variance
+- [x] Shortage blocks normal close
+- [x] Overage requires note
+- [x] Archive remaining unclaimed QR
+- [x] Atomic Store Close transaction
+- [x] Store Close audit
+- [x] `store.closed` broadcast after commit
+- [x] Customer QR switches to Store Closed
+- [x] Concurrent Close Store protection
+
+- [x] Phase 15 implementation complete (focused, frontend, static and isolated PostgreSQL gates)
+- [ ] Standalone parity side-by-side review and device/visual acceptance (USER MANUAL QA)
+
+Phase 15 implementation on `feature/close-store` (2026-09-23). Close Store extends the existing `LIVE / STORE OPEN` Current Store Session dialog: a Close Store danger section below Purchases & Expenses opens Review & reconcile → final confirmation → Store Closed, with no new navigation page. The decoded `context/design/pos.html` bundle contains no Close Store prototype, so the flow reuses the accepted Phase 14 dialog shell and the standalone's white/black/red/amber/green token language; the Phase 14 sections are unchanged.
+
+**Intentional reconciliation decisions**
+
+1. `StoreSessionReconciliation` is the single authority for the read-only preview and the final close. Expected = Opening + Payment rows − Store Expenses − corrections on non-voided Orders − all payments of voided Orders, computed separately for Cash and Cashless in integer cents. Cash impact is `Payment.amount`, never tendered cash; Split legs count once and the split breakdown is explanatory only; a restock expense has one financial effect.
+2. `variance = actual − expected` everywhere (backend, DB, UI, Audit). Negative is a shortage, positive an overage.
+3. Cash and Cashless are independent: a shortage in either blocks close with no note override and no cross-channel offset. An overage requires a trimmed explanation of at least 5 characters; exact needs no note.
+4. Any committed, non-voided current-session Order with authoritative outstanding > 0 blocks close (unpaid/partial Pay Later and higher-total Balance Due, regardless of `payment_term`). Committed Kitchen/Preparing/Ready blocks; Done and voided do not.
+5. Voided Orders reverse every payment they collected, so an earlier lower-total correction on the same Order is excluded from the corrections line and never subtracted twice.
+6. New lower-total corrections persist `cash_amount`/`cashless_amount`. Single-method Orders are attributed automatically; mixed-method edits require the Cashier's explicit Cash portion in the existing Adjustment to return confirmation.
+7. Historical mixed-method corrections without a source block Close Store until a write-once, audited allocation is recorded from the blocker card. Nothing is guessed (no Cash default, no proportional split).
+8. A loaded (claimed) uncommitted QR order blocks close until payment or Cancel LOAD; Close never clears `loaded_by_user_id`. Submitted unclaimed QR orders are informational and archived with `store_closed` at the close timestamp.
+9. Expected balances keep exact signed math and may be negative (the former `expected_* >= 0` CHECK was removed); the UI surfaces a warning. Actual Closing Cash/Cashless remain non-negative.
+10. The close holds idempotency advisory → Branch → OPEN Store Session exclusively → unclaimed QR Orders, recomputes everything inside that boundary, and never trusts client totals. Exact retry recovers the same close; changed retry or a different key after close returns 409.
+11. The local POS cart is untouched until the server confirms the close; the confirmation warns that an unsent cart on the device will be cleared, and Store state reloads only after success (or a truthful already-closed response).
+
+**Verification**: focused Phase 15 + adjacent Store Session, expense, payment, settlement, edit, Void, Kitchen, QR, Customer Display, Audit and realtime slice **537 tests / 4,107 assertions**; frontend **87 tests**; Pint, PHPStan (zero errors), frontend lint, TypeScript, production build and `git diff --check` passed. Disposable SQLite up/down/reapply passed for both Phase 15 migrations. The isolated PostgreSQL harness `tests/verify-close-store-postgres.php` passed fresh/rollback/reapply (constraints and session-correction index), PostgreSQL SQL exactness and allocation, A Close vs Close, close-wins rejection of Pay Now, Pay Later, edit, Void, Kitchen, Expense and QR restore/load, write-first inclusion of settlement, correction, Void, Done and Expense (Pay Now/Pay Later correctly re-block), J 10-order QR archival rollback, and K concurrent Cash/Cashless/Split payments closing at zero variance; every temporary schema was removed. Phase 12, 13 and 14 harnesses were rerun after their fixed rollback step counts were made relative to their own migrations; the QR harness still uses pre-Phase-12 fixed step counts and was not rerun. Responsive layout was source-reviewed for 360/390/430/tablet/desktop (confirmation footer and variance labels were corrected for 360px); no browser sweep was performed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**: it received only the two additive `php artisan migrate` runs, and no Store Session was closed or edited. Supabase was not accessed. The full Laravel suite is reserved for FINAL QA after USER MANUAL QA. Status: **READY FOR USER MANUAL QA**.
+
+**Follow-up UI/UX refinements (USER MANUAL QA driven, 2026-09-23):** standalone-style Store Session close button without mouse focus ring; Pre-close checks shown only while a blocker remains; session purchases collapsible dropdown below Actual closing count; redesigned per-channel final confirmation; cached Store Session reopen with layout-preserving skeleton; modal widened 512px → 614px; Customer QR shows Store Closed instead of stale uncommitted-order tracking and refetches when a sleeping phone becomes visible.
+
+**Store Session inventory adjustments:** Adjust inventory sits beside Add expense / purchase in the same dialog. Complimentary, Wastage, Damaged, Staff meal and Other (explanation required) deduct stock through `ApplyInventoryMovement` (`manual_adjustment`, attributed via `store_session_inventory_adjustments`) under the shared Session boundary, with idempotency, one `inventory / store_session.inventory_adjusted` Audit and existing inventory/catalog realtime. It creates no Store Expense or Payment and never changes reconciliation. Verified by focused Pest, frontend tests and PostgreSQL scenario L (concurrent last-unit deductions). Status: USER MANUAL QA.
+
+**Final QA (2026-09-23):** the complete `origin/dev...feature/close-store` change set was re-audited from source. Fixes: the closing Cashier's client now records the Store Session it is closing before sending the request, because the `store.closed` broadcast can arrive before the HTTP response and previously dismissed the pending Store Closed summary; Add expense / Adjust inventory / expense detail fall back to the overview load message when the cached session is discarded (404/403/401/419) instead of rendering an empty dialog; the desktop Store Closed header keeps long Branch names beside the illustration. Regression coverage was added for inventory-adjustment failure injection (adjustment record and Audit write roll back stock, movement and attribution with no realtime), the inventory-adjustment role matrix (Cashier+Kitchen allowed; guest, inactive, inactive-assignment and other-Branch denied), and backend rejection of Pay Later, settlement and inventory adjustment after a real close. Stale PostgreSQL harness assumptions were corrected without production changes: the QR harness rollback steps are now relative to its own migrations, and the Phase 5/6 harnesses accept the documented `BRANCH-MMDDYY-####` reference. Gates: **1,408 Laravel tests / 9,419 assertions** and **100 frontend tests**, zero failures; Pint, PHPStan, frontend lint, TypeScript, production build and `git diff --check` passed; disposable SQLite fresh/rollback/reapply passed; all 11 isolated PostgreSQL harnesses (Close Store A–L, Store Expenses, Transaction History, Void/Audit, QR, inventory, Kitchen, Pay Later, Pay Now, POS, Store Session) passed and removed their schemas. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** No browser/device QA was performed in this audit. Status: **READY FOR PR**.
 
 ---
 
@@ -750,22 +798,127 @@ Owner workspace UI alignment slice (2026-09-21):
 - Live Chrome QA verified MAIN availability, Product enable/disable, price override, out-of-stock, and restock changes in an already-open POS without browser reload; a QAVE-only change did not alter MAIN. Original availability/price/role state and stock quantity were restored. Owner Instructions defaults and explanatory treatment were visually verified; 360/390/430/tablet/desktop checks found no document overflow and browser logs contained no application error.
 - The browser automation bridge could focus but not activate the POS order-type buttons in this run, so live instruction-chip/cart interaction was not claimed; server snapshots/totals/rejections and client price-neutral/reconnect behavior are covered by focused automated tests. Phase 8 and Phase 16 remain incomplete.
 
-- [ ] Dashboard
-- [ ] All Branches scope
-- [ ] Specific Branch scope
-- [ ] Transactions
-- [ ] Reports
-- [ ] Products
-- [ ] Inventory
-- [ ] Staff
-- [ ] Settings
-- [ ] Branch comparison
-- [ ] Store Session summaries
-- [ ] Owner blocked from Super Admin-only controls
+### Phase 16A — Owner Sales & Store Session reporting — 2026-09-24
+
+Branch `feature/owner-reporting` from `dev` at `62ec3a9`. No migration and no dependency change.
+
+- **Real Reports page.** `GET /workspaces/reports` (`workspaces.reports`, `auth` + `permission:reports.view`, and `ReportsRequest` requires an active business-wide Owner or Super Admin). It is one read-only Inertia page (`workspaces/reports`) rendered in the Owner shell for Owner and the Super Admin shell for Super Admin. Owner → Reports is now enabled with an active state and appears as a Dashboard card. Super Admin → Owner → Reports is a live registry destination; the `super-admin.reports` placeholder route and content were removed. Owner Transactions stays disabled.
+- **One projection.** `App\Support\StoreSessionSalesReport` resolves Manila business-date ranges, the global Branch scope and the Store Session filter, then projects the summary, daily rows, session rows and detail. `StoreSessionReconciliation` gained `flows()` (batched Payment / Split / Expense / correction / Void flows keyed by session, Branch-matched), `opening()` and `expected()`. `calculate()` and `correctionChannels()` now delegate to them, so Close Store, the Cashier Dashboard and reporting share one formula. `ExactMoney::signedCents()` parses persisted signed values.
+- **Semantics:** see `02-business-rules.md` §37. Business date = Manila date the session opened; multiple sessions per date; cross-midnight sessions stay under the opening date. Net Sales = current `orders.total` of committed Active/Completed Orders (Pay Later included), separate from Cash/Cashless net collections. Split is informational. Corrections and Void reversals are shown separately with no double subtraction. Expenses are Store Session expenses only, and stock-only adjustments are excluded. CLOSED sessions use persisted snapshot/close values (legacy sessions fall back to records and show Not available for missing values). OPEN sessions are LIVE and provisional. Zero-activity sessions still appear.
+- **Performance:** a constant number of queries regardless of session count (sessions + eager identities + one Order aggregate + batched flows; closed snapshots skip the live flows), bounded by the 31-day custom maximum. Index review found `orders(store_session_id, qr_sequence)` already leads with `store_session_id`, and payments / expenses / order_adjustments already have session indexes, so no migration was added. Realtime was not added: All Branches would need many subscriptions and Owner is not authorized on operational branch channels, so the page has a manual Refresh (no polling).
+- **UI:** follows the decoded `PONGSKILOG-OWNER.html` Reports screen (toolbar card with segmented periods and a centered Business date, custom-range card, KPI grid, 20px panels, inset tiles, tables that become cards). Fake analytics (charts, product ranking, cashier performance, exports) were not reproduced. Responsive layout was source-reviewed for 360/390/430/tablet/1024/desktop; no browser sweep was performed.
+- **Verification:** new `StoreSessionSalesReportTest` (35 tests) plus a batched-flow parity test in `StoreSessionReconciliationTest`. Focused backend regression **551 tests / 3,910 assertions**; frontend **120 tests** (new `reports-ui.test.ts`). Pint, PHPStan (0 errors), frontend lint, TypeScript, production build and `git diff --check` passed. The new isolated PostgreSQL harness `tests/verify-owner-reports-postgres.php` passed: index, same-day sessions with odd-cent Cash/Cashless/Split, correction + Void, Manila boundary, All Branches isolation, and batched-vs-single parity. The Close Store PostgreSQL harness (A–L) was rerun after the reconciliation refactor and passed. Both removed their schemas. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**, received no migration and had no rows written. The full Laravel suite is reserved for FINAL QA.
+- **Known limitation:** the shared BranchSwitcher redirects to the role workspace after switching (existing behavior), so the Owner returns to Reports from the navigation after changing Branch scope.
+- Status: **READY FOR USER MANUAL QA**. Phase 16 remains incomplete: Dashboard analytics, Transactions, Staff, full Settings, Branch comparison, product/payment-mix/cashier/kitchen reporting and exports remain deferred. Only Store Session summaries is checked below; Reports stays unchecked until the rest of the planned report scope exists.
+
+### Phase 16B + 16C + 16D — Owner workspace completion — 2026-09-24
+
+Same branch `feature/owner-reporting`, built on Phase 16A (`1731ce0`). No migration and no dependency change.
+
+- **16B Transactions.** `GET /workspaces/transactions` (+ `/{order}` detail) renders the **same** `workspaces/transaction-history` page with `surface = business` inside the Owner or Super Admin shell, for All Branches or the selected Branch. `TransactionHistory::for()` now takes an optional Branch and a separate POS-authorized mutable Branch, so capabilities stay server-derived: the Owner is always read-only (write routes remain 403 through `permission:pos.access`), a Super Admin keeps open-session actions only on the selected Branch. Branch codes on All Branches cards, Branch identity in details, invoice proofs without links and no Show QR for read-only viewers. Cashier history is unchanged.
+- **16C Dashboard + Reports.** New `SalesAnalytics` (one authority for Dashboard and Reports) over `StoreSessionSalesReport` and `StoreSessionReconciliation`; `ReportPeriod` (standalone periods, previous period, buckets); `ManilaSql` (driver-aware Manila hour / prep seconds); `BusinessSnapshot` (Kitchen snapshot, Inventory attention per Branch, recent transactions); `ReportCsvExport`. `StoreSessionReconciliation::flows()` accepts an optional order scope so order filters narrow collections with the same formula; closed sessions still use their snapshot when unfiltered. The Owner Dashboard (`workspaces/owner-dashboard`) and Reports were rebuilt to the decoded standalone with real data only; Store Session summaries gained archived-QR counts and a bounded list; Branch comparison is factual and alphabetical. Definitions: `02-business-rules.md` §38.
+- **16D Staff + Settings.** `StaffRoles::manageableBy()` scopes Staff by capability: Owner `staff.manage` → Cashier / Kitchen Staff / Cashier + Kitchen only, re-checked in `CreateStaffAccount`; Owner routes `staff.index/store/avatar` reuse `StaffController` and `super-admin/staff` with `surface = owner`; avatars are served to an Owner only for Staff they manage (404 otherwise). Settings reuse Branch Management / Receipt and add a Customer QR tab over the existing QR panel.
+- **Navigation.** Owner shell: Dashboard, Transactions, Reports, Products, Inventory, Staff, Settings are real (groups Overview / Operations / Catalog / Administration); no "Later" items remain; Super Admin-only controls are absent. Super Admin gains Owner → Transactions. Print hides both management shells.
+- **Data gaps (documented, not invented):** Order Items have no category snapshot, so categories group by the current product category (labelled); a category filter cannot split Cash/Cashless, so category narrows Product performance only; prep time covers Orders that reached Ready.
+- **Performance.** Aggregates are grouped SQL over the selected sessions (one per-order subquery grouped by session/hour/type/cashier/payment class, one Order Item grouping, batched flows); previous period adds the same bounded queries; the product list is bounded by the catalog; history stays paginated (10); the Dashboard polls only its live props. No speculative index was added (orders already index `(branch_id, committed_at)` and `store_session_id`).
+- **Verification.** New `SalesAnalyticsTest` (18), `OwnerDashboardTest` (14), `BusinessTransactionHistoryTest` (12), `OwnerStaffManagementTest` (13), `OwnerSettingsTest` (6); updated `SuperAdminWorkspaceTest`. Focused backend regression **615 tests / 5,413 assertions** passed. Frontend **135 tests** passed (new `owner-analytics.test.ts`, rewritten `reports-ui.test.ts`). Pint, PHPStan (0 errors), frontend lint, TypeScript and production build passed. The isolated PostgreSQL harness `tests/verify-owner-reports-postgres.php` gained cases G–J (Manila hours, payment-class filter with scoped flows, EXTRACT(EPOCH) prep time, live snapshot and All Branches history) and passed, removing its schema. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.** The complete Laravel suite is reserved for FINAL QA.
+- Status: **READY FOR USER MANUAL QA.** Standalone parity was reviewed source-side against the decoded template (no browser sweep); final visual acceptance is USER MANUAL QA. Phase 16 is not final until USER MANUAL QA and FINAL QA pass. PWA work was not started.
+
+### Manual-QA refinements — 2026-09-24 (`10ab328`, `3528eb0`, `da90ced`)
+
+- Reports Payment method donut became a paid-sales (₱) share with the user-approved *Include split* toggle (OFF = Split parts inside Cash/Cashless, ON = Cash-only / Cashless-only / Split, never added on top); category filter (Top products, Product performance, CSV product table only; current-category limitation disclosed); the "Filter this report" dialog (Category, Order type, Payment method, Cashier; Select all; Reset / Apply; 560px dialog, phone bottom sheet).
+- Owner Dashboard and Reports became live through the private `reports` invalidation channel (supersedes the 16A "no realtime / manual Refresh" note and the 16C "Dashboard polls" note).
+- Branding: canonical name **Pongskilog**, gold rounded-square chef tab icon, wordmark-only sidebars/rails, round emblem on phone/auth, square launcher icons prepared (unused), cream 1200×630 link preview, intentional Pongskilog `/` landing. Staff page: tiled default, optional list, per-device preference, name then Employee ID.
+
+### Phase 16 FINAL QA — 2026-09-24
+
+USER MANUAL QA: **PASSED BY USER** (reported by the user; the agent performed no browser/device QA). Final engineering QA audited the complete `origin/dev...origin/feature/owner-reporting` change set (5 commits, 99 files) in a detached QA worktree, independently of prior reports.
+
+- **Findings fixed (branch `qa/owner-reporting-final` → pushed fast-forward to `feature/owner-reporting`):**
+  - Realtime race: a debounced `router.reload` (which always requests the current URL and is applied when only the pathname matches) could land after a period/filter visit, overwrite the new figures with the old filter's and push the old URL. `useReportsRealtimeRefresh` now holds refreshes during the page's own sync visits, cancels an in-flight reload when one starts and refreshes once afterwards; the disconnected fallback goes through the same guard.
+  - Polling: the Dashboard's always-on 30s poll (duplicate polling while connected; two timers while disconnected) was removed. The single 30s fallback runs only while realtime is disconnected, skips hidden tabs, and the first connection after a page load no longer triggers a redundant full reload. Stock adjustments (`AdjustInventory`, Store Session inventory adjustment) now signal `reports.changed` (`inventory.adjusted`) so inventory attention stays live.
+  - Owner Transaction History rendered disabled Take payment / Void / Edit with a false "Earlier Store Sessions are read-only" reason; a view-only viewer now gets no Cashier mutation controls (server gating unchanged). Its view preference `localStorage` access is now guarded.
+  - CSV now states when a long period lists only the latest 100 of N Store Sessions (the screen already did).
+  - Report filter chips / Reset all and the Staff tile/list toggle meet 44px on touch widths; the custom date range no longer overflows at 360px; the Daily summary table scrolls instead of clipping; the filter dialog discloses that choosing a Payment method leaves out unpaid Pay Later Orders.
+  - Laravel starter-kit Repository/Documentation links removed from the account settings shell (`app-sidebar`, `app-header`).
+  - Regression coverage: realtime signal per action (settlement, Store Close, both stock adjustments), channel denial for guest / inactive owner / revoked `reports.view`, hold/cancel refresh unit test, CSV truncation notice, read-only history, touch/overflow/disclosure and branding source checks.
+- **Verified semantics (unchanged):** Manila business date = session opening date (cross-midnight stays under the opening date; UTC half-open bounds); multiple sessions per date combine with per-session drill-down and zero-activity sessions kept; Net Sales = current `orders.total` of committed Active/Completed Orders (Pay Later included) ≠ collections; Cash/Cashless = `StoreSessionReconciliation::flows()` (same formula as Close Store and Cashier Dashboard; `calculate()` delegates to it); corrections never guessed, corrected-then-voided nets to zero once; Expenses = Store Session expenses only; CLOSED = persisted snapshot, OPEN = LIVE/provisional, legacy missing values = Not available; Branch isolation on every flow, CSV and realtime filter; settlement/edit/void/allocation are same-session only, so order-filtered flows lose nothing; query count constant in session count; no migration.
+- **Gates:** complete Laravel suite **1,656 passed / 11,595 assertions / 0 failures / 0 errors / 0 skipped**; complete frontend suite **156 passed / 0 failed**; Pint, PHPStan (0 errors), `check:frontend`, `types:check`, production build and `git diff --check` passed. `tests/verify-owner-reports-postgres.php` passed A–K on an isolated loopback PostgreSQL schema that was removed afterwards. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET.**
+- **Known limitations (documented, accepted):** categories use the product's current category (no Order Item category snapshot); in an OPEN session an edited Order with a raised, unsettled balance is classified in the donut at its full current total until settled; `APP_NAME` in each deployment's env drives titles and the session cookie/cache prefix, so changing it logs users out (pin `SESSION_COOKIE` / `CACHE_PREFIX` before renaming); `og:image` follows the request host/scheme (configure trusted proxies in production); maskable icon corners fall outside the circular safe zone (icons not yet used).
+- **PWA:** POST-PHASE-16 PLANNED PWA SLICE recorded in `12-deployment-operations.md` §26 — **NOT implemented** (no manifest, service worker, install prompt, offline cache or offline writes).
+- Status: **PHASE 16 COMPLETE.** Phase 17, the remaining Phase 18 Access Control and the PWA slice are not started.
+
+- [x] Dashboard (Phase 16C; manual QA + Final QA passed)
+- [x] All Branches scope
+- [x] Specific Branch scope
+- [x] Transactions (Phase 16B; read-only for Owner)
+- [x] Reports (Phase 16A + 16C + manual-QA refinements)
+- [x] Products
+- [x] Inventory
+- [x] Staff (Phase 16D, operational Staff only)
+- [x] Settings (Phase 16D reuse)
+- [x] Branch comparison (Phase 16C)
+- [x] Store Session summaries (Phase 16A + 16C)
+- [x] Owner blocked from Super Admin-only controls (tested)
+
+---
+
+## Phase 16E — Owner Operations & Pamamalengke
+
+Branch `feature/owner-operations` from `dev` at `0031fc8` (0 behind / 0 ahead of `origin/dev` at start). Approved design tracked: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. Additive migration `2026_09_24_053738_create_owner_operations_tables`; no dependency change. Rules: `02-business-rules.md` §39; schema: `05` Phase 16E; access: `07`; UI: `08`/`09`.
+
+- **Status: IMPLEMENTED — READY FOR USER MANUAL QA.** Not Final QA, not merged, no PR. USER MANUAL QA: PENDING (the agent performed no browser/device QA). The complete Laravel suite is reserved for FINAL QA. PWA not implemented.
+- Operations sidebar section (Owner + Super Admin) with seven real routes and URL Plan state; Plans (one active Plan per Product, archive, history-safe moves); business-wide Ingredients with one exact per-Branch balance; recipes per existing Product size with Missing / No recipe needed / Product-stock exclusivity; append-only Ingredient ledger (opening, sale, edit delta, void restoration, purchase, wastage, count correction).
+- Sale consumption integrated into the canonical order lifecycle (Pay Now and Pay Later share `ApplyOrderInventory`); immutable Order recipe snapshots make edits delta-only and voids restore the historical net once; negative Ingredient stock allowed; settlement/Kitchen/payment corrections never move stock.
+- Server-side replenishment engine; Pamamalengke Plan mode and mobile Shopping checklist; Confirm writes one canonical Store Session expense (existing OPEN Store Session rule kept; Cash/Cashless source) plus exact restocks and purchase metadata; Purchases projection; View summary with Cash view (not profit), estimated Profit view (snapshotted costs, uncosted never ₱0, Store-wide expenses only in the business scope) and a display-only Profit divider. Catalog › Inventory gains All / Products / Ingredients.
+- Verification: new Pest suites `OperationsIngredientConsumptionTest` (14), `OperationsManagementTest` (32), `PamamalengkeTest` (13); focused regression across orders, edit, void, payments, inventory, expenses, reports/reconciliation, realtime and RBAC passed (1,089 tests); frontend suite 168 tests (new `operations-ui.test.ts`); Pint, PHPStan (0 errors), frontend lint, TypeScript, production build and `git diff --check`; `tests/verify-operations-postgres.php` passed A–N with real two-process races on an isolated schema that was removed. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET**; it only needs the forward migration.
+- The PostgreSQL harness caught a real deadlock during development (a POS sale holding the Branch row vs a concurrent wastage holding the balance and needing a foreign-key KEY SHARE on the Branch). Fixed by a Branch → balance lock order for every Operations writer, inserting only missing balances and FOR NO KEY UPDATE on Ingredient definitions; the race then passed three consecutive runs. The same inversion appears to exist in the pre-existing Product-stock `AdjustInventory` vs Pay Now path (not changed here; flagged for FINAL QA).
+- Known limitations: Operations "today" uses the Phase 16 business date for sales/COGS and the Manila calendar day for stock movements; a Product/size removed by an edit and re-added later reuses the Order's original snapshot; direct-resale COGS is unavailable (no trusted product cost); Confirm needs an OPEN Store Session at the Branch; checklist progress is per device.
+
+- [x] Operations navigation (Owner + Super Admin)
+- [x] Pamalengke Plans
+- [x] Ingredients + canonical Branch stock
+- [x] Recipes
+- [x] Sale / edit / void Ingredient integration
+- [x] Ingredient Stock (wastage, count correction)
+- [x] Pamamalengke recommendations + checklist + Confirm
+- [x] Purchases
+- [x] View summary (Cash / Profit / divider)
+- [x] Manual QA follow-up: Group semantics, one Size group, Recipe setup states, Add-on effects, Recipe-based availability
+- [ ] USER MANUAL QA (Final QA UI changes)
+- [x] FINAL AUTOMATED QA
+
+### Phase 16E Manual QA follow-up — Recipe configuration, Add-on effects & Recipe availability (2026-09-24)
+
+- Group behaviours shown as **Size / Add-on / Modifier / Instructions** on the existing `semantic_role` (no new group type, no data migration); one active Size group per Product enforced server-side; legacy duplicates reported, never guessed.
+- Recipes page separates **Uses Product stock** (Open Product settings), **No recipe needed** (Use ingredient recipe) and **Recipe not set** (Set up recipe); base recipes only per Size (or Regular); separate Add-on / Modifier effects; Instructions excluded.
+- Additive migration `2026_09_24_072528_add_product_modifier_effects` (Product-specific Add-on effects + immutable Order snapshots of them).
+- `RecipeCapacity` drives per-Size availability in `BranchCatalog`, the POS/QR customization dialogs (server capacity endpoints) and a whole-order pre-check; the authoritative no-oversell check runs under the Ingredient locks. **Rule change: sales and usage-increasing edits can no longer drive Recipe Ingredient stock negative.**
+- Lock order fix found while designing the edit-vs-sale race: Edit and Void now take the Branch FOR SHARE before the Store Session.
+- **Status: READY FOR USER MANUAL QA.** USER MANUAL QA: PENDING. Not Final QA, not merged, no PR. Normal local development DB not reset; run `php artisan migrate` (forward only).
+
+### Phase 16E FINAL QA — 2026-09-24
+
+- **Status: IMPLEMENTATION COMPLETE · FINAL AUTOMATED QA COMPLETE.** USER MANUAL QA of the Final QA UI changes: PENDING (no browser/device QA was performed by the agent). Not merged, no PR. Branch was 5 ahead / 0 behind `origin/dev` (`0031fc8`) at start.
+- **Legacy deadlock audit — real, fixed.** Scenario S in `tests/verify-operations-postgres.php` reproduced PostgreSQL deadlocks (40P01) between Pay Now and: Catalog inventory adjustment, Store Purchase restock, Store Session inventory adjustment, plain Store Expense and Pay Later settlement (Void was already safe). Fix: Branch FOR SHARE first in `AdjustInventory`, `RecordStoreSessionExpense`, `RecordStoreSessionInventoryAdjustment`, `SettlePayLaterOrder` and `AllocateOrderAdjustment`; all six races now commit with 0 deadlocks.
+- **Giveaway (Record giveaway)** added to the Store Session dialog with audited, exactly-once reversal; additive migration `2026_09_24_134328_create_store_session_giveaways` (rules `02` §39.2, schema `05`).
+- **Manual QA corrections:** required-field red/gray rule; Recipes "Uses Product stock" names every blocking Branch with per-Branch settings actions; missing Size recipes shown as red "Recipe required".
+- **Other audit fixes:** Customer QR capacity gated by Branch active + QR enabled; recipe/effect/mode broadcasts only on real change and only to active Branches; Pamamalengke skip/manual-item validation; Operations summary uses order subqueries (no growing bind lists); overview movement fetch bounded; Products-tab Ingredient count cheap; new bounded query-count tests.
+- **Verification:** complete Laravel suite 1,810 tests / 12,735 assertions passed; frontend 185 tests passed; Pint, PHPStan (0 errors), frontend lint (173 files), TypeScript, production build and `git diff --check` clean; all 13 PostgreSQL harnesses passed on disposable schemas (none left behind). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- **QR LOAD follow-up (user request):** LOAD now switches to the POS instantly (client-side visit with the LOAD response, background prop refresh), and a loaded QR order accepts Cashier-added items committed atomically with Pay Now / Pay Later (`LoadedQrOrder::appendItems`, replay-checked). Tests: `LoadedQrAdditionalItemsTest`, `qr-order.test.ts`.
+- Known limitations: six Laravel-generated index/key names are truncated by PostgreSQL at 63 bytes (functional, no collision; harness blocks new ones); the Customer QR "fits" yes/no for a chosen quantity is an accepted disclosure equal to what submission reveals; Giveaway reversal is limited to the Giveaway's own open Store Session.
 
 ---
 
 ## Phase 17 — Stock Transfers
+
+**Status: DEFERRED**
+
+Reason: Pongskilog currently operates with only one real active branch, so branch-to-branch stock transfer workflows are not needed yet.
+
+Revisit Phase 17 when Pongskilog has a second real operating branch that actually transfers stock between locations. The original scope below is kept for that future work; none of it is implemented.
+
+Original scope (deferred):
 
 - [ ] Create transfer
 - [ ] Source branch
@@ -784,51 +937,417 @@ Owner workspace UI alignment slice (2026-09-21):
 
 ## Phase 18 — Super Admin Workspace
 
-- [ ] Dashboard
-- [ ] Audit Trail
-- [ ] Void Orders
-- [ ] Access Control
-- [ ] Settings / system controls
-- [ ] Cross-branch visibility
-- [ ] Protected Super Admin authorization
+### Super Admin foundation, navigation, and Staff creation — 2026-09-24
+
+Branch `feature/super-admin-foundation` from `dev` at `e927c5c`. No dependency change. One additive migration (follow-up request): nullable unique `users.employee_id`, required on new staff as `MMDDYY` + two digits, typed manually by the Super Admin; existing accounts keep it empty. A second additive migration adds nullable `users.avatar_path` for an optional Super Admin uploaded staff profile picture (private disk, authorized route), shown as a rounded-square holder in the Staff list.
+
+- The obsolete `context/design/PONGSKILOG Super Admin (standalone).html` was deleted. No Super Admin standalone is authoritative; Super Admin UI is product-designed in the Owner/POS language (`08-ui-rules.md`, `09-ui-registry.md`).
+- New `SuperAdminShell` with a collapsible four-section sidebar (Overview, Cashier + Kitchen, Owner, Control), driven by the permission-aware registry `resources/js/lib/super-admin-navigation.ts`. It has a tablet rail and a mobile dock, each with a collapsible drawer, and the Owner shell is now Owner-only. Operational pages keep their POS shell and gain a Control Center link for Super Admin.
+- Real destinations link to existing pages. Notifications, Reports, and Access Control are protected Planned placeholders with no fake data or toggles. The Super Admin Dashboard is a Control Center landing with real quick links only. Settings reuses Branch Management under Control.
+- Full operational parity for Super Admin, approved by the product owner, superseding the Phase 14/15 denials. It works through `User::hasCashierOperationsRole()` / `hasOperationalBranchAccess()` on the selected active Branch with no fabricated assignments. Store Session and business invariants are unchanged, actions are audited as the Super Admin, and Void keeps two-person approval. Owner gains no Cashier operations.
+- Real Staff page (`access_control.manage`): list/search/filter and an atomic Add Staff flow. The Super Admin chooses the temporary password, which is hashed and never re-shown or audited. Operational roles require an active Branch; Owner and Super Admin are business-wide. The flow writes one `staff.created` Audit record. There is no invite email, forced password change, or self-service profile work.
+- Automated gates: focused backend regression **1,148 tests / 8,466 assertions** (including the new SuperAdminWorkspaceTest and StaffManagementTest), frontend Node tests **113 passed**, Pint, PHPStan (zero errors), frontend lint (zero warnings), TypeScript, production build, and `git diff --check` all passed. Tests use in-memory SQLite; the normal local development database was not reset.
+- Not complete: the Access Control matrix, Notifications service, Owner Reports, Super Admin analytics, editing or deactivating existing staff, and profile settings. Final visual and device acceptance is **USER MANUAL QA**. No checkbox below is marked by this slice.
+- Final QA — 2026-09-24: **USER MANUAL QA: PASSED BY USER**. Engineering fixes: a Staff unique-index race now reports the actually violated field (email vs Employee ID) from the parsed constraint instead of the SQL message; staff avatars fall back to initials if the image fails to load; the avatar Remove control is named. Added regressions for avatar denial (Cashier, Kitchen, Cashier + Kitchen, guest, inactive Super Admin), spoofed-content uploads, duplicate races, and Super Admin Store expense, Store inventory adjustment, and `store-session` channel parity. Complete suite **1,513 tests / 10,127 assertions**, frontend **114 passed**; Pint, PHPStan, lint, TypeScript, build, and `git diff --check` passed. Disposable-schema PostgreSQL verified the two additive migrations (fresh, rollback, reapply, existing rows) and atomic Staff creation; the Void, Close Store, and Pay Now PostgreSQL harnesses passed. The normal local development database was not reset.
+
+### Phase 18 — Access Control, Staff administration & Notifications — 2026-09-25
+
+Branch `feature/access-admin-cleanup` (0 behind / 1 ahead of `origin/dev` at `c60e8e0` at start; the roadmap commit `7b97482` is preserved). No dependency change. Two additive migrations: `2026_09_24_165603_create_user_permission_overrides_table`, `2026_09_24_165604_create_notifications_table`. Rules: `07-security-rbac.md` "Phase 18"; schema `05`; realtime `06`; UI `08`/`09`; deploy `12` §27.
+
+- **Access Control (real):** Role = baseline, account = optional ALLOW/DENY exception. One resolver (`EffectivePermissions`) behind `User::hasPermission()`, middleware, requests, channels and the shared `auth.permissions`, so navigation and backend always agree and revocation applies on the next request. One `PermissionCatalog` (labels, categories, scope, defaults, grant envelope, lock reasons). Super Admin locked full access (no overrides, baseline not editable). Cashier + Kitchen derived as the union of Cashier and Kitchen Staff inside the same transaction. Audit, Void Orders and Access Control never leave Super Admin; Products, Inventory, Staff and Settings stay business-wide (locked for Branch roles).
+- **Custom Reports for Branch staff:** a Cashier/Kitchen account with Reports ALLOW reads only its selected assigned Branch (never All Branches; forged Branch/session rejected or ignored; CSV follows the same scope; Owner Dashboard stays business-wide), inside the operational shell with a Reports nav item and a Branch-scoped realtime channel.
+- **RbacSeeder** no longer resets live configuration: defaults only for newly created Roles/Permissions; Super Admin completed; Cashier + Kitchen re-derived.
+- **Staff administration (existing Staff page):** Manage sheet (name, email, Role, Branch access, Active/Inactive, photo replace/remove; Employee ID read-only), Super Admin password reset; Owner limited to operational Staff. Last active Super Admin protected (row locks; crossing two-admin race leaves exactly one), no self-demotion/self-deactivation, Role change resets custom access, deactivation/password reset end sessions (remember token, database sessions, `AuthenticateSession`). Audit `staff.*` / `access.*` actions without credentials.
+- **Notifications (real):** persisted in-app notifications for Super Admins (access/Staff security changes by another Super Admin; Product or Ingredient out-of-stock transitions, deduplicated by the locked stock transition), unread badge, mark read / mark all read, pagination, private per-user realtime signal. No email/SMS/push.
+- Verification: new `AccessControlTest`, `StaffAdministrationTest`, `AdminNotificationsTest`, `BranchScopedReportsTest`; focused regression 682 + 699 tests passed; frontend 195 passed; Pint, PHPStan (0 errors), lint, TypeScript, production build and `git diff --check` clean. PostgreSQL: new `tests/verify-access-admin-postgres.php` (cases A–H incl. real crossing Super Admin deactivate/demote races and concurrent sell-out alert dedupe) plus the inventory and operations harnesses passed on disposable schemas (dropped). **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- ~~**Status: IMPLEMENTED — READY FOR USER MANUAL QA.**~~ Superseded by the final pass below.
+
+### Phase 18 — Final refinements + FINAL AUTOMATED QA — 2026-09-25
+
+Same branch (`feature/access-admin-cleanup`, 0 behind / 2 ahead of `origin/dev` `c60e8e0` at start; `7b97482` and `240adb4` preserved). No dependency change. One additive migration: `2026_09_25_052453_add_custom_role_metadata_to_roles_table`. Rules: `07-security-rbac.md` "Phase 18 final"; schema `05`; realtime `06`; UI `08`/`09`; deploy `12` §28; `.ai/rules` access-control, super-admin, reports, jscomponents.
+
+- **Custom Roles (approved refinement #1):** System Role (five canonical, protected) vs Custom Role (Super Admin-created reusable package, stable `custom_{id}` key, editable unique name) vs user override (unchanged ALLOW/DENY exception). Explicit Branch or Business-wide scope; scope decides WHERE (`Role::scopeBusinessWide()` / `scopeCashierOperations()`, used by `User::hasBusinessWideScope()` / `hasCashierOperationsRole()`), permissions decide WHAT. Scope-based grant envelope (`PermissionCatalog::CUSTOM_GRANTABLE`); Control permissions never grantable. Builder (Name → Scope → Access → Review), rename, scope change only while unassigned, archive only while unassigned, archived roles never assignable. Staff create/edit offer active Custom Roles to Super Admin only; Owner unchanged (operational roles only). Role changes (System ↔ Custom, Custom → Custom) reset overrides. RbacSeeder never touches Custom Roles. Audits `access.custom_role_created|updated|permissions_updated|archived`; notifications to other Super Admins only. Shells show the real role label; operational chrome keys off permissions, not role names.
+- **Executive Overview (approved refinement #2):** `SuperAdminDashboardController` replaces the static route. Money from the Owner Dashboard's own `SalesAnalytics::for()` call (no second calculation); live state from `BusinessSnapshot`; Store status, Ingredients at zero, Staff counts, unread count and payload-free recent Audit from `ExecutiveSnapshot`. Attention Needed, KPI row + money-movement tiles, Sales trend with compare, Payment mix donut (Reports Split semantics), Operations health, Top products, categories, Branch performance (honest single-Branch note), latest Store Session, People & security, Quick admin actions. Lazy memoized props; realtime reuses `reports.changed` and the viewer's `notifications.changed` (no new channel).
+- **Defect found and fixed:** the new PostgreSQL archive-vs-assign race reproduced a real deadlock (`UpdateStaffAccount` locked accounts, then the Role; archive held the Role, then key-shared the actor through its audit insert). Staff writers now lock the Role first. Also fixed: Owner shell no longer links Dashboard/Reports without `reports.view`; landing for Owner/business roles picks the first allowed page instead of a 403.
+- **Automated gates:** complete Laravel suite **1,981 tests / 13,780 assertions, 0 failures, 0 skipped** (one run); new `CustomRolesTest` (56) and `SuperAdminExecutiveDashboardTest` (13); frontend **203 passed**; Pint, PHPStan (0 errors), `vp check` lint (0 warnings), TypeScript, production build, `git diff --check` clean. PostgreSQL (disposable schemas, all dropped): `verify-access-admin-postgres.php` cases A–M (incl. pre-Phase-18 rows forward + backfill, rollback/reapply, name/scope constraints, racing same-name create, concurrent Custom Role saves = one complete baseline, archive vs assign, seeder rerun) run 3×, plus close-store, inventory, kitchen, operations, owner-reports, pay-later, pay-now, POS, QR, store-expenses, store-session, transaction-history and void-audit harnesses — all passed. Isolated SQLite migrate → rollback → reapply verified. **NORMAL LOCAL DEVELOPMENT DB WAS NOT RESET** — run `php artisan migrate` (forward only).
+- **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL QA: PENDING. READY FOR FINAL MANUAL SPOT-CHECK / PR.** Not merged; no PR opened.
+
+### Phase 18 — Manual QA refinement pass #1 — 2026-09-25
+
+Same branch, on top of `5f35c3d` (0 behind `origin/dev`). No dependency change. Two additive migrations: `2026_09_25_082318_add_position_to_users_table`, `2026_09_25_082319_split_operations_from_inventory_permission`. Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #1"; schema `05`; UI `09`; `.ai/rules` access-control, operations, layoutscomponentspages, jscomponents, js-pages, super-admin.
+
+- Management sidebar: permission-filtered registry (`lib/management-navigation.ts`), sections Overview / Store Operations / Sales / Catalog / Operations / Administration, inaccessible pages hidden (also in the POS shell), collapsible desktop rail with a remembered per-device preference, stronger section headings.
+- Staff Position (display only, never access) in Staff create/edit/list, sidebar footer and Audit Trail actor.
+- `operations.manage` split from `inventory.manage` (Owner keeps both; existing grants and overrides copied forward).
+- Business Transactions are view-only while the selected Store is closed; Custom Roles with POS get the existing Store status and ready-order flow.
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 18 — Manual QA refinement pass #2 — Branch-scoped management + realtime access — 2026-09-25
+
+Same branch, on top of `058c5b6` (0 behind `origin/dev`). No dependency change. **No migrations** (Branch assortment uses the existing `branch_products` unique `(branch_id, product_id)`). Rules: `07-security-rbac.md` "Phase 18 Manual QA refinement #2"; realtime `06`; `.ai/rules` access-control, operations, super-admin, hooks, jscomponents, layoutscomponentspages.
+
+- Branch Custom Roles may hold Products, Inventory, Operations, Staff and Settings (Control never), each with a Branch-safe meaning on the selected assigned Branch only; Dashboard and business Transactions open for Branch roles on their Branch only.
+- Products: Branch assortment/configuration only; "Add products to this Branch" and "Copy from another Branch" (authorized source + destination, skip existing by default, never stock).
+- Operations: Branch stock/list/purchases; shared Ingredients/Recipes/Plans read-only for Branch roles. Staff: own-Branch accounts only, no escalation, hidden assignments preserved. Settings: "Branch Settings — MAIN" (contact, QR, receipt; no create/rename/status).
+- Realtime: `user.context_changed` (identity/access/branches/status) revalidates open sessions (sidebar, Position, picture, Branch selector, safe redirect on revocation); `access_control.changed` and `staff.changed` refresh other admins' pages; reconnect revalidates; no polling. Super Admin sidebar section renamed "Store Operations".
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 18 — Manual QA refinement pass #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Same branch on top of `32e2500` (0 behind `origin/dev`). No dependency change. One forward migration `2026_09_25_112126_make_branch_catalog_and_operations_independent` (applied to the local development DB forward-only; never reset). Rules: `02` / `04` / `05` / `06` / `07` / `09` / `11` sections "pass #2.1"; `.ai/rules` operations, access-control, hooks, seeders.
+
+- Explicit Branch assortment (no row = not sold; unavailable ≠ removed; Remove keeps stock/history); new Branch and new Product start with no memberships.
+- Plans, Ingredients, Recipes, Add-on effects and recipe mode are Branch-owned; existing Branches received independent copies at cutover with history re-pointed and quantities unchanged.
+- Copy Products (+ optional Operations setup) and Operations › Copy setup: configuration only, clone once, skip by default, explicit replace, reviewed; never stock or history.
+- Removal-vs-sale and recipe-edit-vs-sale serialize on the Branch configuration lock (PostgreSQL verified, no deadlock).
+- Focused automated checks only (not Final QA). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED. **Status: READY FOR USER MANUAL QA.** Phase 18 Final QA is **not** passed.
+
+### Phase 18 — FINAL AUTOMATED QA — 2026-09-25
+
+Same branch (`feature/access-admin-cleanup`) on top of `25a15df`, 0 behind / 7 ahead of `origin/dev` `c60e8e0` at start. No dependency change, **no migration**; the normal local development DB was not reset. Rules: `07-security-rbac.md` / `06-realtime-contracts.md` / `11-testing-qa.md` "Phase 18 Final QA"; `.ai/rules` orders, operations, hooks, super-admin, layoutscomponentspages.
+
+- Fixed: Product with zero Groups (multipart drops the empty list; absent = empty, malformed rejected); each server error shown once in catalog forms; committed edit keeps each Product's committed stock path after a Branch mode change; Confirm Pamamalengke lock order Branch → Plan (real PostgreSQL deadlock reproduced and fixed, harness case G-E); self-service account deletion removed; staff sign-in email changes Super Admin only; case-insensitive profile email; staff creation locks the Role first and notifies Super Admins; Ingredient unit locked by Add-on effects; Operations live refresh for Operations-only accounts, complete partial reloads and tracking-change signal; background refresh never shows a raw 403; Dashboard stock attention one grouped query for All Branches; Super Admin footer Position; Audit filter bar at tablet widths; Owner placeholder bell removed; required-field standard in Staff and copy dialogs; lint warnings cleared.
+- Gates: complete Laravel suite 2066 passed (14800 assertions, 0 failed, 0 skipped); frontend 245/245; 16/16 PostgreSQL harnesses (0 new deadlocks, no leftover schema); Pint, PHPStan 0, lint 0 errors / 0 warnings, TypeScript, production build, `git diff --check`.
+- Deferred to Phase 19: `audit_logs (created_at, id)` index; Product copy with Replace skipping (instead of aborting on) a conflicting destination recipe.
+- **Status: FINAL AUTOMATED QA: PASSED. USER FINAL MANUAL SPOT-CHECK: PENDING. READY FOR PR** (not opened, not merged). Phase 17 remains DEFERRED; Phase 19.5 PWA remains PLANNED / NOT STARTED.
+
+- [x] Dashboard (Executive Overview — Phase 18 final, pending USER FINAL MANUAL QA)
+- [x] Audit Trail (real register, filters, detail, realtime)
+- [x] Void Orders (protected history, detail, global Void approval PIN)
+- [x] Access Control incl. Custom Roles (Phase 18 final — pending USER FINAL MANUAL QA)
+- [x] Settings / system controls (Branch Management, QR, receipt settings)
+- [x] Cross-branch visibility (business-wide scope + BranchSwitcher + selected-Branch operational parity)
+- [x] Protected Super Admin authorization
+- [x] Staff administration (create + edit/role/Branch/status/photo/password reset — Phase 18, pending USER MANUAL QA)
+- [x] Notifications (Phase 18, pending USER MANUAL QA)
 
 ---
 
 ## Phase 19 — Reporting & Performance Hardening
 
-- [ ] Query/index review
-- [ ] Pagination
-- [ ] Report aggregation
-- [ ] Cache safe read-heavy data
-- [ ] Queue heavy exports
-- [ ] Eliminate N+1 issues
-- [ ] Realtime payload optimization
-- [ ] Product image optimization verification
-- [ ] Owner all-branch query optimization
-- [ ] POS performance verification
+**Status: PHASE 19 COMPLETE — MERGED.** Implementation: COMPLETE. USER MANUAL QA: PASSED. FINAL AUTOMATED QA: PASSED. PR #24 (`feature/reporting-performance-hardening`) MERGED to `dev` on 2026-09-26; merge commit / current `dev` baseline `b928b6330220d680869e84ebef823402e074cf53`. Not deployed. Phase 17 Stock Transfers remains DEFERRED; Phase 19.5 PWA Phase 1 is PLANNED / NOT STARTED.
+
+- [x] Query/index review (one additive migration, five indexes backing real query shapes)
+- [x] Pagination (Audit Trail, Void Orders, Transactions, notifications stay paginated newest-first on their indexes)
+- [x] Report aggregation (verified SQL aggregation; no per-Order/item rows in PHP; exact totals at 30,000 Orders on PostgreSQL)
+- [x] Cache safe read-heavy data — intentionally none: no measured need; lazy props remove the wasted work instead
+- [x] Queue heavy exports — intentionally none: the CSV re-serializes already-bounded report arrays (≤100 sessions, ≤31 buckets)
+- [x] Eliminate N+1 issues (Void Orders restorations)
+- [x] Realtime payload optimization (payloads were already ids/time only; refresh work reduced instead)
+- [ ] Product image optimization verification (unchanged; presigned variants already bounded per page)
+- [x] Owner all-branch query optimization (`orders (committed_at, id)`, lazy dashboard props)
+- [x] POS performance verification (catalog/QR/Kitchen queries fixed-count per page; QR state not refetched after render)
+
+### Phase 19 implementation — 2026-09-25
+
+Branch `feature/reporting-performance-hardening` on `7690db1` (0 behind `origin/dev`). No dependency change. One additive migration `2026_09_25_150406_add_reporting_performance_indexes` (applied forward to the local development DB; never reset).
+
+- Audit Trail newest-first: `audit_logs (created_at, id)` (Audit Trail + Executive recent audit read it backwards; filters keep their own indexes). Filter option lists are lazy props; realtime reloads request `logs` only.
+- Product copy with Replace: each Product copies inside its own savepoint; a destination conflict (e.g. source tracks Product stock, destination has a Recipe/Add-on effect) is skipped with the canonical reason, reported (`conflicts`), audited by name, excluded from the Operations part, and never deletes destination setup. The copy dialog stays open on a result with skipped items.
+- Other indexes: `orders (committed_at, id)` (All Branches Transactions / recent transactions), `notifications (notifiable_type, notifiable_id, created_at, id)`, `pamamalengke_purchase_items (pamamalengke_purchase_id)`, `pamamalengke_purchases (store_session_id)`.
+- Query work: Owner Dashboard props lazy + memoized (period switch 38 → 24 queries; the realtime live reload requests all five live props and costs 34 — the earlier "13" counted Kitchen / inventory / recent transactions without analytics and report); shared `auth` / `branchContext` props lazy (JSON unread count 8 → 3); Void Orders eager-loads restorations (10 voids 50 → 32, constant per page); Products page loads only the selected Branch's rows.
+- Branch context: `ActiveBranchContext::current()` drops a stale/forged selection and continues (single assigned Branch re-selected) on the same call — the answer no longer depended on shared props calling it first.
+- Realtime: business Transactions refresh on `reports.changed` (poll only for Transactions-only accounts); Operations pages ignore `kitchen.status_changed`; Branch/Audit/POS-QR background reloads use `handleRevalidationException`; POS QR state is refetched only after a reconnect.
+- Intentionally unchanged: per-movement `qr.catalog_changed` (clients coalesce; a server dedupe needs transaction-scoped state), Cashier Dashboard's second reload per sale and the paying terminal's explicit catalog reload (stock freshness while disconnected), Transaction History full-history counts, correction rows in filtered reports (rare), CSV export (bounded).
+- Focused automated checks only (not Final QA). **Status: READY FOR USER MANUAL QA.**
+
+### Phase 19 Final QA — 2026-09-26
+
+- User Manual QA: PASSED (by the user, before Final QA).
+- Audit of the whole Phase 19 diff against source: Product copy savepoints (validation conflict rolls back only its Product, no destination delete, conflicts excluded from the Operations part), lazy dashboard/shared/filter props, Void Orders eager load, Products page rows, `ActiveBranchContext` fallback, realtime guards and the five indexes (column order matches the real `WHERE`/`ORDER BY`; no duplicate of an existing index). No application defect found; no code change to `app/` or `resources/js/`.
+- Defect fixed (harness): `verify-reporting-performance-postgres.php` failed between 00:00 and ~03:00 Manila (its Store Sessions opened "3 hours ago" = yesterday) and wrote PostgreSQL `now()` into `timestamp without time zone` columns under the server's +08 session zone. It now pins one Manila-midday UTC moment for Carbon and the raw SQL.
+- Regression coverage: Void Orders realtime reload (`voids,pinStatus`) keeps a flat query count as voids grow and runs no Branch/user option query.
+- Measured query counts (SQLite test DB, identical at 40 and 4,340 Orders over 3 Branches / 2 and 10 voids): Reports 34, Owner Dashboard 41 (period switch 24, live reload 34), Executive Dashboard 43, All Branches Transactions 24, Void Orders 32 (realtime 23), Audit Trail 18 (realtime 7), unread count 3. PostgreSQL: SalesAnalytics 19 queries at 90 and 30,000 Orders; newest-first Audit / Transactions / notifications read their index backwards with no Sort.
+- All 17 PostgreSQL harnesses, complete frontend suite, Pint, PHPStan, lint, TypeScript, production build and the complete Laravel suite passed (details in `11-testing-qa.md`). Normal local development DB was not reset.
+- **Status (at Final QA): PHASE 19 FINAL AUTOMATED QA: PASSED. READY FOR PR.** Superseded: PR #24 was subsequently opened and MERGED to `dev` (merge commit `b928b63`) — Phase 19 is COMPLETE.
 
 ---
 
-## Phase 20 — Final Hardening
+## Remaining Roadmap Order
 
-- [ ] Full RBAC review
-- [ ] Full branch-isolation test pass
-- [ ] Payment concurrency test pass
-- [ ] Inventory race-condition test pass
-- [ ] Store Open concurrency test pass
-- [ ] Store Close reliability test pass
-- [ ] QR archive test pass
-- [ ] Realtime reconnect test pass
+1. Phase 19 — Reporting & Performance Hardening: **COMPLETE / MERGED** (PR #24, `b928b63`)
+2. Phase 19.5 — PWA Phase 1 (Installable, internet-first): **COMPLETE / MERGED** (PR #25, `4e3ab28`; not deployed)
+3. Phase 19.6 — Customer Experience Expansion: **COMPLETE / MERGED** (PR #26, `7e511c3`; not deployed)
+4. Phase 20 — Final Production Hardening: **IMPLEMENTATION COMPLETE · AUTOMATED QA: see Phase 20 · USER MANUAL QA: AWAITING USER · STAGING / BACKUP-RESTORE / PRODUCTION HEALTH: PENDING · PRODUCTION READINESS: NOT APPROVED** (branch `feature/final-production-hardening`; no PR opened, not merged, not deployed)
+5. Deployment
+6. PWA Phase 2 — Offline-First POS: **FUTURE UPDATE ONLY** (after Deployment; not part of Phase 19.5 or Phase 19.6)
+
+Phase 17 Stock Transfers remains **DEFERRED**.
+
+---
+
+## Phase 19.5 — PWA Phase 1 (Installable Web App)
+
+**Status: PHASE 19.5 PWA PHASE 1 COMPLETE / MERGED.** Implementation: COMPLETE. USER MANUAL QA: PASSED. FINAL AUTOMATED QA: PASSED. PR #25 (`feature/pwa-phase-1`) MERGED to `dev` on 2026-09-26; merge commit / Phase 19.6 baseline `4e3ab28`. Not deployed. Scope frozen 2026-09-26. Plan and branding registry: `12-deployment-operations.md` §26; deployment and local phone testing: §30.
+
+**Goal:** Make PONGSKILOG POS V3 installable and app-like while remaining **INTERNET-FIRST** for actual critical operations.
+
+> **Phase 1 = real installable app experience, but internet is still required for critical POS/business operations.**
+
+**Phase 1 does NOT include offline transactional writes.** Offline must NOT allow: Pay Now, Pay Later, settlement, Void, committed Order Edit, Store Open / Close, expenses, purchases, inventory adjustments, Ingredient stock/movements, Pamamalengke confirmation, Giveaway, Kitchen status mutations, Staff / permission / security mutations, or any other financial/stock/security-sensitive write.
+
+Installable app experience (implemented; device behavior accepted in USER MANUAL QA):
+
+- [x] Installable on Android, iPhone/iPad, Windows and Mac (manifest + service worker + Install / Add to Home Screen / Add to Dock flows)
+- [x] Proper PONGSKILOG app name and branding (PONGSKILOG POS / PONGSKILOG)
+- [x] Launcher/app icons (final assets: approved any + maskable 192/512, 180 Apple touch)
+- [x] Splash/loading experience (manifest colors + standalone-only startup screen)
+- [x] Standalone/fullscreen app mode
+- [x] Web app manifest
+- [x] Install button / Add to Home Screen guidance
+- [x] Proper mobile/tablet/desktop PWA behavior (safe areas, dvh; responsive checks passed in USER MANUAL QA)
+
+Service worker, caching and connectivity:
+
+- [x] Service worker
+- [x] Cached basic app shell/static assets (safe cache strategy: fingerprinted build, icons, offline page only)
+- [x] Faster startup where safe
+- [x] Online / Offline / Reconnecting indicator
+- [x] Safe degraded/read-only offline state where appropriate (current screen only; every server write blocked)
+- [x] Authoritative backend refetch after reconnect
+- [x] Realtime reconnection (existing Echo hooks unchanged, no second client)
+- [x] Realtime continues for POS, KDS, Customer Display and Owner / Manager screens
+
+Notifications:
+
+- [x] Push notifications for new Kitchen order, Order ready and important alerts
+- [x] Notification sound/vibration where the device/browser supports it (OS/browser behavior; not universal)
+
+Updates and recovery:
+
+- [x] App version/update detection
+- [x] Safe update prompt — never unexpectedly refresh/destroy an ongoing transaction
+- [x] Basic current page/session recovery after refresh/reopen where safe
+
+QA (USER MANUAL QA — PASSED, reported by the user; phone testing over an HTTPS tunnel):
+
+- [x] Android / phone
+- [x] iPhone/iPad (Home Screen app, as reported)
+- [x] Windows/Mac (desktop install)
+- [x] Install/uninstall
+- [x] Offline/reconnect
+- [x] Notifications (incl. Super Admin excluded from routine Kitchen / Order Ready pushes)
+- [x] Update flow
+
+### Phase 19.5 implementation — 2026-09-26
+
+Branch `feature/pwa-phase-1` on `e2d6737` (1 ahead / 0 behind `origin/dev` `b928b63` at start). One additive migration `2026_09_25_182423_create_push_subscriptions_table`, applied forward to the local development DB (never reset). Dependencies: `minishlink/web-push` ^11 (Composer); `vite-plugin-pwa` (dev) and `workbox-core/-precaching/-routing/-strategies` (npm).
+
+- **Install:** `public/manifest.webmanifest` (PONGSKILOG POS / PONGSKILOG, id `/`, start `/workspace`, scope `/`, standalone, `#111111`, en-PH, business/productivity/food, approved any + maskable icons, no forced orientation), linked only on staff and sign-in pages; `viewport-fit=cover`, Apple standalone meta, a standalone-only startup screen. Install PONGSKILOG uses the captured Chromium prompt (never automatic); iPhone/iPad and Mac Safari get their real manual steps; insecure (LAN http) contexts are explained.
+- **Service worker:** custom `resources/js/service-worker/sw.ts` (Workbox precaching/routing via `vite-plugin-pwa` injectManifest), served at `/sw.js` by Laravel with no-store. Precache: fingerprinted build assets, brand icons, `offline.html`. Navigations network-only with the branded offline page; nothing else intercepted — no HTML/JSON/private caching, no Background Sync, no write queue.
+- **Connectivity + write guard:** one Online / Reconnecting / Offline state (`/up` probe, bounded backoff, paused while hidden, no polling once online, one authoritative reload before writes resume); the wrapped Inertia HTTP client refuses every server write while not online with "You're offline. Reconnect to continue this operation."; status pills in every shell, the Kitchen full screen and the Customer Display; Last synced.
+- **Updates:** a new version waits; Update now / Later; the POS order in progress and writes in flight block the reload (also Inertia asset-version reloads); one reload, only in the window that asked.
+- **Web Push:** subscriptions per browser (encrypted, unique endpoint hash, SSRF-safe host allowlist, device cookie for server-side logout cleanup, removed on password reset / deactivation); New Kitchen Order, Order Ready and Important Alert queued after commit and delivered to the accounts allowed at send time (Branch channel rule, AdminNotifier rule); generic fixed texts; per-event tags; expired/rejected subscriptions removed; transient failures retried 3× max; a failed push never fails the business action. VAPID keys per environment (`php artisan pwa:vapid-keys`); the local development pair lives only in the untracked `.env`.
+- **Recovery:** refresh/deep links keep their URL; an installed app launched through its start URL returns to the last top-level screen (Kitchen, Customer Display, POS …) — no transaction, cart or dialog state is persisted.
+- **Also:** `config/trustedproxy.php` (`TRUSTED_PROXIES`, opt-in) so https proxies/tunnels produce https URLs.
+- **Verification (focused, not Final QA):** Pest 653 passed / 4,913 assertions (new PWA suites + every suite touching changed code; 2 EC-key tests need `OPENSSL_CONF` on Windows PHP, else they skip); frontend 300/300; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); SQLite migration round-trip; lint, TypeScript, PHPStan, Pint, production build, `git diff --check` clean. Details: `11-testing-qa.md`.
+- ~~**Status: IMPLEMENTED — READY FOR USER MANUAL QA.**~~ Superseded: USER MANUAL QA passed (reported by the user) and Final QA below.
+
+### Phase 19.5 Final QA — 2026-09-26
+
+Complete audit of `origin/dev...feature/pwa-phase-1` (starting HEAD `aa278de`, 3 ahead / 0 behind `origin/dev` `b928b63`) from source, the built service worker and the dependency tree.
+
+- **Security fixes (with regression tests):** trusted proxies now supply only `X-Forwarded-For` / `X-Forwarded-Proto` — with `TRUSTED_PROXIES` set a forged `X-Forwarded-Host`/`-Port`/`-Prefix` produced `https://attacker.example:8443/phish/...` links (password-reset email poisoning); another account signing in on a browser now unbinds the previous account's push subscription there (`ForgetPushDeviceOfOtherAccountsOnLogin`; covers sessions that expired without logout on shared stations); `WebPushGateway` sends with bounded Guzzle timeouts (10 s / 5 s connect) and the app logger, so a stalled push service or a missing optional PHP extension can no longer hang or abort the push job.
+- **Test fixes:** `PwaShellTest` no longer depends on a local `.env` `TRUSTED_PROXIES`; the public receipt page is now asserted outside the installable app (`ReceiptShareTest`), beside the kiosk page.
+- **Audited unchanged:** manifest/icons, service worker (precache only; navigations NetworkOnly + static offline page; no runtime cache, Background Sync, queue or `clients.claim`; public QR / kiosk / receipt navigations are never cached), write guard (all writes go through the wrapped Inertia client; no raw fetch/axios writes), connectivity/revalidation, Reverb (no second client), install UX, update flow and POS blockers, local storage (last route + window flag only), recipient rules, after-commit dispatch, retry/cleanup, notification-tap allowlist, logout / reset / deactivation cleanup, VAPID handling, dependency resolution (Babel 8.0.0-rc.4 → 7.29.x stable, peer range `^7.29 || ^8.0.0-rc.1`; lockfile valid, composer additions only).
+- **Verification:** complete Laravel suite **2,134 passed / 15,223 assertions, 0 failed, 0 skipped** (`OPENSSL_CONF` set, 202 s); focused PWA/business Pest 454 passed; PostgreSQL `verify-push-subscriptions-postgres.php` A–D passed (schema dropped); frontend 300/300; lint 0/0; TypeScript app + service worker; PHPStan 0; Pint; production build (144 precache entries) and built-artifact/secret scan clean; SQLite migration fresh / rollback / reapply; `git diff --check` clean. Normal local development DB was not reset.
+- **Status (at Final QA): PHASE 19.5 PWA PHASE 1 IMPLEMENTATION: COMPLETE. USER MANUAL QA: PASSED. PHASE 19.5 FINAL AUTOMATED QA: PASSED. READY FOR PR.** Superseded: PR #25 was subsequently opened and MERGED to `dev` (merge commit `4e3ab28`) — Phase 19.5 is COMPLETE. Phase 17 Stock Transfers: DEFERRED. Phase 19.6: FROZEN / NOT STARTED. Phase 20: NOT STARTED. PWA Phase 2 — Offline-First POS: FUTURE UPDATE ONLY / NOT PART OF Phase 19.5 or Phase 19.6.
+
+---
+
+## Phase 19.6 — Customer Experience Expansion
+
+**Status: PHASE 19.6 IMPLEMENTATION + MANUAL-QA FIXES: COMPLETE (2026-09-27). FINAL AUTOMATED QA: PASSED. USER MANUAL RETEST: REQUIRED — AWAITING USER. NO PR OPENED. NOT MERGED.** (See "manual-QA fixes + Final Automated QA" below; earlier bullets describe the first implementation and are superseded where noted.) Branch `feature/customer-experience-expansion` (scope frozen 2026-09-27 from `dev` baseline `4e3ab28`). No PR opened, not merged, not deployed. Phase 20: NOT STARTED. On the user's explicit one-shot instruction both slices were implemented in one pass (A first, then B); the frozen "19.6A accepted before 19.6B starts" gate is therefore replaced by one combined manual acceptance of 19.6A + 19.6B.
+
+Architecture decisions (details in `04-architecture.md` §22, `06-realtime-contracts.md`, `07-security-rbac.md`, `05-database-data-model.md`):
+
+- **Display mode state machine:** `customer_screens.mode` ∈ `ads | menu | customer_display` (one column + CHECK, so "both on" cannot exist). The Store Operations header control presses MENU or CUSTOMER DISPLAY; `CustomerScreenMode::toggled()` decides under the screen row lock: pressing the other control switches, pressing the active one returns to `ads`. The mode belongs to the station's paired screen (the prompt's "controls only the paired customer screen"), not to the whole Branch.
+- **Station ↔ screen pairing:** the screen is a public kiosk page (`/customer-screen`) identified only by its own HttpOnly device cookie (SHA-256 stored). The POS station is a random UUID in the browser's local storage, sent as `X-POS-Station`; only its SHA-256 is stored with the Branch. The screen shows a one-time 6-character code (5 minutes, keyed hash at rest); a cashier with `PosAccess` at the selected Branch enters it. `(branch_id, station_hash)` is unique: pairing a new screen releases the previous one (a racing pairing retries once). Cashier changes keep the pairing; the screen can reset itself (hidden 3-second hold on its top-left corner) for a lost station.
+- **Ephemeral Live Cart:** the POS sends only ids/quantities (debounced 300 ms, one request at a time, numbered per page instance). `CustomerScreenCart` derives every name, Size, Add-on, Instruction and amount from `BranchCatalog` (no ids, no free-text notes). The projection lives only in cache (Redis) for 15 minutes: never an Order, no stock or payment effect. Older sends of the same instance are ignored; a takeover clears the cart and fences off sends that were already in flight; sign-out clears the carts that account sent.
+- **Success takeover timing:** *(superseded by the manual-QA fixes)* started by the Pay Now / Pay Later request itself after commit; counts down the Branch duration (default 5 s / 5 s) only once the screen shows it; Menu closes to Ads afterwards, Customer Display stays.
+- **Queue position source of truth:** `KitchenBoard::queue()` — overall (Dine In + Take Out) and same-type positions in the Customer Display "Preparing" column (Kitchen/Preparing) of the open Store Session, in the board's `(committed_at, id)` order, plus a bounded row window. Ready, Done, voided and archived orders are not in the queue.
+- **Pickup token security:** `IssuePickupToken` (after-commit listener on `OrderCommitted` / `OrderUpdated`, rescued) gives every committed Take Out order exactly one 32-byte URL-safe token (unique `order_id`), even if never scanned; Dine In never. Lookup is by SHA-256; the raw token is stored only encrypted (to re-render the QR on the paired screen); realtime uses a separate random `channel_key`. Expires 12 h after commit; pruned 7 days later (`model:prune`, daily). A raw order id, a hash or a guessed token opens nothing.
+- **Buzz eligibility / cooldown / max:** `PickupBuzzPolicy` — committed Take Out, Kitchen status Ready, unexpired link, stored customer subscription. `BuzzPickupCustomer` decides under the token row lock: same idempotency key → replay (nothing sent), 5-second cooldown (429), at most 5 accepted Buzzes per order (422). An accepted Buzz queues `SendPickupBuzz`, which re-validates at send time, deletes a rejected endpoint (404/410/400/401/403 → order no longer buzz-capable) and retries a transient failure once. Nothing touches order/Kitchen/payment state.
+- **Public Push separation:** customer endpoints live in `pickup_push_subscriptions` (one per pickup token, encrypted), are delivered only through `PickupPushGateway::deliverPickup()` and a separate service worker (`/pickup-sw.js`, scope `/pickup/`, push + click only, no caching). Staff `push_subscriptions`, `PushRecipients` and `/sw.js` are unchanged; neither side can reach the other.
+
+### Phase 19.6A — Customer-Facing Screen V2
+
+Customer screen and pairing:
+
+- [x] Add a dedicated customer-facing screen paired to exactly one POS station/device, not to a cashier account. Pairing is Branch-scoped and survives cashier sign-in changes without allowing cross-Branch or cross-station cart visibility.
+- [x] Preserve server authority: pairing, selected mode, displayed cart, order takeover, availability, and queue position are never trusted from client-only state.
+
+Default advertising and management:
+
+- [x] Default to an advertising slideshow when neither operating mode is selected (clean PONGSKILOG idle screen when a Branch has no media).
+- [x] Allow an authorized Owner, Super Admin, or role granted the applicable management permission to manage only the selected Branch's advertisement media (Settings › Customer Screen; `settings.manage` through `BranchPolicy::update`).
+- [x] Support images and videos with active/inactive state, explicit sequence, and per-item duration.
+- [x] Apply safe file/content validation, bounded media size/duration, storage isolation, and non-blocking optimization suitable for the displayed media type (images re-encoded to WebP ≤ 1920 px; MP4/H.264 ≤ 50 MB and ≤ 60 s, container duration read server-side; HEVC-only rejected; server-generated `s3` paths; at most 30 per Branch).
+
+Store Operations controls and modes:
+
+- [x] Add two mutually exclusive Store Operations controls: `MENU` and `CUSTOMER DISPLAY` (shared operational header, every Store Operations page, `pos.access` accounts).
+- [x] Permit zero or one active control. `MENU` on means Menu mode; `CUSTOMER DISPLAY` on means the order-status board; both off means the default advertisement slideshow. Enabling one disables the other atomically.
+- [x] `MENU` is browse-only and shows the Branch's categories, products, prices, Size prices and authoritative current availability. It never exposes add-to-cart, quantity, modifier, edit, order, payment, or other mutation controls.
+- [x] `CUSTOMER DISPLAY` preserves the safe Preparing/Ready board projection (the existing `KitchenBoard::customerDisplay()` and the shared `CustomerOrderBoard` component) and exposes no financial or private data.
+
+Paired live cart and success takeover:
+
+- [x] While the paired Cashier POS has an active cart, show a compact realtime **Live Cart** above a still-usable Menu (≤ 30% of the height, own scroll; Menu keeps scrolling below).
+- [x] Only the paired POS station's current cart may appear. The projection contains customer-safe line names, quantities, selected options, and prices only; no tender, payment, discount authority, customer identity, staff identity, internal ids, or mutation capability.
+- [x] After a successful commitment, temporarily replace the screen with a large green order number, order type, and server-derived queue position among active orders of the same type.
+- [x] Dine In takeover lasts 3 seconds. Take Out takeover lasts 5 seconds and also shows the Phase 19.6B pickup QR. *(Superseded: Branch durations, default 5 s each, counted from display.)*
+- [x] After the takeover, return to the previously selected operating mode; if neither mode is active, return to advertising. *(Superseded: Menu closes to Ads; Customer Display stays.)*
+- [x] Realtime changes use compact invalidations followed by authoritative refetch, coalesce bursts, recover after reconnect, and add no polling (the only timers renew a pairing code or signed media/menu image links before expiry).
+
+### Phase 19.6B — Takeout Pickup QR + Buzz
+
+Take Out token and public page:
+
+- [x] Generate a secure, high-entropy pickup token after every successful Take Out commitment, even if the QR is never scanned. Dine In never receives one.
+- [x] Show the pickup QR during the Take Out success takeover.
+- [x] Scanning opens a public, no-login, read-only page (`/pickup/{token}`) limited to the order number, Take Out, Preparing/Ready/Done state, and server-derived position in the active Take Out queue.
+- [x] The public projection contains no payment/tender data, customer data, staff data, internal identifiers, notes, item details, or edit/cancel/pay action.
+
+Notification opt-in and Buzz:
+
+- [x] The customer may explicitly enable notifications on the pickup page. A scan by itself never subscribes the device and never makes the order buzz-capable.
+- [x] Associate a valid notification subscription only with the matching pickup token/order and revalidate it at send time. Expired or rejected subscriptions are not buzz-capable.
+- [x] Kitchen continues to mark the order Ready through the existing authoritative Kitchen transition; the existing cashier/POS Ready notification and modal remain the serving authority.
+- [x] Show `Buzz Customer` in that Ready modal only for a Ready Take Out order with a currently valid, opted-in subscription. It is absent for Dine In, never-scanned QR, declined notifications, invalid subscription, or any non-Ready state.
+- [x] Buzz sends one event-driven Web Push notification ("Order #024 is ready for pickup.", vibration where supported; tapping opens that pickup page). No polling.
+- [x] Enforce a 5-second cooldown server-side plus idempotency/repeat protection and a maximum of 5 accepted Buzzes per order; concurrent/replayed requests cannot bypass the limits (PostgreSQL harness cases B–C).
+- [x] Buzz failure never changes Kitchen/order state and never falsely reports delivery (the cashier sees "Buzz sent", not "delivered").
+
+### Phase 19.6 release boundary
+
+- [ ] ~~Phase 19.6A accepted before Phase 19.6B implementation starts~~ — superseded by the user's one-shot instruction (A then B in one pass; combined manual acceptance below).
+- [x] Automated authorization, Branch isolation, station isolation, projection privacy, upload validation, queue-position, token, subscription, cooldown, repeat/concurrency, realtime, reconnect, and failure-path coverage
+- [ ] Manual customer-screen and phone QA at 360/390/430 px, tablet, desktop/display, and installed PWA where applicable — **AWAITING USER**
+- [x] No offline transactional behavior; PWA Phase 2 remains future-only after Deployment
+
+### Phase 19.6 implementation verification — 2026-09-27
+
+- Schema: one additive migration `2026_09_26_174138_create_customer_experience_tables` (`customer_screens`, `customer_screen_media`, `order_pickup_tokens`, `pickup_push_subscriptions`). **Forward `php artisan migrate` was run on the normal local development DB** (batch 19); nothing was reset, refreshed or wiped.
+- Pest (new): `CustomerScreenPairingTest` 11, `CustomerScreenLiveCartTest` 10, `CustomerScreenMenuMediaTest` 5, `OrderPickupTest` 10, `PickupBuzzTest` 9 — **45 passed**. Focused regression set (new tests + Customer Display, Kitchen, Pay Now/Later/settlement, committed edits, void, Customer QR, catalog, product images, Web Push, PWA shell, Settings, Access Control/Custom Roles/Branch-scoped management, realtime, performance, audit, auth): **830 passed / 6,472 assertions, 0 failed**.
+- PostgreSQL harness `tests/verify-customer-experience-postgres.php` A–D passed (isolated `cx_*` schema, dropped): migration rollback/reapply + indexes + mode CHECK; 4 concurrent Buzzes → 1 accepted, 3 cooldown; 3 concurrent replays of one key → 1 send; racing same-station pairing → retry releases the previous screen.
+- Frontend 316/316 (new `tests/customer-screen.test.ts`, `tests/pickup.test.ts`; updated contracts in `kitchen-ui` and `pwa-contracts`), lint 0/0, TypeScript (app + service worker), PHPStan 0 (level 7), Pint, production build (151 precache entries; staff worker unchanged), SQLite migration fresh / rollback / reapply on a disposable file, `git diff --check`.
+- Existing contracts deliberately updated: the Pay Now read budget 39 → 41 (two constant after-commit reads: token issue + pickup-page invalidation; still flat at 1/30/100 items); the POS Ready events add `.pickup.notify_changed`; the public-surface lists (Blade manifest guard, `isPublicCustomerSurface`, shared props) add `customer-screen.*` / `pickup.*`.
+- Found during implementation (pre-existing, not changed, for Phase 20): un-named `throttle:X,Y` middleware shares one counter per account/IP across every route, so frequent throttled calls (e.g. `pos/recipe-capacity` 240/min) can exhaust low limits elsewhere (Void 5/min, Close Store 10/min) within the same minute. Phase 19.6 routes use named limiters with their own counters and do not add to that shared budget.
+- **Manual QA: NOT YET PASSED — awaiting user.** Checklist: pairing; Ads default; Menu toggle; Customer Display toggle; both off → Ads; Live Cart + Menu together; Dine In 3-s takeover; Take Out 5-s takeover + QR; scan pickup QR; enable notifications (HTTPS origin required; iPhone needs Home Screen); Kitchen marks Ready; cashier Ready modal; Buzz visible only with a valid subscription; phone notification/vibration; 5-s Buzz cooldown; 5-Buzz maximum; realtime reconnect; 360/390/430 px, tablet and desktop layouts. Requires a running queue worker (as for the Phase 19.5 pushes) for Buzz delivery, and `npm run build` or `npm run dev` for the new pages.
+
+### Phase 19.6 manual-QA fixes + Final Automated QA — 2026-09-27
+
+**Status: PHASE 19.6 IMPLEMENTATION + MANUAL-QA FIXES: COMPLETE. FINAL AUTOMATED QA: PASSED. USER MANUAL RETEST: REQUIRED — AWAITING USER. NO PR OPENED. NOT MERGED.** Baseline `1efc110`.
+
+Manual-QA defects found by the user and fixed:
+
+- **Dine In confirmation did not reliably appear / Take Out QR too late / Menu and cart stayed too long.** Root cause: the confirmation was a second best-effort POS request after the payment response, and its fixed 3 s / 5 s countdown was anchored on the server at that request, so the screen's refetch (with QR rendering) arrived after most or all of the window — a 3 s Dine In often expired unseen. Fix: Pay Now / Pay Later start it server-side after commit from the same request (`ShowOrderOnCustomerScreen`, `X-POS-Station` + `X-Customer-Screen-Cart` headers; the POS takeover endpoint was removed), and the countdown starts only when the screen reports it is on screen (`takeover/{id}/shown`; Take Out after the QR image loaded, 4 s fallback). The cart clears and Menu closes at commit time.
+- Ads: 3-second option (3/5/8/10/15, default 5), arrows / swipe / arrow keys with a fresh countdown, press-and-hold pause (video too), one leak-free slide timer, progress bar.
+- Customer-screen header: logo, Branch, MENU, CUSTOMER DISPLAY (same single mode as the POS; POS headers refetch on `customer_screen.status_changed`), Fullscreen.
+- Cart display: Ads + cart → full order summary; Menu + cart → split kept; cart cleared → Ads.
+- Dedicated confirmation view (not the Customer Display board): big green number, type, strong same-type position, overall position, queue window (≤ 10, two columns, own row green, true positions), Take Out QR, never a customer name. After it: Menu/Ads → Ads; explicit Customer Display stays.
+- Branch settings (Settings › Customer Screen): Dine In / Take Out confirmation 3–15 s (default 5 / 5); Facebook / Website (shared with Customer QR) / Maps links (http(s) only).
+- Canonical queue: `KitchenBoard::queue()` — overall (Dine In + Take Out) + same-type positions and a bounded window; one query; used by the confirmation and the pickup page.
+- QR latency: token issued after commit by the listener and ensured again idempotently before the confirmation; failure never touches the payment and the confirmation shows without a QR.
+- Pickup page: Take Out (emphasized) + overall positions (none once Ready/Done), snapshot order summary, View / Print receipt through the 12-hour capability (canonical receipt card, without name/table/notes; paid orders), Facebook / Website / Maps buttons when configured.
+- Optional customer-screen sound hook: `public/audio/customer-screen-success.mp3` (no approved asset committed; kitchen cues not reused; autoplay refusal ignored). Phone Buzz unchanged (OS sound / vibration).
+
+Migration: `2026_09_27_072905_add_customer_screen_settings_to_branches_table` (additive: two tinyint defaults of 5, nullable `maps_url`). **Forward `php artisan migrate` ran on the normal local development DB (batch 20); nothing reset.** Rollback/reapply verified only on a disposable SQLite file and an isolated PostgreSQL schema.
+
+Verification: complete Laravel suite **2,193 passed / 16,180 assertions, 0 failed, 0 skipped**; frontend 324/324; lint 0/0; TypeScript app + service worker; PHPStan 0; Pint; production build (153 precache entries, secret scan clean); `git diff --check`; PostgreSQL `verify-customer-experience-postgres.php` A–E plus push-subscriptions, Pay Now, Pay Later, Kitchen and QR harnesses passed. Details: `11-testing-qa.md`.
+
+Still pending for **Phase 20**: the pre-existing shared un-named `throttle:X,Y` counter (a heavy generic route can consume another route's limiter for the same account/IP). Phase 19.6 routes use named limiters.
+
+**User manual retest checklist:** pairing; Ads default with 3-s ads, arrows, swipe, hold-to-pause; header MENU / CUSTOMER DISPLAY (in sync with the POS header) and Fullscreen; Ads + cart → full order summary; Menu + cart → split; clear cart → Ads; Pay Now and Pay Later for **Dine In** and **Take Out** → confirmation appears every time, countdown starts once the number/QR is visible (default 5 s; try a changed Branch duration), queue list + overall + same-type position, no customer name; Menu closes to Ads afterwards, Customer Display stays; scan QR → pickup page positions, order summary, View / Print receipt, Facebook / Website / Maps buttons; notifications opt-in (HTTPS; iPhone Home Screen), Kitchen Ready, Buzz (valid subscription only, 5-s cooldown, max 5); reconnect; 360/390/430 px, tablet portrait/landscape and desktop/second monitor. Requires `npm run build` (or `npm run dev`) and a queue worker for Buzz.
+
+### Phase 19.6 final manual-QA polish — 2026-09-27
+
+**Status unchanged: FINAL AUTOMATED QA previously PASSED. USER MANUAL RETEST: REQUIRED — AWAITING USER. NO PR OPENED. NOT MERGED.** Baseline `035dc59`. Small polish pass only (no new scope, no migration):
+
+- **Fit-to-screen order confirmation.** Dine In and Take Out confirmations fit the customer screen with no scrolling: the order block (number, type, same-type + overall positions, Take Out QR — placed beside the number when the block is wide enough) scales to its box, and the queue shows only the whole rows that fit (one or two columns), always including the customer's own row with its true server positions ("#a–#b of N" when trimmed). Landscape tablet / desktop is side-by-side; portrait and phones stack with the queue below.
+- **Customer Display counts.** The persistent board ends with a compact "IN QUEUE · Dine In: X · Take Out: Y" bar. `KitchenBoard::customerDisplay()` counts its Preparing column (the same active queue as `KitchenBoard::queue()`) from the rows it already loads; board numbers now carry their order type.
+- **Order-type colors (customer-facing).** Dine In = GREEN, Take Out = BLUE on board numbers, confirmation queue rows, type pill, number and queue card — always with the DINE IN / TAKE OUT text. The customer's own row is solid with a white ring and a "YOU" label; Ready numbers are solid, waiting numbers a dark tint (contrast kept).
+- **Phone Buzz sound (final behavior).** Locked / backgrounded phone: the push notification only (OS/browser sound and vibration where allowed; no custom MP3 is possible or attempted). Open pickup page in the foreground: the push plus a page vibration and, if installed, a custom sound. Push/VAPID flow unchanged; `/pickup-sw.js` additionally posts `pickup.buzz` to that order's open page.
+- **Optional foreground MP3:** `public/audio/customer-screen-buzz.mp3` (not committed — place a Branch-approved file there). Advertised as `buzz_sound_url` only when the file exists, so an absent file means no request and no error; the first tap on the page unlocks audio and any autoplay refusal is silent. The customer-screen success sound (`public/audio/customer-screen-success.mp3`) stays separate.
+
+Verification: see `11-testing-qa.md` (final manual-QA polish). Retest additionally: confirmation fit on tablet landscape/portrait, desktop and a phone with a long queue (own row always visible, no scrollbar); board counts and green/blue numbers; Buzz with the pickup page open vs. phone locked (with and without the MP3).
+
+---
+
+## Phase 20 — Final Production Hardening
+
+**Status: IMPLEMENTATION COMPLETE (2026-09-28) · AUTOMATED PHASE 20 QA: PASSED · USER MANUAL PHASE 20 QA: AWAITING USER · STAGING VALIDATION: PENDING · BACKUP / RESTORE: PENDING · PRODUCTION HEALTH CHECKS: PENDING · PRODUCTION READINESS: NOT APPROVED.** Branch `feature/final-production-hardening` (fast-forwarded to `dev` `7e511c3`, PR #26 merge). No PR opened, not merged, not deployed. Feature-frozen: accepted Manual-QA corrections, business-rule consistency, security, concurrency, reliability and measured performance only. Phase 17 Stock Transfers stays DEFERRED; PWA Phase 2 stays FUTURE.
+
+Baseline gates (checked only when actually verified):
+
+- [x] Full RBAC review — route/controller/action review; fixes below; automated tests
+- [x] Full branch-isolation test pass — forged/foreign ids re-derive the active Branch; complete suite + new isolation tests (Branch photo, funding session, receipts)
+- [x] Payment concurrency test pass — PostgreSQL harnesses (Pay Now, Pay Later, close-store, POS) rerun at Final QA
+- [x] Inventory race-condition test pass — inventory / operations harnesses + Phase 20 harness B (Stock Correction vs sale, both orders)
+- [x] Store Open concurrency test pass — Phase 20 harness A (one open session, both callers get it, one audit)
+- [x] Store Close reliability test pass — close-store harness (Close vs Close, Close vs every competing write, both orders) + Phase 20 harness C (Pamamalengke vs Close, both orders) and D (closed reconciliation untouched)
+- [x] QR archive test pass — QR harness + scheduler/Close archive tests
+- [ ] Realtime reconnect test pass — reconnect logic covered by automated source/unit tests only; a live reconnect / Reverb-restart check is in the manual checklist
 - [ ] 360px QA
 - [ ] 390px QA
 - [ ] 430px QA
 - [ ] Tablet QA
 - [ ] Desktop QA
-- [ ] Staging validation
-- [ ] Backup / restore verification
-- [ ] Production health checks
-- [ ] CI green
-- [ ] Production readiness approved
+- [ ] Staging validation — DEFERRED / optional future environment, outside the active release flow (steps: `12-deployment-operations.md` §32)
+- [ ] Backup / restore verification — not performed (steps: `12-deployment-operations.md` §32)
+- [ ] Production health checks — `/health` implemented and tested locally; production check pending deployment
+- [ ] CI green — CI runs on pushes/PRs to `dev`/`production`, with existing `staging` coverage retained for the deferred environment; verify the relevant PR run before promotion
+- [ ] Production readiness approved — not approved (manual and release-stage gates open; staging deferred)
+
+Accepted Phase 20 corrections (implemented + automated tests; device/visual acceptance is part of the user's manual QA):
+
+- [x] Collapsible desktop sidebars for Owner and Super Admin from one server-read preference (no width flash); tablet rail › Expand navigation; stronger section headings; mobile dock pill stays inside the dock
+- [x] App & notifications › Version: APP_VERSION + build SHA (environment-driven)
+- [x] Account & preferences (Profile, Security, Appearance, App & notifications, Sign out); styled Confirm Password; self-edit limited to Preferred Name / photo / appearance
+- [x] Appearance Light / Dark (default Light) through one shared token adapter; customer-facing pages locked Light
+- [x] Pamalengke Plans without "What a plan holds" and "Today across plans"
+- [x] Operations Overview: Products Sold (category → Product × size from order snapshots) first; order Products Sold, Upcoming Pamamalengke, Today's Consumption, Needs Attention, Recent Ingredient Movements; fixed query count
+- [x] Operations nav Ingredients → Ingredient Stock → Recipes; Ingredient Stock / Ingredients responsive (container query, pinned Adjust, 44 px targets)
+- [x] Stock Correction model (± with reasons; Complimentary/Staff meal removed; never a purchase)
+- [x] Giveaway regression audit (unchanged; operations harness G-A…G-E pass)
+- [x] Pamamalengke funding Store Session: no open-Store requirement, closed-session allocation without expense, closed reconciliation immutable, race-safe
+- [x] Pamamalengke Summary: Copy as text + Export as image
+- [x] Cash View removed (duplicated Profit view)
+- [x] Branch store photo (optional, re-encoded WebP, Branch authorization, fallback)
+- [x] One canonical receipt + Receipt Settings (controlled blocks, order, header, custom rows, separators, order-again QR); snapshots only
+- [x] Preferred Name semantics (receipts: Preferred Name else first given name; audit keeps the real account)
+- [x] Customer QR named limiters (device cookie + per-IP ceiling; submit per device and per Branch/IP)
+- [x] Un-named throttle collision fixed (every route on a named limiter) + regression tests
+- [x] Shared Store status / Open Store control on every Store Operations page (permission-aware) + `store.opened` realtime
+- [x] Store Close summary shows opening date/time, opening Cash / Cashless and who opened
+- [x] Pay Now polish: no "Invoice: —", green Exact, camera vs file picker with type/size checks, no keypad on phones
+- [x] QR Orders: no stale cross-tab cards (keyed + aborted requests), shared badge on every Store Operations page, archived newest first, Restore only for the open session; 30-minute auto-archive verified
+- [x] Reports: Period Highlights right after the KPI cards
+- [x] Mobile: dock overflow, Ready panel above View cart, Kitchen full-screen focus fallback (iOS) with round logo, round logo in phone headers
+- [x] Notification matrix documented (`06-realtime-contracts.md`); Void PIN lock alert added
+- [x] Security: Void PIN lockout + audit + alert, transactions.view on POS transaction routes, anti-enumeration account recovery, reset links from APP_URL, password change/reset ends other sessions (audited), security headers, Reverb client events off / allowed origins, voided invoice proofs 404, Branch cannot leave Active while open
+- [x] Reliability: bounded Reverb HTTP client, handled background reloads, reconnect jitter, serialized notification refreshes, POS catalog realtime rebuilt
+- [x] Performance: stable windowed signed image URLs (batched, cached) + immutable uploads, one catalog signal per paid order, catalog fan-out without N+1, hidden-tab report refresh deferred, lazy Store Session dialog chunk, versioned receipt-logo caching
+- [x] Health (`/health` readiness + queue heartbeat) and release metadata; pooling / backup / staging guidance documented
+
+Verification (details in `11-testing-qa.md` › Phase 20): complete Laravel suite **2,301 passed / 17,293 assertions, 0 failures, 0 errors, 0 skipped** (definitive run after correcting two stale test contracts found by the first full run); frontend 352/352; lint, TypeScript (app + service worker), production build, Pint, PHPStan 0; all 20 PostgreSQL harnesses including the new Phase 20 harness; Phase 20 migrations fresh/rollback/reapply on SQLite and PostgreSQL and forward-applied to the local development database; dependency audits clean; secret/debug scan clean. Manual/browser QA was not performed by the agent.
+
+Known limits / deferred: the unreachable starter-kit shell (`pages/dashboard.tsx`, `AppLayout` family) is left in place (not a runtime path); `Model::preventLazyLoading` not enabled (would need a full N+1 sweep); per-Product catalog events are still one queued broadcast per Product × Branch (only the synchronous Customer QR signal was collapsed); connection-pooling settings are recommendations until validated in an isolated non-production environment.
+
+---
+
+## PWA Phase 2 — Offline-First POS (FUTURE UPDATE ONLY)
+
+**Status: FUTURE — NOT PLANNED FOR IMPLEMENTATION.** Not part of Phase 19.5 or Phase 19.6; revisit only after Phase 20 and Deployment.
+
+**Goal:** Basic store operations continue on a trusted registered device when internet is unavailable, then safely sync when connectivity returns.
+
+> **Phase 2 = if internet disappears, POS can continue on the device; when internet returns, transactions safely and automatically sync to the server.**
+
+Future concepts: IndexedDB local device database; cached Products/prices/categories/modifiers/basic Branch settings; offline Order creation; offline CASH payment recording; unique local Order IDs; Pending Sync / Syncing / Synced / Failed states; automatic sync/retry; idempotency / duplicate-Order prevention; safe syncing of Orders/payments/inventory movements/Audit; Sync Center; conflict handling; inventory reconciliation; unfinished cart/Order recovery; limited trusted-device offline login/session; device registration + Branch assignment; network quality awareness; sync priority/throttling; local offline audit trail; stale-data/device-time protection; practical protection/encryption of sensitive local data.
+
+Important limit: fully offline transactions should initially be **CASH only**. Card/e-wallet/online payment methods still require internet unless a provider-specific supported offline workflow exists.
 
 ---
 
@@ -900,3 +1419,17 @@ The standalone receipt-only page reuses the customer receipt card, persisted bra
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
 
 Verification: focused receipt/payment/Customer QR regression passed 206 tests / 1,747 assertions; focused frontend receipt/PNG passed 5 tests; full Laravel passed 1,240 tests / 8,117 assertions with zero failures/errors; complete Node frontend suite passed 51 tests. Pint, PHPStan, frontend lint (zero warnings), TypeScript, production build and diff check passed. An initial full-suite run overlapped the build removing a font CSS asset; the log confirmed that transient rendering failure, the affected 20-test file passed independently, and the full suite passed with assets stable. No payment/concurrency logic changed, so the PostgreSQL concurrency harness was not rerun. Status: READY FOR MANUAL QA; device scan/PNG visual acceptance remains pending.
+
+## Phase 12 implementation delivery - 2026-09-22
+
+Implemented cashier-only, active-branch Transaction History with server pagination/search/date/Kitchen/Payment/Order Type/Method filtering, full-dataset metrics, local Tiled/List preference, fresh detail reads, receipt print/share eligibility, and intentionally disabled Phase 13 Void. Historical committed Orders remain readable across Store Sessions; edits, balance settlement, and proof mutation require the Order's current OPEN Store Session.
+
+Committed edits retain unchanged item/modifier/name/price snapshots, price new or reconfigured lines from the current catalog, aggregate deterministic tracked inventory deltas, append `order_edit_delta` movements, preserve the KitchenTicket and lifecycle timestamps, and use Order version plus idempotency replay. Same-total edits add no money row; higher totals become authoritative outstanding balance; lower paid totals append explicit adjustments while original Payments remain. Payment attempts have stable grouping/context, and invoice proofs attach only to real Cashless Payment rows in private storage with authorized camera/file add, view, replace, remove, cleanup, and audit.
+
+Automated delivery gates passed: focused Phase 12 Pest tests, 180 adjacent Pay Now/Pay Later/Kitchen/receipt regression tests, 54 Node frontend tests, Pint, PHPStan (1 GB runner, zero errors), frontend lint (zero warnings), TypeScript, production build, PostgreSQL fresh/rollback/reapply and concurrency cases A-I. The separate user device/visual walkthrough and final implementation audit remain pending, so **Phase 12 is not marked complete**. Status: READY FOR USER MANUAL QA.
+
+### Phase 12 final audit and release gates - 2026-09-22
+
+User manual UI/UX QA was accepted before this audit; no broad browser pass or speculative redesign was performed. The complete `dev...HEAD` Phase 12 diff and the decoded `context/design/pos.html` bundle were source-reviewed. The audit corrected two integrity defects: payment-method filtering and display now use the persisted payment context rather than same-second timestamps, so an original Cash payment plus a later Cashless balance payment is not reported as Split; KDS prunes UPDATED IDs that no longer exist on its authoritative board while retaining the badge for tickets still present until reload.
+
+The complete Laravel suite passed **1,255 tests / 8,267 assertions** with zero failures, errors, or skips. The complete frontend behavioral suite passed **62 tests**. Pint, PHPStan (zero errors), frontend lint (zero warnings), TypeScript, production build, whitespace checks, and the isolated local PostgreSQL Phase 12 migration/concurrency harness (fresh, rollback, reapply, cases A-I, schema cleanup) passed. No Supabase access/reset, Phase 13 Void implementation, dependency change, secrets/artifacts, or PR was created. **Phase 12 is COMPLETE and ready for PR.**

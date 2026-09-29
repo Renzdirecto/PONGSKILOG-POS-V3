@@ -1,13 +1,6 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import {
-    Boxes,
-    Building2,
-    CheckCircle2,
-    Globe2,
-    PackageSearch,
-} from 'lucide-react';
+import { Building2, CheckCircle2, Globe2 } from 'lucide-react';
 import { CashierStore } from '@/components/cashier-store';
-import { OwnerPage, ownerPanelClass } from '@/components/owner-ui';
 import type { CashierStoreState } from '@/components/cashier-store';
 import { index as branchesIndex } from '@/routes/branches';
 import { index as inventoryIndex } from '@/routes/inventory';
@@ -60,90 +53,6 @@ export default function Workspace({
                     tables={tables}
                     kitchenStatus={kitchenStatus}
                 />
-            </>
-        );
-    }
-
-    if (workspace === 'Owner' || workspace === 'Super Admin') {
-        return (
-            <>
-                <Head title={`${workspace} workspace`} />
-                <OwnerPage
-                    title="Dashboard"
-                    description="Your business-wide workspace for products, branch inventory, and operating locations."
-                    maxWidth="max-w-[1180px]"
-                >
-                    <div className="grid gap-3 md:grid-cols-3">
-                        {auth.permissions.includes('products.manage') && (
-                            <Link
-                                href={productsIndex()}
-                                className={`${ownerPanelClass} flex min-h-[132px] flex-col justify-between p-4 transition hover:border-[#bdbdbd]`}
-                            >
-                                <Boxes className="size-5 text-[#666]" />
-                                <span>
-                                    <strong className="block text-sm font-semibold">
-                                        Products
-                                    </strong>
-                                    <span className="mt-1 block text-[11.5px] text-[#767676]">
-                                        Catalog, categories, groups, pricing,
-                                        and availability.
-                                    </span>
-                                </span>
-                            </Link>
-                        )}
-                        {auth.permissions.includes('inventory.manage') && (
-                            <Link
-                                href={inventoryIndex()}
-                                className={`${ownerPanelClass} flex min-h-[132px] flex-col justify-between p-4 transition hover:border-[#bdbdbd]`}
-                            >
-                                <PackageSearch className="size-5 text-[#666]" />
-                                <span>
-                                    <strong className="block text-sm font-semibold">
-                                        Inventory
-                                    </strong>
-                                    <span className="mt-1 block text-[11.5px] text-[#767676]">
-                                        Branch stock health, adjustments, and
-                                        movement history.
-                                    </span>
-                                </span>
-                            </Link>
-                        )}
-                        {branchContext.businessWide &&
-                            auth.permissions.includes('settings.manage') && (
-                                <Link
-                                    href={branchesIndex()}
-                                    className={`${ownerPanelClass} flex min-h-[132px] flex-col justify-between p-4 transition hover:border-[#bdbdbd]`}
-                                >
-                                    <Building2 className="size-5 text-[#666]" />
-                                    <span>
-                                        <strong className="block text-sm font-semibold">
-                                            Branch management
-                                        </strong>
-                                        <span className="mt-1 block text-[11.5px] text-[#767676]">
-                                            Branch details, state, and customer
-                                            QR entry points.
-                                        </span>
-                                    </span>
-                                </Link>
-                            )}
-                    </div>
-                    <section
-                        className={`${ownerPanelClass} flex items-start gap-3 p-4`}
-                    >
-                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-700" />
-                        <div>
-                            <h2 className="text-sm font-semibold">
-                                Owner workspace foundations are ready
-                            </h2>
-                            <p className="mt-1 text-[12.5px] leading-5 text-[#666]">
-                                Products, inventory, and branches are live.
-                                Dashboard analytics, transactions, reports, and
-                                staff management remain unavailable until their
-                                scheduled phases.
-                            </p>
-                        </div>
-                    </section>
-                </OwnerPage>
             </>
         );
     }

@@ -1,6 +1,7 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 
 import {
@@ -36,7 +37,13 @@ export function useBranchRealtimeRefresh({
     const refresh = useMemo(
         () =>
             createRealtimeRefresh((onFinish) => {
-                router.reload({ only: onlyRef.current, onFinish });
+                /** A background reload after access was revoked goes to the workspace, never a raw 403 dialog. */
+                router.reload({
+                    only: onlyRef.current,
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
+                    onFinish,
+                });
             }, debounceMs),
         [branchId, channel, debounceMs],
     );

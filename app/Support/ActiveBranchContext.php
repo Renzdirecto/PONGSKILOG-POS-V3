@@ -13,26 +13,23 @@ class ActiveBranchContext
 
     public function __construct(private Session $session) {}
 
+    /**
+     * The selected Branch, re-authorized on every call. A stale or forged selection is dropped and the account continues
+     * as if it had none selected (a single assigned Branch is chosen again), so the answer never depends on how many
+     * times it was asked within one request.
+     */
     public function current(User $user): ?Branch
     {
         $branchId = $this->session->get(self::SESSION_KEY);
 
         if ($branchId !== null) {
-            if (! is_string($branchId)) {
-                $this->clear();
+            $branch = is_string($branchId) ? Branch::query()->find($branchId) : null;
 
-                return null;
+            if ($branch !== null && Gate::forUser($user)->allows('select', $branch)) {
+                return $branch;
             }
 
-            $branch = Branch::query()->find($branchId);
-
-            if ($branch === null || Gate::forUser($user)->denies('select', $branch)) {
-                $this->clear();
-
-                return null;
-            }
-
-            return $branch;
+            $this->clear();
         }
 
         if (! $user->is_active || $user->hasBusinessWideScope()) {
@@ -52,6 +49,19 @@ class ActiveBranchContext
         $this->session->put(self::SESSION_KEY, $branch->getKey());
 
         return $branch;
+    }
+
+    /**
+     * The Branch a management page (Dashboard, Transactions, Reports, Products, Inventory, Operations, Staff, Settings)
+     * works on. Business-wide accounts get the selected Branch or null (All Branches). A Branch-scoped account (Branch
+     * Custom Role or Branch staff) only ever works on its selected assigned Branch; false means it has none selected yet,
+     * so the caller sends it to the workspace (Branch picker) instead of ever showing All Branches.
+     */
+    public function managementBranch(User $user): Branch|false|null
+    {
+        $branch = $this->current($user);
+
+        return $branch === null && ! $user->hasBusinessWideScope() ? false : $branch;
     }
 
     public function set(User $user, Branch $branch): void

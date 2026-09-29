@@ -2,6 +2,8 @@
 
 @import 'tw-animate-css';
 
+@import './dark-theme.css';
+
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
@@ -204,10 +206,15 @@ body:has([data-slot='dialog-content'].pos-surface)
     background: rgb(0 0 0 / 40%);
 }
 
+/* The POS receipt prints on an 80 mm roll (a named page, so other printouts keep the printer's paper). */
+@page pos-receipt {
+    size: 80mm auto;
+    margin: 4mm;
+}
+
 @media print {
-    @page {
-        size: 80mm auto;
-        margin: 4mm;
+    body:has([data-pos-receipt]) {
+        page: pos-receipt;
     }
 
     body:has([data-pos-receipt]) > * {
@@ -252,5 +259,25 @@ body:has([data-slot='dialog-content'].pos-surface)
     [data-pos-receipt] * {
         color: #000 !important;
         box-shadow: none !important;
+    }
+}
+
+/* Phase 19.6 customer screen: the takeover's remaining-time bar. */
+@keyframes customer-screen-countdown {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+
+/* Phase 19.6 customer screen: the current advertisement's progress bar. */
+@keyframes customer-screen-progress {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
     }
 }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { QrLine, QrOrder, QrReceipt } from '../resources/js/types/qr.ts';
+import type { QrLine, QrOrder } from '../resources/js/types/qr.ts';
 
 // Node's native TypeScript runner requires explicit extensions; Vite resolves these in the app.
 registerHooks({
@@ -15,7 +16,7 @@ registerHooks({
         );
     },
 });
-const { qrLineCents, qrStatus, canStartQrOrder, receiptText, mergeQrLine } =
+const { qrLineCents, qrStatus, canStartQrOrder, mergeQrLine } =
     await import('../resources/js/lib/qr-order.ts');
 
 const line: QrLine = {
@@ -115,48 +116,83 @@ test('Pay Later tracks kitchen progress without falsely claiming payment or perm
         'Archived / Unclaimed',
     );
 });
-test('receipt download contains persisted line names instructions and tender change', () => {
-    const receipt = {
-        branch: { name: 'Main' },
-        order_number: '1048',
-        paid_at: '2026-09-22T08:00:00Z',
-        order_type: 'take_out',
-        total: '190.00',
-        items: [
-            {
-                name: 'Tapsilog',
-                display_name: 'Large Tapsilog',
-                quantity: 2,
-                line_total: '190.00',
-                notes: 'Less salt',
-                modifiers: [
-                    { name: 'Large', semantic_role: 'size' },
-                    { name: 'Scrambled', semantic_role: 'instruction' },
-                ],
-            },
-        ],
-        payments: [
-            {
-                method: 'cash',
-                amount: '190.00',
-                amount_received: '200.00',
-                change_amount: '10.00',
-            },
-        ],
-    } as QrReceipt;
-    const text = receiptText(receipt);
-    assert.match(text, /Order number : #1048/);
-    assert.match(text, /2x Large Tapsilog/);
-    assert.match(text, /Instructions: Scrambled/);
-    assert.match(text, /Note: Less salt/);
-    assert.match(text, /Change : ₱10.00/);
-    assert.doesNotMatch(text, /cashier|idempotency|token_hash/);
+test('QR display transitions from provisional to official identity and elapsed time is local', async () => {
+    const { qrIdentity, qrElapsed } =
+        await import('../resources/js/lib/qr-order.ts');
+    assert.equal(
+        qrIdentity({ order_number: null, qr_number: 'QR-01' }),
+        'QR-01',
+    );
+    assert.equal(
+        qrIdentity({ order_number: '1001', qr_number: 'QR-01' }),
+        '#1001',
+    );
+    assert.equal(
+        qrElapsed('2026-09-22T00:00:00Z', Date.parse('2026-09-22T00:02:03Z')),
+        '2m 3s',
+    );
 });
 
+test('Store close replaces uncommitted QR tracking and refetches when the phone wakes', () => {
+    const page = readFileSync(
+        new URL('../resources/js/components/customer-qr.tsx', import.meta.url),
+        'utf8',
+    );
+    const realtime = readFileSync(
+        new URL(
+            '../resources/js/hooks/use-customer-qr-realtime.ts',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(page, /order\.committed_at === null && !closedOrderViewed/);
+    assert.match(page, /setClosedOrderViewed\(true\);\s*go\('track'\);/);
+    assert.match(
+        realtime,
+        /document\.addEventListener\('visibilitychange', visible\)/,
+    );
+    assert.match(realtime, /window\.addEventListener\('pageshow', online\)/);
+});
 
-test('QR display transitions from provisional to official identity and elapsed time is local', async () => {
-    const { qrIdentity, qrElapsed } = await import('../resources/js/lib/qr-order.ts');
-    assert.equal(qrIdentity({order_number: null, qr_number: 'QR-01'}), 'QR-01');
-    assert.equal(qrIdentity({order_number: '1001', qr_number: 'QR-01'}), '#1001');
-    assert.equal(qrElapsed('2026-09-22T00:00:00Z', Date.parse('2026-09-22T00:02:03Z')), '2m 3s');
+test('a loaded QR order switches to the POS at once and accepts additional Cashier items', async () => {
+    const { additionalQrItems } =
+        await import('../resources/js/lib/pos-order.ts');
+    const { editableLines, orderItemCount, orderTotalCents } =
+        await import('../resources/js/lib/pos-money.ts');
+    const pos = readFileSync(
+        new URL('../resources/js/components/cashier-pos.tsx', import.meta.url),
+        'utf8',
+    );
+    const line = {
+        key: 'l1',
+        quantity: 2,
+        notes: '',
+        modifiers: [],
+        product: { id: 'p1', effective_price: '40.00', modifier_groups: [] },
+    } as never;
+    const qr = {
+        source: 'customer_qr',
+        total: '95.00',
+        items: [{ quantity: 1 }],
+    } as never;
+    const draft = {
+        source: 'pos',
+        total: '95.00',
+        items: [{ quantity: 1 }],
+    } as never;
+
+    assert.equal(orderTotalCents(qr, [line]), 17500n);
+    assert.equal(orderItemCount(qr, [line]), 3);
+    assert.deepEqual(editableLines(draft, [line]), []);
+    assert.equal(orderTotalCents(draft, [line]), 9500n);
+    assert.deepEqual(additionalQrItems([]), {});
+    assert.deepEqual(additionalQrItems([line]).qr_additional_items, [
+        { product_id: 'p1', quantity: 2, notes: '', modifiers: [] },
+    ]);
+    assert.match(pos, /\(!saved \|\| saved\.source === 'customer_qr'\)/);
+    assert.match(
+        pos,
+        /router\.replace\(\{\s*url: cashier\(\)\.url,\s*props: \(props\) => \(\{ \.\.\.props, loadedQr: order \}\)/,
+    );
+    assert.match(pos, /\.\.\.additionalQrItems\(lines\)/);
 });

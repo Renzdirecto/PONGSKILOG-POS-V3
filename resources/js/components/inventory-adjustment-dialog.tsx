@@ -255,7 +255,10 @@ export function InventoryAdjustmentDialog({
                     </div>
 
                     <div className="shrink-0 border-t border-neutral-200 bg-white px-4 pt-3 pb-[calc(14px+env(safe-area-inset-bottom,0px))]">
-                        <FormErrors errors={form.errors} />
+                        <FormErrors
+                            errors={form.errors}
+                            inline={['quantity_delta', 'reason']}
+                        />
                         <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                             <Button
                                 type="button"

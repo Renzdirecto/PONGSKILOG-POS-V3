@@ -2,6 +2,7 @@
 
 use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
@@ -49,7 +50,7 @@ test('another cashier sees the existing open store without changing its session'
 
     $this->actingAs($secondCashier)->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id, 'canOpen' => false])
             ->missing('store.status')
             ->missing('storeSession'));
 
@@ -69,7 +70,7 @@ test('switching branches replaces store state on every redirected workspace visi
             ->assertInertia(fn (Assert $page) => $page
                 ->component('workspaces/show')
                 ->where('branchContext.current.id', $branch->id)
-                ->where('storeContext', ['status' => $status, 'isOpen' => $isOpen, 'branchId' => $branch->id]));
+                ->where('storeContext', ['status' => $status, 'isOpen' => $isOpen, 'branchId' => $branch->id, 'canOpen' => ! $isOpen]));
     }
 });
 
@@ -80,17 +81,17 @@ test('business wide scope has no store state until a specific branch is selected
     $this->actingAs(sharedStoreUser($role));
 
     $this->get(route($route))->assertInertia(fn (Assert $page) => $page
-        ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null]));
+        ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null, 'canOpen' => false]));
 
     foreach ([[$main, 'open', true], [$closedBranch, 'closed', false]] as [$branch, $status, $isOpen]) {
         $this->followingRedirects()->put(route('branch-context.update', $branch))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('storeContext', ['status' => $status, 'isOpen' => $isOpen, 'branchId' => $branch->id]));
+                ->where('storeContext', ['status' => $status, 'isOpen' => $isOpen, 'branchId' => $branch->id, 'canOpen' => ! $isOpen && $role === 'super_admin']));
     }
 
     $this->followingRedirects()->delete(route('branch-context.destroy'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null]));
+            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null, 'canOpen' => false]));
 })->with([
     ['owner', 'workspaces.owner'],
     ['super_admin', 'workspaces.super-admin'],
@@ -114,7 +115,7 @@ test('kitchen receives only the safe store projection even when reconciliation f
 
     $this->actingAs($user)->get(route('workspaces.kitchen'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id, 'canOpen' => false])
             ->missing('storeSession')
             ->missing('store')
             ->missing('opening_cash_amount')
@@ -144,7 +145,7 @@ test('forged or inactive branch context cannot expose another branch store state
         ->assertSessionMissing(ActiveBranchContext::SESSION_KEY)
         ->assertInertia(fn (Assert $page) => $page
             ->where('branchContext.current', null)
-            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null]));
+            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null, 'canOpen' => false]));
 })->with(['unassigned' => false, 'inactive assignment' => true]);
 
 test('guests cannot resolve store state from a stale session or query parameter', function () {
@@ -154,5 +155,34 @@ test('guests cannot resolve store state from a stale session or query parameter'
     $this->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
         ->get(route('home', ['branch_id' => $branch->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null]));
+            ->where('storeContext', ['status' => null, 'isOpen' => false, 'branchId' => null, 'canOpen' => false]));
+});
+
+test('the shared Store status offers Open Store only to accounts the server lets open this Branch', function () {
+    $branch = Branch::factory()->create();
+    $cashier = sharedStoreUser();
+    $kitchen = sharedStoreUser('kitchen_staff');
+    $cashier->branches()->attach($branch, ['is_active' => true]);
+    $kitchen->branches()->attach($branch, ['is_active' => true]);
+
+    $this->actingAs($cashier)->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('storeContext.canOpen', true));
+    $this->actingAs($kitchen)->get(route('workspaces.kitchen'))
+        ->assertInertia(fn (Assert $page) => $page->where('storeContext.canOpen', false));
+
+    $cashier->roles()->sole()->permissions()->detach(Permission::query()->where('name', 'store.open_close')->sole());
+    $this->actingAs($cashier->fresh())->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('storeContext.canOpen', false));
+});
+
+test('opening the Store from another Store Operations page returns to that page', function () {
+    $branch = Branch::factory()->create();
+    $cashier = sharedStoreUser();
+    $cashier->branches()->attach($branch, ['is_active' => true]);
+
+    $this->actingAs($cashier)->from(route('workspaces.cashier-dashboard'))
+        ->post(route('store-sessions.open'), ['opening_cash_amount' => '0', 'opening_cashless_amount' => '0'])
+        ->assertRedirect(route('workspaces.cashier-dashboard'));
+    $this->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('storeContext.isOpen', true)->where('storeContext.canOpen', false));
 });

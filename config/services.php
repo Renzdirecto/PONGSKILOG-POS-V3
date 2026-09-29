@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    /*
+    | Web Push (PWA Phase 1). One VAPID key pair per environment, generated with `php artisan pwa:vapid-keys`. The
+    | subject is a contact the push services can reach (a `mailto:` address or an https URL). The private key stays
+    | in the server environment: never committed, sent to a browser, logged or audited. Push is disabled until all
+    | three are set.
+    */
+    'webpush' => [
+        'subject' => env('VAPID_SUBJECT'),
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+    ],
+
 ];

@@ -34,6 +34,7 @@ export type InventoryPagination<T> = {
 };
 
 export type InventoryFilters = {
+    type?: 'all' | 'products' | 'ingredients';
     search?: string;
     stock_status?: StockStatus | 'all';
     category?: string;

@@ -1,25 +1,38 @@
 import { router } from '@inertiajs/react';
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
+import { shouldRefetchCatalogAfterConnectionChange } from '@/lib/pos-catalog-realtime';
 import {
     createBranchEventGuard,
     createRealtimeRefresh,
 } from '@/lib/realtime-refresh';
 
-export function usePosQrRealtime(branchId: string) {
+/**
+ * Customer QR signals of the Branch POS channel reload the given props: the shell keeps the shared QR Orders badge
+ * (`qrWaitingCount`) current on every Store Operations page; the POS reloads its own loaded QR order.
+ */
+export function usePosQrRealtime(branchId: string, props: string[]) {
+    const only = props.join(',');
     const connection = useConnectionStatus();
+    const previousConnection = useRef(connection);
+    const hasConnected = useRef(connection === 'connected');
     const accept = useMemo(() => createBranchEventGuard(branchId), [branchId]);
     const refresh = useMemo(
         () =>
             createRealtimeRefresh(
                 (finish) =>
                     router.reload({
-                        only: ['qrWaitingCount', 'loadedQr'],
+                        only: only.split(','),
+                        /** A background reload never moves the page (e.g. POS ↔ QR Orders switched meanwhile). */
+                        preserveUrl: true,
+                        onHttpException: handleRevalidationException,
+                        onNetworkError: () => false,
                         onFinish: finish,
                     }),
                 35,
             ),
-        [branchId],
+        [branchId, only],
     );
     useEcho<Record<string, unknown>>(
         `branch.${branchId}.pos`,
@@ -29,14 +42,29 @@ export function usePosQrRealtime(branchId: string) {
         },
         [branchId, accept, refresh],
     );
+    /** The server just rendered the QR state: refetch only after a reconnect, when signals may have been missed. */
+    useEffect(() => {
+        if (
+            shouldRefetchCatalogAfterConnectionChange(
+                previousConnection.current,
+                connection,
+                hasConnected.current,
+            )
+        ) {
+            refresh.schedule(0);
+        }
+        if (connection === 'connected') {
+            hasConnected.current = true;
+        }
+        previousConnection.current = connection;
+    }, [refresh, connection]);
     useEffect(() => {
         refresh.activate();
-        if (connection === 'connected') refresh.schedule(0);
         const retry = () => refresh.schedule(0);
         window.addEventListener('online', retry);
         return () => {
             refresh.dispose();
             window.removeEventListener('online', retry);
         };
-    }, [refresh, connection]);
+    }, [refresh]);
 }

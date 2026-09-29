@@ -12,6 +12,8 @@ export type Props = {
     canManageTwoFactor?: boolean;
     requiresConfirmation?: boolean;
     twoFactorEnabled?: boolean;
+    /** Rendered inside an Account section that already shows the title. */
+    embedded?: boolean;
 };
 
 export default function ManageTwoFactor(props: Props) {
@@ -46,11 +48,13 @@ export default function ManageTwoFactor(props: Props) {
 
     return (
         <div className="space-y-6">
-            <Heading
-                variant="small"
-                title="Two-factor authentication"
-                description="Manage your two-factor authentication settings"
-            />
+            {!props.embedded && (
+                <Heading
+                    variant="small"
+                    title="Two-factor authentication"
+                    description="Manage your two-factor authentication settings"
+                />
+            )}
             {twoFactorEnabled ? (
                 <div className="flex flex-col items-start justify-start space-y-4">
                     <p className="text-muted-foreground text-sm">

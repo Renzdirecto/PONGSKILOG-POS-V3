@@ -42,15 +42,28 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { lineCents, pesos } from '@/lib/pos-money';
+import {
+    lineCents,
+    orderItemCount,
+    orderTotalCents,
+    pesos,
+} from '@/lib/pos-money';
 import { usePosQrRealtime } from '@/hooks/use-pos-qr-realtime';
+import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import { usePosCatalogRealtime } from '@/hooks/use-pos-catalog-realtime';
+import { useUpdateBlocker } from '@/hooks/use-pwa';
+import { useCustomerScreenCart } from '@/hooks/use-customer-screen-cart';
+import { isOfflineWriteBlock } from '@/lib/pwa-mutation-guard';
+import { serverWritesAllowed } from '@/lib/pwa-runtime';
 import { savedItemName } from '@/lib/pos-item-name';
+import { otherCartLines } from '@/lib/recipe-availability';
+import { recipeCapacity } from '@/routes/pos';
 import {
     confirmedPayLaterState,
     payLaterAttemptForOrder,
 } from '@/lib/pos-pay-later';
 import {
+    additionalQrItems,
     customerDisplayLabel,
     customerLabelAfterTableChange,
     freshOrderDetails,
@@ -88,7 +101,7 @@ export function CashierPos({
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
     const realtimeStatus = usePosCatalogRealtime(branch.id);
-    usePosQrRealtime(branch.id);
+    usePosQrRealtime(branch.id, ['loadedQr']);
     const loadedQr = usePage().props.loadedQr as StaffQrOrder | null;
     const qrView =
         new URL(usePage().url, 'http://localhost').searchParams.get('view') ===
@@ -176,8 +189,18 @@ export function CashierPos({
         product: PosProduct;
         line?: CartLine;
     } | null>(null);
-    const form = useForm(`${rememberKey}:details`, {...freshOrderDetails(), customer_label: initialDraft?.customer_label ?? '', branch_table_id: loadedQr?.branch_table_id ?? ''});
+    const form = useForm(`${rememberKey}:details`, {
+        ...freshOrderDetails(),
+        customer_label: initialDraft?.customer_label ?? '',
+        branch_table_id: loadedQr?.branch_table_id ?? '',
+    });
     const total = lines.reduce((sum, line) => sum + lineCents(line), 0n);
+    /** The paired customer screen mirrors this cart; the commit request itself confirms the order there (best effort). */
+    const customerScreenHeaders = useCustomerScreenCart({
+        lines,
+        orderType,
+        savedOrderId: saved?.id ?? null,
+    });
     const orderNumber =
         saved?.order_number ??
         saved?.qr_number ??
@@ -188,6 +211,18 @@ export function CashierPos({
               (product) => product.id === editing.product.id,
           ) ?? editing.product)
         : null;
+    /** An app update or notification tap never reloads over an order in progress (its state lives only here). */
+    useUpdateBlocker(
+        lines.length > 0 ||
+            saved !== null ||
+            attempt !== null ||
+            payLaterAttempt !== null ||
+            payment.processing ||
+            payLater.processing ||
+            editing !== null ||
+            (dialog !== null && dialog !== 'type'),
+        'Finish or clear the current order first.',
+    );
 
     useEffect(() => {
         if (
@@ -263,7 +298,7 @@ export function CashierPos({
             );
             return;
         }
-        if (!navigator.onLine) {
+        if (!serverWritesAllowed()) {
             setPaymentError(
                 'You are offline. Reconnect before confirming payment.',
             );
@@ -282,6 +317,7 @@ export function CashierPos({
                                     branch_table_id:
                                         form.data.branch_table_id || null,
                                 },
+                                ...additionalQrItems(lines),
                             }
                           : {}),
                   }
@@ -303,7 +339,9 @@ export function CashierPos({
         setPaymentError('');
         payment.transform(() => payload);
         try {
-            const result = await payment.submit(payNow());
+            const result = await payment.submit(payNow(), {
+                headers: customerScreenHeaders(),
+            });
             if (result.receipt?.payment_status !== 'paid')
                 throw new Error('Unconfirmed payment');
             setReceipt(result.receipt);
@@ -315,7 +353,12 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('paid');
-            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
+            router.reload({
+                only: ['catalog', 'loadedQr', 'storeContext'],
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -327,7 +370,13 @@ export function CashierPos({
                           };
                       })
                     : null;
-            if (
+            if (isOfflineWriteBlock(error)) {
+                /** Refused before sending: nothing reached the server, so no result needs recovering. */
+                setAttempt(null);
+                setPaymentError(
+                    'You are offline. Reconnect before confirming payment.',
+                );
+            } else if (
                 response &&
                 [401, 403, 404, 409, 419, 422].includes(response.status)
             ) {
@@ -366,7 +415,7 @@ export function CashierPos({
             );
             return;
         }
-        if (!navigator.onLine) {
+        if (!serverWritesAllowed()) {
             setPayLaterError(
                 'You are offline. Reconnect before saving this Pay Later order.',
             );
@@ -383,6 +432,7 @@ export function CashierPos({
                               branch_table_id:
                                   form.data.branch_table_id || null,
                           },
+                          ...additionalQrItems(lines),
                       }
                     : {}
                 : {
@@ -403,7 +453,9 @@ export function CashierPos({
         const { order_id: orderId, ...payload } = activation;
         payLater.transform(() => payload);
         try {
-            const result = await payLater.submit(commitPayLater(orderId));
+            const result = await payLater.submit(commitPayLater(orderId), {
+                headers: customerScreenHeaders(),
+            });
             if (!result.order || !confirmedPayLaterState(result.order)) {
                 throw new Error('Unconfirmed Pay Later result');
             }
@@ -416,7 +468,12 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('payLaterSuccess');
-            router.reload({ only: ['catalog', 'storeSession', 'loadedQr'] });
+            router.reload({
+                only: ['catalog', 'loadedQr', 'storeContext'],
+                preserveUrl: true,
+                onHttpException: handleRevalidationException,
+                onNetworkError: () => false,
+            });
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -428,7 +485,13 @@ export function CashierPos({
                           };
                       })
                     : null;
-            if (
+            if (isOfflineWriteBlock(error)) {
+                /** Refused before sending: nothing reached the server, so no result needs recovering. */
+                setPayLaterAttempt(null);
+                setPayLaterError(
+                    'You are offline. Reconnect before saving this Pay Later order.',
+                );
+            } else if (
                 response &&
                 [401, 403, 404, 409, 419, 422].includes(response.status)
             ) {
@@ -549,10 +612,19 @@ export function CashierPos({
                         customer_label: order.customer_label ?? '',
                         branch_table_id: order.branch_table_id ?? '',
                     });
-                    router.visit(cashier(), {
-                        only: ['loadedQr', 'qrWaitingCount'],
+                    /** Show the POS at once with the order LOAD returned; the server props refresh in the background. */
+                    router.replace({
+                        url: cashier().url,
+                        props: (props) => ({ ...props, loadedQr: order }),
                         preserveState: true,
                         preserveScroll: true,
+                        onFinish: () =>
+                            router.reload({
+                                only: ['loadedQr', 'qrWaitingCount'],
+                                preserveUrl: true,
+                                onHttpException: handleRevalidationException,
+                                onNetworkError: () => false,
+                            }),
                     });
                 }}
             />
@@ -610,7 +682,7 @@ export function CashierPos({
                     workspace
                     lines={lines}
                     onSelect={
-                        orderType && !saved
+                        orderType && (!saved || saved.source === 'customer_qr')
                             ? (product) => setEditing({ product })
                             : undefined
                     }
@@ -622,20 +694,16 @@ export function CashierPos({
                     {cart}
                 </aside>
             </div>
-            <div className="fixed right-3 bottom-[88px] left-3 z-30 md:hidden">
+            <div className="fixed right-[max(12px,env(safe-area-inset-right))] bottom-[calc(max(12px,env(safe-area-inset-bottom))+76px)] left-[max(12px,env(safe-area-inset-left))] z-30 md:hidden">
                 <Button
                     className="h-12 w-full justify-between rounded-xl bg-neutral-950 px-4 text-white shadow-lg hover:bg-black"
                     onClick={() => setDialog('cart')}
                 >
                     <span className="flex items-center gap-2">
                         <ShoppingBag className="size-5" />
-                        View cart ·{' '}
-                        {(saved?.items ?? lines).reduce(
-                            (sum, line) => sum + line.quantity,
-                            0,
-                        )}
+                        View cart · {orderItemCount(saved, lines)}
                     </span>
-                    <span>{saved ? pesos(saved.total) : pesos(total)}</span>
+                    <span>{pesos(orderTotalCents(saved, lines))}</span>
                 </Button>
             </div>
             {editing && editingProduct && (
@@ -643,6 +711,8 @@ export function CashierPos({
                     key={editing.line?.key ?? editing.product.id}
                     product={editingProduct}
                     initial={editing.line}
+                    capacityUrl={recipeCapacity.url()}
+                    otherLines={otherCartLines(lines, editing.line?.key)}
                     onClose={() => setEditing(null)}
                     onRemove={() => {
                         setLines((current) =>
@@ -1266,7 +1336,7 @@ export function CashierPos({
                                             <div className="space-y-1.5 rounded-xl bg-neutral-50 p-3 text-xs">
                                                 <p className="font-semibold">
                                                     {saved
-                                                        ? `${saved.items.reduce((sum, item) => sum + item.quantity, 0)} items · ${pesos(saved.total)}`
+                                                        ? `${orderItemCount(saved, lines)} items · ${pesos(orderTotalCents(saved, lines))}`
                                                         : `${lines.reduce((sum, line) => sum + line.quantity, 0)} items · ${pesos(total)} preview`}
                                                 </p>
                                                 <p className="leading-5 text-neutral-500">

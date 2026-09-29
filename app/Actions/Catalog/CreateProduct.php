@@ -14,7 +14,7 @@ class CreateProduct
     /** @param array{category_id?: mixed, name?: mixed, description?: mixed, default_price?: mixed, is_active?: mixed} $attributes */
     public function execute(User $user, array $attributes): Product
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         $validated = Validator::make($attributes, [
             'category_id' => ['bail', 'required', 'uuid', Rule::exists(Category::class, 'id')],

@@ -22,6 +22,7 @@ import {
     useSyncExternalStore,
 } from 'react';
 import { toast } from 'sonner';
+import { PwaStatus } from '@/components/pwa-status';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import {
     canTransitionKitchenStatus,
@@ -38,6 +39,7 @@ import {
     projectKitchenBoard,
 } from '@/lib/kitchen-transitions';
 import type { KitchenTransitionResult } from '@/lib/kitchen-transitions';
+import { fullscreenSupported } from '@/lib/customer-screen';
 import { customerDisplay } from '@/routes/workspaces';
 import type {
     BranchContext,
@@ -78,7 +80,13 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         'kitchen-active-tab',
     );
     const [search, setSearch] = useRemember('', 'kitchen-search');
-    const [fullscreen, setFullscreen] = useState(false);
+    const [nativeFullscreen, setNativeFullscreen] = useState(false);
+    /**
+     * Where the Fullscreen API is missing or refused (iPhone Safari, some kiosk browsers) the same full-screen board is
+     * a fixed layer over the shell instead: the dense grid still fills the screen.
+     */
+    const [focusView, setFocusView] = useState(false);
+    const fullscreen = nativeFullscreen || focusView;
     const transitions = useMemo(
         () => new KitchenTransitionStore(),
         [branch?.id],
@@ -101,10 +109,21 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         new Set(kitchenBoard.tickets.map((ticket) => ticket.id)),
     );
     const pendingNewTicketIds = useRef(new Set<string>());
+    const [updatedOrderIds, setUpdatedOrderIds] = useState<Set<string>>(
+        () => new Set(),
+    );
     const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
         (event: Record<string, unknown>) => {
+            if (event.event_type === 'kitchen.order_updated') {
+                const orderId =
+                    typeof event.order_id === 'string' ? event.order_id : null;
+                if (orderId) {
+                    setUpdatedOrderIds((current) => new Set(current).add(orderId));
+                }
+                return;
+            }
             if (event.event_type !== 'kitchen.ticket_created') {
                 return;
             }
@@ -142,6 +161,12 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         const currentIds = new Set(
             kitchenBoard.tickets.map((ticket) => ticket.id),
         );
+        setUpdatedOrderIds(
+            (current) =>
+                new Set(
+                    [...current].filter((orderId) => currentIds.has(orderId)),
+                ),
+        );
         const newlyArrivedIds = [...pendingNewTicketIds.current].filter(
             (ticketId) =>
                 currentIds.has(ticketId) &&
@@ -160,7 +185,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
 
     useEffect(() => {
         const synchronizeFullscreen = () => {
-            setFullscreen(document.fullscreenElement === surface.current);
+            setNativeFullscreen(document.fullscreenElement === surface.current);
         };
 
         document.addEventListener('fullscreenchange', synchronizeFullscreen);
@@ -177,15 +202,32 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         [projectedBoard.tickets, search, tab],
     );
 
+    useEffect(() => {
+        if (!focusView) return;
+        const leave = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setFocusView(false);
+        };
+        window.addEventListener('keydown', leave);
+        return () => window.removeEventListener('keydown', leave);
+    }, [focusView]);
+
     async function toggleFullscreen() {
+        if (focusView) {
+            setFocusView(false);
+            return;
+        }
+        if (document.fullscreenElement === surface.current) {
+            await document.exitFullscreen().catch(() => undefined);
+            return;
+        }
+        if (!fullscreenSupported(document)) {
+            setFocusView(true);
+            return;
+        }
         try {
-            if (document.fullscreenElement === surface.current) {
-                await document.exitFullscreen();
-            } else {
-                await surface.current?.requestFullscreen();
-            }
+            await surface.current?.requestFullscreen();
         } catch {
-            toast.error('Fullscreen could not be opened in this browser.');
+            setFocusView(true);
         }
     }
 
@@ -242,10 +284,17 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
             <Head title="Kitchen display" />
             <div
                 ref={surface}
-                className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto' : ''}`}
+                className={`pos-surface flex min-h-full flex-col bg-[#f5f5f3] text-[#111] ${fullscreen ? 'fixed inset-0 z-[100] overflow-y-auto pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]' : ''}`}
             >
                 <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white">
                     <div className="flex flex-wrap items-center gap-2 overflow-hidden px-3 py-2.5 sm:flex-nowrap md:px-4">
+                        {fullscreen && (
+                            <img
+                                src="/images/branding/logo.png"
+                                alt="PONGSKILOG"
+                                className="size-10 shrink-0 rounded-full bg-[#111] object-contain p-1"
+                            />
+                        )}
                         <nav
                             aria-label="Kitchen status filters"
                             className="order-2 flex min-w-0 basis-full gap-1 overflow-x-auto py-px sm:order-none sm:flex-1 sm:basis-auto"
@@ -303,6 +352,12 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                             </span>
                         </button>
                     </div>
+                    {/* The shell header is hidden in full screen: the connection / update status moves here. */}
+                    {fullscreen && (
+                        <div className="flex justify-end px-3 not-empty:pb-2.5 md:px-4">
+                            <PwaStatus />
+                        </div>
+                    )}
                 </header>
 
                 {!kitchenBoard.is_open ? (
@@ -334,6 +389,7 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     pendingTransitions[ticket.id]?.pending ??
                                     false
                                 }
+                                updated={updatedOrderIds.has(ticket.id)}
                                 onTransition={transition}
                             />
                         ))}
@@ -373,12 +429,14 @@ function TicketCard({
     compact,
     now,
     disabled,
+    updated,
     onTransition,
 }: {
     ticket: KitchenTicket;
     compact: boolean;
     now: number;
     disabled: boolean;
+    updated: boolean;
     onTransition: (ticket: KitchenTicket, status: KitchenStatus) => void;
 }) {
     return (
@@ -391,15 +449,18 @@ function TicketCard({
             >
                 <div className="min-w-0 flex-1">
                     <p className="text-xs leading-4 font-black tracking-tight wrap-anywhere">
-                        <span className="whitespace-nowrap">#{ticket.number}</span>{' '}
+                        <span className="whitespace-nowrap">#{ticket.number}</span>
+                        {ticket.customer && (
+                            <span className="text-red-700">
+                                {' | '}
+                                {ticket.customer}
+                            </span>
+                        )}{' '}
                         {disabled && (
                             <span className="text-[9px] font-normal text-neutral-500">
                                 Saving...{' '}
                             </span>
                         )}
-                        <span className="text-red-700">
-                            {ticket.customer || ''}
-                        </span>
                     </p>
                     <p className="text-[9px] leading-3 font-bold tabular-nums">
                         <span className="text-neutral-500">
@@ -410,11 +471,18 @@ function TicketCard({
                         </span>
                     </p>
                 </div>
-                <span
-                    className={`shrink-0 rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
-                >
-                    {orderTypeLabel(ticket.order_type)}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                    {updated && (
+                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[8px] font-black tracking-wide text-amber-900 uppercase">
+                            Updated
+                        </span>
+                    )}
+                    <span
+                        className={`rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
+                    >
+                        {orderTypeLabel(ticket.order_type)}
+                    </span>
+                </div>
             </header>
             <div className={`space-y-3 ${compact ? 'p-2.5' : 'p-3'}`}>
                 {ticket.items.map((item) => (
@@ -460,7 +528,7 @@ function TicketCard({
                             type="button"
                             disabled={disabled || current || !allowed}
                             onClick={() => onTransition(ticket, status)}
-                            className={`min-h-9 rounded-[7px] border px-1 text-[9px] font-bold uppercase transition sm:text-[10px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
+                            className={`min-h-11 min-w-0 truncate rounded-[8px] border px-1 text-[10.5px] font-bold uppercase transition sm:text-[11px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
                         >
                             {compact && status === 'preparing'
                                 ? 'Prep'

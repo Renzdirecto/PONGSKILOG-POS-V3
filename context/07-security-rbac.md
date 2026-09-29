@@ -268,9 +268,10 @@ Backend must prevent:
 
 Void requires:
 
-- Authorized action
+- An active assigned Cashier or Cashier+Kitchen initiator, or a full-access Super Admin on the selected active Branch, with POS access
 - Reason
-- Re-auth/PIN mechanism where configured
+- The one global four-digit PIN configured by an active Super Admin and stored only as a hash
+- Attribution of the configuring Super Admin as a distinct authorizer
 - Correct branch
 - Valid order state
 - Audit
@@ -282,6 +283,8 @@ If stock was previously deducted:
 - restore through compensating inventory movement.
 
 Dedicated Void Orders history is Super Admin-only.
+
+Kitchen-only and Owner-only identities do not gain the operational Cashier Void action. A full-access Super Admin may initiate a Void for the selected active Branch (see Super Admin foundation, 2026-09-24), but the configuring Super Admin can never approve their own initiation. Owner is denied Audit Trail, Void Orders, and PIN configuration. Possession of the configured PIN is intentionally delegated approval authority; it is not per-user password re-authentication. The plaintext PIN is never persisted, audited, returned, logged, or broadcast.
 
 ---
 
@@ -343,6 +346,8 @@ Normal staff management may assign:
 Super Admin / Owner elevation must not be available through normal staff CRUD unless explicitly authorized by higher-level access control.
 
 Access Control page remains Super Admin-only.
+
+Phase 18 (2026-09-25): editing existing accounts, Role baselines and per-account custom access are specified in "Phase 18 — Access Control, Staff administration and Notifications" at the end of this file.
 
 ---
 
@@ -498,3 +503,289 @@ Frozen:
 - Audit is append-only
 - Sensitive reconciliation data is not broadcast to general staff
 - Offline financial writes are blocked
+
+## Phase 14 Store expense authorization - 2026-09-23
+
+- Expense create, current-session expense projection, private receipt streaming, and the Store Session realtime channel require an active, Branch-assigned `cashier` or `cashier_kitchen` with `store_expenses.manage`. Kitchen-only, Owner, unassigned, inactive, unauthenticated, and foreign-Branch access is denied; role-wide management status does not bypass the operational boundary.
+- The server derives the active Branch and current OPEN Store Session. Client Branch/Session identifiers are not authoritative. Creation takes the current Session shared lock, while future Close Store must take that boundary exclusively.
+- Receipts accept only validated JPG/JPEG/PNG/WebP images within the existing 2 MB and dimension bounds. Objects stay on the configured private disk and are served through an authorized Branch-scoped route with `private, no-store`; raw storage paths are never returned. Failed transactions remove newly stored objects.
+- Expense records and items reject normal update/delete behavior. Audit metadata excludes receipt bytes/path and credentials. A truly offline browser cannot submit and no irreversible expense is queued locally. A Reverb/Echo disconnect alone is not treated as network offline and does not block an authoritative HTTP expense commit.
+
+## Phase 15 Close Store authorization - 2026-09-23
+
+Preview and close require an active user with `pos.access` and `store.open_close`, a Cashier or Cashier+Kitchen role, and an active assignment to the active Branch; the server derives the Branch and OPEN Store Session. Kitchen-only, Owner, unassigned and inactive users are denied; Super Admin is denied unless actually assigned as a Cashier. Payment-correction allocation requires `pos.access`, `transactions.view` and a Cashier or Cashier+Kitchen role (not `store.open_close`), for a correction in the current OPEN Store Session of the active Branch. Store Session inventory adjustment requires `store_expenses.manage`, a Cashier or Cashier+Kitchen role and an active assignment to the active Branch; the Product must be inventory-tracked in that Branch, and Kitchen-only, Owner, guest, inactive and unassigned users are denied. Reconciliation values stay in authorized HTTP responses and the protected Audit Trail and are never broadcast.
+
+## Super Admin foundation — full operational access and Staff creation — 2026-09-24
+
+**Supersedes** the Phase 14 and Phase 15 statements above that deny Super Admin Store expenses, Store inventory adjustment, Open/Close Store, and Cashier POS actions unless actually assigned as a Cashier. The product owner approved full operational parity for Super Admin.
+
+- Super Admin is the full-access role. Cashier POS and Store Session authorization now goes through `User::hasCashierOperationsRole()` (cashier, cashier_kitchen, super_admin) and `User::hasOperationalBranchAccess()` (an active assignment, or business-wide Super Admin). This covers `PosAccess`, every Cashier FormRequest, `OpenStoreSession`, the Cashier workspace, the current Store Session endpoint, and the private `store-session` channel.
+- Super Admin is never given fabricated Branch assignments. It operates only the active Branch it selects, which must be Active. Store Session state, reconciliation, idempotency, stock and payment invariants are unchanged, and every action is attributed and audited as the Super Admin.
+- Owner business-wide scope alone still grants no Cashier operations. Kitchen and Customer Display were already permission-based and now open for Super Admin once a Branch is selected.
+- Void keeps two-person authorization: a Super Admin may initiate, but the Super Admin who configured the global PIN cannot approve their own initiation.
+- Authorization stays backend-authoritative. Hidden or visible navigation is never the control; branch isolation (404 for another Branch's records) is unchanged.
+
+### Staff account creation
+
+- `GET/POST workspaces/super-admin/staff` requires an active user with `access_control.manage`, enforced by route middleware, the FormRequest, and the action.
+- Phase 16D: `GET/POST workspaces/staff` (`staff.index` / `staff.store` / `staff.avatar`) requires `staff.manage` (route middleware) and business-wide scope. `StaffRoles::manageableBy()` is the one role authority used by the FormRequests and re-checked inside `CreateStaffAccount`: `access_control.manage` covers every role; Owner `staff.manage` covers **Cashier, Kitchen Staff and Cashier + Kitchen only**. An Owner submitting Owner or Super Admin gets "Choose a valid role." and the action refuses it even if called directly. The Owner list shows only accounts whose every role is operational. Owner never gains `access_control.manage`, Access Control, Audit Trail, Void Orders or the Super Admin Staff routes.
+- Assignable roles are the seeded canonical roles only. Creating Owner or Super Admin is allowed here because this is the higher-level access-control surface required by §14. Owner and Super Admin are business-wide and reject Branch assignments. Cashier, Kitchen Staff, and Cashier + Kitchen require at least one Active Branch, rechecked under lock inside the transaction.
+- The temporary password is chosen by the Super Admin, validated with `Password::default()` plus confirmation, and hashed by the User `hashed` cast. It is never persisted in plaintext, logged, audited, broadcast, returned in page props, or shown again. There is no invite email, forced password change, first-login flow, or password expiry.
+- User, role, Branch assignments, active state, and one `staff/staff.created` Audit record commit in one transaction. The Audit records user id, Employee ID, name, email, role, Branch ids/codes, business-wide flag, and active state, with no password, confirmation, hash, secret, or token. Duplicate emails, including races on the unique index, return a validation error, so retries cannot create a second user or Audit record.
+- An optional staff profile picture set by the Super Admin (JPG/PNG/WebP, 64–8000px, up to 2 MB, no SVG) is stored on the private `staff_avatars_disk` (default `local`) under `staff-avatars/{user}` and served only through `super-admin.staff.avatar` (`access_control.manage`, `nosniff`) or, for operational Staff an Owner manages, `staff.avatar` (404 for any account outside that scope, e.g. Owner or Super Admin). A failed creation deletes the stored file. The Audit records only `has_profile_picture`, never the path. This is admin-set; staff self-service avatar upload remains out of scope.
+- ~~The Access Control matrix remains unimplemented.~~ Superseded by Phase 18 (below): Access Control is a real, backend-enforced page.
+
+### Phase 16B–16D Owner workspace authorization - 2026-09-24
+
+- `workspaces.owner` (Owner Dashboard), `workspaces.reports` and `workspaces.reports.export` require `reports.view` plus business-wide scope (Owner, Super Admin). *Phase 18: Reports and its export also accept a Branch-scoped account with custom `reports.view`, limited to its selected assigned Branch (see Phase 18 below); the Owner Dashboard stays business-wide only.* The export is throttled and built only from the authorized, scoped and filtered report arrays.
+- `workspaces.transactions` and `workspaces.transactions.show` require `transactions.view` plus business-wide scope. A selected Branch limits both to that Branch (another Branch's Order is 404). Voided Orders are 404. Capabilities (`can_edit`/`can_settle`/`can_void`) are computed on the server from POS access to the selected Branch; the Owner never has it, so the Owner's POS write requests are 403 (`permission:pos.access`). The Cashier `workspaces.transaction-history` route and its `hasCashierOperationsRole` authorization are unchanged.
+- Settings reuse the existing Branch Management, receipt and QR endpoints (`BranchPolicy`, `settings.manage` + business-wide); operational staff remain 403.
+
+### Phase 16E Owner Operations authorization - 2026-09-24
+
+- All `operations.*` routes require `permission:inventory.manage`; `OperationsAccess` re-checks on every page and action: an **active, business-wide** user (Owner or Super Admin) with `inventory.manage`. Cashier, Kitchen Staff, Cashier + Kitchen, guests and inactive users are denied (403 / redirect). Hidden navigation is never the control. *Superseded by Phase 18 Manual QA refinement #1: Operations now requires its own `operations.manage` (see below); `inventory.manage` is Product stock only.*
+- Cashier-originated POS sales still consume Ingredients inside the existing Pay Now / Pay Later / Edit / Void transactions as domain behavior; that grants no Operations access.
+- The Branch is always the server-side global Branch context (`ActiveBranchContext`), never a browser `branch_id`. Opening stock, wastage, count correction, manual list items, skips and Confirm Pamamalengke require one concrete **active** Branch; All Branches is read-only. List entries of another Branch are 404. Plans, Ingredients, Products and manual entries are resolved and validated on the server (existing Products only, active Plans/Ingredients only, the Product's own sizes only).
+- Confirm Pamamalengke is the only path by which an Owner records a Store Purchase. It uses the canonical `RecordStoreSessionExpense::persist()` under the same OPEN Store Session shared lock and idempotency rules as the Cashier form (no alternate expense path) and is audited as the Owner. Close Store still takes the Store Session exclusively.
+- Audit (`module = operations`): `operation_plan.created|updated|archived` (with moved Products), `ingredient.created|updated|archived|restored`, `recipe.saved|removed|mode_changed`, `ingredient.wastage_recorded`, `ingredient.count_corrected`, `pamamalengke.confirmed` (restocks and cost updates), plus the canonical `store_expense_recorded`. Order edits and voids record `ingredient_deltas` / `ingredient_restorations` in their existing audit metadata.
+
+### Phase 16E Final QA authorization (2026-09-24)
+
+- **Giveaway / reversal / giveaway catalog**: authenticated active user with `pos.access` + `store_expenses.manage` and Cashier operations (`PosAccess`: assigned active cashier/cashier_kitchen or business-wide Super Admin) on the server-chosen active Branch; OPEN Store Session required. Owner (no Cashier operations), Kitchen, guests and inactive users are rejected. Browser ids (product, options) are validated against the Branch catalog; a Giveaway of another Branch returns 404 and only the Giveaway's own open Store Session may reverse it.
+- **Customer QR capacity** (`qr.recipe-capacity`) now also requires an active Branch with QR ordering enabled, like the QR menu and submission. It returns fit booleans only; the coarse yes/no for a chosen quantity is an accepted disclosure equal to what order submission already reveals.
+- **Branch switch return path**: only a same-application path (`/…`, no scheme, host, `//`, backslash or whitespace) is followed; the Branch selection policy is unchanged.
+- Pamamalengke: a skip mark is accepted only for an active Ingredient of the Plan, and the manual-item delete route cannot remove skip marks.
+
+## Phase 18 — Access Control, Staff administration and Notifications — 2026-09-25
+
+### Effective permissions (one authority)
+
+- Role = baseline permissions (`role_permissions`); account = optional explicit exception (`user_permission_overrides`, `allow` or `deny`; no row = INHERIT).
+- `App\Support\EffectivePermissions` is the only resolver. `User::hasPermission()`, the `permission:` middleware, every FormRequest/action check, broadcast channels and the shared `auth.permissions` prop all resolve through it, so navigation and backend decisions always agree. Nothing is cached between requests: a revoked permission is denied on the very next request or mutation.
+- For a non-Super-Admin: ALLOW override → yes; DENY override → no; otherwise the Role baseline (union over its roles).
+- **Super Admin is locked full access**: its baseline is always every permission (the seeder re-completes it), overrides are ignored for it and are never written for it, and its baseline cannot be edited. An ALLOW override never grants `audit.view`, `void_orders.manage` or `access_control.manage`, even if such a row were inserted directly.
+- Permission = WHAT; Role + Branch assignment = WHERE. A permission never widens scope.
+
+### Grant envelope (PermissionCatalog)
+
+`App\Support\PermissionCatalog` is the single catalog (label, description, category, scope, first-install defaults, grant envelope, lock reasons) used by the seeder, the actions and the Access Control page.
+
+| Role | May hold (baseline or custom) | Locked, with reason |
+| --- | --- | --- |
+| Owner | Transactions, Reports, Products, Inventory, Staff, Settings | POS, QR, Store Open/Close, Expenses, Kitchen, Customer Display (operations belong to Branch staff); Control permissions (Super Admin only) |
+| Cashier | POS, Transactions, Store Open/Close, Expenses, Kitchen, Customer Display, **Reports (own Branch)** | Products, Inventory, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control (Super Admin only) |
+| Kitchen Staff | Kitchen, Customer Display, **Reports (own Branch)** | Cashier operations (need a Cashier role); business-wide and Control permissions |
+| Cashier + Kitchen | derived: union of Cashier and Kitchen Staff | not edited directly |
+| Super Admin | everything | locked full access |
+
+QR Orders has no route of its own (it is enforced through POS) and always follows POS in a Role baseline; it is not individually configurable.
+
+### Writes
+
+- Access Control routes (`super-admin.access-control*`) require an active account with `access_control.manage`; the actions re-read the actor inside the transaction.
+- **Role baseline** (`UpdateRolePermissions`): Owner, Cashier or Kitchen Staff only; only catalog permissions inside the envelope (unknown names are rejected, not ignored); locked baseline entries are kept; Roles are locked `FOR UPDATE` in id order and Cashier + Kitchen is re-derived as the union in the same transaction; an unchanged submission records nothing. Audit `access_control/access.role_permissions_updated` with before/after lists, added/removed and the derived Cashier + Kitchen before/after.
+- **Custom access** (`UpdateUserPermissionOverrides`): locks the account row (serializing with Staff role changes); accounts must have exactly one staff role; Super Admin accounts are refused. INHERIT deletes; an ALLOW of an included permission or a DENY of an excluded one is stored as INHERIT (no meaningless rows). Audit `access.user_override_updated` / `access.user_overrides_reset` with before/after maps.
+
+### RBAC seeding rule (live configuration is never reset)
+
+`RbacSeeder` stays safe for fresh installs, tests and every deployment rerun:
+
+- a Role receives its catalog defaults only when the seeder creates that Role;
+- a Permission new in this run is granted to the Roles whose defaults include it;
+- existing Role ↔ Permission pairs are never removed or re-added, so an edited baseline survives;
+- Super Admin is always completed to every permission; Cashier + Kitchen is always re-derived from Cashier ∪ Kitchen Staff.
+
+### Branch-scoped Reports (custom access)
+
+- `ReportsRequest` requires `reports.view` only; `ReportsController` then derives the scope: Owner/Super Admin keep the selected Branch or All Branches; a Branch-scoped account uses its selected **assigned** Branch (`ActiveBranchContext`, which rejects any other Branch) and is redirected to choose one instead of ever receiving All Branches. The session filter only matches that Branch's Store Sessions. The CSV export follows the same scope.
+- The Owner Dashboard (`workspaces.owner`) stays business-wide only. Branch staff see Reports inside their operational shell.
+- Realtime: `branch.{branch}.reports` (reports.view + access to that Branch) for Branch-scoped viewers; the business-wide `reports` channel still requires business-wide scope.
+
+### Staff administration
+
+- `PUT super-admin/staff/{user}` (Super Admin, every account) and `PUT workspaces/staff/{user}` (Owner `staff.manage`, operational accounts only) run `UpdateStaffAccount`: name, email (unique ignoring case), one Role, Branch access, active status, picture replace/remove. The Employee ID is never changed.
+- Locks every Super Admin row plus actor and target in id order first. **At least one active Super Admin always remains**; nobody changes their own role or deactivates themselves; a crossing race (A deactivates/demotes B while B deactivates/demotes A) lets exactly one win (verified on PostgreSQL).
+- A Role change clears Branch assignments for Owner/Super Admin, requires at least one active Branch for operational Roles, and **resets custom access to INHERIT** (recorded in the audit).
+- Deactivation rotates the remember token and, with the database session driver, deletes that account's session rows; `EnsureUserIsActive` signs an inactive account out on its next request and channels refuse inactive users. Accounts are never deleted.
+- `PUT super-admin/staff/{user}/password` (Super Admin only, never oneself): new temporary password with `Password::default()` + confirmation, hashed by the User cast, never returned, logged, audited or notified; the remember token is rotated, database sessions are deleted, and `AuthenticateSession` (web middleware) signs out any other session whose stored password hash no longer matches.
+- Audit (`module = staff`): `staff.updated`, `staff.role_changed`, `staff.branch_access_changed`, `staff.deactivated`, `staff.reactivated`, `staff.avatar_updated`, `staff.avatar_removed`, `staff.password_reset` — one row per distinct change category, readable before/after, no credentials.
+
+### Notifications
+
+- In-app only (Laravel database notifications, `notifications` table). The Control Center notification center is Super Admin only (`access_control.manage`); a viewer reads and marks only their own rows (another account's id is 404).
+- Recipients: active Super Admins, excluding the actor. Delivery runs after the business transaction commits and is rescued (a failed notification never fails the change). Payloads hold category, title, summary and a server-generated same-app link only — no credentials, audit payloads or money.
+- Realtime: `notifications.changed` (event id/type/time only) on the recipient's own `App.Models.User.{id}` channel, which now also requires an active account.
+
+## Phase 18 final — Custom Roles — 2026-09-25
+
+### Model
+
+- **System Role** = one of the five built-in roles (Super Admin, Owner, Cashier, Kitchen Staff, Cashier + Kitchen), identified by its unchanged machine name, never editable as a custom record, never archived or deleted. Super Admin stays **Locked · Full access**; Cashier + Kitchen stays derived.
+- **Custom Role** = a reusable permission package a Super Admin creates (e.g. "Branch Supervisor"), shared by many Staff accounts. Stable key `custom_{id}`; editable display name (trimmed, single-spaced, ≤ 40 characters, letters/numbers/spaces and `& + - / ( ) . ' ,`, unique ignoring case among active roles including System names).
+- **User override** = the existing per-account ALLOW / DENY exception. Effective access for a Custom Role account = ALLOW → yes, DENY → no, otherwise the Custom Role baseline (the same `EffectivePermissions` resolver; no second engine).
+
+### Scope (WHERE) is separate from permissions (WHAT)
+
+- **Branch role**: every account needs ≥ 1 active Branch; everything stays inside its assigned Branches (Reports: selected assigned Branch only, never All Branches; `branch.{branch}.reports` channel only). A Branch Custom Role runs Cashier operations like a Cashier (`Role::scopeCashierOperations()`), still gated by each permission (e.g. POS needs `pos.access`).
+- **Business-wide role**: no Branch assignments (fabricated ones are rejected); reaches every Branch through `User::hasBusinessWideScope()`, which is now metadata-driven (`Role::scopeBusinessWide()`: Owner/Super Admin by name, plus active business-wide Custom Roles). It never gains Control permissions.
+- **Business-wide operations (Manual QA refinement, 2026-09-25)**: a business-wide Custom Role may combine operational and management permissions. Like Super Admin it operates at any selected **active** Branch without assignments (`Role::scopeOperatesEveryBranch()` = Super Admin by name + active business-wide Custom Roles, used by `User::hasOperationalBranchAccess()`; `Role::scopeCashierOperations()` includes every active Custom Role). Each operational action stays bound to the one selected Branch; business-wide is never one combined operational Branch, and Store Session, payment and inventory rules are unchanged. Without a management landing page it goes to the Branch picker (active Branches only) and then its operational workspace. Owner is unchanged (no Cashier operations).
+- Scope can change only while **no** account holds the role (checked under the Role row lock that Staff assignment also takes); otherwise reassign Staff first or create a new role.
+
+### Grant envelope (PermissionCatalog::CUSTOM_GRANTABLE)
+
+| Scope | May hold (baseline or user ALLOW) | Locked |
+| --- | --- | --- |
+| Branch | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display, Reports (own Branch) | Products, Inventory, Operations, Staff, Settings (business-wide, cannot be Branch-limited); Audit Trail, Void Orders, Access Control |
+| Business-wide | POS (QR Orders follows), Transactions, Store Open / Close, Expenses, Kitchen, Customer Display (each at one selected active Branch), Reports (All Branches or selected Branch), Products, Inventory, Operations, Staff (operational Staff only, like the Owner), Settings | Audit Trail, Void Orders, Access Control (Super Admin only) |
+
+Every business permission's backend was checked: business Transactions, Owner Dashboard, Operations, Branch settings and Staff management already require business-wide scope; Inventory/Products are gated by permission and stay business-wide. A per-user ALLOW is limited by the same envelope (`PermissionCatalog::lockReason(Role, …)`), so it can never escape the role's scope or reach Control.
+
+### Custom Role Builder (Super Admin only)
+
+- Routes (`super-admin.access-control.custom-roles.store|update|archive`) sit in the `permission:access_control.manage` group (throttled); `SaveCustomRoleRequest` authorizes again; `CreateCustomRole` / `UpdateCustomRole` / `ArchiveCustomRole` re-read the actor inside the transaction. Owner, Cashier, Kitchen, Custom Roles, inactive accounts and forged requests are refused.
+- Create: name, scope, baseline inside the envelope, QR follows POS, audit, one transaction; the partial unique index is the final guard against two admins racing on one name (one wins, the other gets a validation error).
+- Update: Role row `FOR UPDATE`, then the whole submitted baseline replaces the old one, so concurrent saves serialize to one complete submission (never a merge). User overrides are never touched; inheriting accounts follow the new baseline on their next request.
+- Archive: blocked while any account holds the role ("Reassign them in Staff first"); an archived role is never offered or accepted for assignment; System roles cannot be archived or deleted.
+- Audit (`module = access_control`): `access.custom_role_created`, `access.custom_role_updated` (name/scope before/after), `access.custom_role_permissions_updated` (permission names + labels, added/removed), `access.custom_role_archived` — Role id, key, label, scope; never credentials. Notifications go to the **other** active Super Admins only (one per save).
+
+### Staff assignment
+
+- Only Super Admin access control assigns Custom Roles (`StaffRoles::manageableBy()` = System roles + active Custom Roles). Owner Staff management stays limited to Cashier, Kitchen Staff and Cashier + Kitchen and never lists or edits Custom Role accounts.
+- Any Role change (System ↔ Custom, Custom A → Custom B) resets custom access to INHERIT (audited with the removed map) and follows the scope's Branch rule (Branch role: explicit active Branch; business-wide: Branch assignments cleared).
+- Lock order: Staff writers take the target Role row (`FOR SHARE`) **before** the account rows. Access Control writers hold Role rows and then key-share the actor's account row through their audit insert; the inverted order was reproduced as a real PostgreSQL deadlock (archive vs assign) and fixed.
+
+### RbacSeeder
+
+Maintains only System roles (canonical label/is_system/scope, Super Admin completion, Cashier + Kitchen derivation) and known permissions. It never reads, renames, archives, re-permissions or reassigns Custom Roles (tested on SQLite and PostgreSQL).
+
+### Super Admin Executive Dashboard
+
+`workspaces.super-admin` (`SuperAdminDashboardController`, `access_control.manage`) is read-only. Money comes only from `SalesAnalytics` (the Owner Dashboard's own call); live state from `BusinessSnapshot`; Staff counts, the viewer's unread count and a payload-free Audit summary (action, actor, Branch, time) from `ExecutiveSnapshot`. No before/after audit payloads, credentials or other users' notifications are exposed.
+
+## Phase 18 Manual QA refinement #1 — 2026-09-25
+
+### Inventory vs Operations permission split
+
+- `inventory.manage` (label **Inventory**) = Product stock levels, stock adjustments and movement history (`inventory.*` routes, `AdjustInventory`).
+- `operations.manage` (label **Operations**) = the Owner Operations workspace: Pamalengke Plans, Overview, Ingredients, Recipes, Ingredient Stock, Pamamalengke and Purchases. All `operations.*` routes require `permission:operations.manage`; `OperationsAccess` re-checks on every page and action (active + `operations.manage` + business-wide scope). Operations never mutates Product stock (Recipe / Add-on effect saves only *read* `tracks_inventory` as a guard), so it needs no `inventory.manage`. Confirm Pamamalengke still writes its Store Purchase only through `RecordStoreSessionExpense::persist()` under the OPEN Store Session.
+- Both are business-wide management permissions: grantable to Owner and to business-wide Custom Roles independently (Inventory without Operations and vice versa), never to Branch roles.
+- Defaults: Owner has both; Super Admin is always complete. Migration `2026_09_25_082319_split_operations_from_inventory_permission` (forward, additive, idempotent) creates `operations.manage` on an existing install and copies **every** Role baseline and per-user ALLOW/DENY that holds `inventory.manage` today, so nobody gains or loses Operations by the split. A fresh install gets it from `RbacSeeder` defaults; the seeder still never resets live Access Control configuration.
+
+### Staff Position (display only)
+
+- `users.position` (nullable, ≤ 100 characters, whitespace collapsed, blank → null, same plain-character rule as Custom Role names) is a business/job title shown to people (e.g. "Area Manager"). It is set in Add Staff / Manage Staff (Super Admin and Owner surfaces), audited in `staff.created` and `staff.updated`, and searchable in Staff.
+- **Position never grants access.** No permission, scope, landing page or workspace is derived from it; access always comes from the Role (System or Custom) plus user overrides.
+- Display: Staff cards show it under the name (hidden when it only repeats the Role label); the management sidebar footer shows Name + Position (fallback: Role label); the Audit Trail actor reads "Name · Position" using the actor's **current** Position (not a historical snapshot).
+
+### Navigation shows only permitted pages
+
+- The management shell (Owner and business-wide Custom Roles) and the operational POS shell render only pages the account can open; there are no disabled "No access" / "Coming later" rows. Sections: Overview, Store Operations (POS, QR Orders, Kitchen, Display), Sales, Catalog, Operations, Administration; an empty section disappears. Hidden navigation is never the control: every route keeps its permission middleware and server checks.
+- QR Orders follows `pos.access` (no separate toggle). Store Operations links open at the selected Branch or go through the Branch picker first.
+
+### Custom Role Store Operations
+
+- A Custom Role with `pos.access` at a selected active Branch uses the same operational shell as the Cashier: the real `storeContext` STORE OPEN / STORE CLOSED status, the existing `PosReadyNotifications` ready-order list and "Mark as done" (`orders.kitchen-status.update`, authorized by `pos.access` for Ready → Done, never by role name) and the `branch.{branch}.pos` channel (`pos.access` + Branch access). No second notification service.
+
+### Business Transactions: mutable only while the Store is OPEN
+
+- `workspaces.transactions` offers Edit / Settle / Void (and the operational detail) only when the viewer passes `PosAccess` for the selected Branch **and** that Branch has an OPEN Store Session; otherwise it is view-only historical reading like the Owner (`transactions.view` alone never grants a mutation).
+- Every write endpoint still re-authorizes (`permission:pos.access`, Branch, Order, the Order's current OPEN Store Session and the existing action rules); after close they reject with `store` errors.
+
+## Phase 18 Manual QA refinement #2 — Branch-scoped management — 2026-09-25
+
+Supersedes "Products, Inventory, Operations, Staff, Settings stay business-wide / never to Branch roles" above. Mental model: **Permission = WHAT, Role scope = WHERE, user override = individual exception.** Control (Audit Trail, Void Orders, Access Control) stays Super Admin-only for every Custom Role, by baseline and by override.
+
+### Grant envelope
+
+`PermissionCatalog::CUSTOM_GRANTABLE` is the same for both scopes: every operational permission plus Reports, Products, Inventory, Operations, Staff and Settings. The scope decides where each applies. System Cashier / Kitchen Staff envelopes are unchanged (no management permissions).
+
+### One scope helper
+
+`ActiveBranchContext::managementBranch()` returns the selected Branch, `null` (All Branches — business-wide accounts only) or `false` (a Branch-scoped account with no selected assigned Branch → redirect to the workspace / Branch picker). Dashboard, business Transactions, Reports, Products, Inventory, Operations and Settings all use it; a Branch-scoped account never receives All Branches data, and a forged session Branch is cleared by `ActiveBranchContext::current()`.
+
+### Branch-scoped meaning per page
+
+- **Dashboard / Transactions / Reports:** selected assigned Branch only (same `SalesAnalytics` / `TransactionHistory`; Transactions stay mutable only with POS access and an OPEN Store).
+- **Products:** one canonical Product definition + an explicit `branch_products` membership row per Branch (no row = not sold there; `is_available = false` = member, temporarily unavailable — pass #2.1). Shared definitions (Product create/update, image, Categories, Modifier Groups/Options) need the `catalog.define` gate = `products.manage` + business-wide. Branch-scoped `products.manage` changes only its Branch rows (`UpsertBranchProduct` checks `canAccessBranch`): sold here, price override, availability, tracking, low-stock threshold. **Add products to this Branch** creates membership rows for Products the Branch does not sell. **Copy from another Branch** copies those row values only (never stock, movements, sales, Store Sessions, Products, Categories, Groups); the destination is the selected Branch from the session, the source must be another active Branch the account can access (a MAIN-only manager cannot read QAVE); existing destination rows are kept unless overwrite is explicitly confirmed. `ConfigureBranchAssortment` locks the Branch `FOR SHARE`, writes with `INSERT … ON CONFLICT DO NOTHING` on the unique `(branch_id, product_id)` and locks rows in Product-id order, so racing or repeated requests end with one row per Product (PostgreSQL harness `tests/verify-branch-assortment-postgres.php`).
+- **Inventory:** selected assigned Branch only; the `branch_id` query is ignored; movements and adjustments of another Branch → 403 (`AdjustInventory` re-checks).
+- **Operations:** `OperationsAccess::allows()` = `operations.manage` + (business-wide or an active assignment). Everything is Branch-owned (pass #2.1): Plans, Ingredients, Recipes, Add-on effects, recipe mode, Ingredient stock, movements, the Pamamalengke list and purchases belong to the selected Branch, configured through `OperationsAccess::configurationBranch()`; another Branch's ids are 404/rejected. Operations › Copy setup copies configuration only (never stock or history).
+- **Staff:** `StaffRoles::branchScope()` = the manager's active assigned Branch ids. It lists other accounts with an active assignment in that set (foreign Branches counted, never named); it assigns Cashier, Kitchen Staff, Cashier + Kitchen and active Branch Custom Roles whose whole baseline it holds itself (no escalation); never Owner, Super Admin or business-wide Custom Roles; Branch ids must be a subset of its own. On an account that also works elsewhere it may change only its own Branch rows (hidden assignments are kept); role, status and profile stay with business-wide Staff managers.
+- **Settings:** `BranchPolicy::update` = `settings.manage` + `canAccessBranch` (contact details, Customer QR, receipt); `create` / `updateIdentity` (code, name, status) = business-wide only. The page shows "Branch Settings — MAIN" with the selected Branch only.
+
+### Business-wide Custom Roles
+
+Unchanged: all normal permissions, All Branches where the page aggregates, one concrete Branch for operations, never Control. Owner is not widened.
+
+
+## Phase 18 pass #2.1 — Branch-owned Operations and explicit assortment — 2026-09-25
+
+Supersedes "shared Operations definitions are business-wide only" and "no row = sold".
+
+- `operations.manage` on a concrete selected Branch configures that Branch's Plans, Ingredients, Recipes, Add-on effects and recipe mode (`OperationsAccess::configurationBranch()`); a Branch role only its assigned Branch (never All Branches), a business-wide role any active Branch after selecting it. All Branches is read-only (Branch picker; Purchases list). Any Plan/Ingredient/list entry id of another Branch is 404 (`ownedBy()`); submitted Ingredient ids of another Branch are rejected (and blocked by composite FKs on PostgreSQL).
+- Copy authorization: products.manage + `canAccessBranch()` on both source and destination (source must be another active Branch); bringing Operations setup additionally needs `operations.manage`. A MAIN-only manager cannot read or copy TEST/QAVE configuration.
+- `inventory.manage` (Product stock) and `operations.manage` stay separate. Control stays Super Admin only.
+
+
+## Phase 18 Final QA — account integrity — 2026-09-25
+
+- **Accounts never delete themselves.** The starter-kit `DELETE settings/profile` route, action and button are removed: it bypassed the last-active-Super-Admin guard, cascaded Role/override/Branch rows and nulled Audit actors. Accounts are deactivated through Staff administration only.
+- **Only a Super Admin changes a staff sign-in email.** The email is the password-recovery address and password resets are Super Admin only; letting an Owner or Branch Staff manager change it would allow an account takeover through Forgot password. `UpdateStaffAccount` rejects the change for any other manager (the Owner-surface field is read-only).
+- **Profile emails** are lowercased and unique ignoring case, like the Staff forms.
+- **Staff creation** takes the Role row lock before computing the actor's manageable roles (a concurrently widened Custom Role is never assigned on a stale check) and notifies the other active Super Admins after commit (name, Employee ID, Role, Branch codes only).
+- **Live Operations pages** may subscribe to `reports` / `branch.{branch}.reports` with `operations.manage` (the signal carries ids/type/time only), so an Operations manager without Reports is not left on stale data.
+
+## Phase 19.5 — PWA Phase 1 security — 2026-09-26
+
+- **Offline never bypasses authorization:** while not confirmed online the client refuses every server write before sending (UX only); nothing is queued or replayed, and the server still authorizes and validates every request. On reconnect one authoritative reload re-checks the session, Branch context and page access (revoked access → workspace, ended session → login).
+- **No private data on the device:** the service worker precaches only fingerprinted build assets, brand icons and the static offline page; it never caches HTML, Inertia JSON, CSRF tokens, signed/private URLs or business data. localStorage holds only non-sensitive preferences and, in the installed app, the last top-level screen path. No IndexedDB.
+- **Push subscriptions:** `pwa.push-subscription.*` require an authenticated, active account, CSRF (web middleware) and `throttle:30,1`; the owner is always the signed-in account (a submitted user id is ignored); only the account's own current-browser subscription is shown or removed. The endpoint must be https on a known push service host (fcm.googleapis.com, android.googleapis.com, *.push.services.mozilla.com, *.push.apple.com, *.notify.windows.com; no credentials or custom port), so stored endpoints can never point server requests at internal hosts. Endpoint, P-256 key and auth secret are encrypted at rest, hidden from serialization and never returned, logged or audited; uniqueness is the SHA-256 `endpoint_hash`. A browser used by another account moves to the account that enables it.
+- **Unbinding:** logout deletes this device's subscription server-side (HttpOnly encrypted device cookie, hash stored) after the client's best-effort browser unsubscribe; `UserSessions::invalidate()` (password reset, deactivation) deletes all of the account's subscriptions.
+- **Recipients at send time:** New Kitchen Order = active + `kitchen.access` + Branch access; Order Ready = active + `pos.access` + Branch access (the Branch channel rule); Important Alert = the AdminNotifier recipient, still an active Super Admin at delivery. Business-wide Custom Roles holding the permission receive every Branch's signal, exactly like the channels; the canonical Super Admin role receives no routine Kitchen / Order Ready pushes (only Important Alerts). Revoked permission, removed assignment or deactivation stops new pushes.
+- **Payloads and taps:** payloads carry type, tag, allowlisted path and Branch name only; the service worker shows fixed texts (no customer, item, money, Staff or audit detail) and opens only same-origin allowlisted paths.
+- **VAPID:** the private key lives only in the server environment (never sent to a browser, logged or audited); the public key is returned to signed-in staff when enabling. Each environment has its own pair.
+
+### Phase 19.5 Final QA security fixes — 2026-09-26
+
+- **Trusted proxies no longer choose the host:** with `TRUSTED_PROXIES` set (`*` behind Railway, `127.0.0.1` behind a local tunnel) Laravel previously trusted every forwarded header, so a request carrying `X-Forwarded-Host`/`-Port`/`-Prefix` produced links such as `https://attacker.example:8443/phish/...` — the same URL generator builds Fortify's public password-reset email links (reset-token phishing). `bootstrap/app.php` now trusts only `X-Forwarded-For` and `X-Forwarded-Proto`; the host always comes from the routed Host header. Regression: `PwaShellTest` (single proxy and `*`).
+- **A shared browser follows the account signed in there:** an account whose session expired (or was ended without a logout) kept its push subscription on that browser, so the next account signing in on a shared station received the previous account's Kitchen / Order Ready / alert notifications. `ForgetPushDeviceOfOtherAccountsOnLogin` removes other accounts' subscriptions for this device cookie on `Login`; the same account signing in again keeps its own. Regression: `PushSubscriptionTest`.
+- **Push delivery is time-bounded:** `WebPushGateway` sends with Guzzle timeouts (10 s, connect 5 s) instead of the discovered client's unlimited default, and passes the app logger to the library so its environment checks are logged instead of raised as `ErrorException`. Regression: `WebPushGatewayTest`.
+
+## Phase 19.6 — Customer experience security boundary (planned)
+
+- Customer-display pairing is Branch- and station/device-scoped. It is never ownership by a cashier account, and changing cashiers cannot expose another station's cart.
+- Display mode and advertisement management require backend authorization. Owner, Super Admin, and any role explicitly granted the applicable management permission remain constrained to an authorized selected Branch; hidden controls are not authorization.
+- Advertisement uploads accept only validated image/video content within bounded type, size, and duration rules. Stored media is Branch-owned; filenames, metadata, and paths supplied by a client are not trusted.
+- Menu, order-status, live-cart, takeover, and public pickup responses use dedicated allowlisted projections. They expose no payment/tender, customer identity, staff identity, internal identifiers, or write capability. (Exception by design, manual-QA fixes: the pickup **receipt** is the canonical customer receipt, so it shows the paid amounts per method, amount received and change — never payment proof, cashier, name, table or notes.)
+- Pickup tokens are cryptographically random and unguessable, belong only to committed Take Out orders, are never placed in logs/realtime payloads, and cannot authorize edit, cancel, payment, or access to another order.
+- Notification permission is explicit. Visiting/scanning the pickup page grants nothing; Buzz eligibility requires a valid subscription linked through the matching pickup token and revalidated at send time.
+- Buzz requires the existing Ready state and an authorized cashier/POS action. Server-side cooldown, bounded attempts, replay/idempotency, concurrency, Branch ownership, and order-type checks cannot be bypassed by UI or forged requests.
+- Phase 20 must include full RBAC, Branch/station isolation, public-token privacy, upload safety, subscription ownership, and concurrent Buzz-limit review for Phase 19.6.
+
+## Phase 19.6 — Customer experience security (implemented 2026-09-27)
+
+- **Who may do what:** pairing, unpairing, the MENU / CUSTOMER DISPLAY controls, the Live Cart and the takeover are POS actions at the selected Branch (`PosAccess`: active, `pos.access`, cashier-operations role, operational Branch access, active Branch) — Cashier, Cashier + Kitchen, Custom Roles with POS, Super Admin; never Owner or Kitchen-only. Advertisement media is Branch-local Settings (`BranchPolicy::update`: `settings.manage` + `canAccessBranch`) — Owner / Super Admin / business-wide Custom Roles for any Branch, a Branch Custom Role only for its own. Buzz is a POS action on an order of the selected Branch.
+- **Never trusted from the client:** Branch (always `ActiveBranchContext`), cart text/prices (derived from ids), media type (file content), video length (container), queue position (server), takeover duration (server), mode transitions (row-locked toggle). A forged Branch, station, order or media id finds nothing (404/403).
+- **Manual-QA fixes:** the order confirmation is started only by a successful Pay Now / Pay Later of the cashier's own Branch for the station in that request's `X-POS-Station` header (a recent committed order, once per screen); the screen's `customer-screen/mode` and `takeover/{id}/shown` writes need its paired device cookie and reach only its own presentation (named limiter `customer-screen-mode` 30/min/IP). Settings › Customer Screen durations/links use `BranchPolicy::update` and accept only http(s) links (`url:http,https`, ≤ 500 chars), and customer-facing links are re-checked (`CustomerScreenSettings::safeUrl`). The pickup receipt is readable only with a valid (≤ 12 h) pickup token, never by order id, with `private, no-store`, `noindex` and `no-referrer`; it omits the customer name, table and free-text notes. The confirmation and pickup summary never include a customer name, notes, cost or ids.
+- **Station and device identity:** a random station UUID (header) and a random 64-hex device cookie (HttpOnly, encrypted by the web middleware); only SHA-256 hashes are stored. Pairing codes: 32^6 alphabet, 5 minutes, one-time, keyed HMAC at rest, 10/min limit per account.
+- **Public projections are allowlisted:** customer screen state/Menu/playlist and the pickup status carry no ids (opaque keys only), tender, customer label, staff, notes, stock counts, capacity or cost. Pickup tokens never appear in logs, audit rows or realtime payloads (a separate `channel_key` is used); pickup pages send `Referrer-Policy: no-referrer`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex`.
+- **Pickup capability:** 256-bit token, hash lookup, route pattern `[A-Za-z0-9_-]{43}` (a UUID or hash cannot even match the route), 12-hour expiry (410), no write besides the customer's own notification opt-in/out, which is validated like staff subscriptions (push-service host allowlist against SSRF, key lengths) and encrypted at rest.
+- **Buzz:** eligibility re-checked under the token row lock and again when the job sends; cooldown and cap cannot be bypassed by parallel requests (PostgreSQL harness B–C); a rejected endpoint is deleted; no order/Kitchen/payment write anywhere in the Buzz path.
+- **Rate limits (named, own counters):** POS screen routes 240/min/account (pairing 10), Buzz 30/min/account, media writes 60/min/account, public screen 120/min/IP (pairing code/reset 10), pickup 120/min/IP, pickup opt-in 10/min per link + 30/min/IP.
+- **Upload safety:** images must decode (GD) and are re-encoded (no original stored); MP4 must have `ftyp` + a readable `mvhd` ≤ 60 s and not be HEVC-only; ≤ 10 MB / 50 MB; server-generated paths; signed temporary URLs only.
+- **Audit:** `customer_screen.paired`, `customer_screen.unpaired`, `customer_screen.reset_on_screen`, `customer_screen_media.created|updated|deleted|reordered` (no tokens, codes or file paths).
+
+## Phase 20 — final RBAC, isolation and security pass — 2026-09-28
+
+The route/controller/action review found no cross-Branch leak through forged ids (every action re-derives the active Branch and re-authorizes on each call). Fixed:
+
+- **Named throttles only.** Every throttle is a named limiter registered in `RateLimits` with its own counter (per account for staff routes; per device cookie with a per-IP ceiling for Customer QR; per link/IP for public receipts and pickup). An un-named `throttle:X,Y` shared one counter per account across routes, so 240 recipe-capacity checks could starve Void (5/min) or Close Store (10/min); `RateLimitIsolationTest` proves heavy traffic on one route cannot consume another's limit and that no route uses an un-named throttle.
+- **Account recovery.** Forgot/reset password and password confirmation are throttled; the forgot-password answer is identical for known and unknown emails (no enumeration); reset links are built from `APP_URL`, never from the request Host (no host-header poisoning). A password change (Security page) or a reset by link ends other sessions/devices of the account and is audited.
+- **Void PIN brute force.** `VoidPinGuard`: 5 wrong PINs per account or 15 across accounts lock Void approval for the rest of a 15-minute window; wrong PINs are audited (`void.authorization_failed`), a lock sends a `security` admin alert, and a new PIN clears it. The PIN is checked before any Order work.
+- **Transactions permission.** A DENY of `transactions.view` now also blocks the POS transaction detail, settlement, void and invoice-proof read/delete routes (edit and upload already required it). Receipt sharing re-checks POS access. Invoice proofs of voided orders answer 404.
+- **Self-service profile.** Staff edit only their Preferred Name, photo and appearance; legal name, email, employee ID, position, role, Branches and status stay with staff administration (self email change removed). Changes are audited.
+- **Branch Settings.** A Branch cannot leave Active while its Store is open. The Branch photo follows Branch Settings authorization (`BranchPolicy::update`) for upload/removal and Branch access (`view`) for reading; uploads go through the checked, re-encoding image pipeline. Receipt layouts are validated server-side (known blocks only, bounded plain text, no HTML).
+- **Transport and headers.** Web responses send `X-Frame-Options: SAMEORIGIN`, `nosniff`, `Referrer-Policy` and HSTS over HTTPS; invoice/receipt/image streams send `nosniff`. Reverb client events are disabled and allowed origins come from `REVERB_ALLOWED_ORIGINS`. The local disk no longer serves signed `/storage` URLs.
+- **Health.** `/health` is read-only, throttled, sessionless and returns only check states, timings and the release name/SHA.
+- **Customer-facing pages** (QR, kiosk, receipts, customer screen, pickup, customer display) always render in Light appearance.
+
+Secrets/build scan (Phase 20 final QA): no committed secrets, keys, tunnel hostnames or LAN addresses in tracked files or the production build; `.env` is untracked.

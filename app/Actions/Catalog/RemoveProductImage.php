@@ -14,7 +14,7 @@ class RemoveProductImage
 
     public function execute(User $user, Product $product): Product
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         [$product, $oldAsset] = DB::transaction(function () use ($product): array {
             $product = Product::query()->whereKey($product->getKey())->lockForUpdate()->firstOrFail();

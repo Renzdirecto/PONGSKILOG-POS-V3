@@ -23,3 +23,15 @@ Lock the current OPEN StoreSession with sharedLock, then Order and KitchenTicket
 
 ## QR numbers are provisional until commercial commitment
 Customer QR submission allocates only a per-Store-Session qr_sequence from customer_qr_order_counters. LOAD and Cancel LOAD never consume official identity. Pay Now/Pay Later atomically assign both official identifiers with payment/stock/Kitchen; direct POS keeps early reservation. New references use an independent branch/Manila-date counter and BRANCH-MMDDYY-####; preserve legacy identifiers.
+
+## Committed order edits preserve histories and lock order
+Committed-order mutations (and Pay Later settlement and correction allocation) require the Order's current OPEN Store Session, then lock Branch shared -> Session shared -> Order exclusive -> tracked Product inventory rows in sorted Product ID order -> Ingredient balances (Edit and Void take the Branch FOR SHARE first because POS commits hold Branch FOR UPDATE then the Session, and every movement insert needs a KEY SHARE on the Branch; the PostgreSQL harness races edit vs sale with zero deadlocks). Retained item/modifier configurations keep committed price/name snapshots; only new or materially reconfigured lines use current catalog values. Reconcile stock with one append-only order_edit_delta per tracked Product, money with append-only Payments/order_adjustments, and require expected version plus idempotency key.
+
+## Loaded QR claims block Store Close
+Store Close archives only submitted, unclaimed, uncommitted Customer QR orders with `archive_reason = store_closed`. A QR order still loaded by a Cashier is a pre-close blocker (complete payment or Cancel LOAD); Close never clears `loaded_by_user_id` or archives an in-progress claim.
+
+## A loaded QR order accepts Cashier additions
+After LOAD, the Cashier may add items (never edit or remove the customer's submitted items). Pay Now and Pay Later send them as `qr_additional_items`; `LoadedQrOrder::appendItems()` validates them through `OrderSnapshots::prepare()` and appends them to the locked order inside the same commit transaction (current prices; submitted prices unchanged), then the normal stock, Kitchen and payment effects cover the whole order. A replay must already contain every additional item it sends (else 409). The POS switches to the loaded order instantly with a client-side visit (`router.replace` with the LOAD response) and refreshes `loadedQr` / `qrWaitingCount` after it.
+
+## A committed edit keeps each Product on its committed stock path (Phase 18 Final QA)
+`EditCommittedOrder` moves Product stock for a Product already on the Order only if the Order already moved Product stock for it (sale / pay_later_commit / order_edit_delta rows), exactly as its Ingredient snapshot fixes the Ingredient path at first commit; today's `tracks_inventory` applies only to Products new to the Order. A Branch mode change between commit and edit must never move both stocks (or neither). If a Product sold from Product stock is no longer tracked, changing its quantity is rejected with a clear message (Void has the same guard); never skip the movement silently.

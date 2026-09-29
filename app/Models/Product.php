@@ -44,9 +44,21 @@ class Product extends Model
         return $this->hasMany(BranchProduct::class);
     }
 
+    /** @return HasMany<StoreSessionExpenseItem, $this> */
+    public function storeSessionExpenseItems(): HasMany
+    {
+        return $this->hasMany(StoreSessionExpenseItem::class);
+    }
+
     /** @return BelongsToMany<ModifierGroup, $this> */
     public function modifierGroups(): BelongsToMany
     {
         return $this->belongsToMany(ModifierGroup::class, 'product_modifier_groups');
+    }
+
+    /** @return HasMany<Recipe, $this> */
+    public function recipes(): HasMany
+    {
+        return $this->hasMany(Recipe::class);
     }
 }

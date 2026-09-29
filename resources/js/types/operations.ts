@@ -1,0 +1,291 @@
+export type OperationsPageKey =
+    | 'plans'
+    | 'overview'
+    | 'ingredients'
+    | 'recipes'
+    | 'stock'
+    | 'pamamalengke'
+    | 'purchases';
+
+export type OperationsPlan = {
+    id: string;
+    name: string;
+    icon: string;
+    description: string | null;
+    product_count: number;
+    ingredient_count: number;
+};
+
+export type OperationsContext = {
+    page: OperationsPageKey;
+    branch: { id: string; name: string; code: string } | null;
+    plans: OperationsPlan[];
+    active_plan_id: string | null;
+    /** How much Operations setup the selected Branch has (all zero for All Branches or a new Branch). */
+    setup: {
+        plans: number;
+        ingredients: number;
+        recipes: number;
+        products: number;
+    };
+    /**
+     * Whether the viewer may configure the selected Branch's own setup (Plans, Ingredients, Recipes, Add-on effects,
+     * recipe mode). Always false for All Branches, which has no single setup.
+     */
+    can_configure: boolean;
+    /** Other Branches this account may copy Operations setup from into the selected Branch. */
+    copy_sources: { id: string; name: string; code: string }[];
+};
+
+export type RecommendationKind = 'setup' | 'manual' | 'buy' | 'hold' | 'ok';
+
+export type IngredientStatusKey =
+    | 'negative'
+    | 'setup'
+    | 'out'
+    | 'buy'
+    | 'below'
+    | 'above'
+    | 'at';
+
+export type OperationsIngredient = {
+    id: string;
+    name: string;
+    icon: string;
+    base_unit: string;
+    target: string;
+    purchase_unit: {
+        name: string;
+        size: string;
+        cost_cents: number | null;
+    } | null;
+    rule: 'top_up' | 'reorder' | 'none';
+    rule_label: string;
+    reorder_point: string | null;
+    plan_ids: string[];
+    locked_unit: boolean;
+    archived: boolean;
+    updated_at: string | null;
+    stock: {
+        current: string;
+        start: string;
+        consumed: string;
+        purchased: string;
+        wastage: string;
+        giveaway: string;
+        correction: string;
+        updated_at: string | null;
+    } | null;
+    status: {
+        key: IngredientStatusKey;
+        label: string;
+        tone: 'red' | 'amber' | 'green' | 'neutral' | 'outline';
+    } | null;
+    recommendation: {
+        kind: RecommendationKind;
+        units: number;
+        base_quantity: string;
+        after: string | null;
+        estimate_cents: number | null;
+        reason: string;
+    } | null;
+};
+
+export type OperationsFigures = {
+    sales_cents: number;
+    orders: number;
+    items: number;
+    uncosted_sales_cents: number;
+    cogs_cents: number;
+    unknown_cost_lines: number;
+    gross_profit_cents: number;
+    pamamalengke_cents: number;
+    non_stock_cents: number;
+    other_expenses_cents: number;
+    operating_profit_cents: number;
+    incomplete: boolean;
+    /** Today's sales by Catalog category → Product × size, from the Order lines' own snapshots. */
+    products_sold: ProductsSoldCategory[];
+};
+
+export type ProductsSoldCategory = {
+    category_id: string;
+    name: string;
+    quantity: number;
+    sales_cents: number;
+    sizes: { name: string; quantity: number }[];
+    lines: {
+        product_id: string;
+        name: string;
+        size: string | null;
+        quantity: number;
+        sales_cents: number;
+    }[];
+};
+
+export type OperationsSummaryProps = {
+    business_date: string;
+    plan: OperationsFigures | null;
+    plans: Record<string, OperationsFigures>;
+    business: OperationsFigures;
+    outside_plan_sales_cents: number;
+    /** Non-revenue free items today: never in sales, COGS or profit. */
+    giveaways: {
+        count: number;
+        items: number;
+        cost_cents: number;
+        uncosted: number;
+    };
+};
+
+export type MarketPlan = {
+    available: boolean;
+    auto: { ingredient_id: string; skipped: boolean }[];
+    setup: string[];
+    ok: string[];
+    hold: number;
+    estimate_cents: number;
+    unknown: number;
+};
+
+export type ManualEntry = {
+    id: string;
+    name: string;
+    quantity: string;
+    unit: string;
+    estimated_unit_cost_cents: number | null;
+    estimate_cents: number | null;
+    note: string | null;
+};
+
+/**
+ * How a Pamamalengke run was funded (Phase 20): the Store Purchase of the session that was open when it was confirmed,
+ * or an allocation to a closed session (no expense; its Close Store result never changes).
+ */
+export type PurchaseFunding = {
+    session_id: string;
+    label: string;
+    recorded_as: 'store_purchase' | 'allocation';
+    expense_reference: string | null;
+};
+
+/** A Store Session that may fund the next confirmation: the open one first, then recent closed ones. */
+export type FundingSession = {
+    id: string;
+    status: 'open' | 'closed';
+    label: string;
+    opened_at: string;
+    closed_at: string | null;
+};
+
+export type EarlierPurchase = {
+    id: string;
+    created_at: string | null;
+    items: number;
+    bought_by: string | null;
+    funding: PurchaseFunding;
+    estimate_cents: number | null;
+    actual_cents: number;
+};
+
+export type IngredientMovementGroup = {
+    id: string;
+    type:
+        | 'opening_balance'
+        | 'sale_consumption'
+        | 'order_edit_adjustment'
+        | 'void_restoration'
+        | 'purchase_restock'
+        | 'wastage'
+        | 'count_correction'
+        | 'giveaway'
+        | 'giveaway_reversal';
+    label: string;
+    created_at: string;
+    plan: { id: string; name: string } | null;
+    order: { id: string; number: string | null } | null;
+    reason: string | null;
+    by: string | null;
+    products: string[];
+    lines: {
+        ingredient_id: string;
+        name: string | null;
+        unit: string | null;
+        delta: string;
+        mine: boolean;
+    }[];
+};
+
+export type RecipeLine = { ingredient_id: string; quantity: string };
+
+export type RecipeProductSize = {
+    key: string;
+    option_id: string | null;
+    name: string;
+    price_cents: number;
+    lines: RecipeLine[] | null;
+    /** Servings the selected Branch's ingredient stock can make now; null for All Branches or without a recipe. */
+    servings: number | null;
+};
+
+/** An Add-on / Modifier option of the Product and its Product-specific ingredient effect (null = no effect). */
+export type RecipeAddOn = {
+    option_id: string;
+    name: string;
+    group_name: string;
+    price_delta_cents: number;
+    lines: RecipeLine[] | null;
+};
+
+export type RecipeState =
+    | 'set'
+    | 'partial'
+    | 'missing'
+    | 'not_needed'
+    | 'product_stock'
+    | 'configuration_error';
+
+export type RecipeProduct = {
+    id: string;
+    name: string;
+    category: string | null;
+    is_active: boolean;
+    image_url: string | null;
+    no_recipe_needed: boolean;
+    /** Only this Branch's own Product stock tracking blocks its Ingredient recipe; other Branches never do. */
+    tracks_product_stock: boolean;
+    inventory_mode: 'product_stock' | 'no_recipe_needed' | 'recipe';
+    size_conflict: string[] | null;
+    state: RecipeState;
+    sizes: RecipeProductSize[];
+    add_ons: RecipeAddOn[];
+    instruction_groups: string[];
+    settings_url: string;
+};
+
+export type PurchaseRun = {
+    id: string;
+    created_at: string | null;
+    branch: { id: string; code: string; name: string } | null;
+    plan: { id: string; name: string } | null;
+    bought_by: string | null;
+    payment_source: 'cash' | 'cashless';
+    expense_id: string | null;
+    funding: PurchaseFunding;
+    actual_cents: number;
+    estimate_cents: number | null;
+    estimate_complete: boolean;
+    note: string | null;
+    items: {
+        name: string;
+        type: 'ingredient' | 'manual';
+        unit: string;
+        recommended: string | null;
+        quantity: string;
+        unit_cost_cents: number;
+        total_cents: number;
+        base_quantity: string | null;
+        base_unit: string | null;
+        note: string | null;
+    }[];
+};

@@ -88,7 +88,7 @@ test('the database rejects changing a closed row to a duplicate open session', f
         ->toThrow(UniqueConstraintViolationException::class);
 });
 
-test('the database rejects negative opening closing and expected balances', function (string $column) {
+test('the database rejects negative opening and closing balances', function (string $column) {
     $attributes = StoreSession::factory()->make(['id' => (string) Str::uuid()])->getAttributes();
     $attributes[$column] = '-0.01';
 
@@ -99,6 +99,16 @@ test('the database rejects negative opening closing and expected balances', func
     'opening cashless' => 'opening_cashless_amount',
     'closing cash' => 'closing_cash_amount',
     'closing cashless' => 'closing_cashless_amount',
+]);
+
+test('expected balances keep exact signed reconciliation math', function (string $column) {
+    $attributes = StoreSession::factory()->make(['id' => (string) Str::uuid()])->getAttributes();
+    $attributes[$column] = '-250.00';
+
+    DB::table('store_sessions')->insert($attributes);
+
+    expect(StoreSession::query()->findOrFail($attributes['id'])->{$column})->toBe('-250.00');
+})->with([
     'expected cash' => 'expected_cash_amount',
     'expected cashless' => 'expected_cashless_amount',
 ]);

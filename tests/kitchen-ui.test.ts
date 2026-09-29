@@ -114,10 +114,12 @@ test('kitchen item labels keep size in the name and compact standard groups', ()
     );
 });
 
-test('POS refreshes both ready orders and kitchen status for ticket lifecycle events', () => {
+test('POS refreshes both ready orders and kitchen status for ticket lifecycle and Buzz state events', () => {
     assert.deepEqual(POS_READY_REALTIME_EVENTS, [
         '.kitchen.ticket_created',
         '.kitchen.status_changed',
+        '.pickup.notify_changed',
+        '.order.voided',
     ]);
 });
 
@@ -181,6 +183,20 @@ test('KDS renders one-row controls and split ticket timing', () => {
     );
     assert.match(
         kitchenPage,
+        /ticket\.customer && \([\s\S]*\{' \| '\}[\s\S]*\{ticket\.customer\}/,
+    );
+    assert.match(
+        kitchenPage,
+        /flex shrink-0 items-center gap-1\.5[\s\S]*\{updated && \([\s\S]*Updated[\s\S]*orderTypeLabel\(ticket\.order_type\)/,
+    );
+    assert.doesNotMatch(kitchenPage, /8_000/);
+    assert.doesNotMatch(kitchenPage, /next\.delete\(orderId\)/);
+    assert.match(
+        kitchenPage,
+        /\[\.\.\.current\]\.filter\(\(orderId\) => currentIds\.has\(orderId\)\)/,
+    );
+    assert.match(
+        kitchenPage,
         /text-red-700[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
     );
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
@@ -204,7 +220,11 @@ test('operational sidebar stays visible on iPad Mini and floating navigation is 
 
     assert.match(workspaceLayout, /w-\[94px\][^"\n]*md:flex/);
     assert.match(workspaceLayout, /shadow-xl md:hidden/);
-    assert.match(workspaceLayout, /pb-\[76px\] md:pb-0/);
+    /** 76px clears the floating nav; on phones with a home indicator the safe-area inset replaces its 12px offset. */
+    assert.match(
+        workspaceLayout,
+        /pb-\[calc\(max\(12px,env\(safe-area-inset-bottom\)\)\+64px\)\] md:pb-0/,
+    );
     assert.match(kitchenPage, /grid-cols-1 md:grid-cols-2 min-\[1180px\]:grid-cols-3/);
     assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });
@@ -218,4 +238,22 @@ test('Vite keeps hot assets and generated development font URLs on one fixed ser
     assert.match(viteConfig, /host: '127\.0\.0\.1'/);
     assert.match(viteConfig, /port: 5173/);
     assert.match(viteConfig, /strictPort: true/);
+});
+
+test('Kitchen full screen falls back to a fixed focus view where the Fullscreen API is missing, with the round logo', () => {
+    const kitchen = readFileSync(
+        new URL('../resources/js/pages/workspaces/kitchen.tsx', import.meta.url),
+        'utf8',
+    );
+    const layout = readFileSync(
+        new URL('../resources/js/layouts/workspace-layout.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.match(kitchen, /const fullscreen = nativeFullscreen \|\| focusView;/);
+    assert.match(kitchen, /if \(!fullscreenSupported\(document\)\) \{\s*setFocusView\(true\);/);
+    assert.match(kitchen, /catch \{\s*setFocusView\(true\);/);
+    assert.match(kitchen, /event\.key === 'Escape'\) setFocusView\(false\)/);
+    assert.match(kitchen, /\{fullscreen && \(\s*<img\s+src="\/images\/branding\/logo\.png"[\s\S]*?rounded-full/);
+    assert.match(kitchen, /min-h-11 min-w-0 truncate rounded-\[8px\] border px-1 text-\[10\.5px\]/);
+    assert.match(layout, /className="theme-static size-9 shrink-0 rounded-full bg-\[#111\] object-contain p-1 md:hidden"/);
 });

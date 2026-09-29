@@ -30,7 +30,7 @@ class CashierWorkspaceController extends Controller
         $user = $request->user();
 
         abort_unless($user instanceof User, 401);
-        abort_unless($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'), 403);
+        abort_unless($user->hasCashierOperationsRole(), 403);
 
         $branch = $activeBranchContext->current($user);
 
@@ -39,9 +39,6 @@ class CashierWorkspaceController extends Controller
         }
 
         return Inertia::render('workspaces/show', [
-            'qrWaitingCount' => fn (): int => Order::query()->where('branch_id', $branch->id)
-                ->where('source', OrderSource::CustomerQr)->where('commercial_status', CommercialStatus::Submitted)
-                ->whereNull('loaded_by_user_id')->whereIn('store_session_id', $branch->storeSessions()->where('status', 'open')->select('id'))->count(),
             'loadedQr' => function () use ($branch, $user): ?array {
                 $order = Order::query()->where('branch_id', $branch->id)
                     ->where('source', OrderSource::CustomerQr)
@@ -63,7 +60,7 @@ class CashierWorkspaceController extends Controller
                 'branchStatus' => $branch->status->value,
                 'canOpen' => $branch->status === BranchStatus::Active
                     && $user->hasPermission('store.open_close')
-                    && $user->branches()->whereKey($branch->getKey())->wherePivot('is_active', true)->exists(),
+                    && $user->hasOperationalBranchAccess($branch),
             ],
         ]);
     }

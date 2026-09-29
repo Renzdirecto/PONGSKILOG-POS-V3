@@ -471,30 +471,44 @@ Navigation:
 
 ## 6.1 Dashboard
 
-Scopes:
+Phase 16C (implemented): `workspaces.owner` renders `workspaces/owner-dashboard` inside the Owner shell (Super Admin: inside the Control Center shell). It follows the decoded standalone Dashboard in order, with real data only:
 
-- All Branches
-- Specific Branch
-
-May include:
-
-- Sales
-- Orders
-- Payment mix
-- Pending Pay Later
-- Product performance
-- Inventory alerts
-- Branch comparison
-- Store Open/Closed state
+- Reporting period card (Today / 7 days / 30 days) with the business-date range and scope.
+- Five KPI cards with icons — Total sales, Transactions (Total transactions ≥ 1250px), Average order (Average order value ≥ 1250px), Items sold, Cashless sales % — each with a server delta pill and "vs <previous period>"; 2 / 3 / 5 columns. Cards open Reports for the same period.
+- Sales trend (area + line, keyboard/hover points with a dark tooltip, Compare previous dashed line and legend) beside Payment mix (Cash/Cashless donut, legend, and a Split explanation row) at ≥ 1120px (1.7fr / 1fr).
+- Sales by category and Peak sales hours (two-hour blocks, black peak bar, "Peak …" chip) in two columns ≥ 1000px.
+- Top products (top 5), Inventory attention (selected Branch: OUT/LOW rows with Adjust links; All Branches: low/out counts per Branch) and Kitchen snapshot (Kitchen / Preparing / Ready + oldest ticket waiting) in an auto-fit ≥ 290px grid.
+- Recent transactions (latest five, tap for the shared transaction detail/receipt), Branch comparison (All Branches only) and the latest four Store Sessions with drill-down into Reports.
+- Empty states say what is missing ("No sales in this period", "No Branch has an open Store Session", "All tracked products are sufficiently stocked"); no fabricated zeros where "—" is truer.
 
 ## 6.2 Transactions
 
-- All Branches / branch filter
-- Search/filter
-- Transaction detail
-- Operational review
+Phase 16B (implemented): `workspaces.transactions` renders the **same** `workspaces/transaction-history` page as the Cashier terminal with `surface = business` inside the Owner (or Super Admin) management shell.
+
+- Same tiled/list presentation, KPI filter cards, search, date/status/payment/type/method filters, server pagination, Details, receipt Print and badges. All Branches cards add the Branch code chip; details show Branch identity; the header shows the scope and "view only" when the viewer has no POS access.
+- Read-only for the Owner: Edit / Payment / Void stay disabled from server capabilities, invoice proofs show without a link, and Show QR is hidden. A Super Admin with POS access to the selected Branch keeps the normal open-session actions.
+- The business surface refreshes every 30 seconds (it subscribes to no POS channel). `?open=<order id>` opens that transaction's detail (used by the Dashboard).
 
 ## 6.3 Reports
+
+Phase 16C (implemented) brings Reports to the decoded standalone "Reports & analytics" layout on top of Phase 16A: period tabs Daily / Weekly / Monthly / Yearly / Custom with a centred range label, Print, Export (CSV or PDF via print) and Filters · N; a scope row with the custom range and the Store Session select; active filter chips with Reset all; five KPI cards; Sales by category (tap a row to show only that category in Top products and Product performance; tap again to clear) | Payment method (order-classified donut with an Include split checkbox); Order type | Peak sales hours (Sales/Transactions); Sales trend (Sales/Transactions + Compare previous); Top products (Sales/Qty sold, top 10); Product performance (sort select, category chips, table ≥ 1000px, cards below); Kitchen performance with Average prep time by hour | Cashier performance (Highest sales / Most transactions); Branch comparison (All Branches) — since Phase 20 *Period highlights* sits immediately after the KPI cards; then the Phase 16A Collections & drawer effects, Daily summary and Store Sessions with the read-only session dialog (now also showing archived QR orders). The filter dialog offers Category (product views only), Order type, Payment method and Cashier. The earlier Phase 16A description below is kept for history.
+
+Owner Reports manual-QA fix (2026-09-24): the filter dialog follows the standalone "Filter this report" sheet — "Analytics filter" kicker, 560px dialog on tablet/desktop and a bottom sheet under 768px, groups Category · Order type · Payment method · Cashier with Select all, 44px checkbox rows (every option checked = no filter), and a Reset + Apply filters footer. Category (each product's current category) is a shareable URL filter that narrows Top products, Product performance and the CSV product table only; it never changes money, payments or collections. The Payment method donut shows shares of paid sales (₱): by default Cash and Cashless with each split order's cash and cashless parts inside them; with Include split checked, Cash-only, Cashless-only and Split order totals. Tapping a segment or legend row shows its exact %, amount and orders. Unpaid Pay Later orders are listed separately.
+
+Branding (2026-09-24): the round Pongskilog emblem (public/images/branding/pongskilog-emblem.png) is the brand mark in the Owner/Super Admin mobile top bar, the Operations header and auth screens; the Owner/Super Admin sidebars, tablet rails and the Cashier POS rail keep the wordmark only. The Apple touch icon and PWA-ready 192/512 and maskable icons derive from the square logo. The browser tab icon is the approved rounded-square chef icon (source/pongskilog-tab-icon.png). The 1200×630 link preview is the approved cream "Pongskilog" card art (source/pongskilog-link-preview-mockup.png), titled "Pongskilog" / "Pongskilog · Est. 2022". Owner Dashboard and Reports update live from the private reports channel. No web manifest or service worker yet: the PWA is a POST-PHASE-16 PLANNED PWA SLICE (internet-first, offline read-only, no offline writes), recorded with the asset registry in `12-deployment-operations.md` §26. The account settings shell (`app-sidebar`, `app-header`) carries no Laravel starter-kit links.
+
+Phase 16A (implemented): **Sales & Store Sessions** at `workspaces.reports` (`/workspaces/reports`), one read-only page shared by Owner and Super Admin and rendered inside each role's management shell.
+
+- Toolbar card (Owner standalone Reports pattern): segmented Today / Yesterday / Last 7 days / This month / Custom, a centered Business date label with day, Store Session and scope counts, and a labelled Store Session select (All Sessions by default). Custom opens a second card with native From/To date inputs and Apply range (max 31 days, re-validated on the server). Filters are shareable query parameters (`date`, `from`, `to`, `session`).
+- Branch scope is the existing global BranchSwitcher (All Branches or one Branch); the page has no second Branch selector.
+- Six KPI cards: Net Sales, Orders, Cash Collected, Cashless Collected, Expenses, Store Sessions (2 / 3 / 6 columns).
+- Financial effects panel: Split payments (informational, already inside Cash/Cashless), Corrections (Cash/Cashless and any pending allocation), Void reversals.
+- Daily summary (multi-day ranges): table from 768px, cards below.
+- Store Sessions: table from 1280px (Branch · business date, time range or LIVE, opened/closed by, Orders, Net sales, Cash, Cashless, Expenses, status text badge, View session); two-column cards from 768px and one column on phones.
+- View session opens a read-only dialog (bottom sheet on mobile) with Store Session, Sales, Collections, Outflows / effects and Reconciliation sections. OPEN sessions show "LIVE · figures are provisional"; CLOSED sessions show persisted opening, expected, actual, per-channel variance and the closing note. There are no mutation controls.
+- Not in this slice: product performance, payment-mix charts, cashier/kitchen activity, branch comparison, exports.
+
+Planned scope:
 
 - Date range
 - Branch scope
@@ -579,6 +593,8 @@ Super Admin retains full business-wide permission regardless of workspace presen
 
 ## 7.2 Audit Trail
 
+Implemented Phase 13 protected register; this does not mark the full Phase 18 workspace complete.
+
 Filters:
 
 - Branch
@@ -597,6 +613,8 @@ Detail:
 - Metadata
 
 ## 7.3 Void Orders
+
+Implemented Phase 13 protected register with global PIN configuration for Super Admin; this does not mark the full Phase 18 workspace complete.
 
 - Voided transaction list
 - Branch/date/user filters
@@ -694,7 +712,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 - Products, Categories, and Modifiers share segmented route navigation. Product stock is branch-specific; All Branches never fabricates an aggregate stock value.
 - Inventory uses full-dataset server summaries, compact filters, a dense desktop table, wrapped mobile rows, real update timestamps, and real adjustment/history actions.
 - Management dialogs become bottom sheets on mobile and centered dialogs from the small desktop breakpoint upward.
-- Dashboard, Products, Inventory, and Branch Management link to real protected routes. Unimplemented Transactions, Reports, and Staff destinations remain visibly disabled with a reason.
+- Dashboard, Transactions, Reports, Products, Inventory, Staff and Settings link to real protected routes (Phase 16B–D). *Since Phase 18 Manual QA refinement #1* the shell is driven by `lib/management-navigation.ts` with sections Overview, Store Operations (POS, QR Orders, Kitchen, Display), Sales, Catalog, Operations, Administration, and a destination without permission is **not rendered** (no "No access" rows; empty sections disappear). The ≥1180px sidebar collapses to a 76px icon rail through a labelled toggle (`aria-expanded`, per-device `localStorage` preference); collapsed icons carry `aria-label` + tooltip. Section headings are brighter/bolder than before but below the active page. The footer shows Name + Position (fallback Role label). Tablet rail and mobile dock/More sheet are unchanged in behavior. Super Admin-only Audit Trail, Void Orders and Access Control never appear in the Owner shell.
 - The Owner presentation never replaces backend permission, branch, inventory, catalog, image, or Store Session authority.
 
 ## 12.1 Standalone Product Editor and Groups
@@ -708,7 +726,7 @@ The decoded `context/design/PONGSKILOG-OWNER.html` is the primary visual and int
 | Property | Approved pattern |
 | --- | --- |
 | Anatomy | Compact kicker/title header; image panel; two-column product fields from small screens upward; optional description; branch configuration; Options; fixed Cancel/Save footer. |
-| Groups | “Groups” is the user-facing term. Existing reusable Groups render as complete read-only assignment cards with option price/status rows; removing one detaches only its Product assignment. New Groups and Options are created inline in the same Product save. The behavior picker uses Standard options, Size, and Instructions rather than exposing raw enum values. |
+| Groups | “Groups” is the user-facing term. Existing reusable Groups render as complete read-only assignment cards with option price/status rows; removing one detaches only its Product assignment. New Groups and Options are created inline in the same Product save. The behavior picker uses Size, Add-on / Modifier (formerly "Standard options") and Instructions, each with one line of helper text, rather than exposing raw enum values. |
 | Branch and stock truth | A selected global branch exposes only that branch configuration and exact stock-on-hand. All Branches exposes authorized configurations but never a summed stock value. Inventory quantities remain read-only here and are changed only through Adjust Stock. |
 | Images | Use the signed optimized image/fallback, a visible choose/replace control, file validation errors, and the existing protected image operations. |
 | Interactive states | Disable all editor controls during submission, guard duplicate save, retain explicit active/branch-available/inventory-tracked states, and keep destructive assignment controls visually red with text/labels. |
@@ -832,7 +850,7 @@ Primary decoded references remain customer-qr.html, pos.html and PONGSKILOG-OWNE
 
 Customer updates include configured/disabled welcome social links, allowlisted category icons, cart icon/quantity count, top-scoped success toast, Confirm Order CTA, green/blue order-type selection, Track/View icons, green top View Order action, actual timestamped colored timeline, rounded Browse/New Order + View Order + Receipt actions, and Stay connected on tracking/receipt. Existing browse-only protection and terminal-only reset remain.
 
-Owner Settings exposes Branch Management and Receipt only. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
+Owner Settings exposes Branch Management, Receipt and (Phase 16D) a Customer QR tab that reuses the same QR panel with a Branch select, in the standalone segmented tab style. No business-profile fields are invented. Existing branch CRUD is reused. QR modal adds QR/History tabs, stable kiosk link/image, independent enablement, date-filtered bounded activity, and truthful copy/open behavior. Receipt fields configure safe public identity, logo visibility, and validated custom logo upload/replacement/removal. Customer receipt export is PNG. Printer integration and full Phase 16 remain deferred.
 
 Visual acceptance comes from the user's manual QA. No broad browser sweep was performed during the final audit.
 
@@ -843,6 +861,204 @@ POS paid receipt -> Show QR -> temporary signed public digital receipt. This rep
 
 The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
 
-The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states.
 
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
+
+## Transaction History workspace
+
+| Surface | Registered behavior |
+|---|---|
+| History collection | Metric filters, server query, date preset/custom range, Kitchen/Payment/Order Type/Method filters, 10-row pagination, local Tiled/List preference. |
+| Transaction card/row | Official number, label/table, committed time, type/status/method/edited chips, item preview, total/balance, Details/Edit/Print; Void is disabled as Phase 13. |
+| Detail dialog | Fresh items/modifiers, original/current money, grouped Payment attempts, adjustments, proof actions, receipt print/share eligibility. |
+| Edit dialog | Current metadata, reusable Product customization, retained snapshot disclosure, versioned save, explicit lower-total reconciliation and higher-total balance path. |
+| Invoice proof dialog | Authorized private view plus camera/file capture, replace and remove on the actual Cashless Payment row. |
+
+## Current Store Session surface
+
+| Surface | Registered behavior |
+|---|---|
+| Entry | Existing Cashier `LIVE / STORE OPEN` top control; no Expenses navigation page. |
+| Overview | Current Branch/session/opening context, complete-session Cash/Cashless/total expense aggregates, newest 50 expense records, truthful empty/truncated/offline states. |
+| Add expense / purchase | Stable attempt UUID, exact amount and payment source, optional note/private receipt, optional explicit one-product tracked restock and quantity. |
+| Expense detail | Read-only amount/source/actor/time/Branch/Session, note, Product/quantity/movement reference, and authorized private receipt action. |
+| State preservation | Dialog close returns to the same POS/cart/loaded-QR/order/payment state; authoritative realtime refresh updates only Store Session data. |
+| Future extension | Phase 15 adds reconciliation and Close Store to this same surface; none of those controls or calculations exist in Phase 14. |
+
+## Phase 15 Close Store surface
+
+| Surface | Registered behavior |
+|---|---|
+| Entry | Close Store section inside the Current Store Session overview (supersedes the Phase 14 "Future extension" row); no navigation item. |
+| Review & reconcile | Server preview with blockers, Recheck, debounced realtime refetch, correction allocation cards, session money table, unfilled closing inputs, variance cards and overage explanation. |
+| Final confirmation | Expected/actual/variance per channel, QR archive count and cart warning; stable idempotency key for ambiguous retries. |
+| Store Closed | Closed time/by, closing balances, variances, archived QR count and Done; Store state reloads and other clients leave the stale dialog on `store.closed`. |
+| Edit correction source | Adjustment to return asks `Returned in Cash` only when the refund source is not deterministic. |
+| Stock correction | Store Session sub-view beside Add expense / purchase (Phase 20; was "Adjust inventory"): Remove / Add stock toggle, reason cards (Physical count, Found stock, Missing stock, Wastage, Damaged, Other — each limited to its allowed direction), searchable tracked products with current stock, whole-number quantity, note (required for Other), signed stock preview, compact confirmation, stock-only save with no Cash/Cashless effect. Free items are recorded as a Giveaway instead. |
+
+## Super Admin foundation — 2026-09-24
+
+This supersedes the §7 core navigation list. No Super Admin standalone is authoritative (see `08-ui-rules.md`, Super Admin UI authority).
+
+| Section | Destination | Status |
+| --- | --- | --- |
+| Overview | Dashboard | **Executive Overview** (Phase 18 final): real CEO dashboard — see "Phase 18 final" below. |
+| Overview | Notifications | Real (Phase 18): persisted in-app notifications with unread/read state and a real unread badge. |
+| Cashier + Kitchen | Cashier Dashboard, POS / Orders, QR Orders, Transaction History, Kitchen, Customer Display | Real existing pages for the selected Branch. |
+| Owner | Owner Dashboard, Products, Inventory | Real existing pages. The Owner Dashboard is the Phase 16C analytics dashboard. |
+| Owner | Transactions | Real: the shared Transaction History on the business surface (`workspaces.transactions`, Phase 16B). |
+| Owner | Reports | Real: the shared Sales & Store Sessions report (`workspaces.reports`, Phase 16A). The former `super-admin.reports` placeholder route was removed. |
+| Control | Audit Trail, Void Orders | Real existing registers. |
+| Control | Staff | Real: account list and Add Staff (below). |
+| Control | Access Control | Real (Phase 18): Role baselines and per-account custom access, backend-enforced. |
+| Control | Settings | Real existing Branch Management / Receipt / QR settings (`branches.index`). Not duplicated under Owner. |
+
+Navigation comes from the registry in `resources/js/lib/super-admin-navigation.ts` (label, section, route, required permission, availability, Branch requirement), so future permission-driven Access Control can filter the same source.
+
+### Staff (Super Admin → Control → Staff)
+
+- List: Tiled (default) or List view, remembered per device. Name comes first with the Employee ID beneath it (no separate Employee ID column), beside a rounded-square profile picture holder (initials when empty), then Email, Role, Branch access and Status; debounced name/email/Employee ID search plus Role and Active/Inactive filters; 25 per page. Credentials are never projected.
+- Add Staff dialog (bottom sheet on mobile): optional profile picture (JPG/PNG/WebP up to 2 MB, preview, Remove), Employee ID (typed by the Super Admin as `MMDDYY` + a two-digit number, e.g. `09242601`; required and unique), Full name, Email (normalized to lowercase, unique ignoring case), Temporary password and Confirm with show/hide, Role (canonical seeded roles: Cashier, Kitchen Staff, Cashier + Kitchen, Owner, Super Admin), Branch access, Account status (Active by default / Inactive).
+- Operational roles require at least one active Branch. Owner and Super Admin show "All branches / business-wide" and take no Branch assignment. Choosing Super Admin shows a full-access warning.
+- Success shows only "Staff account created." The password is never shown again. There is no invite email, forced password change, first-login setup, or password expiry.
+- Staff self-service profile settings (change password, edit name, avatar) are out of scope and were not expanded. Editing, deactivating and password reset of existing staff arrived in Phase 18 (below).
+
+### Staff (Owner → Administration → Staff, Phase 16D)
+
+- The same `super-admin/staff` page renders with `surface = owner` at `staff.index` inside the Owner shell: identical list, avatars/initials, search, Role and Active/Inactive filters and Add Staff dialog.
+- Role options and the list are server-scoped to Cashier, Kitchen Staff and Cashier + Kitchen; Owner and Super Admin accounts are neither listed nor creatable. Branch access rules, the temporary password flow, private avatars (`staff.avatar`) and the `staff.created` Audit are unchanged.
+
+### Owner Operations (Owner → Operations, Phase 16E)
+
+Reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html`. All pages use `OperationsShell` inside the existing Owner/Super Admin shell: page heading, the **Active plan** switcher (URL `?plan=`, *Manage plans*), the Branch scope line, *How this works*, and a horizontal Operations sub-navigation below 1180px (Pamamalengke carries a to-buy badge).
+
+- **Pamalengke Plans** (`operations.plans`): plan cards (products with recipes, ingredients/shared, low stock/to buy, suggested market cost), Add/Edit plan dialog (name, description, icon, existing products with "in X plan" hints; moving warns "future sales only"; Archive) and the one-stock-record explanation for a shared ingredient. Phase 20 removed the "What a plan holds" and "Today across plans" cards.
+- **Overview**: seven KPI tiles (sales, est. COGS with uncosted amount, est. gross profit, est. market cost, below target, auto recommended, missing recipes), then (Phase 20 order) **Products sold** (per category: size counts "10 Large | 6 Medium" and "1× Large Lemon Yakult" rows with sales), Upcoming pamamalengke (+ Summary), Today's consumption, Needs attention, Recent ingredient movements.
+- **Ingredients**: plan / all scope, search, table (≥980px) or cards: stock/target bar with reorder tick, purchase unit + cost (or *Cost unknown* / *No purchase unit*), rule, used-in plans, status, Edit. Ingredient dialog: name, plans, icon, base unit (locked once used), opening stock (create only, needs a Branch), target, purchase unit (name, size, cost), rule, reorder point, "What Pamamalengke will do" plus the server's current recommendation, Archive/Restore.
+- **Recipes**: Product → Recipe → Ingredient explainer, plan products (list ≥820px, chips below), product header with real prices, **Base recipe** tabs (one per Size from the one Size group, or Regular) with servings at the selected Branch, rows with exact quantity/unit/estimated cost, add/remove, estimate boxes (cost, selling price, margin — margin needs every cost), unsaved-changes bar; **Recipe not set** (Set up recipe, Copy from size, No recipe needed); **Uses Product stock** (explanation + Open Product settings to the Branch configuration); **No recipe needed** (Use ingredient recipe); **Choose one Size group** (configuration error); separate **Add-on / Modifier effects** list (Configure ingredient effect / No ingredient effect; Instructions explained, never listed).
+- **POS / Customer QR customization (Recipe-backed Products)**: each Size shows "N available", "Out of stock" or "Recipe required" (QR shows only unavailable states); unfulfillable Add-ons are disabled with "Unavailable"; the quantity control stops at the server capacity for the selected configuration and the rest of the cart; Add is disabled with a plain reason when the selection can't be made.
+- **Ingredient Stock**: status buckets (filter), table (≥1040px) or cards with Start, Consumed, Purchased, Wastage, Correction, Current, Target, status and Adjust; link to Catalog › Inventory (Ingredients); *How stock moves*; today's movement history. Adjust dialog: Wastage / Count correction, quantity, reason, note, resulting stock.
+- **Pamamalengke**: estimate header with Plan / Shopping checklist and View summary; Auto recommended cards (reason, recommended units, base quantity, after, estimate, Skip this run), Needs setup (Set purchase rule), Manually added (Add manual item dialog with common items), No purchase needed. Checklist: 44px bought checkbox, expandable quantity stepper, unit cost, actual total, note, Not available; sticky/fixed *Review purchase* bar; Confirm dialog (items, actual vs estimated total, left on list, Paid from Cash/Cashless, effects, closed-Store block).
+- **Purchases**: plan / all plans, purchased today, last 7 days, actual vs estimate, run cards (estimated, actual, items, bought by, Stock + expense / Expense only) with details and the canonical Store Purchase reference; pagination.
+- **View summary** (dialog; bottom sheet on phones): *Pamamalengke* (auto/manual estimates, estimated market cost, shopping progress, already bought today) and *Sales & profit* (Plan / All plans scope, Cash view, Profit view marked Estimated, Divide estimated profit).
+- **Catalog › Inventory** gains an **All / Products / Ingredients** type filter; ingredient rows show type, status, exact on-hand and target and link to Operations › Ingredient Stock for changes.
+
+### Phase 16E Final QA UI (2026-09-24)
+
+- **Store Session dialog**: actions stack on mobile and wrap on wider screens — **Add expense / purchase**, **Stock correction**, **Record giveaway**. Record giveaway: product search list → the POS customization dialog in giveaway mode (no price, notes or cart; "Use this item") → selected item card (Change) → reason chips → optional note (required for Other) → Review giveaway → Confirm giveaway. History rows show giveaways as ₱0.00 "Stock only" with a Reversed badge; a row opens Giveaway detail (selections, stock that left, reversal with a required reason).
+- **Close Store** session list includes giveaways.
+- **POS customization dialog**: a required Group without enough choices is outlined red with "Required · choose …".
+- **Recipes**: Size tiles missing a recipe are outlined red with "Recipe required"; the missing-recipe panel is a red "Recipe required for …" state; Uses Product stock names the blocking Branches with one "Open {CODE} product settings" action each.
+- **Ingredient Stock**: separate Giveaway column / "Given" cell. **View summary › All plans**: "Giveaways today" section.
+
+### QR LOAD follow-up (2026-09-24)
+
+- LOAD switches to the POS immediately using the order LOAD returned (no second full page round trip before the switch); the waiting count refreshes in the background.
+- A loaded QR order shows the customer's submitted items read-only, and the Cashier can add more items below them (editable: quantity, edit, remove). Totals, Pay Now and Pay Later include them; Cancel LOAD discards them.
+
+## Phase 18 — Access Control, Staff management and Notifications — 2026-09-25
+
+### Access Control (Control → Access Control)
+
+- Two views: **Roles** and **Staff overrides** (URL `tab`).
+- Roles: five role chips (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin). The selected Role shows permission groups (Operations, Management, Control) with label, plain description and state — Included / Not included / Locked (with the reason) / Derived. Editable Roles use labelled checkboxes and a sticky save bar with Discard; saving opens a confirmation listing what is added and removed and noting the Cashier + Kitchen effect. Super Admin shows "Locked · Full access"; Cashier + Kitchen shows "Derived from Cashier + Kitchen Staff". From `md` up an "All roles at a glance" read-only matrix follows; phones keep the grouped cards (no horizontal document scroll).
+- Staff overrides: search (debounced) and pick an account; the panel shows Name, Employee ID, email, Role, status and Branch access with a reminder that custom access never widens Branch access. Each permission has a keyboard-usable Inherit / Allow / Deny radio group (options equal to the Role default are disabled with a tooltip), "Role default: …", a lock reason when locked, and the effective result badge (Included by role / Custom access / No access / No access · removed). Save and "Reset all custom access" both confirm first. Super Admin accounts show the locked full-access note.
+
+### Staff (Control → Staff and Owner → Staff)
+
+- Every card and list row has **Manage** (and, for Super Admin, **Reset password**, never on one's own account); accounts with custom access show an "N custom access" label (managed in Access Control → Staff overrides).
+- Manage sheet (bottom sheet on mobile): photo replace/remove, **read-only Employee ID** with a lock, name, email, Role, Branch access (active Branches plus any currently assigned one), Active/Inactive. Own account: Role and status are disabled with an explanation. High-impact changes (any Role change — custom access resets —, into/out of Owner or Super Admin, deactivation, removed Branch access) show a plain-language confirmation step before saving.
+- Reset password sheet: new temporary password + confirmation with show/hide, then a confirmation that the person is signed out everywhere. The password is never shown again.
+
+### Notifications (Overview → Notifications)
+
+- Header bell and sidebar item show the real unread count (hidden at zero, "99+" cap, count in the accessible name). The page lists the viewer's notifications newest first (20 per page, All / Unread), each with category, Unread label (text, not colour only), time, Open (marks read and follows the same-app link) and Mark read; Mark all read. Empty state: "No notifications yet".
+
+### Branch staff with custom Reports
+
+- A Cashier / Kitchen account with custom Reports access gets a **Reports** item in its operational rail/dock and reads the Branch report inside the operational shell (never the Owner shell, never All Branches).
+
+## Phase 18 final — Custom Roles and Executive Overview — 2026-09-25
+
+### Access Control → Roles
+
+- **System roles** grid (Owner, Cashier, Kitchen Staff, Cashier + Kitchen, Super Admin) and a **Custom roles** grid with **+ Create custom role** (empty state explains the use). Archived roles sit in a collapsed "Archived roles (N)" list, read-only.
+- A selected Custom Role shows "Custom · Branch-scoped / business-wide", the same grouped checkbox editor and save bar as System roles, **Rename or change scope** (scope fixed while assigned, with the reason), **Archive** (disabled while assigned, with the reason) and **Assigned staff (N)** chips linking to that account's Staff overrides.
+- Create dialog: steps Name → Scope (Branch / Business-wide cards) → Access (grouped permissions; locked ones visible with the reason) → Review → Create role.
+- "All roles at a glance" matrix includes active Custom Roles and scrolls horizontally inside its card when needed.
+
+### Staff
+
+- Role select: System roles, then a "Custom roles" group labelled "· Branch" / "· Business-wide" (Super Admin only). Owner surface is unchanged.
+
+### Executive Overview (Overview → Dashboard, `workspaces.super-admin`)
+
+1. Dark header card: "Super Admin · Control Center", scope · period, Today / 7 days / 30 days (the global Branch selector stays in the shell header).
+2. **Attention needed** (or an emerald "Nothing needs attention"): server-computed items — products out of stock (red), Ingredients at zero (red), products low (amber), unread notifications (violet), closed Stores (neutral) — each linking to the page that resolves it.
+3. KPI row: the Owner Dashboard KPI cards (Total sales, Transactions, Average order, Items sold, Cashless sales) with canonical deltas; money-movement tiles (Collected, Expenses, Voided orders, Store Sessions).
+4. Sales trend (previous-period compare, keyboard/hover tooltip) + Payment mix donut (Show Split toggle, Reports semantics).
+5. Operations health (Store OPEN/CLOSED per Branch with opener and time, Kitchen preparing/ready, products out/low, Ingredients at zero) · Top products · Sales by category.
+6. Branch performance (comparison only with > 1 Branch; honest single-Branch note) + Latest Store Session.
+7. People & security (active/inactive Staff, Super Admins, Custom Roles, unread notifications, the latest six audit actions linking to Audit Trail).
+8. Quick admin actions (Staff, Access Control, Audit Trail, Void Orders, Reports, Settings).
+
+Responsive: single column at 360–430px with Attention near the top; two/three columns from tablet; the 1.7fr/1fr executive grid from 1120px.
+
+
+## Phase 18 pass #2.1 — Branch assortment and Branch Operations UI — 2026-09-25
+
+- **Products — {CODE}** (selected Branch): lists only that Branch's assortment; empty state "No products in {CODE} yet." with Add products / Copy from another Branch. Card actions: Branch settings, Mark unavailable / Mark available, Remove from {CODE} (confirmation explains stock/history are kept; unavailable is the pause), Edit product (business-wide only). All Branches: global catalog cards show "Sold at MAIN, QAVE" or "Not sold at any Branch yet". Product editor: per-Branch "Sell at {CODE}" (new Products join only selected Branches).
+- **Copy products** dialog: optional "Copy Operations setup for selected products" (Operations access only); review shows Source, Destination, Products, Plans/Ingredients/Recipes/Add-on effects counts, kept items, conflicts, **Will NOT copy** (Product stock, Ingredient stock, movements, purchases/expenses, sales/sessions) and the replace warning.
+- **Operations · {CODE}**: every heading names the Branch; All Branches shows "Choose a Branch". Empty states: "No Pamalengke Plans yet." (Create manually / Copy setup), "No Ingredients configured for this Branch.", "No Recipes configured for this Branch.". **Copy setup from another Branch** (`OperationsSetupCopyButton`): source, sections (Plans · Ingredients & settings · Recipes & add-on effects), Keep (default) / Replace, server dry-run review, confirm. Recipes: "Uses Product stock" names only this Branch and links to its product settings.
+
+## Phase 19.6 — Customer Experience Expansion — 2026-09-27
+
+### Customer screen (`/customer-screen`, public kiosk page, `pages/customer-screen.tsx`)
+
+- Dark kiosk surface (`#0f1010`), no staff navigation, no install prompt. Layers: pairing code (amber 6-character code, 5-minute renewal) → Ads (full-bleed images/videos, `object-contain`, fade; `IdleBrand` emblem + PONGSKILOG + "Est. 2022" + Branch when there is no media) / Menu / Customer Display (the shared `CustomerOrderBoard`, same as the staff-launched display) → the success takeover overlay on top.
+- Menu (`customer-screen-menu.tsx`): header (logo, title, Branch, clock), 44 px category chips, 2–5 column product cards (4:3 image, name, description, price or Size prices, "Sold out" / "Unavailable" badge, dimmed). Browse-only: no add, quantity, edit or checkout control anywhere.
+- Live Cart: a compact panel above the Menu (≤ 30% of the viewport, own scroll, amber bottom border): "Your order", DINE IN / TAKE OUT pill, item count, total, lines (qty ×, name with Size, + Add-ons · Instructions, amount); changed lines glow amber for ~1.4 s; "May not be up to date" while disconnected.
+- Takeover (`customer-screen-takeover.tsx`, manual-QA redesign): full-screen green-on-black confirmation (not the Customer Display board): countdown bar (starts once shown), "Thank you!", "YOUR ORDER", huge green number, DINE IN / TAKE OUT pill, a strong green bordered "TAKE OUT QUEUE / DINE IN QUEUE #n" card, "You are #n overall", Take Out QR card (200–300 px) "Scan to track your order"; on ≥ 900 px a "CURRENT QUEUE" panel beside it (≤ 10 rows, two columns from 560 px when > 5 rows, customer's row solid green, "#a–#b of N" when windowed). Duration = Branch setting (default 5 s).
+- Header (`customer-screen-header.tsx`): logo, Branch name, MENU / CUSTOMER DISPLAY toggles (yellow when active; labels collapse to icons < 520 px, "DISPLAY" < 900 px), Fullscreen (hidden where unsupported). Ads: arrows (48–56 px), swipe, press-and-hold pause, thin yellow progress bar. Ads + cart: full-screen "Your order" summary with a large yellow total.
+- Pickup page additions: green "TAKE OUT QUEUE #n" card + "#n in the overall queue"; "Your order" summary; Receipt section (View receipt / Hide / Print receipt → the canonical `DigitalReceiptCard`, print shows only the card); Facebook / Website / Maps buttons (only configured ones, equal columns).
+- Settings › Customer Screen: "Order confirmation" (Dine In / Take Out 3–15 s) and "Customer links" (Facebook, Website, Maps) form above the Ads list; ad durations 3/5/8/10/15 s.
+- Connection pill (bottom-right, amber): "Reconnecting…" / "Live updates unavailable". Hidden reset: hold the top-left 64 px corner for 3 s.
+
+- Final manual-QA polish (supersedes the takeover sizing above): the takeover never scrolls — the order block scales to fit, the Take Out QR (120–300 px) sits beside the number when the block is ≥ 34 rem wide, and the queue panel (beside it in landscape, below it in portrait) shows only whole rows that fit, always with the customer's row (solid type color, white inset ring, "YOU"). Order-type colors: Dine In green (emerald), Take Out blue, always with the DINE IN / TAKE OUT text; board numbers show their type label (waiting = dark tint, Ready = solid); the board ends with an "IN QUEUE · Dine In: X · Take Out: Y" bar.
+
+### Store Operations header control (`customer-screen-control.tsx`)
+
+- Monitor icon button (44 px; label from 1180 px: Ads / Menu / Customer Display / Screen) with a green dot when paired, on every Store Operations page for `pos.access` accounts. Popover: status line, two 56 px toggle tiles **MENU** and **CUSTOMER DISPLAY** (ON/OFF), helper text "both off → ads", Pair customer screen (dialog with a large monospaced code input), Open customer screen on this device, Unpair (confirm).
+
+### POS Ready modal — Buzz Customer (`pos-buzz-customer.tsx`)
+
+- Amber outline button on the left of the existing Ready modal footer, shown only when `order.buzz` is present: "Buzz Customer" → "Notified · wait 5s" → "Buzz again (n of 5)" → "Buzz limit reached (5 of 5)", with "Last notified … ago" below.
+
+### Settings › Customer Screen (`customer-screen-media-panel.tsx`)
+
+- Fourth Settings tab with a Branch select (Branch-scoped roles see only their Branch). Upload row (file, optional label, "Show for" seconds for images, Upload) with the size/format rules; ordered list rows: position, preview, Active/Hidden badge, type · duration · size, inline label, duration select (images), Hide/Show, move up/down, delete (confirm). Empty state explains the welcome screen.
+
+### Pickup page (`/pickup/{token}`, public, `pages/pickup.tsx`)
+
+- Mobile-first dark card (max 448 px): emblem + PONGSKILOG, TAKE OUT pill, large order number (green when Ready), Preparing → Ready → Done steps, status title/message, "You are #2 in the Take-Out queue"; notification card with one "Turn on notifications" button (or honest unsupported / blocked / iPhone / https messages) and "Turn off"; connection notice; invalid/expired link page.
+
+## Phase 20 — Final Production Hardening UI — 2026-09-28
+
+| Surface | Phase 20 behavior |
+| --- | --- |
+| Management sidebars (Owner, Super Admin) | Both collapse on desktop (248 px ↔ 76 px icon rail named by tooltips) from one per-device preference read by the server (`sidebar_state` cookie), so pages never flash between widths. The tablet rail keeps its tiles and gains *Expand navigation* (full labelled drawer with section headings). Section headings are brighter and bolder than page links in both appearances. |
+| Mobile docks (Owner, Super Admin, Store Operations) | Tiles fill the dock height (the active pill never overflows); labels truncate; the QR Orders count is a corner badge. |
+| App & notifications › Version | PONGSKILOG POS, Version (`APP_VERSION`), Build (short SHA) when known. |
+| Account & preferences (`settings/*`) | One PONGSKILOG page: Profile (read-only identity, editable Preferred Name and photo), Security (password, two-factor), Appearance (Light / Dark, default Light), App & notifications, Sign out. Confirm Password uses the PONGSKILOG sign-in styling. Customer-facing pages always render Light. |
+| Store status (every Store Operations header) | `StoreStatusControl`: STORE OPEN (opens the current Store Session to permitted accounts), STORE CLOSED with *Open* for accounts that may open (Open Store dialog = the POS form), plain status otherwise. |
+| Store Close summary | Adds Opened at, Opened by, Opening Cash and Opening Cashless (review, confirm and result). |
+| POS › Pay Now | No empty "Invoice: —" rows; *Exact* is green (filled when the cash equals it); the keypad shows on tablets/desktops only (phones use their numeric keyboard). Invoice proof: *Take photo* (camera) and *Choose image* / *Replace* (library, never camera-only); JPG/PNG/WebP ≤ 20 MB before resizing. |
+| POS › Ready panel (phones) | Sits above View cart (and above the dock on QR Orders). |
+| QR Orders | Waiting ↔ Archived never shows the other tab's cards (skeleton until the current tab answers); archived newest first; Restore only for the open Store Session ("From an earlier Store Session" otherwise). The badge stays on every Store Operations page. |
+| Kitchen | Full screen uses the Fullscreen API when available, otherwise a fixed full-screen focus view (iPhone Safari, kiosks; Escape or the button exits); round PONGSKILOG logo top-left in full screen; 44 px status buttons. Store Operations headers show the round logo on phones. |
+| Reports | Period highlights right after the KPI cards. |
+| Operations | Nav: Plans, Overview, Ingredients, Ingredient Stock, Recipes, Pamamalengke, Purchases. Plans without the two explainer cards. Overview leads with Products sold. Ingredient Stock and Ingredients switch to the table only when the content area is wide enough (container query), scroll sideways otherwise and keep *Adjust* pinned. Summary › Pamamalengke: shopper card with *Copy as text* and *Export as image*. Pamamalengke Confirm asks for the funding Store Session (open one preselected; recent closed ones labelled "Sep 27 · 8:00 AM – 9:30 PM"). |
+| Settings › Receipt | Receipt Settings editor (logo, store texts with Branch fallbacks, header line, show/hide blocks, Details and Footer order, custom rows, separators) with a live preview rendered by the real receipt component. |
+| Settings › Branch Management | Optional store photo per Branch (upload / replace / remove in Edit branch; fallback tile with the Branch code). |
+| Every receipt | One `ReceiptDocument` component (POS print on an 80 mm named page, reprint, receipt link, Customer QR, Pickup, Settings preview). |

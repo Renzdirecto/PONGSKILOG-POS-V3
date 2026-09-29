@@ -1,4 +1,10 @@
-import type { BranchTable, CartLine, OrderType, PosProduct } from '@/types/pos';
+import type {
+    AdditionalQrItem,
+    BranchTable,
+    CartLine,
+    OrderType,
+    PosProduct,
+} from '@/types/pos';
 
 export function freshOrderDetails(): {
     order_type: string;
@@ -20,7 +26,11 @@ export function freshOrderDetails(): {
 }
 
 export function orderNumberLabel(orderNumber: string | null): string {
-    return orderNumber ? (orderNumber.startsWith('QR-') ? orderNumber : `#${orderNumber}`) : 'Preparing order…';
+    return orderNumber
+        ? orderNumber.startsWith('QR-')
+            ? orderNumber
+            : `#${orderNumber}`
+        : 'Preparing order…';
 }
 
 export function needsOrderReservation(
@@ -58,10 +68,7 @@ export function customerDisplayLabel(
 }
 
 export function stockAvailabilityLabel(
-    product: Pick<
-        PosProduct,
-        'tracks_inventory' | 'on_hand' | 'stock_status'
-    >,
+    product: Pick<PosProduct, 'tracks_inventory' | 'on_hand' | 'stock_status'>,
 ): string {
     if (!product.tracks_inventory) return 'Available';
     if (product.on_hand === 0) return 'Out of stock · 0 left';
@@ -69,4 +76,20 @@ export function stockAvailabilityLabel(
         return `Low stock · ${product.on_hand} left`;
 
     return `In stock · ${product.on_hand} left`;
+}
+
+/** Items a Cashier adds to a loaded Customer QR order, sent only when there are any. */
+export function additionalQrItems(lines: CartLine[]): {
+    qr_additional_items?: AdditionalQrItem[];
+} {
+    return lines.length === 0
+        ? {}
+        : {
+              qr_additional_items: lines.map((line) => ({
+                  product_id: line.product.id,
+                  quantity: line.quantity,
+                  notes: line.notes,
+                  modifiers: line.modifiers,
+              })),
+          };
 }

@@ -523,3 +523,5 @@ The context pack is complete when the repository contains:
 - `15-library-docs.md`
 
 This set is the primary VS Code / Codex context for PONGSKILOG POS V3.
+
+Approved design references for implemented slices live in `context/design/`. Phase 16E Owner Operations & Pamamalengke uses `context/design/PONGSKILOG Owner Operations v2 (standalone).html` (decode `__bundler/template`); it supplements, and does not replace, `PONGSKILOG-OWNER.html`.

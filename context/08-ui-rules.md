@@ -81,6 +81,8 @@ Use consistently:
 
 Visible generic payment label is **Cashless**, never generic `GCash`.
 
+Void uses an explicit irreversible danger confirmation with a canonical reason selector, conditional text for Other, and the four-digit approval PIN. On mobile, Audit/Void detail sheets retain viewport side gutters and bounded height; on wider screens they use centered, readable multi-column layouts without a raw JSON wall.
+
 ---
 
 ## 4. Typography
@@ -298,7 +300,7 @@ Show Total, Received, Remaining and a prominent dark Change surface (including z
 
 Once the order type is selected, show the server-reserved numeric operational number consistently as `#number` in Cart, Payment, paid-success, and receipt. Show the longer immutable reference as secondary audit metadata, never as the primary display number.
 
-For Cashless and Split, show `Invoice: —` as a deliberate placeholder. Capturing or editing an invoice is Phase 12 work.
+For Cashless and the Cashless leg of Split, show the saved invoice filename when present and the working Invoice action for camera/file capture, view, replacement, or removal. Cash rows never show an invoice action.
 
 The Phase 6 receipt follows an 80mm thermal hierarchy: its own top Back action, branch identity and contact, prominent order number and PAID state, secondary full reference, order/customer metadata, item/modifier/note detail, subtotal/total, payment breakdown, received/change where applicable, and footer. Print styling removes application chrome, colors, shadows, and controls. `Show QR` opens a clearly labelled placeholder surface only; real receipt QR links/tokens belong to Phase 10 and must not be fabricated.
 
@@ -553,6 +555,8 @@ When Offline:
 - Disable high-risk mutations
 - Keep safe read-only views usable where practical
 
+**PWA Phase 1 (Phase 19.5, implemented — USER MANUAL QA passed, Final automated QA passed):** internet-first. One status for the whole app: nothing while Online; an **Offline** (Wi-Fi-off icon, "Last synced 10:42 PM" on wide screens) or **Reconnecting…** (spinning icon) pill, always text + icon, 44px tall, in the operational / Owner / Super Admin header, the Kitchen full-screen header and the Customer Display header (floating top-right where a page has no header slot). Tapping it explains that the screen shows what was last loaded and may be out of date, that changes need internet, and offers Retry now. The visible screen stays readable; nothing private is cached for offline use and nothing is shown from a device cache. Every server write is refused while not Online with "You're offline. Reconnect to continue this operation."; the POS keeps the cart visible and its own offline messages. An **Update** pill (and a one-time "PONGSKILOG update available" toast: Update now / Later) appears when a new version is ready; Update now waits with the reason while a POS order is in progress. "App & notifications" (account menus) holds Install PONGSKILOG or the platform's Add to Home Screen steps, Enable Notifications (permission asked only from that button; blocked permission explained), connection and version. The installed-app launch shows a dark PONGSKILOG startup screen until the app renders. Plan and branding registry: `12-deployment-operations.md` §26 / §30.
+
 ---
 
 ## 27. Accessibility
@@ -588,3 +592,46 @@ Every visible control in the implemented app must do one of:
 - Be intentionally disabled with a clear reason
 
 No decorative dead buttons in production UI.
+
+## Phase 12 History UI
+
+Operational navigation order is Dashboard, POS, QR Orders, Kitchen, History, Display. History uses standalone-aligned metric cards, server search/date/status/type/method filters, 10-row pagination, and a local-only Tiled/List preference. Detail always fetches fresh authoritative state before edit, balance payment, proof, print, or share actions. Editing uses current catalog customization while explaining snapshot pricing.
+
+For Cashless and the Cashless leg of Split, show the real Invoice action. Camera capture is progressive enhancement; an image file picker remains available. Never show an invoice control for a Cash Payment row. Void remains visibly disabled and labeled `Phase 13`; there is no PIN prototype or hidden void mutation.
+
+## Phase 14 Current Store Session expenses UI
+
+Cashier Store Purchases / Expenses are accessed through the existing top `LIVE / STORE OPEN` control, not a new primary navigation item. The control opens one reusable responsive Current Store Session dialog without navigating or remounting POS order state. The overview preserves the standalone's compact white surface, live treatment, 44px controls, Branch/opening context, exact Cash/Cashless/total cards, bounded newest-first history, empty/offline states, and read-only details.
+
+Add Expense / Purchase is a nested dialog view with description, exact amount, Cash/Cashless choice, optional reason, an explicit one-product restock switch with searchable tracked products and positive bounded quantity, and camera plus file receipt inputs. Submit is disabled while processing and while the browser is truly offline. A Reverb/Echo disconnect shows a truthful live-updates warning but does not block the authoritative HTTP write. Mobile uses a near-full-height scrollable body with fixed reachable actions; descriptions/details wrap, list labels truncate safely, summary money scales down, and no Phase 15 Close Store or reconciliation control is shown.
+
+## Phase 15 Close Store UI
+
+Close Store extends the Current Store Session dialog; the Phase 14 statement that no Close Store control is shown is superseded. A red-bordered Close Store section sits below Purchases & Expenses for users with `store.open_close`. Review & reconcile shows text-plus-icon pre-close cards (outstanding balances, Kitchen, loaded QR, correction allocation, unclaimed QR), Recheck, then — only when no blocker remains — the Cash/Cashless session money table, unfilled Closing Cash/Cashless inputs, per-channel Expected/Actual/Difference variance cards (Exact, Shortage, Overage), and a required overage explanation. A separate final confirmation summarizes the values and warns that an unsent POS cart on the device will be cleared; Confirm Close Store shows `Closing Store…` and the dialog cannot be dismissed until the server responds. Browser offline blocks closing; an Echo/Reverb disconnect only shows `Live updates unavailable`. At 360px the confirmation footer keeps Cancel compact and gives Confirm the remaining width.
+
+## Super Admin UI authority — 2026-09-24
+
+### Owner analytics presentation (Phase 16C)
+
+Owner Dashboard and Reports charts are lightweight SVG/CSS modeled on the decoded standalone (no chart library): black area/line trends with a dashed grey previous period, a black/blue Cash–Cashless donut, #F2F2F2 bar tracks, black peak bars, keyboard-focusable trend points with a dark tooltip, collision-free axis labels (≤ 5 on phones) and text alternatives for every bar. Money on cards is always exact server decimals; compact ₱k/₱M appears only on chart axes. On the Dashboard, Split is an explanatory row, never a third payment segment. The Reports Payment method donut is a paid-sales (₱) share: Split parts sit inside Cash and Cashless by default, and the *Include split* toggle shows Cash-only / Cashless-only / Split as three segments of the same total (never added on top). Report filter chips and Reset all keep 44px targets below `md`; the custom date range must fit 360px without horizontal overflow. The read-only Owner Transaction History renders no Take payment, Void or Edit controls. Segmented controls keep the standalone look on desktop with 44px targets on touch widths. Print hides the management shell.
+
+No authoritative Super Admin standalone exists. The former `context/design/PONGSKILOG Super Admin (standalone).html` was deleted as obsolete. Super Admin screens are product-designed from requirements (idea → product UX → implementation) in the established PONGSKILOG Owner/POS language: dark `#111111` sidebar, white/`#F7F7F7` content, Poppins, compact 20px-radius panels, restrained borders, and the existing button, dialog, and bottom-sheet conventions. `pos.html`, `PONGSKILOG-OWNER.html`, and `customer-qr.html` remain authoritative for the surfaces Super Admin inherits from them.
+
+Super Admin management pages use one collapsible control-center sidebar with five sections: Overview, Store Operations, Owner, Operations, and Control ("Cashier + Kitchen" is only a system Role name, never a navigation label). Each section header has a label and chevron and expands or collapses with local UI state only. Overview and the section holding the current page start expanded, and navigating into a collapsed section re-expands it. The active item uses the white active treatment and `aria-current="page"`. Tablet uses a 96px rail with pinned Dashboard, Staff, and Audit plus a Menu button. Mobile uses a four-item bottom dock with More. Both open a drawer with the same collapsible groups, 44px targets, and no horizontal overflow.
+
+Branch operational workspaces (Cashier Dashboard, POS, QR Orders, Transaction History, Kitchen, Customer Display) stay in their existing operational shells and are not duplicated. Until a Branch is chosen they appear disabled with the reason "Choose a Branch". Inside the operational shell, Super Admin gets a Control Center link back. Planned destinations open real protected placeholder pages with a title, a plain-language description, and a Planned state, with no fake statistics, records, toggles, charts, or unread counts. Since Phase 18 there are none: Notifications and Access Control are live pages, and the only unread number shown is the real server count (no badge at zero).
+
+## Owner Operations presentation — 2026-09-24
+
+Operations follows the approved Owner Operations v2 standalone inside the real Owner shell (no second shell): compact 14–16px-radius white cards, 10px uppercase labels, gold `#C8962E` for AUTO/market, amber for attention, red for negative/out, green for restock/at target. Mobile: 12–14px body text, 44px targets (`min-h-11`), tables become cards (Ingredients <980px, Stock <1040px), dialogs are bottom sheets, the Shopping checklist review bar is fixed above the mobile dock, and pages never scroll horizontally. Status always has text, never colour alone. The standalone's CONCEPT / mock-data banner, demo sale/edit/void simulator and reset button are design-review aids and are not implemented; production shows only server data and truthful empty states (no plans, no products, no ingredients, no recipe, cost unknown, no suggestion, no purchases, choose a Branch, Store closed).
+
+## Required-field visual rule (Phase 16E Final QA, manual QA)
+
+Required and still empty/invalid/unconfigured → **red outline** + readable text ("Required …", "Recipe required") + `aria-invalid` (+ `aria-describedby` to the text). Valid → **neutral gray** outline. Optional controls never turn red. Text inputs use the shared Input's `aria-invalid` styling; cards, chip groups and pick lists use `resources/js/lib/required-field.ts` (`requiredOutline`, `requiredGroupOutline`). Do not repaint every input globally; apply it to required controls deliberately.
+
+## Phase 18 final — Custom Roles and Executive Dashboard UI rules (2026-09-25)
+
+- Access Control shows **System roles** and **Custom roles** as separate groups; a Custom Role card shows its scope and assigned Staff count. Locked permissions stay visible with the reason; a checkbox is only shown when the backend accepts it for that role/scope.
+- Custom Role creation is a four-step dialog (Name → Scope → Access → Review). The required name and scope follow the required-field rule (red + text until valid, then neutral gray).
+- Staff role selects group System and Custom roles (`optgroup`); a role change always states that custom access resets.
+- The Super Admin landing is the **Executive Overview**: semantic colour only — emerald for healthy/positive money, blue for neutral analytics, amber for low stock, red only for something that cannot be sold, violet for Control/security, neutral for a closed Store. Real data only; every empty state says what is missing. Navigation links are secondary (Quick admin actions at the bottom).

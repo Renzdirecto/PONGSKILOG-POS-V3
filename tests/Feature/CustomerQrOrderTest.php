@@ -178,7 +178,7 @@ test('tracking and receipt are session owned and receipt expires exactly 24 hour
     $this->postJson(route('pos.qr-orders.load', $order))->assertOk();
     $this->postJson(route('pos.payments.store'), ['draft_order_id' => $order->id, 'payment_method' => 'cash', 'cash_received' => '200.00', 'idempotency_key' => (string) Str::uuid()])->assertOk()
         ->assertJsonPath('receipt.branch.name', 'Custom receipt branch')->assertJsonPath('receipt.branch.footer', 'Thank you!')->assertJsonPath('receipt.branch.show_logo', false);
-    $this->getJson($url)->assertOk()->assertJsonPath('receipt.total', '190.00')->assertJsonMissingPath('receipt.id')->assertJsonMissingPath('receipt.cashier')->assertJsonMissingPath('receipt.payments.0.idempotency_key');
+    $this->getJson($url)->assertOk()->assertJsonPath('receipt.total', '190.00')->assertJsonMissingPath('receipt.id')->assertJsonPath('receipt.cashier', $user->customerFacingName())->assertJsonMissingPath('receipt.store_session_id')->assertJsonMissingPath('receipt.payments.0.id')->assertJsonMissingPath('receipt.payments.0.invoice')->assertJsonMissingPath('receipt.payments.0.idempotency_key');
     $this->getJson($url)->assertOk()->assertJsonPath('receipt.branch.name', 'Custom receipt branch')->assertJsonPath('receipt.branch.address', 'Receipt address')->assertJsonPath('receipt.branch.contact', '09170000000')->assertJsonPath('receipt.branch.footer', 'Thank you!')->assertJsonPath('receipt.branch.show_logo', false);
     $this->travel(24)->hours();
     $this->getJson($url)->assertGone();
@@ -577,6 +577,11 @@ test('owner QR settings enforce authorization and persist only validated public 
     $this->actingAs($owner)->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'javascript:alert(1)'])->assertUnprocessable();
     $this->putJson($url, ['qr_ordering_enabled' => false, 'receipt_footer' => 'Thank you', 'website_url' => 'https://example.com'])->assertOk();
     expect($branch->fresh()->qr_ordering_enabled)->toBeFalse()->and($branch->fresh()->receipt_footer)->toBe('Thank you');
+    $this->assertDatabaseHas('audit_logs', [
+        'action' => 'branch_receipt_qr_settings.updated',
+        'auditable_id' => $branch->id,
+        'user_id' => $owner->id,
+    ]);
     $this->withCredentials()->withCookie(app(CustomerQrAccess::class)->cookieName($branch), $token)->postJson(route('qr.orders.store', $branch), qrPayload($product))->assertUnprocessable();
     qrNoEffects();
 });
@@ -716,3 +721,40 @@ test('disabled QR ordering distinguishes an open store from a closed store', fun
     $this->assertDatabaseCount('orders', 0);
     qrNoEffects();
 })->with([true, false]);
+
+test('archived QR orders list newest archived first and say which can still be restored', function () {
+    $this->travelTo(now()->startOfSecond());
+    [$branch, $session, , $product, $user] = qrFixture();
+    $first = app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    $second = app(SubmitCustomerQrOrder::class)->execute($branch, CustomerQrSession::factory()->for($branch)->create(), qrPayload($product));
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+    $this->deleteJson(route('pos.qr-orders.destroy', $first))->assertOk();
+    $this->travel(1)->minutes();
+    $this->deleteJson(route('pos.qr-orders.destroy', $second))->assertOk();
+    $earlier = Order::factory()->for($branch)->create([
+        'source' => 'customer_qr', 'commercial_status' => CommercialStatus::ArchivedUnclaimed,
+        'store_session_id' => StoreSession::factory()->closed()->for($branch)->create()->id,
+        'archived_at' => now()->subDay(), 'submitted_at' => now()->subDay(),
+    ]);
+
+    $orders = $this->getJson(route('pos.qr-orders.index', ['archived' => 1]))->assertOk()->json('orders.data');
+
+    expect(array_column($orders, 'id'))->toBe([$second->id, $first->id, $earlier->id])
+        ->and(array_column($orders, 'restorable'))->toBe([true, true, false]);
+    $this->getJson(route('pos.qr-orders.index'))->assertOk()->assertJsonMissingPath('orders.data.0.restorable');
+});
+
+test('the QR Orders waiting count is shared with every Store Operations page, Kitchen included', function () {
+    [$branch, $session, , $product, $user] = qrFixture('cashier_kitchen');
+    app(SubmitCustomerQrOrder::class)->execute($branch, $session, qrPayload($product));
+    $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id]);
+
+    foreach (['workspaces.cashier', 'workspaces.kitchen', 'workspaces.cashier-dashboard', 'workspaces.transaction-history'] as $route) {
+        $this->get(route($route))->assertInertia(fn (AssertableInertia $page) => $page->where('qrWaitingCount', 1));
+    }
+    $kitchenOnly = User::factory()->create();
+    $kitchenOnly->roles()->attach(Role::query()->where('name', 'kitchen_staff')->sole());
+    $kitchenOnly->branches()->attach($branch, ['is_active' => true]);
+    $this->actingAs($kitchenOnly)->get(route('workspaces.kitchen'))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('qrWaitingCount', null));
+});

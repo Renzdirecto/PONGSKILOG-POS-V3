@@ -7,6 +7,8 @@ use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentTerm;
+use App\Events\CustomerCatalogChanged;
+use App\Events\InventoryChanged;
 use App\Events\KitchenTicketCreated;
 use App\Events\OrderCommitted;
 use App\Models\Branch;
@@ -26,6 +28,7 @@ use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -66,7 +69,7 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
     $order = Order::query()->sole();
     $response->assertOk()->assertJsonPath('receipt.id', $order->id)->assertJsonPath('receipt.total', '235.00')
         ->assertJsonPath('receipt.payment_status', 'paid')->assertJsonPath('receipt.branch.name', $branch->name)
-        ->assertJsonPath('receipt.cashier', $user->name)->assertJsonPath('receipt.items.0.notes', 'Less salt')
+        ->assertJsonPath('receipt.cashier', $user->customerFacingName())->assertJsonPath('receipt.items.0.notes', 'Less salt')
         ->assertJsonMissingPath('receipt.payments.0.idempotency_key');
     expect($order->order_number)->toMatch('/\A[0-9]+\z/')
         ->and($order->reference_number)->toBe($branch->code.'-'.now()->timezone('Asia/Manila')->format('mdy').'-0001')
@@ -101,6 +104,12 @@ test('cashier payment commits authoritative totals stock kitchen session and rec
     $this->assertDatabaseCount('payments', $count);
     $this->assertDatabaseCount('kitchen_tickets', 1);
     $this->assertDatabaseCount('inventory_movements', 1);
+    $this->assertDatabaseHas('audit_logs', [
+        'auditable_id' => $order->id,
+        'user_id' => $user->id,
+        'action' => 'order.paid',
+        'idempotency_key' => strtolower($payload['idempotency_key']),
+    ]);
 })->with(['cashier', 'cashier_kitchen'])->with([
     'cash exact' => ['cash', '235.00', null, '0.00', 1],
     'cash change' => ['cash', '500.00', null, '265.00', 1],
@@ -272,7 +281,7 @@ test('current product availability is revalidated for an existing draft', functi
 
 test('duplicate product lines aggregate one sale movement while untracked products create none', function () {
     [$branch, $user, $product, $balance] = paymentFixture('10.00');
-    $untracked = Product::factory()->create(['default_price' => '20.00']);
+    $untracked = Product::factory()->soldAt($branch)->create(['default_price' => '20.00']);
     $payload = paymentPayload($product);
     $payload['items'][] = [...$payload['items'][0], 'notes' => 'Different preparation'];
     $payload['items'][] = ['product_id' => $untracked->id, 'quantity' => 1, 'modifiers' => []];
@@ -317,7 +326,35 @@ test('direct payment endpoint forbids unauthorized actors', function (string $ro
     $this->actingAs($user)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
         ->postJson(route('pos.payments.store'), paymentPayload($product))->assertForbidden();
     $this->assertDatabaseCount('orders', 0);
-})->with(['owner', 'super_admin', 'kitchen_staff']);
+})->with(['owner', 'kitchen_staff']);
+
+test('full access super admin pays for the selected active branch without an assignment and owns the payment', function () {
+    [$branch, $superAdmin, $product, $balance, $session] = paymentFixture('235.00', 'super_admin');
+    $superAdmin->branches()->detach();
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->postJson(route('pos.payments.store'), paymentPayload($product))
+        ->assertOk()
+        ->assertJsonPath('receipt.cashier', $superAdmin->customerFacingName())
+        ->assertJsonPath('receipt.total', '235.00');
+
+    $order = Order::query()->sole();
+    expect($order->store_session_id)->toBe($session->id)
+        ->and($order->created_by_user_id)->toBe($superAdmin->id)
+        ->and($balance->fresh()->on_hand)->toBe(9);
+    $this->assertDatabaseHas('payments', ['order_id' => $order->id, 'created_by_user_id' => $superAdmin->id]);
+});
+
+test('full access super admin cannot operate an inactive branch POS', function () {
+    [$branch, $superAdmin, $product] = paymentFixture('235.00', 'super_admin');
+    $branch->update(['status' => BranchStatus::Inactive]);
+
+    $this->actingAs($superAdmin)->withSession([ActiveBranchContext::SESSION_KEY => $branch->id])
+        ->postJson(route('pos.payments.store'), paymentPayload($product))
+        ->assertForbidden();
+
+    $this->assertDatabaseCount('orders', 0);
+});
 
 test('guest payment endpoint returns 401', function () {
     $this->postJson(route('pos.payments.store'), [])->assertUnauthorized();
@@ -480,7 +517,11 @@ test('payment product and order item reads remain bounded as the cart grows', fu
     $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with(strtolower($query['query']), 'select'));
     DB::disableQueryLog();
 
-    expect($reads->count())->toBeLessThanOrEqual(36)
+    /**
+     * Phase 16E adds three constant reads (size modifiers, Plan membership, recipes) for the Ingredient snapshot; Phase
+     * 19.6 adds two constant after-commit reads (the Take Out pickup token and the pickup-page invalidation).
+     */
+    expect($reads->count())->toBeLessThanOrEqual(41)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "products"'))->count())->toBeLessThanOrEqual(4)
         ->and($reads->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'from "order_items"'))->count())->toBeLessThanOrEqual(2);
 })->with([1, 30, 100]);
@@ -500,3 +541,19 @@ test('private operational channels require the appropriate branch and permission
 })->with([
     ['cashier', 'pos', true], ['cashier', 'kitchen', false], ['kitchen_staff', 'kitchen', true], ['kitchen_staff', 'pos', false], ['cashier_kitchen', 'kitchen', true],
 ]);
+
+test('a paid order with several stocked products sends one Customer QR catalog signal, not one per product', function () {
+    [$branch, $user, $product] = paymentFixture('100.00');
+    $second = Product::factory()->create(['default_price' => '50.00']);
+    BranchProduct::factory()->for($branch)->for($second)->create(['tracks_inventory' => true]);
+    BranchInventory::factory()->for($branch)->for($second)->create(['on_hand' => 10]);
+    Event::fake([CustomerCatalogChanged::class, InventoryChanged::class]);
+    $payload = paymentPayload($product);
+    $payload['items'][] = ['product_id' => $second->id, 'quantity' => 2, 'notes' => '', 'modifiers' => []];
+
+    $this->actingAs($user)->postJson(route('pos.payments.store'), $payload)->assertOk();
+
+    Event::assertDispatchedTimes(CustomerCatalogChanged::class, 1);
+    Event::assertDispatchedTimes(InventoryChanged::class, 2);
+    expect(BranchInventory::query()->where('product_id', $second->id)->value('on_hand'))->toBe(8);
+});

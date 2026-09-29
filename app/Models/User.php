@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\EffectivePermissions;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -17,7 +18,11 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
  * @property int $id
- * @property string $name
+ * @property string|null $employee_id
+ * @property string|null $avatar_path
+ * @property string|null $position Business/job title for display only; access always comes from the Role.
+ * @property string $name The full name: admin-managed identity (Staff administration), shown in audit records.
+ * @property string|null $preferred_name Self-chosen display name (Phase 20), never an identity or permission.
  * @property string $email
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -51,6 +56,30 @@ class User extends Authenticatable
         ];
     }
 
+    /** The friendly name for greetings and shells: the Preferred Name when set, else the full name. */
+    public function displayName(): string
+    {
+        $preferred = trim((string) $this->preferred_name);
+
+        return $preferred !== '' ? $preferred : $this->name;
+    }
+
+    /**
+     * The name customers may see (cashier on a receipt): the Preferred Name when set, else only the first given name,
+     * so a customer never receives a staff member's full legal name. Leading titles and abbreviations ("Dr.", "Ma.")
+     * are skipped; a name made only of those is shown as it is.
+     */
+    public function customerFacingName(): string
+    {
+        $preferred = trim((string) $this->preferred_name);
+        if ($preferred !== '') {
+            return $preferred;
+        }
+        $tokens = preg_split('/\s+/u', trim($this->name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return collect($tokens)->first(fn (string $token): bool => ! str_ends_with($token, '.')) ?? trim($this->name);
+    }
+
     /** @return BelongsToMany<Role, $this> */
     public function roles(): BelongsToMany
     {
@@ -64,19 +93,64 @@ class User extends Authenticatable
             ->exists();
     }
 
+    /**
+     * The account's effective permission: Role baseline plus explicit per-user overrides (Super Admin is locked full).
+     */
     public function hasPermission(string $permission): bool
     {
-        return $this->roles()
-            ->whereHas('permissions', function (Builder $query) use ($permission): void {
-                $query->where('permissions.name', $permission);
-            })
-            ->exists();
+        return EffectivePermissions::has($this, $permission);
     }
 
+    /** @return HasMany<UserPermissionOverride, $this> */
+    public function permissionOverrides(): HasMany
+    {
+        return $this->hasMany(UserPermissionOverride::class);
+    }
+
+    /**
+     * Business-wide scope comes from role semantics (Owner, Super Admin, or an active business-wide Custom Role), never
+     * from a Branch assignment or a page permission. See Role::scopeBusinessWide().
+     */
     public function hasBusinessWideScope(): bool
     {
-        return $this->roles()
-            ->whereIn('roles.name', ['super_admin', 'owner'])
+        return $this->roles()->businessWide()->exists();
+    }
+
+    /**
+     * Cashier operational surfaces belong to assigned Cashiers, Custom Roles (Branch or business-wide) and Super Admin,
+     * whose full-access role covers every operational workspace. Owner scope never grants Cashier operations. See
+     * Role::scopeCashierOperations().
+     */
+    public function hasCashierOperationsRole(): bool
+    {
+        return $this->roles()->cashierOperations()->exists();
+    }
+
+    /**
+     * Whether the account operates at any selected Branch without assignments (Super Admin and business-wide Custom
+     * Roles). See Role::scopeOperatesEveryBranch().
+     */
+    public function operatesEveryBranch(): bool
+    {
+        return $this->roles()->operatesEveryBranch()->exists();
+    }
+
+    /**
+     * Operational Branch access requires an active assignment, except for Super Admin and business-wide Custom Roles,
+     * which are never given fabricated Branch assignments and operate at the one Branch they select.
+     */
+    public function hasOperationalBranchAccess(Branch $branch): bool
+    {
+        return self::query()
+            ->whereKey($this->getKey())
+            ->where(function (Builder $query) use ($branch): void {
+                $query->whereHas('roles', function (Builder $roles): void {
+                    $roles->whereIn('roles.id', Role::query()->operatesEveryBranch()->select('roles.id'));
+                })->orWhereHas('branches', function (Builder $branches) use ($branch): void {
+                    $branches->whereKey($branch->getKey())
+                        ->where('user_branch_assignments.is_active', true);
+                });
+            })
             ->exists();
     }
 
@@ -108,10 +182,22 @@ class User extends Authenticatable
         return $this->hasMany(StoreSession::class, 'closed_by_user_id');
     }
 
+    /** @return HasMany<StoreSessionExpense, $this> */
+    public function createdStoreSessionExpenses(): HasMany
+    {
+        return $this->hasMany(StoreSessionExpense::class, 'created_by_user_id');
+    }
+
     /** @return BelongsToMany<Branch, $this> */
     public function branches(): BelongsToMany
     {
         return $this->belongsToMany(Branch::class, 'user_branch_assignments')
             ->withPivot('is_active');
+    }
+
+    /** @return HasMany<PushSubscription, $this> */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
     }
 }

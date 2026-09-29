@@ -7,6 +7,7 @@ use App\Enums\StoreSessionStatus;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\CurrentStoreSessionExpenses;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,12 +16,12 @@ class CurrentStoreSessionController extends Controller
     /**
      * Handle the incoming request.
      */
-    public function __invoke(Request $request, ActiveBranchContext $activeBranchContext): JsonResponse
+    public function __invoke(Request $request, ActiveBranchContext $activeBranchContext, CurrentStoreSessionExpenses $expenses): JsonResponse
     {
         $user = $request->user();
 
         abort_unless($user instanceof User, 401);
-        abort_unless($user->hasRole('cashier') || $user->hasRole('cashier_kitchen'), 403);
+        abort_unless($user->hasCashierOperationsRole(), 403);
 
         $branch = $activeBranchContext->current($user);
 
@@ -53,6 +54,7 @@ class CurrentStoreSessionController extends Controller
                 'code' => $branch->code,
                 'name' => $branch->name,
             ],
+            ...$expenses->for($branch, $storeSession),
         ])->header('Cache-Control', 'no-store');
     }
 }

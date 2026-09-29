@@ -12,6 +12,7 @@ use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
 use App\Support\InventoryState;
+use App\Support\StockAlerts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -32,6 +33,8 @@ class ApplyInventoryMovement
         ?string $orderId = null,
         ?string $storeSessionExpenseId = null,
         ?string $stockTransferId = null,
+        /** False when the caller moves several Products and sends one Customer QR catalog signal itself. */
+        bool $signalCustomerCatalog = true,
     ): InventoryMovement {
         if ($quantityDelta === 0) {
             throw ValidationException::withMessages(['quantity_delta' => 'The inventory quantity delta must not be zero.']);
@@ -47,7 +50,7 @@ class ApplyInventoryMovement
             'stock_transfer_id' => ['nullable', 'uuid'],
         ])->validate();
 
-        return DB::transaction(function () use ($branch, $product, $movementType, $quantityDelta, $reason, $actor, $orderId, $storeSessionExpenseId, $stockTransferId): InventoryMovement {
+        return DB::transaction(function () use ($branch, $product, $movementType, $quantityDelta, $reason, $actor, $orderId, $storeSessionExpenseId, $stockTransferId, $signalCustomerCatalog): InventoryMovement {
             $branch = Branch::query()->whereKey($branch->getKey())->firstOrFail();
             $product = Product::query()->whereKey($product->getKey())->firstOrFail();
             $actor = $actor === null ? null : User::query()->whereKey($actor->getKey())->firstOrFail();
@@ -88,6 +91,7 @@ class ApplyInventoryMovement
                 throw ValidationException::withMessages(['quantity_delta' => 'The inventory balance or version would exceed the supported integer range.']);
             }
 
+            $onHandBefore = $balance->on_hand;
             $balance->update([
                 'on_hand' => $balance->on_hand + $quantityDelta,
                 'version' => $balance->version + 1,
@@ -115,7 +119,14 @@ class ApplyInventoryMovement
                 $balance->version,
             );
 
-            CustomerCatalogChanged::dispatch($branch->id);
+            if ($signalCustomerCatalog) {
+                CustomerCatalogChanged::dispatch($branch->id);
+            }
+
+            /** Only the movement that empties a stocked balance alerts; it holds the balance row lock. */
+            if ($onHandBefore > 0 && $balance->on_hand <= 0) {
+                StockAlerts::productOutOfStock($branch, $product);
+            }
 
             return $movement;
         });

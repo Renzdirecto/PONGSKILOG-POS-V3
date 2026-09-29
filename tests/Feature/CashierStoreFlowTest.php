@@ -33,7 +33,7 @@ test('cashier sees closed store when only historical or other branch sessions ex
         ->assertInertia(fn (Assert $page) => $page
             ->component('workspaces/show')
             ->where('branchContext.current.id', $branch->id)
-            ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id])
+            ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id, 'canOpen' => true])
             ->where('store', ['branchStatus' => 'active', 'canOpen' => true]));
 });
 
@@ -44,7 +44,7 @@ test('existing open store is detected without exposing opening balances', functi
 
     $this->actingAs($user)->get(route('workspaces.cashier'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+            ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id, 'canOpen' => false])
             ->where('store', ['branchStatus' => 'active', 'canOpen' => true])
             ->missing('storeSession')
             ->missing('opening_cash_amount')
@@ -71,7 +71,7 @@ test('non cashier roles cannot visit or open a cashier store even with permissio
         ->assertForbidden();
 
     $this->assertDatabaseCount('store_sessions', 0);
-})->with(['kitchen_staff', 'owner', 'super_admin']);
+})->with(['kitchen_staff', 'owner']);
 
 test('cashier opening requires both operation and workspace permissions', function (string $permission) {
     $branch = Branch::factory()->create();
@@ -121,7 +121,7 @@ test('assigned cashier opens store and returns to an open workspace', function (
     expect($session->opening_cashless_amount)->toBe('0.00');
 
     $this->get(route('workspaces.cashier'))->assertInertia(fn (Assert $page) => $page
-        ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id])
+        ->where('storeContext', ['status' => 'open', 'isOpen' => true, 'branchId' => $branch->id, 'canOpen' => false])
         ->where('store', ['branchStatus' => 'active', 'canOpen' => true]));
 })->with(['cashier', 'cashier_kitchen']);
 
@@ -263,7 +263,7 @@ test('visiting the closed cashier workspace remains read only even with opening 
         'opening_cash_amount' => '10',
         'opening_cashless_amount' => '20',
     ]))->assertInertia(fn (Assert $page) => $page
-        ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id]));
+        ->where('storeContext', ['status' => 'closed', 'isOpen' => false, 'branchId' => $branch->id, 'canOpen' => true]));
 
     $this->assertDatabaseCount('store_sessions', 0);
 });

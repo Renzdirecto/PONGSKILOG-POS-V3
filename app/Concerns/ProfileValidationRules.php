@@ -3,15 +3,16 @@
 namespace App\Concerns;
 
 use App\Models\User;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Validation\Rule;
+use Illuminate\Database\Eloquent\Builder;
 
 trait ProfileValidationRules
 {
     /**
      * Get the validation rules used to validate user profiles.
      *
-     * @return array<string, array<int, ValidationRule|array<mixed>|string>>
+     * @return array<string, array<int, ValidationRule|Closure|array<mixed>|string>>
      */
     protected function profileRules(?int $userId = null): array
     {
@@ -32,9 +33,10 @@ trait ProfileValidationRules
     }
 
     /**
-     * Get the validation rules used to validate user emails.
+     * Get the validation rules used to validate user emails. Uniqueness ignores case, like the Staff forms, so two
+     * accounts can never share one sign-in address in different letter case.
      *
-     * @return array<int, ValidationRule|array<mixed>|string>
+     * @return array<int, ValidationRule|Closure|array<mixed>|string>
      */
     protected function emailRules(?int $userId = null): array
     {
@@ -43,9 +45,14 @@ trait ProfileValidationRules
             'string',
             'email',
             'max:255',
-            $userId === null
-                ? Rule::unique(User::class)
-                : Rule::unique(User::class)->ignore($userId),
+            function (string $attribute, mixed $value, Closure $fail) use ($userId): void {
+                $taken = User::query()->whereRaw('LOWER(email) = ?', [mb_strtolower(trim((string) $value))])
+                    ->when($userId !== null, fn (Builder $query) => $query->whereKeyNot($userId))
+                    ->exists();
+                if ($taken) {
+                    $fail('This email is already used by another account.');
+                }
+            },
         ];
     }
 }

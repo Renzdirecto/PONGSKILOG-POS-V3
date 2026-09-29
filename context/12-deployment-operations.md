@@ -32,7 +32,7 @@ GitHub + GitHub Actions
 Use:
 
 - Local Development
-- Staging
+- Staging — DEFERRED / optional future environment
 - Production
 
 Each environment must have separate:
@@ -188,11 +188,19 @@ Use environment-managed secrets in Railway/Supabase.
 
 Rotate compromised secrets.
 
+### Production transactional mail
+
+Production transactional mail uses Resend (`MAIL_MAILER=resend`) through Laravel's built-in transport and the official `resend/resend-php` SDK. The sender domain is verified in Resend; `MAIL_FROM_ADDRESS` must use that domain. Keep `RESEND_API_KEY` in the server-side environment only, never in Git or any `VITE_*` variable. Existing sender, queue, and mail behavior remain unchanged; local development defaults to the log mailer.
+
 ---
 
 ## 10. CI/CD
 
-GitHub Actions should validate protected development/release branches.
+The canonical branch flow is `feature/* → dev → production`. Feature PRs target `dev`; reviewed release promotions target `production`. The `staging` branch is preserved but DEFERRED / optional future work, outside the active release flow.
+
+`production` initially preserves the exact history of the former release branch (`main`); renaming the branch does not promote `dev` or deploy the application.
+
+GitHub Actions validates pushes and pull requests targeting `dev` and `production`. Existing `staging` CI coverage is retained for future use.
 
 Required checks:
 
@@ -212,7 +220,7 @@ Production deployment should originate only from reviewed/approved code.
 Rules:
 
 - Review migrations
-- Test on staging
+- Test in an isolated non-production environment (staging is deferred)
 - Prefer additive/forward-compatible changes
 - Avoid destructive schema changes during live branch operations
 
@@ -252,7 +260,7 @@ Avoid high-risk deployments during peak service.
 
 For significant release:
 
-1. Verify staging
+1. Verify release acceptance in an isolated non-production environment
 2. Review active branch/store activity
 3. Apply safe schema changes
 4. Deploy application
@@ -495,3 +503,156 @@ Before production launch:
 - Mobile/tablet QA passed
 - Monitoring/logging active
 - Rollback procedure documented
+
+## 26. POST-PHASE-16 PLANNED PWA SLICE (accepted plan, NOT implemented)
+
+**Status: PWA Phase 1 COMPLETE / MERGED (Phase 19.5, 2026-09-26)** — USER MANUAL QA: PASSED · FINAL AUTOMATED QA: PASSED · PR #25 MERGED to `dev` at `4e3ab28`; not deployed (deployment notes in §30). Accepted by the user on 2026-09-24 during Phase 16 Final QA. Phase 1 ships the manifest, service worker, install flow, connectivity state, offline write guard, Web Push and safe updates below; it has **no offline cache of business data and no offline writes**. Offline-first POS stays **PWA Phase 2 — future only, after Phase 19.6, Phase 20, and Deployment**. The plan text below is kept as accepted; where it mentions offline snapshots of the catalog or reports, Phase 1 deliberately keeps only the currently rendered screen (no device cache of business data).
+
+### Mental model
+
+PONGSKILOG PWA = **INTERNET-FIRST / WIFI-FIRST**. The server stays authoritative for every financial, inventory, Store Session and concurrency decision (§02 rule 4: the system is not offline-first).
+
+- **Online:** normal, full application behavior.
+- **Offline:** a safe, degraded, **read-only / browse-oriented** experience.
+
+### Offline read-only scope
+
+- Primary offline-safe candidate: **Product/Menu Browse** from the last confirmed cached catalog.
+- Possible later cached read-only views: Transaction History, Owner Dashboard, Owner Reports — **only** with an explicit last-confirmed snapshot strategy. Any such view must prominently show `OFFLINE` and `Last synced: <timestamp>` and must never imply the data is current.
+- When no safe confirmed cache exists, show an offline-unavailable state instead of stale or invented data.
+
+### No offline writes (first PWA release)
+
+Offline must block, and must **not** queue for later automatic sync: Pay Now, Pay Later, settlement, Store Open, Store Close, Void, committed-order edits, Store Expenses, inventory adjustments, Customer QR LOAD/restore/delete, Kitchen status changes, Staff creation/edit, Access Control changes, Settings changes, and any other financial or stock-changing mutation. Reason: financial, inventory, Store Session and concurrency integrity remain server-authoritative.
+
+### Recommended: POS cart draft preservation
+
+- An unfinished local POS cart/draft intent MAY be preserved on the device. If the connection drops, the cart stays visible and Payment/commit stays disabled.
+- When the connection returns, the server MUST revalidate Product availability, price, modifiers, stock, Branch and Store Session before payment/commit. An offline cart is never silently auto-submitted.
+
+### Reconnect
+
+Network returns → Reverb/Echo reconnects → the client performs an authoritative refetch → server truth replaces any stale cached display. The existing realtime contracts already treat events as invalidation signals followed by refetch (catalog, Customer Display, Kitchen, Owner reports), which is compatible with this plan.
+
+### Installability goals
+
+- Installable on Android, desktop and other browser-supported devices; standalone, app-like launch; branded launcher/home-screen icon; app name **Pongskilog**; splash/theme branding where supported.
+- HTTPS is required in production. No App Store / Play Store listing is required for the initial release.
+
+### Branding asset registry for the future PWA
+
+| Use | Asset | Source original |
+| --- | --- | --- |
+| Browser tab / favicon | Approved gold rounded-square chef icon: `public/favicon.ico`, `public/images/branding/icons/favicon-32.png`, `favicon-192.png` | `public/images/branding/source/pongskilog-tab-icon.png` |
+| App install / launcher icon | Approved square Pongskilog-branded icon: `public/images/branding/icons/icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`; `public/apple-touch-icon.png` | `public/images/branding/source/pongskilog-square-logo.jpg` |
+| Social / Messenger link preview | Approved cream Pongskilog preview card: `public/images/branding/og-image.jpg` (1200×630) | `public/images/branding/source/pongskilog-link-preview-mockup.png` |
+| Header / sidebar | Existing approved Pongskilog wordmark treatment (sidebars and rails keep the wordmark only) | — |
+| Phone top bar / auth identity | Round emblem `public/images/branding/pongskilog-emblem.png` | `public/images/branding/source/pongskilog-round-emblem.jpg` |
+
+Since Phase 19.5 the 192/512 any + maskable icons are referenced by `public/manifest.webmanifest`; the icons, the emblem and `offline.html` are precached by the service worker.
+
+### Phase 16E note (2026-09-24)
+
+Owner Operations pages (Overview, Ingredient Stock, Purchases) are possible future **read-only** PWA snapshot candidates under the rules above; Pamamalengke confirmation, adjustments and every other Operations write stay online-only. Nothing PWA-related was implemented in Phase 16E. Deploying 16E needs only the additive migration `2026_09_24_053738_create_owner_operations_tables` (`php artisan migrate --force`); no seeder, queue or environment change.
+
+### Phase 16E Final QA note (2026-09-24)
+
+Deploying the Final QA corrections adds one forward migration, `2026_09_24_134328_create_store_session_giveaways` (`php artisan migrate --force`). No seeder, queue or environment change. `php artisan operations:seed-qa` remains LOCAL QA ONLY (refuses outside local/testing, never part of `DatabaseSeeder`).
+
+## 27. Phase 18 deployment note — Access Control, Staff administration and Notifications (2026-09-25)
+
+- Two additive migrations: `2026_09_24_165603_create_user_permission_overrides_table` and `2026_09_24_165604_create_notifications_table` (`php artisan migrate --force`). No queue or environment change.
+- `php artisan db:seed --class=RbacSeeder` (or `DatabaseSeeder`) is **safe to rerun**: it never removes or re-adds existing Role ↔ Permission pairs, so Role baselines configured in Access Control survive deployments. It only seeds defaults for Roles/Permissions it creates, completes Super Admin, and re-derives Cashier + Kitchen.
+- `AuthenticateSession` is now in the web middleware group: after an administrative password reset, other sessions of that account are signed out on their next request with any session driver (database sessions are also deleted immediately).
+- PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 28. Phase 18 final deployment note — Custom Roles and Executive Overview (2026-09-25)
+
+- One additive migration: `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (`php artisan migrate --force`); it backfills the five System roles. Rollback is safe (drops the partial unique index, then the four columns).
+- `RbacSeeder` remains safe to rerun and never touches Custom Roles.
+- No dependency, queue, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 29. Phase 19 deployment note — performance indexes (2026-09-25)
+
+- One additive migration: `2026_09_25_150406_add_reporting_performance_indexes` (`php artisan migrate --force`). It only creates five btree indexes; rollback drops exactly those.
+- `CREATE INDEX` (non-concurrent) briefly blocks writes to `audit_logs`, `orders`, `notifications` and the two Pamamalengke tables while each index builds. At current volumes this is seconds; on a much larger production dataset run it outside trading hours.
+- No dependency, queue, cache, environment or realtime-channel change. PWA remains NOT implemented (§26 / Phase 19.5).
+
+## 30. Phase 19.5 deployment note — PWA Phase 1 (2026-09-26)
+
+Documentation only: no Railway or Cloudflare setting was changed.
+
+- **Migration:** one additive migration `2026_09_25_182423_create_push_subscriptions_table` (`php artisan migrate --force`); rollback drops only that table.
+- **Dependencies:** Composer `minishlink/web-push` ^11 (brings php-http/discovery, php-http/httplug, php-http/promise, spomky-labs/base64url, symfony/polyfill-php83, web-token/jwt-library; uses the existing Guzzle as its PSR-18 client; needs ext-openssl, ext-curl, ext-mbstring). npm: `vite-plugin-pwa` (dev, build only) and `workbox-core`, `workbox-precaching`, `workbox-routing`, `workbox-strategies` (bundled into the service worker).
+- **Build:** `npm run build` produces `public/build/sw.js` next to the Vite assets. Without a build `/sw.js` answers 404 and the app is a normal web app.
+- **HTTPS:** the service worker, install and push need a secure context, so production must be https. Behind Railway / Cloudflare set `TRUSTED_PROXIES=*` (`config/trustedproxy.php`, new) so Laravel sees the forwarded https scheme; otherwise it builds `http://` asset and redirect URLs an https page cannot load. Only `X-Forwarded-For` and `X-Forwarded-Proto` are trusted (`bootstrap/app.php`, Final QA): the host comes from the Host header Railway / Cloudflare / cloudflared route on, so a forged `X-Forwarded-Host`/`-Port`/`-Prefix` can never redirect generated links such as password-reset emails. LAN `http://` links keep working as a plain web app without PWA features.
+- **VAPID:** generate a separate production pair on a trusted machine with `php artisan pwa:vapid-keys --show` and set `VAPID_SUBJECT` (a real, monitored `mailto:` or https contact), `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` as Railway secrets. Never reuse the local pair; never commit, log or share the private key. Rotating the pair invalidates existing subscriptions (the push service rejects them and the server removes them; staff enable notifications again). Push stays off until all three are set.
+- **Queue worker:** required (already needed for queued broadcasts). It delivers `SendPushNotification`; transient push failures retry per subscription after 30 s and 120 s, three attempts at most. Keep a real queue in production: with `QUEUE_CONNECTION=sync` pushes would be sent inside the request (still rescued, but slower).
+- **Service worker path/scope:** `/sw.js`, scope `/`, served by Laravel (`ServiceWorkerController`, outside the web middleware: no session or cookies) with `Cache-Control: no-cache, no-store, must-revalidate` and `Service-Worker-Allowed: /`; registered with `updateViaCache: 'none'`. Open app windows also check for a new version hourly while visible.
+- **Cloudflare:** never edge-cache `/sw.js` (the origin sends `no-store`, which Cloudflare respects by default; if a "Cache Everything" rule exists, add a Cache Rule *URI Path equals `/sw.js` → Bypass cache*). Keep `/manifest.webmanifest` refreshable (bypass or a short edge TTL). `/build/assets/*` are fingerprinted and may be cached long / immutable. Never cache HTML or authenticated responses.
+- **Update behavior:** a deploy is detected by the service worker (and by Inertia's asset version). Open apps show "PONGSKILOG update available" and wait for Update now; a POS order in progress, or a write still being saved, holds the reload until it is safe. Deploying during service therefore never reloads a cashier's screen by itself.
+- **Push is best effort, never authoritative:** Reverb stays the realtime authority; invalid subscriptions are removed automatically; notification permission is per browser and device; iPhone/iPad receive Web Push only in the Home Screen app (iOS/iPadOS 16.4+), and every feature is detected elsewhere. Phase 1 still needs internet for every write.
+- **Windows development PHP:** PHP for Windows can create the P-256 keys that VAPID generation and push payload encryption need only when `OPENSSL_CONF` points at its bundled `extras\ssl\openssl.cnf` (for example `C:\php\extras\ssl\openssl.cnf`) in the shell running `php artisan pwa:vapid-keys`, `php artisan queue:work` or `php artisan serve`. Linux production is unaffected; the two tests that need these keys skip themselves where they cannot be created.
+
+### 30.1 Local phone PWA testing (HTTPS)
+
+`localhost` is a secure context only on the PC itself. A phone on `http://192.168.x.x` gets the normal web app but no service worker, install or push, so full testing needs an HTTPS URL:
+
+1. `npm run build` (only a production build has the service worker). Stop `npm run dev` so `public/hot` is gone.
+2. In `.env` set `TRUSTED_PROXIES=127.0.0.1` (the tunnel connects from this PC), then `php artisan config:clear`.
+3. PowerShell in the project: `$env:OPENSSL_CONF = "C:\php\extras\ssl\openssl.cnf"; php artisan serve --host=127.0.0.1 --port=8000`, and in a second window with the same `OPENSSL_CONF`: `php artisan queue:work` (push delivery). Start Reverb as usual if realtime is needed.
+4. Expose it over HTTPS with a tunnel. No tunnel tool is installed on the development PC; with the owner's approval install Cloudflare's (`winget install --id Cloudflare.cloudflared`) and run `cloudflared tunnel --url http://127.0.0.1:8000`. It prints a temporary `https://….trycloudflare.com` URL — never commit it. Account-less quick tunnels are for local QA only (never production configuration): the URL changes on every start and the tunnel can drop briefly (for example Cloudflare error 1033 while the PC reconnects to Wi-Fi) and recover on its own; that is tunnel reliability, not an application defect.
+5. Open that URL on the phone (any network) and sign in. Android Chrome: App & notifications › Install PONGSKILOG (or the browser's Install app). iPhone/iPad: Safari › Share › Add to Home Screen, then open it from the Home Screen (required for iOS push).
+6. Realtime over the tunnel also needs Reverb over wss: a second tunnel `cloudflared tunnel --url http://127.0.0.1:8080` and a rebuild with `VITE_REVERB_HOST=<that tunnel host>`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`. Without it everything else works and live screens show their disconnected state.
+7. Update test: change a frontend file, run `npm run build` again (new `sw.js` and assets), then return to the open app (reopen it, or wait for the hourly check).
+8. Afterwards remove `TRUSTED_PROXIES` and the tunnel `VITE_REVERB_*` values from `.env` (keep them only while tunnelling locally) and rebuild.
+
+## 31. Phase 19.6 Customer Experience — deployment notes (not deployed)
+
+- **Migration:** `2026_09_26_174138_create_customer_experience_tables` (additive). Run `php artisan migrate --force` before switching traffic.
+- **Scheduler:** `model:prune` for `CustomerScreen` and `OrderPickupToken` runs daily from `routes/console.php` (the existing `schedule:run` cron covers it).
+- **Queue:** Buzz delivery is the queued `SendPickupBuzz` job — the existing queue worker must run (same as the Phase 19.5 pushes). Web Push needs the existing VAPID keys.
+- **Cache:** the Live Cart and takeover live in the cache store (Redis in production). Losing the cache only blanks a Live Cart until the POS's next change.
+- **Customer-screen sound (optional):** place a Branch-approved MP3 at `public/audio/customer-screen-success.mp3` to play it on open customer screens when an order is confirmed (none ships with the app). Browsers may block autoplay until someone taps the screen once (e.g. the Fullscreen button); the confirmation stays visual either way. Phone Buzz uses the OS notification sound.
+- **Migration (manual-QA fixes):** `2026_09_27_072905_add_customer_screen_settings_to_branches_table` is additive (two defaults of 5 and a nullable `maps_url`); run `php artisan migrate` on deploy.
+- **Storage:** advertisement media on the existing private `s3` disk (`customer-screen/{branch}/…`), served by signed temporary URLs (60 min). Plan bucket size for up to 30 items × 50 MB per Branch at most.
+- **Static file:** `public/pickup-sw.js` (the customer pickup service worker, scope `/pickup/`) must be served from the site root with a JavaScript content type; it is not part of the Vite build or the staff precache.
+- **HTTPS:** customer notifications need a secure origin (service worker + Push); the pickup QR encodes the host that rendered the customer screen, so open the customer screen through the public HTTPS domain. iPhone customers only get notifications from Home Screen web apps; the page stays live without them.
+- **Customer screen devices:** open `https://<domain>/customer-screen` in a full-screen/kiosk browser window (or a second window of the POS PC), then pair it from the POS header control. It is a public page (no staff sign-in on the counter device).
+
+## 32. Phase 20 Final Production Hardening — operations notes (not deployed)
+
+Nothing in this section has been exercised against a real staging or production environment. Staging validation is **DEFERRED** / optional future work. Backup/restore verification and production health checks remain **PENDING** release-stage actions (tracker).
+
+**Migrations (additive; run `php artisan migrate --force` before switching traffic).**
+- `2026_09_27_165552` Stock Correction: `store_session_inventory_adjustments.direction` (`decrease` default, so legacy rows stay correct) and the widened reason CHECK. Rollback refuses while new-reason or increase rows exist.
+- `2026_09_27_170628` Pamamalengke funding: `pamamalengke_purchases.payment_source` (backfilled from the expense, NOT NULL), nullable `store_session_expense_id`, and on PostgreSQL a `(branch_id, id)` unique index on `store_sessions` plus the composite FK `pamamalengke_purchases_branch_session_foreign`. Rollback refuses while closed-session allocations exist.
+- `2026_09_27_174640` `users.preferred_name`; `2026_09_27_180018` `branches.receipt_layout` (JSON) and `branches.image_path`.
+- Verified: fresh / rollback / reapply on disposable SQLite and isolated PostgreSQL (`tests/verify-final-hardening-postgres.php`); forward-applied to the local development database (batch 21) without reset.
+
+**Release identity.** `APP_VERSION` (`development` locally, `v1.0.0-rc.N` on staging, `v1.0.0` for the first production release) and `APP_BUILD_SHA` (the deployed commit; on Railway `RAILWAY_GIT_COMMIT_SHA` is used when it is unset). Never hard-code a SHA. Shown in App & notifications › Version and returned by `/health`; nothing else about the environment is exposed.
+
+**Health.** `/up` is the framework liveness probe (use it for deploy gating). `GET /health` is readiness for monitoring: JSON, `no-store`, throttled per IP, read-only (no writes, no session/cookies). `503` only when a critical dependency fails (`database`, `cache`); otherwise `200` with `status: ok|degraded` and per-check results: `queue` (heartbeat written every minute by the scheduler through the queue — `fail` = never seen, `stale` = worker or scheduler stopped), `reverb` (2 s probe), `storage` (bucket HEAD, 2 s), `private_files` (writable). Alert when `/health` is not `ok` for more than 5 minutes.
+
+**Scheduler and queue.** Run `schedule:run` every minute (or `schedule:work`) — QR 30-minute auto-archive, model pruning and the queue heartbeat depend on it (`withoutOverlapping()->onOneServer()`, so more than one app instance is safe with a shared Redis cache). Run at least one `queue:work` (push delivery, Buzz, heartbeat).
+
+**Reverb.** `REVERB_ALLOWED_ORIGINS` = the app host(s) (never `*` outside local); client events are disabled. Broadcasts run synchronously after commit, so the HTTP client is bounded by `REVERB_CONNECT_TIMEOUT` (2 s) and `REVERB_TIMEOUT` (3 s): an unreachable Reverb slows a request by seconds instead of hanging a payment, and the signal is lost (clients refetch on reconnect).
+
+**Security configuration.** `APP_ENV=production`, `APP_DEBUG=false`, `composer install --no-dev`; `APP_URL` = the public HTTPS origin (password-reset links are built from it, never from the request Host); `SESSION_SECURE_COOKIE=true`; `TRUSTED_PROXIES` set for the platform proxy; a real `MAIL_MAILER` (the `log` mailer would write reset links into logs). Every web response carries `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and, over HTTPS, HSTS. All throttles are named limiters (`RateLimits`) stored in the cache store — use Redis so limits hold across instances.
+
+**Storage.** Product images, advertisements, Branch photos and receipt logos live on the private `s3` disk. Signed links are now stable per time window (30 min Products, 60 min advertisements) and cached, and new uploads carry `Cache-Control: public, max-age=31536000, immutable`, so devices stop re-downloading images after every sale. Invoice proofs, Store expense receipts and staff photos use `PAYMENT_PROOFS_DISK` / `STORE_EXPENSE_RECEIPTS_DISK` / `STAFF_AVATARS_DISK` (default `local`): the container disk is **not persistent on Railway** — set them to `s3` (or mount a persistent volume) before deployment.
+
+**Database connection pooling (recommendation — not validated against real Supabase/Railway).**
+- Web requests (short transactions): Supabase's transaction pooler (Supavisor, port 6543) is compatible with the application's locking — every `FOR UPDATE` / `FOR SHARE` and `pg_advisory_xact_lock` is transaction-scoped and no request relies on session state. PDO uses server-side prepared statements by default; with transaction pooling enable emulated prepares for the web connection (a `PDO::ATTR_EMULATE_PREPARES` option on a dedicated connection) and verify in an isolated non-production environment before production.
+- Queue workers, the scheduler and Reverb (long-lived processes): the session pooler (port 5432) or a direct connection.
+- Migrations: always the direct (or session) connection — DDL, the constraint swaps and CHECK rebuilds must not run through the transaction pooler.
+- Size: (web PHP workers × instances) + queue workers + scheduler + Reverb must stay below the pooler/database connection limit of the plan, with headroom for migrations and the SQL console. Local development keeps its direct local PostgreSQL connection.
+
+**Backup and restore (PENDING — perform in an isolated non-production environment, then record the result).**
+1. Confirm automated PostgreSQL backups (Supabase daily backups / PITR per plan) and their retention.
+2. Restore the latest backup into a scratch project; point an isolated validation build at it; run `php artisan migrate:status` (no pending, no drift).
+3. Spot-check business history: a closed Store Session's reconciliation snapshot, Payments, inventory and ingredient movements, Pamamalengke purchases and Audit entries for one day.
+4. Object storage: confirm bucket versioning or a scheduled copy; restore one product image, one advertisement and one invoice proof and open them through the app.
+5. Rollback/redeploy: redeploy the previous release (additive migrations stay; never `migrate:rollback` on production data without the guards above) and confirm `/health` is `ok`.
+
+**Staging readiness (DEFERRED / optional future environment).** Separate from production: database, Redis, Reverb app id/key/secret, VAPID keys, bucket, `APP_KEY`, session cookie domain and `APP_VERSION=v1.0.0-rc.N` + SHA. Then run the Phase 20 manual QA checklist (`11-testing-qa.md`) against staging.

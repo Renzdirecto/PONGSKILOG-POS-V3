@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'Pongskilog'),
 
     /*
     |--------------------------------------------------------------------------
@@ -27,6 +27,22 @@ return [
     */
 
     'env' => env('APP_ENV', 'production'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Release Identity (Phase 20)
+    |--------------------------------------------------------------------------
+    |
+    | Set per deployment, never committed: APP_VERSION (e.g. v1.0.0-rc.1,
+    | v1.0.0) and APP_BUILD_SHA (the deployed Git commit). On Railway the
+    | commit falls back to RAILWAY_GIT_COMMIT_SHA. Local development shows
+    | "development" with no build. Only these two safe values are exposed.
+    |
+    */
+
+    'version' => env('APP_VERSION', 'development'),
+
+    'build_sha' => env('APP_BUILD_SHA', env('RAILWAY_GIT_COMMIT_SHA')),
 
     /*
     |--------------------------------------------------------------------------

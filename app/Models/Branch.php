@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property BranchStatus $status
  */
-#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path'])]
+#[Fillable(['code', 'name', 'status', 'address', 'contact', 'operating_hours', 'qr_ordering_enabled', 'facebook_url', 'website_url', 'receipt_name', 'receipt_address', 'receipt_contact', 'receipt_footer', 'receipt_show_logo', 'receipt_logo_path', 'receipt_layout', 'image_path', 'maps_url', 'customer_screen_dine_in_success_seconds', 'customer_screen_take_out_success_seconds'])]
 class Branch extends Model
 {
     protected $attributes = ['qr_ordering_enabled' => true, 'receipt_show_logo' => true];
@@ -45,7 +45,10 @@ class Branch extends Model
             'status' => BranchStatus::class,
             'qr_ordering_enabled' => 'boolean',
             'receipt_show_logo' => 'boolean',
+            'receipt_layout' => 'array',
             'operating_hours' => 'array',
+            'customer_screen_dine_in_success_seconds' => 'integer',
+            'customer_screen_take_out_success_seconds' => 'integer',
         ];
     }
 
@@ -77,6 +80,12 @@ class Branch extends Model
     public function storeSessions(): HasMany
     {
         return $this->hasMany(StoreSession::class);
+    }
+
+    /** @return HasMany<StoreSessionExpense, $this> */
+    public function storeSessionExpenses(): HasMany
+    {
+        return $this->hasMany(StoreSessionExpense::class);
     }
 
     /** @return BelongsToMany<User, $this> */

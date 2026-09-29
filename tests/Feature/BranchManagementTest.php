@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\BranchStatus;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
@@ -42,22 +43,25 @@ test('management roles can list create and update branches', function (string $r
     $this->put(route('branches.update', $branch), branchInput(['name' => 'Updated Branch', 'contact' => '555-0123', 'address' => '123 Main Street']))
         ->assertRedirectToRoute('branches.index')->assertSessionHasNoErrors();
     $this->assertDatabaseHas('branches', ['id' => $branch->id, 'name' => 'Updated Branch', 'contact' => '555-0123', 'address' => '123 Main Street']);
+    expect(AuditLog::query()->where('auditable_id', $branch->id)->pluck('action')->all())
+        ->toBe(['branch.created', 'branch.updated']);
 })->with(['owner', 'super_admin']);
 
-test('normal staff cannot manage branches even with settings permission', function (string $roleName) {
+test('branch staff with a forced settings permission never create, rename or reach another branch', function (string $roleName) {
     $user = branchManager($roleName);
     Role::query()->where('name', $roleName)->sole()->permissions()->attach(Permission::query()->where('name', 'settings.manage')->sole());
     $branch = Branch::factory()->create();
+    $foreign = Branch::factory()->create();
     $original = $branch->fresh()->getAttributes();
     $user->branches()->attach($branch, ['is_active' => true]);
 
-    expect(Gate::forUser($user)->allows('viewAny', Branch::class))->toBeFalse()
-        ->and(Gate::forUser($user)->allows('create', Branch::class))->toBeFalse()
-        ->and(Gate::forUser($user)->allows('update', $branch))->toBeFalse();
-    $this->actingAs($user)->get(route('branches.index'))->assertForbidden();
-    $this->post(route('branches.store'), branchInput())->assertForbidden();
-    $this->put(route('branches.update', $branch), branchInput())->assertForbidden();
-    $this->assertDatabaseCount('branches', 1);
+    expect(Gate::forUser($user)->allows('create', Branch::class))->toBeFalse()
+        ->and(Gate::forUser($user)->allows('updateIdentity', $branch))->toBeFalse()
+        ->and(Gate::forUser($user)->allows('update', $foreign))->toBeFalse();
+    $this->actingAs($user)->post(route('branches.store'), branchInput())->assertForbidden();
+    $this->put(route('branches.update', $foreign), branchInput())->assertForbidden();
+    $this->put(route('branches.update', $branch), branchInput())->assertInvalid(['code', 'name']);
+    $this->assertDatabaseCount('branches', 2);
     expect($branch->fresh()->getAttributes())->toBe($original);
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
 
@@ -125,10 +129,21 @@ test('duplicate codes cannot be created or assigned to another branch', function
     expect($branch->fresh()->code)->toBe('QAVE');
 });
 
+test('a Branch cannot leave Active while its Store Session is open', function (BranchStatus $status) {
+    $branch = Branch::factory()->create(['code' => 'MAIN', 'name' => 'Main']);
+    StoreSession::factory()->for($branch)->create();
+
+    $this->actingAs(branchManager())->put(route('branches.update', $branch), branchInput(['code' => 'MAIN', 'name' => 'Main', 'status' => $status->value]))
+        ->assertSessionHasErrors(['status' => 'Close the Store at Main before changing the Branch from Active.']);
+
+    expect($branch->fresh()->status)->toBe(BranchStatus::Active);
+})->with([BranchStatus::TemporarilyClosed, BranchStatus::Inactive]);
+
 test('status changes preserve identity hours and session truth', function (BranchStatus $status) {
     $hours = ['monday' => ['open' => '08:00', 'close' => '21:00']];
     $branch = Branch::factory()->create(['code' => 'MAIN', 'operating_hours' => $hours]);
-    $session = StoreSession::factory()->for($branch)->create();
+    /** Leaving Active needs a closed Store; an Active Branch keeps its open session untouched. */
+    $session = $status === BranchStatus::Active ? StoreSession::factory()->for($branch)->create() : StoreSession::factory()->for($branch)->closed()->create();
     $originalSession = $session->fresh()->getAttributes();
 
     $this->actingAs(branchManager())->put(route('branches.update', $branch), branchInput([
@@ -143,7 +158,7 @@ test('status changes preserve identity hours and session truth', function (Branc
     $this->assertDatabaseCount('branches', 1);
     $this->assertDatabaseCount('store_sessions', 1);
     $this->get(route('branches.index'))->assertInertia(fn (Assert $page) => $page
-        ->where('branches.0.status', $status->value)->where('branches.0.store_is_open', true));
+        ->where('branches.0.status', $status->value)->where('branches.0.store_is_open', $status === BranchStatus::Active));
 })->with(BranchStatus::cases());
 
 test('branch listing uses bounded queries and exposes only core fields and current state', function () {

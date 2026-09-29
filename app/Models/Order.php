@@ -28,6 +28,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $archived_at
  * @property Carbon|null $completed_at
  * @property Carbon|null $committed_at
+ * @property Carbon|null $edited_at
+ * @property Carbon|null $voided_at
+ * @property string|null $original_total
  * @property string|null $store_session_id
  * @property int $version
  * @property OrderSource $source
@@ -38,7 +41,7 @@ use Illuminate\Support\Carbon;
  * @property KitchenStatus $kitchen_status
  * @property KitchenTicket|null $kitchenTicket
  */
-#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'preparing_at', 'ready_at', 'voided_at', 'pay_later_idempotency_key', 'version', 'customer_qr_session_id', 'public_tracking_id', 'qr_idempotency_key', 'qr_intent_hash', 'table_name_snapshot'])]
+#[Fillable(['branch_id', 'store_session_id', 'source', 'order_type', 'customer_label', 'branch_table_id', 'commercial_status', 'payment_status', 'payment_term', 'kitchen_status', 'subtotal', 'total', 'original_total', 'created_by_user_id', 'loaded_by_user_id', 'submitted_at', 'archived_at', 'archive_reason', 'committed_at', 'completed_at', 'preparing_at', 'ready_at', 'voided_at', 'edited_at', 'pay_later_idempotency_key', 'version', 'customer_qr_session_id', 'public_tracking_id', 'qr_idempotency_key', 'qr_intent_hash', 'table_name_snapshot'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
@@ -76,6 +79,7 @@ class Order extends Model
             'kitchen_status' => KitchenStatus::class,
             'subtotal' => 'decimal:2',
             'total' => 'decimal:2',
+            'original_total' => 'decimal:2',
             'version' => 'integer',
             'qr_sequence' => 'integer',
             'preparing_at' => 'datetime',
@@ -85,6 +89,7 @@ class Order extends Model
             'committed_at' => 'datetime',
             'completed_at' => 'datetime',
             'voided_at' => 'datetime',
+            'edited_at' => 'datetime',
         ];
     }
 
@@ -124,6 +129,12 @@ class Order extends Model
         return $this->hasMany(Payment::class);
     }
 
+    /** @return HasMany<OrderAdjustment, $this> */
+    public function adjustments(): HasMany
+    {
+        return $this->hasMany(OrderAdjustment::class);
+    }
+
     /** @return HasMany<InventoryMovement, $this> */
     public function inventoryMovements(): HasMany
     {
@@ -134,5 +145,17 @@ class Order extends Model
     public function kitchenTicket(): HasOne
     {
         return $this->hasOne(KitchenTicket::class);
+    }
+
+    /** @return HasOne<OrderVoid, $this> */
+    public function voidRecord(): HasOne
+    {
+        return $this->hasOne(OrderVoid::class);
+    }
+
+    /** @return HasOne<OrderPickupToken, $this> */
+    public function pickupToken(): HasOne
+    {
+        return $this->hasOne(OrderPickupToken::class);
     }
 }

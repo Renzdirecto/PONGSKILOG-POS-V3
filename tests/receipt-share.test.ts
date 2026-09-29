@@ -18,6 +18,8 @@ function component(file, mocks) {
         },
     }).outputText;
     const exports = {};
+    // Deliberate: runs the transpiled hook module with mocked imports; the code is the repository's own source.
+    // oxlint-disable-next-line typescript/no-implied-eval
     new Function('require', 'exports', code)(
         (name) => (name in mocks ? mocks[name] : require(name)),
         exports,
@@ -185,40 +187,71 @@ test('Show QR reports expired receipts without retry or QR', async () => {
     assert.doesNotMatch(html, /<img|Retry/);
 });
 
-test('shared digital receipt renders branding REF payment and items with no action buttons', () => {
+test('shared digital receipt renders the canonical receipt: branding, REF, payment and items, no action buttons', () => {
+    const money = component('lib/pos-money.ts', {});
+    const receiptLib = component('lib/receipt.ts', { './pos-money': money });
+    const { ReceiptDocument } = component('components/receipt-document.tsx', {
+        '@/components/operational-item-name': {
+            OperationalItemName: ({ value }) => value.displayName,
+        },
+        '@/lib/pos-money': money,
+        '@/lib/receipt': receiptLib,
+    });
     const { DigitalReceiptCard } = component(
         'components/digital-receipt-card.tsx',
         {
-            '@/lib/pos-money': { pesos: (value) => `PHP ${value}` },
+            '@/lib/pos-money': money,
             './customer-qr-product': { qrPanel: '' },
+            './receipt-document': { ReceiptDocument },
         },
     );
     const receipt = {
         branch: {
             name: 'Custom branch',
+            code: 'MAIN',
             address: 'Street',
             contact: '0917',
             show_logo: true,
             logo_url: '/logo.png',
             footer: 'Thank you!',
         },
+        layout: {
+            blocks: [
+                'logo', 'store', 'address', 'contact', 'header_text',
+                'order', 'date', 'cashier', 'customer',
+                'items', 'totals', 'payments',
+                'custom_rows', 'footer',
+            ],
+            separator: 'dashed',
+            header_text: 'Open daily',
+            custom_rows: ['Wi-Fi: pongskilog'],
+            order_qr: null,
+        },
         order_number: '1001',
         reference_number: 'MAIN-REF',
+        commercial_status: 'completed',
+        payment_status: 'paid',
+        committed_at: '2026-09-22T08:55:00Z',
         paid_at: '2026-09-22T09:00:00Z',
         order_type: 'take_out',
         customer_label: 'Customer',
+        table_name: null,
+        cashier: 'Ana',
         items: [
             {
                 name: 'Tapsilog',
                 quantity: 2,
+                unit_price: '95.00',
                 line_total: '190.00',
                 notes: 'Less salt',
                 modifiers: [
-                    { name: 'Scrambled', semantic_role: 'instruction' },
+                    { group_name: 'Egg', name: 'Scrambled', semantic_role: 'instruction', price_delta: '0.00', quantity: 1 },
                 ],
             },
         ],
+        subtotal: '190.00',
         total: '190.00',
+        money: { paid: '190.00', refunded: '0.00', balance: '0.00' },
         payments: [
             {
                 method: 'cash',
@@ -233,19 +266,26 @@ test('shared digital receipt renders branding REF payment and items with no acti
         'Custom branch',
         'MAIN-REF',
         '/logo.png',
+        'Open daily',
+        'ORDER #1001',
+        'PAID',
+        'Cashier',
+        'Ana',
+        'Customer',
         'Tapsilog',
-        'Less salt',
-        'Instructions:',
-        'Scrambled',
-        '200.00',
-        '10.00',
+        'Instructions: Scrambled, Less salt',
+        '₱200.00',
+        '₱10.00',
+        'Wi-Fi: pongskilog',
         'Thank you!',
+        'theme-static',
     ])
         assert.ok(html.includes(value), value);
-    assert.doesNotMatch(html, /<button/);
-    receipt.branch.show_logo = false;
-    assert.doesNotMatch(
-        renderToStaticMarkup(DigitalReceiptCard({ receipt })),
-        /<img/,
+    assert.doesNotMatch(html, /<button|<dt|<dd/);
+    receipt.layout.blocks = receipt.layout.blocks.filter(
+        (block) => block !== 'logo' && block !== 'cashier',
     );
+    const withoutLogo = renderToStaticMarkup(DigitalReceiptCard({ receipt }));
+    assert.doesNotMatch(withoutLogo, /<img/);
+    assert.doesNotMatch(withoutLogo, /Cashier/);
 });

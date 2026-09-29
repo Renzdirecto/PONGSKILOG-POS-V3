@@ -18,7 +18,7 @@ class UpdateModifierOption
     /** @param array{modifier_group_id?: mixed, name?: mixed, price_delta?: mixed, is_active?: mixed, sort_order?: mixed} $attributes */
     public function execute(User $user, ModifierOption $modifierOption, array $attributes): ModifierOption
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         $validated = Validator::make($attributes, [
             'modifier_group_id' => ['bail', 'required', 'uuid', Rule::exists(ModifierGroup::class, 'id')],

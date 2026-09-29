@@ -39,17 +39,20 @@ Use DB constraints/indexes in addition to application validation.
 - `email`
 - `password`
 - `is_active`
+- `position` (nullable `varchar(100)`, Phase 18 Manual QA refinement #1): business/job title for display only; never a source of access
 - timestamps
 
 ### `roles`
 
-Examples:
+System roles (machine `name` never changes):
 
 - super_admin
 - owner
 - cashier
 - kitchen_staff
 - cashier_kitchen
+
+Since Phase 18 final: `label`, `is_system`, `scope` (`branch` / `business`), `archived_at`; Custom Roles use the stable key `custom_{id}` (see the Phase 18 final section below).
 
 ### `permissions`
 
@@ -575,6 +578,19 @@ Must cover:
 
 Audit rows are append-only in normal app behavior.
 
+### `order_voids`
+
+- UUID primary key with restrictive Branch, Store Session, Order, initiator, and authorizer relations
+- One row per Order and one row per idempotency key
+- Stable reason code/label, nullable Other detail, `super_admin_pin` authorization method, and timestamps
+- Original Order, item, Payment, Kitchen, adjustment, and inventory movement history is retained
+
+### `void_authorization_settings`
+
+- One row for unique scope `global`
+- Hashed four-digit PIN only; no plaintext PIN column
+- Restrictive configuring Super Admin relation and required configuration timestamp
+
 ---
 
 ## 17. Settings
@@ -770,3 +786,126 @@ boundary. No additional order, payment, inventory, or Kitchen aggregate was adde
 - `2026_09_22_102534_add_receipt_logo_path_to_branches_table`: nullable receipt_logo_path for validated branch-scoped branding stored on the configured S3 disk. Replacement/removal cleans up the old image; transaction failure cleans up the newly uploaded image. Public display streams only the persisted image through the branch logo endpoint.
 - SQLite identity alteration reconstructs the original table DDL while preserving its existing CHECK constraints, foreign keys and explicit indexes. PostgreSQL uses ALTER COLUMN plus a CHECK. Rollback intentionally refuses when provisional null-number Orders exist rather than deleting history or fabricating official numbers; roll forward in that case. Fresh/up/down/reapply tests use isolated databases/schemas.
 - Preparing/Ready represent actual transitions; rollback clears no-longer-reached stages. Receipt expiry remains derived, not a deletion deadline. Existing anonymous-session ownership authorizes prior paid receipts independently of active_order_id.
+
+## Phase 12 additive transaction schema - 2026-09-22
+
+- `orders.original_total` stores the first pre-edit committed total; `orders.edited_at` marks the latest committed edit. Existing `version` is the optimistic concurrency token.
+- `payments.payment_group_id` groups the Cash and Cashless legs of one attempt; `payment_context` distinguishes initial, Pay Later settlement, and edit-balance settlement. Historical rows remain intact and can derive their group from the idempotency-key root.
+- `order_adjustments` is append-only and records positive lower-total corrections with branch, Store Session, Order, actor, reason, and unique idempotency key.
+- `payment_invoice_proofs` has exactly one private object per Cashless Payment row and stores disk/path plus safe file metadata and uploader. Replacement swaps the object without changing Payment history; failed DB work removes the new object.
+- `audit_logs` is the canonical append-only mutation record with branch/user/module/action/auditable identity, before/after JSON, metadata, and an optional unique idempotency key.
+- Migration `2026_09_22_125245_add_transaction_history_editing_support` is additive and has verified PostgreSQL up/down/reapply behavior.
+
+## Phase 14 Store Session expenses - 2026-09-23
+
+- `store_session_expenses` is append-only current-session financial history: UUID identity, restrictive Branch/Store Session/actor parents, positive `numeric(14,2)` amount, constrained Cash/Cashless source, optional note, private receipt metadata, unique client idempotency UUID, and canonical intent hash. Session/source and bounded-history indexes support full-session exact aggregates plus newest-first display.
+- `store_session_expense_items` permits at most one optional tracked Product and positive integer quantity per expense. A linked purchase calls the existing inventory movement primitive with `store_purchase_restock`; `inventory_movements.store_session_expense_id` has a restrictive PostgreSQL foreign key. Normal expenses create no item, movement, or balance change.
+- Cash and Cashless totals are SQL aggregates over the complete current Store Session, independent of the bounded newest 50 records. Earlier sessions and other Branches are excluded. These separate totals are Phase 15 reconciliation inputs; no closing calculation is implemented here.
+- Fresh/rollback/reapply passed on disposable SQLite and isolated PostgreSQL. PostgreSQL also verified positive checks, exact money, uniqueness, restrictive linkage, concurrent retry/restock behavior, and the future exclusive Store Session close boundary.
+
+## Phase 15 Close Store reconciliation schema - 2026-09-23
+
+- Migration `2026_09_23_053920_add_store_close_reconciliation_support` is additive. `order_adjustments` gains nullable `cash_amount`/`cashless_amount` (`numeric(14,2) >= 0`); PostgreSQL also enforces that both are null or both are set and sum to `amount`. Historical rows stay null; a mixed-method null row is allocated once from an explicit, audited Cashier answer and is otherwise immutable.
+- `store_sessions` gains nullable JSON `reconciliation_snapshot` (opening, sales, split, expenses, corrections, voids, expected, actual, variance, QR archived count, zero blocker counts). The `expected_cash_amount`/`expected_cashless_amount >= 0` CHECKs are removed so expected balances keep exact signed math; opening and closing CHECKs remain. Rollback refuses while negative expected balances or allocated corrections exist.
+- Closed Store Sessions are immutable at the model layer. A status-consistency CHECK was deliberately not added because existing fixtures close sessions with a bare status update; `CloseStoreSession` always writes the complete closing record.
+
+Migration `2026_09_23_074723_add_store_session_index_to_order_adjustments_table` adds `(store_session_id, order_id)` on `order_adjustments` so close-time correction aggregates stay scoped to one session. Payments (`store_session_id`), Orders (`store_session_id, qr_sequence`), and expenses (`store_session_id, payment_source`) reuse existing indexes.
+
+## Store Session inventory adjustments - 2026-09-23
+
+Migration `2026_09_23_132208_create_store_session_inventory_adjustments_table` adds an append-only `store_session_inventory_adjustments` record (Branch, Store Session, Product, unique `inventory_movement_id`, reason code `complimentary|wastage|damaged|staff_meal|other`, positive quantity, optional note, actor, unique idempotency key, intent hash). The stock change itself is a canonical `manual_adjustment` movement written through `ApplyInventoryMovement`; no Store Expense, Payment, or reconciliation value is created, so Store Close financial totals are unaffected.
+
+## Phase 16E Owner Operations schema - 2026-09-24
+
+Migration `2026_09_24_053738_create_owner_operations_tables` is additive (the only change to an existing table is `products.no_recipe_needed boolean default false`). Rollback drops only the new tables and column.
+
+- `operation_plans` (UUID, name, description, icon, `archived_at`, creator) and `operation_plan_products` (UUID, Plan, **unique `product_id`** — one active Plan per Product). `operation_plan_ingredients` (unique Plan + Ingredient) lets one Ingredient appear in many Plans.
+- `ingredients`: unique name, icon, CHECKed base unit, `target_quantity numeric(18,4) >= 0`, purchase unit name, `purchase_unit_size numeric(18,4) > 0`, `purchase_unit_cost numeric(14,2) >= 0` (null = unknown), `replenishment_rule` (`top_up|reorder|none`), `reorder_point numeric(18,4)`, `archived_at`, creator/updater.
+- `branch_ingredient_stocks`: the one balance per **unique (branch_id, ingredient_id)** — `on_hand numeric(18,4)` (may be negative), `version`. Written only by `ApplyIngredientMovement`, locked in Ingredient-id order.
+- `ingredient_movements` (append-only; model forbids update/delete): Branch, Ingredient, type, `quantity_delta numeric(18,4) <> 0`, `balance_after`, signed `estimated_cost_cents` (null = unknown), Order, Order recipe snapshot, Plan snapshot, pamamalengke purchase, Store Session expense, reason code/text, actor, unique nullable idempotency key. Partial unique indexes `ingredient_movements_sale_once` and `ingredient_movements_void_once` on (snapshot, Ingredient) for `sale_consumption` / `void_restoration`. Indexes: (branch, ingredient, created_at), (branch, created_at), order, purchase.
+- `recipes` (unique Product + `size_key` = size option id or `base`) with `recipe_lines` (unique recipe + Ingredient, `quantity numeric(18,4) > 0`). Recipe edits replace lines; history lives in snapshots.
+- `order_recipe_snapshots` (immutable; unique Order + Product + size key): recipe state (`recipe|missing|not_needed`), product/size name snapshots, Plan snapshot. `order_recipe_snapshot_lines`: per-unit quantity and the purchase-unit cost basis (`cost_basis_cents`, `cost_basis_quantity`) in force at commitment. Keyed by Order + Product/size (not Order Item ids), because committed edits replace Order Items.
+- `pamamalengke_purchases` (immutable): Branch, Store Session, Plan, **unique `store_session_expense_id`** (the canonical expense), estimated total + completeness, note, buyer, unique idempotency key, intent hash. `pamamalengke_purchase_items`: ingredient/manual line, recommended vs actual quantity, estimated vs actual unit cost, line total, purchase-unit size, exact base quantity, unique restock movement.
+- `pamamalengke_list_entries`: the next run's manual items and skip marks per Branch + Plan (working list, cleared on confirm).
+- Verified on SQLite (Pest) and an isolated PostgreSQL schema (`tests/verify-operations-postgres.php`: fresh, rollback, reapply, numeric types, partial indexes). The normal development database only needs a forward `php artisan migrate`.
+
+### Phase 16E follow-up: Add-on / Modifier Ingredient effects (additive)
+
+Migration `2026_09_24_072528_add_product_modifier_effects` adds four tables; no existing column, row, constraint or `semantic_role` value changes. Long constraint names are explicit (PostgreSQL truncates identifiers at 63 bytes).
+
+- `product_modifier_effects` (UUID, Product, Modifier option, updater; **unique Product + option**) and `product_modifier_effect_lines` (unique effect + Ingredient, `quantity numeric(18,4) > 0`). Current configuration only; Business-wide definition, Branch-specific stock.
+- `order_recipe_snapshot_modifiers` (immutable; unique snapshot + option; option/group name snapshots) and `order_recipe_snapshot_modifier_lines` (`quantity_per_selection numeric(18,4) > 0`, cost basis like recipe snapshot lines). A modifier snapshot without lines records "no Ingredient effect". Add-on usage is merged into the Product/size snapshot's per-Ingredient movements, so the existing sale/void partial unique indexes still apply.
+
+### Phase 16E Final QA: Store Session Giveaways (additive)
+
+Migration `2026_09_24_134328_create_store_session_giveaways`:
+
+- `store_session_giveaways`: `branch_id`, `store_session_id`, `product_id` (restrict), `product_name_snapshot`, `size_key`, `size_name_snapshot`, `selections` (JSON: group, role, option snapshots), `quantity` (CHECK > 0), `stock_mode` (`recipe` / `product_stock` / `none`), `stock_basis` (JSON per-serving base recipe + Add-on effects), `inventory_movement_id` (unique, nullable), `reason_code`, `note`, `created_by_user_id`, `idempotency_key` (unique), `intent_hash`, timestamps. Immutable (model guards).
+- `store_session_giveaway_reversals`: `giveaway_id` (**unique** → at most one reversal), `branch_id`, `store_session_id`, `inventory_movement_id` (unique, nullable), `reason`, actor, `idempotency_key` (unique), `intent_hash`. Immutable.
+- `ingredient_movements.store_session_giveaway_id` (indexed; FK on PostgreSQL) and partial unique indexes `ingredient_movements_giveaway_once` / `ingredient_movements_giveaway_reversal_once` on (`store_session_giveaway_id`, `ingredient_id`).
+- `movement_type` CHECK constraints of `ingredient_movements` and `inventory_movements` extended with `giveaway` and `giveaway_reversal` (PostgreSQL constraint swap; SQLite definition-preserving rebuild). Rollback refuses while giveaway history exists.
+- Known PostgreSQL identifier truncation (functional, no collision; guarded against new ones by the harness): `operation_plan_ingredients_…_uniq`, `order_recipe_snapshot_lines_…_ingredient`, `pamamalengke_list_entries_…_entry_typ` and three pre-existing `store_session_inventory_adjustments_*` names.
+
+## Phase 18 — Access Control and Notifications (additive) — 2026-09-25
+
+Migration `2026_09_24_165603_create_user_permission_overrides_table`:
+
+- `user_permission_overrides`: `id`, `user_id` (FK users, cascade), `permission_id` (FK permissions, cascade), `effect` `varchar(5)` CHECK (`allow`, `deny`), timestamps; **unique (`user_id`, `permission_id`)**, index `permission_id`. No row = INHERIT. Users are deactivated, never deleted, so the cascade removes only exceptions of a genuinely removed row; audit history is untouched.
+
+Migration `2026_09_24_165604_create_notifications_table` (Laravel's standard database notifications table):
+
+- `notifications`: UUID `id`, `type` (`admin.access`, `admin.staff`, `admin.stock`), morph `notifiable`, JSON-text `data` (`category`, `title`, `body`, `url`), `read_at`, timestamps; index (`notifiable_type`, `notifiable_id`, `read_at`) for the unread badge.
+
+Role baselines keep using `role_permissions`; Cashier + Kitchen rows are always the union of Cashier and Kitchen Staff. Index names stay under PostgreSQL's 63-byte limit (checked by `tests/verify-access-admin-postgres.php`).
+
+## Phase 18 final — Custom Roles (additive) — 2026-09-25
+
+Migration `2026_09_25_052453_add_custom_role_metadata_to_roles_table` (additive; existing rows and assignments are kept):
+
+- `roles.label` `varchar(60)` nullable — display name. System roles are backfilled (`Super Admin`, `Owner`, `Cashier`, `Kitchen Staff`, `Cashier + Kitchen`); any other pre-existing row gets its `name`.
+- `roles.is_system` boolean, default false — backfilled true for the five canonical names. A System role is always identified by its canonical `name`; its stored metadata never widens it.
+- `roles.scope` `varchar(16)` nullable, CHECK (`branch`, `business`) — WHERE a role works. System scope is canonical by name (Owner/Super Admin business, the three operational roles Branch).
+- `roles.archived_at` timestamp nullable — an archived Custom Role keeps its row and baseline for audit meaning and cannot be assigned.
+- Partial unique index `roles_active_label_unique` on `LOWER(label) WHERE archived_at IS NULL` (PostgreSQL and SQLite): active display names are unique ignoring case; an archived name may be reused.
+- `roles.name` stays the unique machine key. A Custom Role is inserted with a temporary key and renamed to `custom_{id}` in the same transaction, so renaming the display name never changes identity. No UUID was added; the Role PK is the identity.
+- Custom Role baselines use the existing `role_permissions`; assignments use the existing `user_roles` and `user_branch_assignments`. Rollback drops the index then the four columns (verified on disposable PostgreSQL and isolated SQLite).
+
+
+## Phase 18 pass #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Forward migration `2026_09_25_112126_make_branch_catalog_and_operations_independent` (one authoritative model after cutover; no legacy shared rows remain):
+
+- `branch_products.no_recipe_needed` boolean (Branch recipe mode); `products.no_recipe_needed` dropped. A `branch_products` row is now explicit assortment membership (unique `branch_id, product_id` unchanged).
+- `branch_id` (NOT NULL, FK) on `ingredients`, `operation_plans`, `recipes`, `product_modifier_effects`, `operation_plan_products`, `operation_plan_ingredients`; `lineage_id` (NOT NULL) on `ingredients` and `operation_plans` (copy provenance: own id when created, source lineage when copied).
+- Uniques: `ingredients (branch_id, lower(name))` (replaces global `name`), `ingredients/operation_plans (branch_id, lineage_id)` and `(branch_id, id)`; `recipes (branch_id, product_id, size_key)`; `product_modifier_effects_branch_unique (branch_id, product_id, modifier_option_id)`; `operation_plan_products (branch_id, product_id)` (a Product may sit in a different Plan per Branch). Indexes: `operation_plans (branch_id, archived_at, name)`, `operation_plan_ingredients (branch_id, ingredient_id)`, `product_id` on recipes/effects/plan products.
+- PostgreSQL composite FKs `(branch_id, ingredient_id) → ingredients (branch_id, id)` on `branch_ingredient_stocks`, `ingredient_movements`, `operation_plan_ingredients`, `pamamalengke_list_entries`, and `(branch_id, operation_plan_id) → operation_plans (branch_id, id)` on `operation_plan_ingredients`, `operation_plan_products`, `pamamalengke_list_entries` — a cross-Branch reference is rejected by the database.
+- Cutover: explicit rows for every existing Branch × Product (existing rows kept). The oldest Branch keeps the original Ingredient/Plan/Recipe/effect ids; each other Branch gets copies through an explicit old → new id map, and its stock, movements (Ingredient and Plan ids), working list, purchases/purchase items, Order recipe snapshots (lines, add-on lines, Plan) and Giveaway recipe basis are re-pointed to its own copies. Quantities, balances, costs, totals and timestamps are untouched. `down()` works only while no Branch-owned setup exists (it refuses to merge Branch configurations).
+
+## Phase 19 — performance indexes (additive) — 2026-09-25
+
+Migration `2026_09_25_150406_add_reporting_performance_indexes` adds indexes only (no row or column changes; `down()` drops exactly these). Each backs an existing query shape, read backwards for newest-first ordering (PostgreSQL EXPLAIN verified: Index Scan Backward, no Sort):
+
+- `audit_logs (created_at, id)` — Audit Trail pages and the Executive Dashboard's recent audit (`ORDER BY created_at DESC, id DESC` with no leading filter; filtered browsing keeps the `branch_id` / `user_id` / `module` / `action` composite indexes).
+- `orders (committed_at, id)` — All Branches Transactions and the Dashboard's recent transactions (`(branch_id, committed_at)` still serves one Branch).
+- `notifications (notifiable_type, notifiable_id, created_at, id)` — one recipient's notification list; the unread badge keeps `(notifiable_type, notifiable_id, read_at)`.
+- `pamamalengke_purchase_items (pamamalengke_purchase_id)` and `pamamalengke_purchases (store_session_id)` — previously unindexed foreign keys read by Operations › Purchases.
+
+## Phase 19.6 — Customer Experience Expansion (additive) — 2026-09-27
+
+Migration `2026_09_26_174138_create_customer_experience_tables` (forward-only additions; `down()` drops exactly these four tables):
+
+- `customer_screens` — `id` uuid; `token_hash` char(64) unique (SHA-256 of the device cookie); `channel_key` char(40) unique (private channel suffix); `pairing_code_hash` char(64) nullable unique + `pairing_code_expires_at`; `branch_id` nullable FK (null on delete); `station_hash` char(64) nullable; `paired_by_user_id` nullable FK; `paired_at`; `mode` varchar CHECK `ads|menu|customer_display` default `ads`; `last_seen_at`; timestamps. Unique `(branch_id, station_hash)` = one screen per POS station per Branch. The live cart and takeover are **not** stored here (cache only).
+- `branches` (manual-QA fixes, migration `2026_09_27_072905_add_customer_screen_settings_to_branches_table`, additive): `customer_screen_dine_in_success_seconds` and `customer_screen_take_out_success_seconds` unsigned tinyint default 5 (3–15 enforced by the settings endpoint; out-of-range values are clamped when read), `maps_url` varchar(500) nullable (the customer Maps link beside the existing `facebook_url` / `website_url`).
+- `customer_screen_media` — `id` uuid; `branch_id` FK (cascade); `media_type` CHECK `image|video`; `label` ≤ 80; `path` (server-generated `customer-screen/{branch}/{uuid}/display.webp|video.mp4`); `mime_type`; `size_bytes`; `duration_seconds` CHECK 1–120; `sort_order`; `is_active`; `created_by_user_id` nullable FK; timestamps. Index `(branch_id, is_active, sort_order)`. At most 30 per Branch (application rule).
+- `order_pickup_tokens` — `id` uuid; `order_id` FK unique (cascade) = exactly one per order; `branch_id` FK; `token_hash` char(64) unique (lookup); `token_ciphertext` text (`encrypted` cast; re-renders the QR); `channel_key` char(40) unique; `expires_at` (commit + 12 h) indexed alone and with `branch_id`; `buzz_count` smallint CHECK ≥ 0; `last_buzzed_at`; `last_buzz_key` uuid; timestamps. Only committed Take Out orders get a row.
+- `pickup_push_subscriptions` — `id`; `order_pickup_token_id` FK unique (cascade) = one customer endpoint per pickup token; `endpoint_hash` indexed; `endpoint` / `public_key` / `auth_token` encrypted; `content_encoding` CHECK `aes128gcm|aesgcm`; timestamps. Completely separate from staff `push_subscriptions`.
+
+## Phase 20 — additive schema — 2026-09-28
+
+- `store_session_inventory_adjustments.direction` enum `decrease|increase` (default `decrease`, so every earlier row reads correctly); `reason_code` CHECK widened to `physical_count`, `found_stock`, `missing_stock`, `wastage`, `damaged`, `other` plus the legacy `complimentary` and `staff_meal` (kept readable, no longer accepted). The movement's signed quantity is `direction × quantity`.
+- `pamamalengke_purchases.payment_source` enum `cash|cashless` (NOT NULL, backfilled from the expense); `store_session_expense_id` is now nullable (null = allocation to a closed Store Session); `store_session_id` means the **funding** Store Session. PostgreSQL enforces `(branch_id, store_session_id) → store_sessions (branch_id, id)` (new unique index `store_sessions_branch_id_id_unique`), so a purchase can never be attributed to another Branch's session.
+- `users.preferred_name` string(60), nullable (display only; never an identity key).
+- `branches.receipt_layout` JSON, nullable (null = default layout; always normalized on read by `ReceiptLayout`), `branches.image_path` string, nullable (object-storage path of the re-encoded WebP store photo; never binary data in the database).
+- Order line ids: `order_items` and `order_item_modifiers` rows written by `OrderSnapshots` now use time-ordered UUIDv7 (monotonic within a request), so receipts list items and options in the order they were entered. Existing rows are unchanged.
+
+Rollback guards: the Stock Correction down migration refuses while new-reason or increase rows exist; the funding down migration refuses while closed-session allocations exist.

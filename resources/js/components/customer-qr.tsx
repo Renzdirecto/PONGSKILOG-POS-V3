@@ -42,7 +42,8 @@ import { qrError, qrRequest } from '@/lib/qr-http';
 import { terms, privacy } from '@/lib/qr-copy';
 import { pesos } from '@/lib/pos-money';
 import { createClientUuid } from '@/lib/client-uuid';
-import { reset } from '@/routes/qr';
+import { otherCartLines } from '@/lib/recipe-availability';
+import { recipeCapacity, reset } from '@/routes/qr';
 import { store as submitQr } from '@/routes/qr/orders';
 import type { BranchSummary } from '@/types';
 import type { OrderType } from '@/types/pos';
@@ -192,6 +193,11 @@ export default function CustomerQr({
         branch.id,
         order?.public_tracking_id,
     );
+    /** An uncommitted order is only shown after Store close when the customer explicitly asks for it. */
+    const [closedOrderViewed, setClosedOrderViewed] = useState(false);
+    useEffect(() => {
+        if (store.status === 'open') setClosedOrderViewed(false);
+    }, [store.status]);
     useEffect(() => {
         setOrder(serverOrder);
         if (serverOrder && ['cart', 'review'].includes(view)) {
@@ -362,7 +368,9 @@ export default function CustomerQr({
     );
     const closed =
         store.status === 'closed' &&
-        (!order || ['welcome', 'menu', 'cart', 'review'].includes(view));
+        (!order ||
+            ['welcome', 'menu', 'cart', 'review'].includes(view) ||
+            (order.committed_at === null && !closedOrderViewed));
     return (
         <div className="pos-surface min-h-dvh bg-[#fafafa] [font-family:Poppins,sans-serif] text-[#111]">
             <Head title={`${branch.name} · Order`} />
@@ -496,7 +504,10 @@ export default function CustomerQr({
                     {order && (
                         <button
                             className={qrButton}
-                            onClick={() => go('track')}
+                            onClick={() => {
+                                setClosedOrderViewed(true);
+                                go('track');
+                            }}
                         >
                             View current order
                         </button>
@@ -1216,6 +1227,8 @@ export default function CustomerQr({
                     }
                     initial={editing.line}
                     locked={!!order}
+                    capacityUrl={recipeCapacity.url(branch.id)}
+                    otherLines={otherCartLines(cart, editing.line?.key)}
                     onClose={() => setEditing(null)}
                     onTrack={() => go('track')}
                     onSave={(line) => {

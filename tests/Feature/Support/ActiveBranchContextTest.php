@@ -100,3 +100,20 @@ test('business wide users may explicitly select any branch', function (string $r
 
     expect($context->current($user)?->is($branch))->toBeTrue();
 })->with(['owner', 'super_admin']);
+
+test('a forged branch is dropped and the single assigned branch is resolved on the same first call', function () {
+    $user = userForActiveBranchContext();
+    $assigned = Branch::factory()->create();
+    $foreign = Branch::factory()->create();
+    $user->branches()->attach($assigned, ['is_active' => true]);
+    session([ActiveBranchContext::SESSION_KEY => $foreign->getKey()]);
+
+    $context = app(ActiveBranchContext::class);
+
+    expect($context->current($user)?->is($assigned))->toBeTrue()
+        ->and($context->current($user)?->is($assigned))->toBeTrue()
+        ->and(session(ActiveBranchContext::SESSION_KEY))->toBe($assigned->getKey());
+
+    session([ActiveBranchContext::SESSION_KEY => ['not', 'an', 'id']]);
+    expect($context->current($user)?->is($assigned))->toBeTrue();
+});

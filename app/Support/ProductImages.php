@@ -4,12 +4,16 @@ namespace App\Support;
 
 use App\Models\Product;
 use DateTimeInterface;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 class ProductImages
 {
+    /** Signed image links are stable for this long (and valid at least this long after they are handed out). */
+    public const URL_MINUTES = 30;
+
+    public function __construct(private SignedUrls $signedUrls) {}
+
     public function assetDirectory(Product $product): ?string
     {
         $path = $product->image_path;
@@ -45,37 +49,61 @@ class ProductImages
 
     public function cardUrl(Product $product, ?DateTimeInterface $expiresAt = null): ?string
     {
-        return $this->temporaryUrl($this->cardPath($product), $expiresAt);
+        $path = $this->cardPath($product);
+
+        return $path === null ? null : $this->signedUrls->one($path, SignedUrls::minutesUntil($expiresAt, self::URL_MINUTES));
     }
 
     public function safeCardUrl(Product $product, ?DateTimeInterface $expiresAt = null): ?string
     {
+        return $this->safeCardUrls([$product], $expiresAt)[$product->getKey()] ?? null;
+    }
+
+    /**
+     * The card image URLs of a list of Products in one pass (one cache read for the whole list). A Product with an
+     * invalid stored path or an unavailable disk gets null (reported), never an error for the whole page.
+     *
+     * @param  iterable<Product>  $products
+     * @return array<string, string|null> Product id => URL
+     */
+    public function safeCardUrls(iterable $products, ?DateTimeInterface $expiresAt = null): array
+    {
+        $paths = [];
+        $urls = [];
+        foreach ($products as $product) {
+            $urls[(string) $product->getKey()] = null;
+            try {
+                $path = $this->cardPath($product);
+            } catch (RuntimeException $exception) {
+                report($exception);
+
+                continue;
+            }
+            if ($path !== null) {
+                $paths[(string) $product->getKey()] = $path;
+            }
+        }
+        if ($paths === []) {
+            return $urls;
+        }
         try {
-            return $this->cardUrl($product, $expiresAt);
+            $signed = $this->signedUrls->many(array_values($paths), SignedUrls::minutesUntil($expiresAt, self::URL_MINUTES));
         } catch (RuntimeException $exception) {
             report($exception);
 
-            return null;
+            return $urls;
         }
+        foreach ($paths as $id => $path) {
+            $urls[$id] = $signed[$path] ?? null;
+        }
+
+        return $urls;
     }
 
     public function detailUrl(Product $product, ?DateTimeInterface $expiresAt = null): ?string
     {
-        return $this->temporaryUrl($this->detailPath($product), $expiresAt);
-    }
+        $path = $this->detailPath($product);
 
-    private function temporaryUrl(?string $path, ?DateTimeInterface $expiresAt): ?string
-    {
-        if ($path === null) {
-            return null;
-        }
-
-        $disk = Storage::disk('s3');
-
-        if (! $disk->providesTemporaryUrls()) {
-            throw new RuntimeException('The product image disk does not support temporary URLs.');
-        }
-
-        return $disk->temporaryUrl($path, $expiresAt ?? now()->addMinutes(5));
+        return $path === null ? null : $this->signedUrls->one($path, SignedUrls::minutesUntil($expiresAt, self::URL_MINUTES));
     }
 }

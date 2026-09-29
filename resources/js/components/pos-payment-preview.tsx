@@ -14,8 +14,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     cents,
+    editableLines,
     exactCash,
     lineCents,
+    orderTotalCents,
     paymentTotals,
     pesos,
     selectedOptions,
@@ -67,9 +69,7 @@ export function PosPaymentPreview({
     const [cash, setCash] = useState(attempt?.cash_received ?? '');
     const [cashless, setCashless] = useState(attempt?.cashless_amount ?? '');
     const [activeInput, setActiveInput] = useState<'cash' | 'cashless'>('cash');
-    const total = saved
-        ? cents(saved.total)
-        : lines.reduce((sum, line) => sum + lineCents(line), 0n);
+    const total = orderTotalCents(saved, lines);
     const cashAmount = method === 'cashless' ? 0n : cents(cash || '0');
     const cashlessAmount =
         method === 'cashless'
@@ -82,20 +82,21 @@ export function PosPaymentPreview({
         cashAmount,
         cashlessAmount,
     );
-    const rows =
-        saved?.items.map((item) => ({
+    const rows = [
+        ...(saved?.items ?? []).map((item) => ({
             ...item,
             itemName: savedItemName(item),
             amount: pesos(item.line_total),
-        })) ??
-        lines.map((line) => ({
+        })),
+        ...editableLines(saved, lines).map((line) => ({
             id: line.key,
             itemName: cartItemName(line),
             quantity: line.quantity,
             notes: line.notes,
             modifiers: selectedOptions(line),
             amount: pesos(lineCents(line)),
-        }));
+        })),
+    ];
 
     const locked = processing || attempt !== null;
     const valid = validPayment(total, method, cash, cashless);
@@ -116,7 +117,9 @@ export function PosPaymentPreview({
                         Order number
                     </p>
                     <p className="text-[28px] font-bold tracking-tight wrap-anywhere text-red-700">
-                        {orderNumber.startsWith('QR-') ? orderNumber : `#${orderNumber}`}
+                        {orderNumber.startsWith('QR-')
+                            ? orderNumber
+                            : `#${orderNumber}`}
                     </p>
                 </div>
                 <div
@@ -182,9 +185,7 @@ export function PosPaymentPreview({
                             </span>
                             <div className="min-w-0 flex-1 space-y-0.5">
                                 <p className="text-[12.5px] leading-[1.35] font-semibold wrap-anywhere text-neutral-950">
-                                    <OperationalItemName
-                                        value={row.itemName}
-                                    />
+                                    <OperationalItemName value={row.itemName} />
                                 </p>
                                 <PosModifierDetails
                                     modifiers={row.modifiers}
@@ -255,10 +256,8 @@ export function PosPaymentPreview({
                             </p>
                             <p className="mt-3 text-xs text-sky-800">
                                 Confirm only after payment is received
-                                externally.
-                            </p>
-                            <p className="mt-2 text-[11px] font-semibold text-sky-800">
-                                Invoice: —
+                                externally. You can attach the invoice photo
+                                after confirming.
                             </p>
                         </div>
                     ) : (
@@ -298,12 +297,6 @@ export function PosPaymentPreview({
                             ))
                     )}
                 </div>
-                {method === 'split' && (
-                    <div className="flex items-center justify-between rounded-lg border border-dashed border-neutral-300 px-3 py-1.5 text-[11px] text-neutral-500">
-                        <span>Cashless invoice</span>
-                        <span className="font-semibold text-neutral-700">—</span>
-                    </div>
-                )}
                 {method !== 'cashless' && (
                     <div
                         className="flex flex-wrap gap-1.5"
@@ -315,31 +308,48 @@ export function PosPaymentPreview({
                             { label: '₱100', amount: '100.00' },
                             { label: '₱500', amount: '500.00' },
                             { label: '₱1,000', amount: '1000.00' },
-                        ].map(({ label, amount }) => (
-                            <button
-                                key={label}
-                                type="button"
-                                disabled={locked}
-                                className="h-9 min-w-14 flex-1 rounded-full border border-neutral-300 px-2 text-[11px] font-semibold whitespace-nowrap hover:bg-neutral-50"
-                                onClick={() => {
-                                    const other =
-                                        method === 'split'
-                                            ? cashlessAmount
-                                            : 0n;
-                                    enter(
-                                        amount ?? exactCash(total, other),
-                                        'cash',
-                                    );
-                                    setActiveInput('cash');
-                                }}
-                            >
-                                {label}
-                            </button>
-                        ))}
+                        ].map(({ label, amount }) => {
+                            /** Exact is the one-tap full payment: always green, filled while the cash equals it. */
+                            const exact = amount === null;
+                            const exactAmount = exactCash(
+                                total,
+                                method === 'split' ? cashlessAmount : 0n,
+                            );
+                            const exactSelected =
+                                exact &&
+                                cash !== '' &&
+                                cents(cash) === cents(exactAmount);
+
+                            return (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    disabled={locked}
+                                    aria-pressed={
+                                        exact ? exactSelected : undefined
+                                    }
+                                    className={`h-11 min-w-14 flex-1 rounded-full border px-2 text-[12px] font-semibold whitespace-nowrap md:h-9 md:text-[11px] ${exact ? (exactSelected ? 'border-green-700 bg-green-700 text-white' : 'border-2 border-green-600 bg-green-50 text-green-800 hover:bg-green-100') : 'border-neutral-300 hover:bg-neutral-50'}`}
+                                    onClick={() => {
+                                        const other =
+                                            method === 'split'
+                                                ? cashlessAmount
+                                                : 0n;
+                                        enter(
+                                            amount ?? exactCash(total, other),
+                                            'cash',
+                                        );
+                                        setActiveInput('cash');
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
+                {/* Phones type with their own numeric keyboard (inputMode="decimal"); the keypad is for tablets and desktops. */}
                 {method !== 'cashless' && (
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="hidden grid-cols-3 gap-1.5 md:grid">
                         {[
                             '1',
                             '2',

@@ -1,11 +1,130 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
     createBranchEventGuard,
     createQrVersionRecovery,
     createRealtimeRefresh,
+    createReportsEventGuard,
+    getAuditRealtimeFallbackAction,
 } from '../resources/js/lib/realtime-refresh.ts';
 import { shouldRefetchCatalogAfterConnectionChange } from '../resources/js/lib/pos-catalog-realtime.ts';
+
+const jsSource = (path: string): string =>
+    readFileSync(new URL(`../resources/js/${path}`, import.meta.url), 'utf8');
+
+test('reports signals refresh every branch for All Branches and only the selected branch otherwise', () => {
+    const allBranches = createReportsEventGuard(null);
+    const main = createReportsEventGuard('main');
+
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), true);
+    assert.equal(allBranches({ event_id: 'b', branch_id: 'qave' }), true);
+    assert.equal(allBranches({ event_id: 'a', branch_id: 'main' }), false);
+    assert.equal(allBranches({ event_id: 'c' }), false);
+    assert.equal(main({ event_id: 'd', branch_id: 'qave' }), false);
+    assert.equal(main({ event_id: 'e', branch_id: 'main' }), true);
+});
+
+test('owner dashboard and reports reload their report props from the reports channel', () => {
+    const hook = jsSource('hooks/use-reports-realtime-refresh.ts');
+    const dashboard = jsSource('pages/workspaces/owner-dashboard.tsx');
+    const reports = jsSource('pages/workspaces/reports.tsx');
+
+    assert.match(hook, /channel,\s+\['\.reports\.changed'\]/);
+    assert.match(hook, /reportsChannelFor\(branchContext\.businessWide, branchId\)/);
+    assert.match(hook, /router\.reload\(\{\s+only: onlyRef\.current,\s+onCancelToken:/);
+    assert.match(hook, /REPORTS_FALLBACK_POLL_MS = 30_000/);
+    assert.match(hook, /if \(!shouldPoll\) \{\s+return;\s+\}/);
+    assert.match(hook, /router\.on\('start'[\s\S]+refresh\.hold\(\)/);
+    assert.match(hook, /router\.on\('finish'[\s\S]+refresh\.release\(\)/);
+    assert.doesNotMatch(hook, /usePoll/);
+    assert.doesNotMatch(dashboard, /usePoll/);
+    assert.match(
+        dashboard,
+        /useReportsRealtimeRefresh\(\s+\['analytics', 'report', \.\.\.LIVE_PROPS\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+    assert.match(
+        reports,
+        /useReportsRealtimeRefresh\(\s+\['report', 'analytics', 'kitchenNow'\],\s+report\.scope\?\.id \?\? null,\s+\)/,
+    );
+});
+
+test('a report refresh waits for the page own visit and cancels a stale reload in flight', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let requests = 0;
+    let cancelled = 0;
+    let finish = () => {};
+    const refresh = createRealtimeRefresh((done) => {
+        requests += 1;
+        finish = done;
+
+        return () => {
+            cancelled += 1;
+            done();
+        };
+    }, 100);
+
+    refresh.schedule();
+    refresh.hold();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 0);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 1);
+
+    refresh.hold();
+    assert.equal(cancelled, 1);
+    refresh.schedule();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 1);
+    refresh.release();
+    t.mock.timers.tick(0);
+    assert.equal(requests, 2);
+    finish();
+
+    refresh.hold();
+    refresh.release();
+    t.mock.timers.tick(500);
+    assert.equal(requests, 2);
+    refresh.dispose();
+});
+
+test('audit realtime stops fallback polling while Echo is connected', () => {
+    const action = getAuditRealtimeFallbackAction('connected', 'connected');
+
+    assert.deepEqual(action, {
+        shouldPoll: false,
+        shouldRefresh: false,
+    });
+});
+
+test('audit realtime starts fallback polling while Echo is unavailable', () => {
+    for (const status of [
+        'connecting',
+        'reconnecting',
+        'disconnected',
+        'failed',
+    ]) {
+        const action = getAuditRealtimeFallbackAction('connected', status);
+
+        assert.deepEqual(action, {
+            shouldPoll: true,
+            shouldRefresh: false,
+        });
+    }
+});
+
+test('audit realtime refreshes once and stops polling after reconnecting', () => {
+    const action = getAuditRealtimeFallbackAction(
+        'reconnecting',
+        'connected',
+    );
+
+    assert.deepEqual(action, {
+        shouldPoll: false,
+        shouldRefresh: true,
+    });
+});
 
 test('submitted order tracking recovers once when background refresh finds new assets', () => {
     let reloads = 0;
@@ -44,7 +163,7 @@ test('asset recovery preserves unsent carts and leaves ordinary redirects alone'
     assert.equal(prevented, 0);
 });
 
-for (const delay of [35, 160]) {
+for (const delay of [35, 160, 200]) {
     test(`refresh coalesces bursts at ${delay}ms and queues one refresh while in flight`, (t) => {
         t.mock.timers.enable({ apis: ['setTimeout'] });
         let requests = 0;
@@ -112,4 +231,82 @@ test('branch guards ignore duplicate events and foreign branches; reconnect stil
         false,
     );
     refresh.dispose();
+});
+
+test('a page can ignore report reasons that never change it, and operations ignores kitchen status', () => {
+    const operations = createReportsEventGuard('main', ['kitchen.status_changed']);
+
+    assert.equal(operations({ event_id: 'k', branch_id: 'main', reason: 'kitchen.status_changed' }), false);
+    assert.equal(operations({ event_id: 'o', branch_id: 'main', reason: 'order.committed' }), true);
+    assert.match(
+        jsSource('components/operations-ui.tsx'),
+        /OPERATIONS_IGNORED_REASONS = \['kitchen\.status_changed'\]/,
+    );
+});
+
+test('background reloads send a revoked session to the workspace instead of a raw error dialog', () => {
+    for (const hook of ['use-branch-realtime-refresh', 'use-audit-realtime-refresh', 'use-pos-qr-realtime', 'use-pos-catalog-realtime']) {
+        const source = jsSource(`hooks/${hook}.ts`);
+        assert.match(source, /onHttpException: handleRevalidationException/, hook);
+        assert.match(source, /onNetworkError: \(\) => false/, hook);
+    }
+});
+
+test('the POS QR state is not refetched right after the server rendered it, only after a reconnect', () => {
+    const hook = jsSource('hooks/use-pos-qr-realtime.ts');
+
+    assert.match(hook, /shouldRefetchCatalogAfterConnectionChange\(/);
+    assert.doesNotMatch(hook, /if \(connection === 'connected'\) refresh\.schedule\(0\)/);
+});
+
+test('business transactions listen to reports signals and poll only for accounts that cannot hear them', () => {
+    const page = jsSource('pages/workspaces/transaction-history.tsx');
+
+    assert.match(page, /canHearReports \? \(\s*<BusinessHistoryRealtime/);
+    assert.match(page, /useReportsRealtimeRefresh\(HISTORY_PROPS, branchId\)/);
+});
+
+test('the audit register refreshes only its entries on each new audit record', () => {
+    assert.match(
+        jsSource('pages/super-admin/audit-trail.tsx'),
+        /const realtimeProps = useMemo\(\(\) => \['logs'\], \[\]\)/,
+    );
+});
+
+test('QR Orders never shows another tab\'s cards and the waiting badge stays current on every Store Operations page', () => {
+    const qr = jsSource('components/staff-qr-orders.tsx');
+    const layout = jsSource('layouts/workspace-layout.tsx');
+    const http = jsSource('lib/qr-http.ts');
+
+    assert.match(qr, /const queue = result\?\.key === queryKey \? result\.orders : null;/);
+    assert.match(qr, /inflight\.current\?\.abort\(\);/);
+    assert.match(qr, /controller\.signal/);
+    assert.match(qr, /refresh\.schedule\(typing \? 300 : 0\)/);
+    assert.match(qr, /order\.commercial_status === 'archived_unclaimed'/);
+    assert.doesNotMatch(qr, /\{archived \?\s*'ARCHIVED'|\{!archived && \(/);
+    assert.match(qr, /order\.restorable \?/);
+    assert.match(http, /signal\?: AbortSignal/);
+    assert.match(layout, /<QrWaitingCountListener/);
+    assert.match(layout, /usePosQrRealtime\(branchId, QR_WAITING_COUNT_PROPS\)/);
+    assert.match(jsSource('components/cashier-pos.tsx'), /usePosQrRealtime\(branch\.id, \['loadedQr'\]\)/);
+    assert.match(jsSource('hooks/use-pos-qr-realtime.ts'), /preserveUrl: true/);
+});
+
+test('notification refreshes run one at a time, only after a reconnect, and never show a raw error page', () => {
+    const hook = jsSource('hooks/use-notification-center.ts');
+    assert.match(hook, /onSignalRef\.current\(finish\);/);
+    assert.match(hook, /\.finally\(finish\)/);
+    assert.match(hook, /onFinish: finish,/);
+    assert.match(hook, /shouldRefetchCatalogAfterConnectionChange\(/);
+    assert.doesNotMatch(hook, /previousStatus\.current !== 'connected' &&/);
+    assert.match(hook, /onHttpException: handleRevalidationException/);
+    assert.match(hook, /onNetworkError: \(\) => false/);
+});
+
+test('reports in a background tab mark themselves stale and refresh once when shown', () => {
+    const hook = jsSource('hooks/use-reports-realtime-refresh.ts');
+    assert.match(hook, /if \(document\.visibilityState === 'hidden'\) \{\s*staleWhileHidden\.current = true;/);
+    assert.match(hook, /document\.addEventListener\('visibilitychange', shown\)/);
+    assert.match(hook, /staleWhileHidden\.current = false;\s*scheduleRefresh\(0\);/);
+    assert.match(hook, /document\.removeEventListener\('visibilitychange', shown\)/);
 });

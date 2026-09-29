@@ -3,6 +3,8 @@
 use App\Actions\StoreSessions\OpenStoreSession;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
+use App\Events\StoreOpened;
+use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\Permission;
 use App\Models\Role;
@@ -17,6 +19,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -44,6 +47,11 @@ test('an assigned cashier opens an active branch with exact balances and opener 
     expect($session->opened_by_user_id)->toBe($user->id);
     expect($session->opened_at->equalTo(now()))->toBeTrue();
     $this->assertDatabaseCount('store_sessions', 1);
+    $this->assertDatabaseHas('audit_logs', [
+        'action' => 'store.opened',
+        'auditable_id' => $session->id,
+        'user_id' => $user->id,
+    ]);
 })->with(['cashier', 'cashier_kitchen']);
 
 test('a later cashier reuses the session without changing any original opening data', function () {
@@ -61,6 +69,7 @@ test('a later cashier reuses the session without changing any original opening d
     expect($reused->id)->toBe($original->id);
     expect($reused->refresh()->getAttributes())->toBe($attributes);
     expect($branch->storeSessions()->where('status', StoreSessionStatus::Open)->count())->toBe(1);
+    expect(AuditLog::query()->where('action', 'store.opened')->count())->toBe(1);
 });
 
 test('inactive users are rejected even when the supplied model still appears active', function () {
@@ -96,7 +105,7 @@ test('non cashier roles cannot open a store even if explicitly granted the permi
         ->toThrow(AuthorizationException::class);
 
     $this->assertDatabaseCount('store_sessions', 0);
-})->with(['super_admin', 'owner', 'kitchen_staff']);
+})->with(['owner', 'kitchen_staff']);
 
 test('a cashier cannot open an unrelated branch or reuse its existing session', function (bool $alreadyOpen) {
     $assignedBranch = Branch::factory()->create();
@@ -125,16 +134,35 @@ test('an inactive branch assignment cannot open a store', function () {
     $this->assertDatabaseCount('store_sessions', 0);
 });
 
-test('business wide scope cannot bypass the cashier branch assignment requirement', function () {
+test('owner business wide scope cannot bypass the cashier branch assignment requirement', function () {
     $branch = Branch::factory()->create();
     $user = assignedStoreOpener($branch);
-    $user->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+    $user->roles()->attach(Role::query()->where('name', 'owner')->sole());
     $user->branches()->detach();
 
     expect(fn () => app(OpenStoreSession::class)->execute($user, $branch, '0', '0'))
         ->toThrow(AuthorizationException::class);
 
     $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('full access super admin opens an active branch without a fabricated assignment and is audited as the actor', function () {
+    $this->seed(RbacSeeder::class);
+    $branch = Branch::factory()->create();
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::query()->where('name', 'super_admin')->sole());
+
+    $session = app(OpenStoreSession::class)->execute($superAdmin, $branch, '1000.00', '250.00');
+
+    expect($session->opened_by_user_id)->toBe($superAdmin->id)
+        ->and($superAdmin->branches()->count())->toBe(0);
+    $this->assertDatabaseHas('audit_logs', ['user_id' => $superAdmin->id, 'branch_id' => $branch->id, 'action' => 'store.opened']);
+
+    $inactiveBranch = Branch::factory()->create(['status' => BranchStatus::Inactive]);
+    expect(fn () => app(OpenStoreSession::class)->execute($superAdmin, $inactiveBranch, '0', '0'))
+        ->toThrow(AuthorizationException::class);
+    expect(app(OpenStoreSession::class)->execute($superAdmin, $branch, '0', '0')->id)->toBe($session->id);
+    $this->assertDatabaseCount('store_sessions', 1);
 });
 
 test('a deleted user cannot open a store using a stale model', function () {
@@ -330,4 +358,25 @@ test('a failed session write is rolled back and unrelated database errors propag
         ->toThrow($exception);
 
     $this->assertDatabaseCount('store_sessions', 0);
+});
+
+test('opening the Store tells every Store Operations page once, without balances', function () {
+    Event::fake([StoreOpened::class]);
+    $branch = Branch::factory()->create();
+    $user = assignedStoreOpener($branch);
+
+    $session = app(OpenStoreSession::class)->execute($user, $branch, '5000.00', '1000.00');
+    app(OpenStoreSession::class)->execute($user, $branch, '5000.00', '1000.00');
+
+    Event::assertDispatchedTimes(StoreOpened::class, 1);
+    Event::assertDispatched(StoreOpened::class, function (StoreOpened $event) use ($branch, $session): bool {
+        $payload = $event->broadcastWith();
+
+        return $payload['branch_id'] === $branch->id && $payload['store_session_id'] === $session->id
+            && $payload['state'] === 'open'
+            && array_map(fn ($channel): string => $channel->name, $event->broadcastOn()) === [
+                'private-branch.'.$branch->id.'.pos', 'private-branch.'.$branch->id.'.kitchen', 'private-branch.'.$branch->id.'.store-session',
+            ]
+            && ! array_key_exists('opening_cash_amount', $payload) && ! array_key_exists('opened_by_user_id', $payload);
+    });
 });

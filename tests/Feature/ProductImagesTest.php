@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\ProductImages;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -379,9 +380,33 @@ test('only application variants receive expiring storage URLs', function () {
         return 'https://storage.example.test/'.$path.'?expires='.$expiration->getTimestamp();
     });
 
-    expect($images->cardUrl($product))->toBe('https://storage.example.test/'.$directory.'/card.webp?expires='.now()->addMinutes(5)->getTimestamp());
-    expect($images->detailUrl($product, now()->addMinute()))->toBe('https://storage.example.test/'.$directory.'/detail.webp?expires='.now()->addMinute()->getTimestamp());
+    /** Signed once per 30-minute window, valid until the end of the next one: at least 30 minutes after hand-out. */
+    $window = ProductImages::URL_MINUTES * 60;
+    $cardUrl = $images->cardUrl($product);
+    expect($cardUrl)->toBe('https://storage.example.test/'.$directory.'/card.webp?expires='.((intdiv(now()->getTimestamp(), $window) + 2) * $window));
+    expect($images->detailUrl($product, now()->addMinute()))->toBe('https://storage.example.test/'.$directory.'/detail.webp?expires='.((intdiv(now()->getTimestamp(), 60) + 2) * 60));
     expect($product->refresh()->image_path)->toBe($directory.'/detail.webp');
+});
+
+test('the same image keeps the same signed URL within its window, so browsers can cache it', function () {
+    $this->travelTo(CarbonImmutable::createFromTimestamp(intdiv(now()->getTimestamp(), 1800) * 1800 + 60));
+    $disk = Storage::fake('s3');
+    $product = productWithImage();
+    $signed = 0;
+    $disk->buildTemporaryUrlsUsing(function (string $path, DateTimeInterface $expiration) use (&$signed) {
+        $signed++;
+
+        return 'https://storage.example.test/'.$path.'?signature='.$signed.'&expires='.$expiration->getTimestamp();
+    });
+    $images = app(ProductImages::class);
+
+    $first = $images->cardUrl($product);
+    $this->travel(20)->minutes();
+    $withoutImage = Product::factory()->create();
+    expect($images->safeCardUrls([$product, $withoutImage]))->toBe([$product->id => $first, $withoutImage->id => null])
+        ->and($signed)->toBe(1);
+    $this->travel(10)->minutes();
+    expect($images->cardUrl($product))->not->toBe($first)->and($signed)->toBe(2);
 });
 
 test('unsupported temporary URLs fail explicitly', function () {
@@ -390,7 +415,7 @@ test('unsupported temporary URLs fail explicitly', function () {
     productImageFaultDisk($disk)->shouldReceive('providesTemporaryUrls')->andReturnFalse();
 
     expect(fn () => app(ProductImages::class)->detailUrl($product))
-        ->toThrow(RuntimeException::class, 'The product image disk does not support temporary URLs.');
+        ->toThrow(RuntimeException::class, 'The image disk does not support temporary URLs.');
 });
 
 test('invalid or foreign image paths cannot be signed or recursively deleted', function (string $path) {
@@ -427,7 +452,8 @@ test('the configured S3 adapter signs variant URLs without contacting storage', 
     expect(parse_url($url, PHP_URL_PATH))->toBe('/storage/v1/s3/test-private-bucket/'.$path);
     parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
     $signedAt = new DateTimeImmutable($parameters['X-Amz-Date']);
-    expect($signedAt->getTimestamp() + (int) $parameters['X-Amz-Expires'])->toBe(now()->addMinutes(5)->getTimestamp());
+    $window = ProductImages::URL_MINUTES * 60;
+    expect($signedAt->getTimestamp() + (int) $parameters['X-Amz-Expires'])->toBe((intdiv(now()->getTimestamp(), $window) + 2) * $window);
     expect($parameters['X-Amz-Algorithm'])->toBe('AWS4-HMAC-SHA256');
     expect($parameters['X-Amz-Signature'])->not->toBeEmpty();
     expect($product->refresh()->image_path)->toBe($path);

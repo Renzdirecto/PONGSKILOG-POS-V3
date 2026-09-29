@@ -14,7 +14,7 @@ class CreateCategory
     /** @param array{name?: mixed, icon_key?: mixed, sort_order?: mixed, is_active?: mixed} $attributes */
     public function execute(User $user, array $attributes): Category
     {
-        Gate::forUser($user)->authorize('products.manage');
+        Gate::forUser($user)->authorize('catalog.define');
 
         $validated = Validator::make($attributes, [
             'name' => ['required', 'string', 'max:255'],

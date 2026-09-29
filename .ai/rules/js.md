@@ -19,3 +19,6 @@ Pay Now is implemented in the approved in-place Payment modal, followed by paid-
 
 ## Browser-generated IDs must work on LAN HTTP
 Use the existing createClientUuid helper for cart IDs and payment/Pay Later idempotency keys. Tablet browsers on HTTP IP links may expose crypto.getRandomValues but not crypto.randomUUID; direct randomUUID calls break these flows. Preserve stable keys on ambiguous retries.
+
+## Required fields are red until valid
+Manual QA rule: a REQUIRED control that is empty, invalid or unconfigured shows a red outline plus readable text ("Required …", "Recipe required") and `aria-invalid`; once valid it returns to neutral gray. Optional controls (notes, receipts, Add-ons with no ingredient effect, Instructions, No recipe needed) are never red. Inputs use the shared Input `aria-invalid` style; cards/chips/pick lists use `lib/required-field.ts`. Apply deliberately, never as a global repaint.

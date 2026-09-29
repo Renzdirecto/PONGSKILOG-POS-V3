@@ -17,6 +17,12 @@ import {
 } from '@/components/catalog-ui';
 import { ownerPanelClass } from '@/components/owner-ui';
 import { Button } from '@/components/ui/button';
+import {
+    MODIFIER_ROLE_OPTIONS,
+    modifierRoleFromValue,
+    modifierRoleHelp,
+    modifierRoleLabel,
+} from '@/lib/modifier-roles';
 import { store, update } from '@/routes/modifier-groups';
 import { update as updateGroupProducts } from '@/routes/modifier-groups/products';
 import type { CatalogChoice, ModifierGroup } from '@/types/catalog';
@@ -34,10 +40,7 @@ export default function Modifiers({
     );
     const [assigning, setAssigning] = useState<ModifierGroup | null>(null);
     return (
-        <CatalogPage
-            tab="Groups"
-            counts={{ Groups: groups.length }}
-        >
+        <CatalogPage tab="Groups" counts={{ Groups: groups.length }}>
             {groups.length === 0 ? (
                 <div className={`${ownerPanelClass} px-5 py-14 text-center`}>
                     <SlidersHorizontal className="mx-auto size-7 text-[#aaa]" />
@@ -65,7 +68,7 @@ export default function Modifiers({
                             <p className="text-[12px] text-[#767676]">
                                 {group.semantic_role === 'instruction'
                                     ? 'Instructions · Optional, multiple choices · Price-neutral'
-                                    : `${group.semantic_role === 'size' ? 'Size' : 'Standard options'} · ${group.selection_type === 'single' ? 'One choice' : 'Multiple choices'} · Select ${group.min_select}–${group.max_select}`}
+                                    : `${modifierRoleLabel(group.semantic_role)} · ${group.selection_type === 'single' ? 'One choice' : 'Multiple choices'} · Select ${group.min_select}–${group.max_select}`}
                             </p>
                             {group.options.length === 0 ? (
                                 <p className="rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500">
@@ -253,12 +256,9 @@ function GroupForm({
                         className={controlClass}
                         value={form.data.semantic_role ?? ''}
                         onChange={(event) => {
-                            const role =
-                                event.target.value === 'size'
-                                    ? 'size'
-                                    : event.target.value === 'instruction'
-                                      ? 'instruction'
-                                      : null;
+                            const role = modifierRoleFromValue(
+                                event.target.value,
+                            );
                             form.setData((data) => ({
                                 ...data,
                                 semantic_role: role,
@@ -284,9 +284,11 @@ function GroupForm({
                             }));
                         }}
                     >
-                        <option value="">Standard options</option>
-                        <option value="size">Size</option>
-                        <option value="instruction">Instructions</option>
+                        {MODIFIER_ROLE_OPTIONS.map((option) => (
+                            <option key={option.label} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
                     </select>
                     <select
                         id="group-selection"
@@ -302,9 +304,7 @@ function GroupForm({
                                 ...data,
                                 selection_type: type,
                                 max_select:
-                                    type === 'single'
-                                        ? '1'
-                                        : data.max_select,
+                                    type === 'single' ? '1' : data.max_select,
                                 min_select:
                                     type === 'single'
                                         ? String(
@@ -322,7 +322,23 @@ function GroupForm({
                     </select>
                 </div>
                 {form.errors.name && (
-                    <p className="text-xs text-red-700">{form.errors.name}</p>
+                    <p role="alert" className="text-xs text-red-700">
+                        {form.errors.name}
+                    </p>
+                )}
+                <p
+                    id="group-semantic-role-help"
+                    className="text-xs leading-5 text-[#666]"
+                >
+                    <span className="font-semibold text-[#111]">
+                        {modifierRoleLabel(form.data.semantic_role)}:
+                    </span>{' '}
+                    {modifierRoleHelp(form.data.semantic_role)}
+                </p>
+                {form.errors.semantic_role && (
+                    <p role="alert" className="text-xs text-red-700">
+                        {form.errors.semantic_role}
+                    </p>
                 )}
                 {form.data.semantic_role === 'instruction' && (
                     <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
@@ -413,8 +429,7 @@ function GroupForm({
                                         onChange={(event) =>
                                             updateOption(index, {
                                                 ...option,
-                                                price_delta:
-                                                    event.target.value,
+                                                price_delta: event.target.value,
                                             })
                                         }
                                     />
@@ -449,7 +464,10 @@ function GroupForm({
                                 <Trash2 className="size-4" />
                             </button>
                             {form.errors[`options.${index}.name`] && (
-                                <p className="col-span-full text-xs text-red-700">
+                                <p
+                                    role="alert"
+                                    className="col-span-full text-xs text-red-700"
+                                >
                                     {form.errors[`options.${index}.name`]}
                                 </p>
                             )}
@@ -477,7 +495,16 @@ function GroupForm({
                     </Button>
                 </div>
             </fieldset>
-            <FormErrors errors={form.errors} />
+            <FormErrors
+                errors={form.errors}
+                inline={[
+                    'name',
+                    'semantic_role',
+                    'min_select',
+                    'max_select',
+                    /^options\.\d+\.name$/,
+                ]}
+            />
             <SaveButton
                 processing={form.processing}
                 label={group ? 'Save changes' : 'Add Group'}

@@ -1,15 +1,20 @@
 <?php
 
+use App\Http\Controllers\HealthController;
+use App\Http\Controllers\ServiceWorkerController;
 use App\Http\Middleware\EnsureActiveBranchContext;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\AuthenticateSession;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,15 +22,34 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+        then: function (): void {
+            /** The PWA service worker: at the root for a whole-app scope, outside the web middleware (no session). */
+            Route::get('sw.js', ServiceWorkerController::class)->name('pwa.service-worker');
+            /** Readiness for monitoring (no session or cookies); `/up` stays the liveness probe for deploys. */
+            Route::get('health', HealthController::class)->middleware('throttle:health')->name('health');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        /**
+         * From the proxies in `config/trustedproxy.php` only the client address and the https scheme are trusted. The
+         * host always comes from the Host header the proxy routed on: a forwarded host, port or prefix could otherwise
+         * point generated links (password reset emails) at another site.
+         */
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO);
+
+        /**
+         * AuthenticateSession ends a session whose stored password hash no longer matches (an administrative password
+         * reset); EnsureUserIsActive ends the session of a deactivated account on its next request.
+         */
         $middleware->web(append: [
+            AuthenticateSession::class,
             EnsureUserIsActive::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            SecurityHeaders::class,
         ]);
 
         $middleware->alias([

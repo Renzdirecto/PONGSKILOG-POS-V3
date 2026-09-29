@@ -478,6 +478,8 @@ Payload:
 
 Do not broadcast sensitive authorization/reason details to normal operational clients.
 
+The implemented event is `.order.voided` on private branch POS and Kitchen channels. It is dispatched only after commit and carries compact Order identity/version/time data. Audit management uses `.audit.recorded` on the private Super Admin-only `audit-trail` channel with only Audit identity and nullable Branch identity. Audit Trail and Void Orders use Echo as primary transport, poll every 10 seconds only while Echo is not connected, perform one authoritative refresh after reconnect/browser-online, and stop fallback polling while connected.
+
 ---
 
 ## 17. Payment Events
@@ -718,3 +720,141 @@ automated delivery/rollback/failure and PostgreSQL concurrency checks are covere
 Before commitment, QR staff events expose qr_number (QR-01), not order_number. Added qr.order_released and qr.order_restored on the same authorized private branch POS channel. Cancel and restore emit customer tracking invalidation as well. QR toggle changes emit customer catalog invalidation. Official committed Order/Kitchen/Display paths continue using operational identity.
 
 Immediate after-commit delivery, transport rescue, compact payloads, event deduplication, bounded coalesced refetch, reconnect refresh and branch/session isolation remain. No HTTP polling was added. The queue has one client clock for all elapsed labels. Normal connected QR queue/tracking/receipt screens omit manual Refresh controls; recovery remains in unavailable/error states.
+
+## Phase 12 transaction invalidations - 2026-09-22
+
+`order.updated` is a compact after-commit event on the branch POS private channel with event/entity/order IDs, Order version, changed-domain names, and occurred time. It carries no item, finance, proof, or Audit payload; History coalesces and refetches server projections and also refetches after reconnect.
+
+`kitchen.order_updated` is a compact after-commit event on the branch Kitchen private channel. KDS refetches its authoritative ticket and briefly marks the affected Order `UPDATED`; the existing KitchenTicket identity, status, and lifecycle timestamps are unchanged. Settlement emits `order.updated` for the payment domain and the existing customer tracking invalidation.
+
+## Phase 14 Store Session expense invalidation - 2026-09-23
+
+`store.expense_recorded` is an immediate, rescued, after-commit invalidation on `private-branch.{branchId}.store-session`. Its compact payload contains event/type/Branch/expense/Store Session identity, payment source, amount, inventory-linked boolean, and occurrence time; it contains no note, receipt path, actor, balance, variance, or Audit detail. Authorized Cashier clients with the Store Session dialog open coalesce the signal and refetch the authoritative current-session projection, including after reconnect. Exact replay and rolled-back writes emit no duplicate success signal. Linked restocks retain the existing inventory/catalog invalidations from `ApplyInventoryMovement` rather than broadcasting a second inventory event.
+
+## Phase 15 Store Close delivery - 2026-09-23
+
+`store.closed` is an immediate, rescued, after-commit event on `private-branch.{branchId}.pos`, `.kitchen` and `.store-session`. Payload: event ID/type, branch ID, Store Session ID, `closed_at`, `closed_by_user_id`, `state = closed`, occurred time; no balances, variances, note or Audit detail. Operational layouts reload authoritative Store state; clients other than the closing Cashier close the stale Store Session dialog. Because the event is broadcast before the HTTP response returns, the closing client records the Store Session it is closing before sending the request (cleared on a definitive failure) so its own `store.closed` never dismisses the pending summary. The same commit emits `qr.order_archived` and `order.tracking_changed` per archived QR order, `qr.catalog_changed` for Customer QR availability, and `display.orders_changed` for Customer Display. Exact replay and rolled-back closes emit nothing. `store.reconciliation_updated` was not added; reconciliation reaches Super Admin through the existing Audit Trail broadcast. While Close Store is open, compact order, Kitchen, QR and expense events debounce an authoritative preview refetch; no client arithmetic uses event payloads.
+
+## Phase 16E Operations invalidation - 2026-09-24
+
+Operations pages reuse the private `reports` invalidation channel and `useReportsRealtimeRefresh` (Branch filter, debounce, hold during the page's own visits, 30s fallback only while disconnected). No new channel or event class was added. Existing signals already cover sale consumption, edit delta, void restoration and Pamamalengke confirmation (`order.committed`, `order.updated`, `order.voided`, `store.expense_recorded`); ingredient-only changes dispatch `ReportsChanged` with reasons `ingredients.wastage`, `ingredients.count_corrected` and `ingredients.opening_balance`. Payloads stay identity/time only — no quantities, costs or money. Broadcast failure never undoes the committed transaction.
+
+### Phase 16E follow-up: Recipe availability invalidation - 2026-09-24
+
+`IngredientStockChanged` broadcasts `ingredients.changed` on the existing private `branch.{branch}.inventory` channel with only `event_id`, `event_type`, `branch_id`, `reason` (`sale`, `order_edit`, `void`, `wastage`, `count_correction`, `opening_balance`, `purchase_restock`, `recipe_changed`) and `occurred_at` — no quantities, costs or order data. `CatalogRealtime::ingredientsChanged()` dispatches it together with the existing `qr.catalog_changed` after commit. Cashier POS adds `.ingredients.changed` to its debounced partial `catalog` refetch; Customer QR already refetches on `qr.catalog_changed`. An open customization dialog re-asks the capacity endpoint when its catalog row changes. No polling was added.
+
+### Phase 16E Final QA realtime (2026-09-24)
+
+- Giveaways and their reversals broadcast only through existing after-commit events: Product-stock ones via `inventory.changed` + `qr.catalog_changed` (from `ApplyInventoryMovement`), Recipe ones via `ingredients.changed` (reasons `giveaway`, `giveaway_reversal`), and `ReportsChanged` (`giveaway.recorded`, `giveaway.reversed`). No payload carries quantities, costs or money. The Store Session dialog now also refreshes on `.ingredients.changed`.
+- Recipe, Add-on effect and recipe-mode saves broadcast **only when something changed**, from inside the action (after commit), and a business-wide invalidation reaches **active Branches only**.
+- Correction: the Operations events above carry no money. The pre-existing Phase 14 `store.expense_recorded` event (Cashier Store Session channel) still includes the expense `amount` and payment source, including for a Pamamalengke confirmation's expense; Cashiers already see those amounts in the Store Session dialog.
+
+## Phase 18 realtime — 2026-09-25
+
+- `notifications.changed` on `private-App.Models.User.{id}` (the recipient only; channel requires the same, active account). Payload: `event_id`, `event_type`, `occurred_at` — never a title, body, audit payload or credential. Dispatched after commit for every recipient of a new notification and after mark read / mark all read. The Control Center bell refetches the cheap unread-count endpoint (debounced, plus once after reconnect); the Notifications page partially reloads its list. No polling timer.
+- `reports.changed` now broadcasts on `private-reports` (business-wide, unchanged) **and** `private-branch.{branch}.reports` (reports.view + access to that Branch) for Branch-scoped custom Reports viewers, who subscribe only to their selected Branch channel. Payload unchanged (identity, Branch, reason, time).
+- Out-of-stock alerts are created only by the canonical stock writers (`ApplyInventoryMovement`, `ApplyIngredientMovement`) for the movement that takes a balance from above zero to zero or below while holding its row lock, delivered after commit — one alert per real transition, none for an already-empty balance, a new one after a restock sells out again.
+
+## Phase 18 final — Executive Dashboard realtime — 2026-09-25
+
+- No new channel or event. The Super Admin Executive Dashboard reuses `reports.changed` through `useReportsRealtimeRefresh` (partial reload of `analytics`, `report`, `kitchen`, `inventory`, `stores`, `ingredients`, `attention`; 30s fallback only while disconnected; reload on reconnect) and the viewer's own `notifications.changed` signal through `useNotificationsPageRefresh` (partial reload of `security`, `people`, `attention`). Props are lazy on the server, so a partial reload computes only what it asks for.
+- Custom Roles add no realtime contract; permission changes apply on the next request (nothing is cached across requests).
+
+## Phase 18 Manual QA refinement #2 — user context and admin invalidation — 2026-09-25
+
+Supersedes "Custom Roles add no realtime contract" above. Backend authorization still never depends on these signals (nothing is cached across requests).
+
+- `user.context_changed` (`UserContextChanged`) on `private-App.Models.User.{id}` — the affected account only (same, active account). Payload: `event_id`, `event_type`, `user_id`, `change_type` (`identity` | `access` | `branches` | `status`), `occurred_at`; never permissions, email, credentials, Branch details or audit values. Dispatched after commit by Staff create/update (name, Position, picture, Role, Branch assignments, status), Super Admin password reset, own Profile update, per-user override save/reset, every member of a changed Custom Role and every account inheriting a changed System baseline (including re-derived Cashier + Kitchen). The client (`useUserContextRealtime`, mounted in every workspace shell) coalesces signals and reloads the current page: fresh shared `auth` (permissions, Role label, Position, `avatarUrl`) and `branchContext` update the sidebar and Branch selector; a 403/404 visits the workspace (server-side landing or Branch picker); 401/419 goes to login. It also revalidates once after a reconnect.
+- `access_control.changed` (`AccessControlChanged`) on `private-access-control` (`access_control.manage`): Role baseline, Custom Role, override and Staff changes. Open Access Control pages partially reload their projection.
+- `staff.changed` (`StaffChanged`) on `private-staff` (Super Admin or business-wide `staff.manage`) and `private-branch.{branch}.staff` (`staff.manage` + access to that Branch) for every Branch the changed account was or is assigned to. Payload: `event_id`, `event_type`, `occurred_at` only. Open Staff pages partially reload `staff`, `roles`, `branches` (the server re-scopes; an Owner or Branch manager never receives accounts it cannot see).
+- Bulk Branch assortment changes reuse `product.branch_configuration_changed` / `product.availability_changed` per changed Product on that Branch's `branch.{branch}.inventory` channel plus one `qr.catalog_changed` (`CatalogRealtime::branchProductsChanged()`); no other Branch is signalled.
+- All clients use `createRealtimeRefresh` (debounce + one trailing refresh, held during the page's own visits). No polling was added.
+
+
+## Phase 18 pass #2.1 — Branch configuration invalidation — 2026-09-25
+
+- `CatalogRealtime::branchConfigurationChanged(Branch, reason)` = `ingredients.changed` + `qr.catalog_changed` on that Branch's channels + `reports.changed` (Operations pages partial-reload) — after commit, ids/reason/time only. Used by recipe mode, Recipes, Add-on effects, Ingredient save/archive, Plan save/archive and setup copies. Assortment add/remove/copy use `branchProductsChanged()` (per-Product availability events, removal reports unavailable) plus `reports.changed`. A QAVE-only change never signals MAIN (`BranchSetupCopyTest`).
+- Reconnect: POS/QR refetch their authoritative catalog and Operations pages refetch through the existing reports refresh hook; no missed event is assumed.
+
+
+## Phase 18 Final QA — realtime corrections — 2026-09-25
+
+- `reports` and `branch.{branch}.reports` authorize `reports.view` **or** `operations.manage` (plus business-wide scope / `canAccessBranch`). The Operations workspace refreshes on `reports.changed`, and Operations is a separate permission.
+- `UpsertBranchProduct` dispatches `ReportsChanged` for its Branch only when a membership is created or `tracks_inventory` changes (it is part of the Branch recipe mode).
+- Operations partial reloads now include every prop those signals can change (Plans: `outside`, `products`; Overview: `recipes`, `business_date`; Recipes: `products`; Pamamalengke: `manual`).
+- `useInvalidationRefresh` and `useReportsRealtimeRefresh` share `handleRevalidationException` with `useUserContextRealtime`: a background reload refused with 403/404 goes to the workspace, 401/419 to login, never a raw error modal.
+
+## Phase 19 — realtime hardening — 2026-09-25
+
+No new channel, event or payload field.
+
+- Business Transactions (`workspaces.transactions`) refreshes through `useReportsRealtimeRefresh` on `reports.changed` (commit, edit, settle, allocation, void, Kitchen) with the 30s fallback only while disconnected. An account holding `transactions.view` without Reports or Operations cannot subscribe to the reports channels and keeps the 30s page poll.
+- `createReportsEventGuard` / `useReportsRealtimeRefresh` accept ignored reasons: Operations pages ignore `kitchen.status_changed` (Kitchen status never moves Ingredients, purchases or Plans), so an Order's Kitchen transitions no longer reload them.
+- Audit Trail realtime reloads request `logs` only (filter option lists refresh with the next filter change); the server builds its option lists lazily. Void Orders' option lists are lazy too.
+- `useBranchRealtimeRefresh`, `useAuditRealtimeRefresh` (and its disconnected poll) and `usePosQrRealtime` pass `handleRevalidationException` + `onNetworkError: () => false`, like the reports / invalidation / user-context hooks.
+- `usePosQrRealtime` no longer refetches `qrWaitingCount` / `loadedQr` right after the server rendered them; it refetches on a reconnect (`shouldRefetchCatalogAfterConnectionChange`), on `online`, and on QR events.
+- Unchanged by design: `qr.catalog_changed` may fire once per stock movement of one sale (invalidation only; clients debounce), and the paying POS terminal still reloads its catalog explicitly so stock stays fresh while realtime is down.
+
+## Phase 19.5 — PWA Phase 1 connectivity and Web Push — 2026-09-26
+
+No new channel, event or payload field; Reverb/Echo remain the only live-update transport and the authority for invalidation.
+
+- **Connectivity:** one app state (`lib/pwa-connectivity.ts`). Browser `offline` → Offline; `online` (or a request that got no response) → Reconnecting → `/up` answers → one authoritative `router.reload()` (session, Branch context and page props; 401/419 → login, 403/404 → workspace via `handleRevalidationException`) → Online. Bounded backoff (0, 2, 5, 10, 20, then 30 s), paused while the page is hidden, no timer at all once Online. "Last synced" = the last server response, for messaging only.
+- **Realtime hooks are unchanged:** they keep their own Echo-reconnect and event refetches (pusher-js reconnects on `online` by itself). No duplicate subscriptions, no second client, no new polling.
+- **Web Push complements, never replaces, realtime:** New Kitchen Order (`kitchen.ticket_created` event), Order Ready (`kitchen.status_changed` to `ready`, not from `done`) and Important Alert (each stored `AdminAlert`) are pushed to devices of the accounts allowed at delivery time — the `branch.{id}.kitchen` / `branch.{id}.pos` channel rule (`BranchSignalAccess`) and `AdminNotifier::receivesAlerts()`. Payload: `v`, `type`, `tag` (`kitchen-new-order:{order}`, `order-ready:{order}`, `admin-alert:{notification}`), allowlisted path, Branch name. A focused PONGSKILOG window already handling the event gets a silent notification (its own realtime view and sounds remain the cue).
+
+## Phase 19.6 — Customer experience realtime contract (planned)
+
+Phase 19.6 extends the existing after-commit invalidation model; exact event/class names are chosen during implementation without changing these frozen boundaries.
+
+- Branch display-mode and advertisement changes invalidate only authorized screens for that Branch.
+- Live-cart invalidations are scoped to the paired POS station/device. A Branch-wide customer-display channel must never carry another station's cart contents.
+- Event payloads contain identifiers/version/time only; the customer screen refetches its safe authoritative projection. Cart lines, prices, pickup tokens, subscriptions, and private/order internals are never broadcast in invalidation payloads.
+- Successful order commitment invalidates the paired display's temporary takeover. Its order number, type, same-type queue position, and Take Out QR come from the server projection.
+- Public pickup tracking uses only a narrow high-entropy order token/channel, never broad Branch POS/Kitchen/customer-display channels. The public page refetches only its restricted status projection.
+- Kitchen Ready remains the existing authoritative transition. Buzz is an explicit cashier action after Ready, delivered by queued Web Push only when the matching Take Out subscription remains valid at send time.
+- Buzz adds no polling. A 5-second server cooldown, replay/idempotency guard, and bounded attempts per Ready order apply even under concurrent requests; send failure never mutates order/Kitchen state.
+- Every customer screen and pickup page performs an authoritative refetch after reconnect before showing current state.
+
+## Phase 19.6 — Customer experience realtime (implemented 2026-09-27)
+
+All events are `ShouldBroadcastNow + ShouldDispatchAfterCommit + ShouldRescue` invalidations; every client refetches its own authoritative projection. No polling: the only timers renew a pairing code or signed media/Menu links shortly before they expire.
+
+| Event (`broadcastAs`) | Channel(s) | Payload | Emitted by | Client reaction |
+| --- | --- | --- | --- | --- |
+| `customer_screen.changed` | `private-customer-screen.{channel_key}` (one per screen; several screens in one event for Branch-wide ad changes) | `event_id`, `event_type`, `reason` (`pairing|mode|cart|takeover|ads`), `occurred_at` | pairing/unpair/reset, mode toggle, cart send that changed the stored cart, takeover, ad create/update/delete/reorder, sign-out cart cleanup | screen refetches `customer-screen/state` (and the playlist for `ads`/`pairing`) |
+| `qr.catalog_changed` (existing) | `private-qr-catalog.{branch}` | unchanged | existing catalog/stock writers | a paired screen in Menu mode refetches `customer-screen/menu` (debounced) |
+| `display.orders_changed` (existing) | `private-branch.{branch}.customer-display` | unchanged | commit, Kitchen transition, void, Store close | a paired screen in Customer Display mode refetches its state (board) |
+| `pickup.changed` | `private-pickup.{channel_key}` for every unexpired token of the Branch whose order is waiting or finished in the last 30 min (one event, channels batched) | `event_id`, `event_type`, `occurred_at` | `BroadcastPickupStatusChanged` on `DisplayOrdersChanged` | pickup page refetches `pickup/{token}/status` |
+| `pickup.notify_changed` | `private-branch.{branch}.pos` | `event_id`, `event_type`, `branch_id`, `order_id`, `occurred_at` | customer opt-in/out, accepted Buzz, rejected endpoint cleanup | POS reloads `readyOrders` / `kitchenStatus` (added to `POS_READY_REALTIME_EVENTS`) |
+| `customer_screen.status_changed` (manual-QA fixes) | `private-branch.{branch}.pos` | `event_id`, `event_type`, `branch_id`, `occurred_at` | the screen's own MENU / CUSTOMER DISPLAY press, its staff reset, the Menu closing after an order confirmation | each POS header control refetches its own station's `pos/customer-screen` status (debounced; also on opening the menu) |
+
+Manual-QA fixes: the `takeover` reason is now sent by the Pay Now / Pay Later request itself (after commit), not by a separate POS call. The screen shows the confirmation keyed by its id (a refetch never restarts it; finished ids are never shown again) and starts the countdown only when the number / QR is on screen, reporting `POST customer-screen/takeover/{id}/shown` so the server's time left matches after a reload or reconnect.
+
+- **Channel authorization:** the customer screen authorizes through `POST customer-screen/broadcasting/auth` with its device cookie: its own screen channel always; the paired Branch's `qr-catalog` and `customer-display` channels only while paired. The pickup page authorizes through `POST pickup/{token}/broadcasting/auth`: only its own `pickup.{channel_key}`. Both use their own public Reverb client (`lib/public-echo.ts`); the staff app's single Echo client is unchanged.
+- **Reconnect:** both public pages refetch everything on a *re*connect (not the first connect), on `online` and when the page becomes visible again; the screen shows "Reconnecting…" / "Live updates unavailable" and marks the Live Cart "May not be up to date" while disconnected.
+- **Ordering:** the screen's state refetch runs one request at a time with one trailing refresh (`createRealtimeRefresh`), so a slow response never lands over a newer one; POS cart sends are serialized and sequence-numbered (server keeps the newest per page instance).
+- **Web Push:** the Buzz is a queued `SendPickupBuzz` to the customer's own `pickup_push_subscriptions` row through `PickupPushGateway`; payload `v`, `type: pickup.ready`, `tag: pickup-ready:{token id}`, `order_number`, `url: /pickup/{token}` (E2E-encrypted to that browser only). Shown by `/pickup-sw.js` (scope `/pickup/`) with vibration; staff pushes and `/sw.js` are unchanged. Kitchen Ready never buzzes a customer by itself.
+
+## Phase 20 — realtime hardening and notification matrix — 2026-09-28
+
+- **`store.opened`** (new, after commit, `ShouldBroadcastNow` + `ShouldRescue`) on `branch.{id}.pos`, `branch.{id}.kitchen` and `branch.{id}.store-session`: `{event_id, event_type, branch_id, store_session_id, opened_at, state: open, occurred_at}` — no balances, no opener. Every Store Operations page reloads into the open state (the opening device, already open, ignores it). Sent once per real opening; an idempotent reopen returns the existing session and sends nothing.
+- **POS Ready list** also refreshes on `.order.voided`, so a voided order leaves the Ready panel at once.
+- **QR Orders badge** (`qrWaitingCount`) is a shared prop on every page for accounts with POS access (null otherwise), so navigation (Kitchen, Dashboard, History) never clears it; the operational shell refreshes only that prop on `.qr.order_*` signals and after a reconnect. The POS reloads only `loadedQr`.
+- **QR Orders tabs:** the list is keyed by `tab|search|page`; a tab or page switch loads at once, search waits for a 300 ms pause, a superseded request is aborted and its late answer ignored, and card badges/actions follow each order's own state.
+- **Background reloads** keep the current URL (`preserveUrl`) and send a revoked session to the workspace instead of an error dialog (`handleRevalidationException`, `onNetworkError`). The POS catalog hook now uses `createRealtimeRefresh` (one reload at a time, a fixed debounce, nothing after unmount).
+- **Reconnect storms:** after a realtime reconnect each page revalidates only `auth`, `branchContext`, `storeContext`, `notificationCenter` and `qrWaitingCount`, delayed by a random 0–3 s, so a Reverb restart does not reload every open screen at once; an explicit `user.context_changed` still reloads the whole page.
+- **Notification center / reports:** notification refreshes run one at a time (a late count can no longer overwrite a newer one) and only after a *re*connect; Reports and dashboards in a background tab mark themselves stale and refresh once when shown.
+- **Fewer synchronous broadcasts:** a paid order sends one `qr.catalog_changed` for the whole order (not one per stocked Product); a business-wide Product change (category, modifier group/option) resolves all Products with one catalog load per Branch and sends one `qr.catalog_changed` per Branch. The Reverb HTTP client is bounded (`REVERB_CONNECT_TIMEOUT` 2 s, `REVERB_TIMEOUT` 3 s).
+
+### Notification matrix
+
+| Notification | Trigger | Recipients | Branch scope | Permission | Push / in-app | Duplicate suppression | Read state |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| New Kitchen Order | Kitchen ticket created (Pay Now, Pay Later commit) | Accounts that may hear `branch.{id}.kitchen`, on devices with notifications on | That Branch (business-wide Custom Roles with the permission hear every Branch — accepted) | `kitchen.access` | Web Push (tag `kitchen-new-order:{order}`, 10 min TTL, silent when the app window is focused) + live KDS board and chime | Tag replaces; the canonical Super Admin role is excluded (Phase 19.5 rule) | None (operational) |
+| Order Ready | Kitchen status → Ready (not Done → Ready undo) | Accounts that may hear `branch.{id}.pos` | That Branch | `pos.access` | Web Push (tag `order-ready:{order}`) + POS Ready panel (no sound) | Tag replaces; Super Admin excluded; voids clear the panel | Panel entry cleared by Picked up / void |
+| Important admin alert | Access / staff / stock (a movement empties stock) / **security** (Void PIN lock) | Active Super Admins; the actor is excluded except for stock alerts | Business-wide | Super Admin (Control Center) | Stored notification + Web Push (tag `admin-alert:{notification id}`, 24 h TTL) | One stored row per alert; the id is the push tag, so a retried job never shows it twice | Per account: unread until opened / marked read in Notifications (bell count) |
+| Customer pickup Buzz | Cashier presses Buzz on a Take Out order | The one customer device that opted in on its pickup page | That order only | Pickup link token (no account) | Web Push via `/pickup-sw.js` (tag `pickup-ready:{token}`); vibration/sound only on an open foreground page | 5 s cooldown, at most 5 per order, idempotent retries | None |
+| Customer screen confirmation | Pay Now / Pay Later commit on a paired POS | The paired customer screen | That station | Device pairing | On-screen takeover + optional sound | Keyed by takeover id; never restarts on refetch | None |
+
+Security events are audited (wrong Void PIN, password change, password reset by link, Preferred Name and photo changes); only the Void PIN lock also alerts. Nobody is notified about everything: Kitchen and Ready pushes follow the same Branch channel rules as the live pages.

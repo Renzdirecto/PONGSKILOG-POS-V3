@@ -14,6 +14,24 @@ export type CategoryIconKey =
     | 'add_ons'
     | 'food';
 export type ModifierSemanticRole = 'size' | 'instruction' | null;
+/** Server-computed servings of one Size (Regular when option_id is null); Customer QR never receives counts. */
+export type RecipeSizeAvailability = {
+    key: string;
+    option_id: string | null;
+    name: string;
+    state: 'available' | 'out_of_stock' | 'recipe_required';
+    capacity: number | null;
+};
+/** Recipe-based availability of a Recipe-backed Product; null for direct resale or Products without a recipe. */
+export type RecipeAvailability = {
+    state:
+        | 'available'
+        | 'out_of_stock'
+        | 'recipe_required'
+        | 'configuration_error';
+    capacity: number | null;
+    sizes: RecipeSizeAvailability[];
+};
 export type CashierCatalog = {
     categories: { id: string; name: string; icon_key?: CategoryIconKey }[];
     products: {
@@ -27,12 +45,15 @@ export type CashierCatalog = {
         availability_reason?:
             | 'product_disabled'
             | 'category_disabled'
+            | 'not_in_branch'
             | 'branch_unavailable'
             | 'out_of_stock'
+            | 'recipe_required'
             | null;
         stock_status: StockStatus;
         tracks_inventory: boolean;
         on_hand: number | null;
+        recipe?: RecipeAvailability | null;
         image_url: string | null;
         has_modifiers: boolean;
         modifier_groups?: {
@@ -69,11 +90,16 @@ export type ModifierGroup = CatalogChoice & {
     options: ModifierOption[];
     product_ids?: string[];
 };
-export type BranchConfiguration = Pick<BranchPrice, 'branch_id' | 'code' | 'name'>;
+export type BranchConfiguration = Pick<
+    BranchPrice,
+    'branch_id' | 'code' | 'name'
+>;
 export type BranchPrice = {
     branch_id: string;
     code: string;
     name: string;
+    /** False: the Product is not part of this Branch's assortment (not sold there). */
+    in_assortment: boolean;
     price_override: string | null;
     effective_price: string;
     is_available: boolean;

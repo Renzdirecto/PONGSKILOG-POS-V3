@@ -1,17 +1,25 @@
-/** One request at a time, with one trailing refresh for signals received in flight. */
+/**
+ * One request at a time, with one trailing refresh for signals received in flight.
+ *
+ * `hold()` pauses refreshes while the page runs its own navigation (for example a filter change): a pending refresh
+ * waits, an in-flight one is cancelled through the cancel function `refresh` may return, and `release()` runs one
+ * refresh against the page the navigation produced, so a stale reload never lands on top of newer filters.
+ */
 export function createRealtimeRefresh(
-    refresh: (finish: () => void) => void,
+    refresh: (finish: () => void) => void | (() => void),
     debounceMs = 160,
 ) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight = false;
     let queued = false;
     let disposed = false;
+    let held = false;
+    let cancelInFlight: (() => void) | undefined;
     const schedule = (delay = debounceMs) => {
         if (disposed) {
             return;
         }
-        if (inFlight) {
+        if (inFlight || held) {
             queued = true;
             return;
         }
@@ -21,17 +29,44 @@ export function createRealtimeRefresh(
         timer = setTimeout(() => {
             timer = undefined;
             inFlight = true;
-            refresh(() => {
+            let finished = false;
+            const cancel = refresh(() => {
+                finished = true;
                 inFlight = false;
+                cancelInFlight = undefined;
                 if (queued) {
                     queued = false;
                     schedule(0);
                 }
             });
+            cancelInFlight =
+                finished || typeof cancel !== 'function' ? undefined : cancel;
         }, delay);
     };
     return {
         schedule,
+        hold: () => {
+            held = true;
+            if (timer !== undefined) {
+                clearTimeout(timer);
+                timer = undefined;
+                queued = true;
+            }
+            if (inFlight) {
+                queued = true;
+                cancelInFlight?.();
+            }
+        },
+        release: () => {
+            if (!held) {
+                return;
+            }
+            held = false;
+            if (queued && !inFlight) {
+                queued = false;
+                schedule(0);
+            }
+        },
         activate: () => {
             disposed = false;
         },
@@ -40,6 +75,7 @@ export function createRealtimeRefresh(
             clearTimeout(timer);
             timer = undefined;
             queued = false;
+            held = false;
         },
     };
 }
@@ -78,5 +114,64 @@ export function createBranchEventGuard(branchId: string) {
             }
         }
         return true;
+    };
+}
+
+/**
+ * Accepts a business-wide `reports.changed` signal once: every Branch for All Branches (null), otherwise only the
+ * selected Branch. A page may ignore reasons that can never change what it shows (e.g. Operations and Kitchen status).
+ */
+export function createReportsEventGuard(
+    branchId: string | null,
+    ignoredReasons: readonly string[] = [],
+) {
+    const seen = new Set<string>();
+    return (event: Record<string, unknown>) => {
+        if (typeof event.branch_id !== 'string') {
+            return false;
+        }
+        if (branchId !== null && event.branch_id !== branchId) {
+            return false;
+        }
+        if (
+            typeof event.reason === 'string' &&
+            ignoredReasons.includes(event.reason)
+        ) {
+            return false;
+        }
+        if (typeof event.event_id === 'string') {
+            if (seen.has(event.event_id)) {
+                return false;
+            }
+            seen.add(event.event_id);
+            if (seen.size > 512) {
+                seen.delete(seen.values().next().value!);
+            }
+        }
+        return true;
+    };
+}
+
+/**
+ * Owner and Super Admin listen on the business-wide `reports` channel; a Branch-scoped account with custom Reports
+ * access listens only on its selected Branch's `branch.{id}.reports` channel, so it never sees other Branches' signals.
+ */
+export function reportsChannelFor(
+    businessWide: boolean,
+    branchId: string | null,
+): string {
+    return businessWide || branchId === null
+        ? 'reports'
+        : `branch.${branchId}.reports`;
+}
+
+export function getAuditRealtimeFallbackAction(
+    previousStatus: string,
+    connectionStatus: string,
+): { shouldPoll: boolean; shouldRefresh: boolean } {
+    return {
+        shouldPoll: connectionStatus !== 'connected',
+        shouldRefresh:
+            previousStatus !== 'connected' && connectionStatus === 'connected',
     };
 }

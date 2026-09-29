@@ -270,7 +270,7 @@ Rules:
 - Manual confirmation
 - No provider reference required in MVP
 - No automatic provider verification assumed
-- The Phase 6 invoice field is an explicit placeholder only. Invoice capture and management belong to Transaction History & Editing in Phase 12.
+- Cashless Payment rows may carry one private, manually supplied invoice proof. It is evidence only, not gateway verification; replacement and removal are authorized, audited operations.
 
 ---
 
@@ -550,7 +550,8 @@ After close:
 
 Void requires:
 
-- Authorization/PIN/re-auth
+- One global four-digit approval PIN configured by an active Super Admin and stored only as a hash
+- The configuring Super Admin recorded as authorizer and a distinct active assigned Cashier/Cashier+Kitchen user, or another full-access Super Admin on the selected Branch, recorded as initiator
 - Reason
 - Confirmation
 - Audit
@@ -560,6 +561,8 @@ If inventory was already deducted:
 - Restore using compensating inventory movement
 
 Original records remain.
+
+Voided Orders leave normal Cashier Transaction History and all normal receipt surfaces, but remain available in the protected Super Admin Void Orders register. Inventory restoration is the aggregate net negative effect of the Order's `sale`, `pay_later_commit`, and `order_edit_delta` ledger movements, appended once as sorted `void_restore` movements.
 
 ---
 
@@ -673,4 +676,199 @@ Customer availability requires active branch AND qr_ordering_enabled AND open St
 
 Preparing/Ready timestamps record actual transitions; rollback clears downstream timestamps. Browse Menu with a current Order is read-only, and New Order is available only after Done/archive. Receipt access remains paid_at + 24 hours, even after another Order begins in the same anonymous session. Internal records persist.
 
-Owner Settings is a partial Phase 16 slice: existing Branch Management, QR toggle/link/history, and typed receipt name/address/contact/footer/show-brand-logo settings plus approved social URLs. Unconfigured social URLs are visibly disabled. Visit history records kiosk link opens (not verified camera scans), deduplicates the same session/branch for two minutes, and stores no IP, user agent or fingerprint. Phase 12 and full Phase 16 remain unimplemented.
+Owner Settings is a partial Phase 16 slice: existing Branch Management, QR toggle/link/history, and typed receipt name/address/contact/footer/show-brand-logo settings plus approved social URLs. Unconfigured social URLs are visibly disabled. Visit history records kiosk link opens (not verified camera scans), deduplicates the same session/branch for two minutes, and stores no IP, user agent or fingerprint. Full Phase 16 remains unimplemented.
+
+## 35. Phase 12 committed transaction rules
+
+History is cashier-only, branch-scoped, server-paginated, and includes committed Orders across prior Store Sessions. Historical reading remains available while mutations require the Order's current OPEN Store Session. Committed edits use an expected Order version and an idempotency UUID. Retained item configurations keep committed snapshots; new or materially reconfigured lines use the current branch catalog.
+
+Tracked inventory changes are aggregated to one net `order_edit_delta` movement per Product and applied in deterministic Product order. Payments and inventory movements are never rewritten. A higher total creates an outstanding balance, the same total creates no Payment, and a lower paid total appends a `lower_total_correction` adjustment. Settlement appends an exact Cash, Cashless, or Split Payment group against authoritative outstanding. Every edit and proof mutation appends an Audit Log.
+
+## 36. Phase 15 Close Store reconciliation rules - 2026-09-23
+
+- Pre-close blockers: any committed, non-voided current-session Order with authoritative outstanding > 0 (unpaid or partial Pay Later and higher-total Balance Due, whatever the payment term); any committed non-voided Kitchen/Preparing/Ready Order; any loaded (claimed) uncommitted Customer QR order; any mixed-method payment correction without a recorded Cash/Cashless source. Unclaimed QR orders and uncommitted POS drafts/reservations do not block.
+- Expected Closing Cash/Cashless = Opening + that channel's Payment rows − that channel's Store Expenses − that channel's corrections on non-voided Orders − that channel's payments on voided Orders. Split legs are already separate Payment rows and are shown as an explanatory breakdown only. A voided Order's reversal covers all of its payments, so earlier corrections on it are not subtracted again.
+- Expected balances may be negative and are recorded exactly. Actual Closing Cash/Cashless are required, non-negative, and limited to 12 integer digits and 2 decimals.
+- Variance = actual − expected for each channel independently. A shortage in either channel blocks normal close and cannot be overridden by a note or offset by the other channel. An overage requires an explanation of at least 5 characters; an exact close needs no note.
+- A lower-total correction records the Cash and Cashless amounts returned. Single-method Orders are attributed automatically; mixed-method Orders require the Cashier's explicit Cash portion. Historical unallocated mixed-method corrections must be allocated once, with Audit, before the Store can close.
+- Close archives remaining unclaimed QR orders with `store_closed`, records expected/actual/variance/note and a reconciliation snapshot, closes the session, and audits once. A closed Store Session cannot be edited or reopened; the next business day uses normal Open Store.
+
+## 37. Phase 16A Owner Sales & Store Session reporting - 2026-09-24
+
+- **Business date** is the Asia/Manila calendar date on which a Store Session **opened**. A Branch may open and close several Store Sessions on one business date; all of them belong to it. A session that crosses midnight stays entirely under its opening date and is never split across two daily reports. Boundaries are computed in application code (Manila) and queried as UTC half-open ranges; database, server and browser time zones are never relied on.
+- Date filters: Today (default), Yesterday, Last 7 days, This month, Custom (at most 31 business dates, validated on the server). Phase 16C adds Last 30 days and Last 12 months; see §38. Store Session filter: All Sessions or one session in the selected dates and Branch scope; a session outside that scope or range is never reported (the report falls back to All Sessions with a notice).
+- Branch scope is the global Owner/Super Admin Branch context: All Branches aggregates every Branch the business-wide user may view (including inactive Branches' history); a selected Branch reports only its own sessions. Every Store Session row keeps its Branch identity. Phase 16C adds a neutral, alphabetical Branch comparison for All Branches (§38); there is still no ranking language.
+- **Net Sales is sales value, not cash.** It is the current final `orders.total` of committed Active or Completed Orders in the selected sessions. Drafts, submitted/uncommitted or archived QR Orders and voided Orders are excluded. Committed edits are already in the final total and are never subtracted again. Pay Later Orders count as sales before they are paid (Sale ≠ Collection).
+- **Orders** counts those same eligible committed, non-voided Orders.
+- **Cash / Cashless Collected** are net collections per channel from `StoreSessionReconciliation`: Payment amounts − that channel's allocated corrections on non-voided Orders − that channel's payments on voided Orders. Tendered cash and change are never used. A mixed-method correction still awaiting allocation is reported as pending and never guessed into a channel.
+- **Split** is informational only: its legs are already inside Cash and Cashless and are never added again.
+- **Corrections** and **Void reversals** are shown separately. A corrected Order that is later voided reverses its payments once; the correction is not subtracted twice. A void reversal equals the payments actually collected, not the Order total.
+- **Expenses** are Store Session expenses only (Cash and Cashless). A restock expense has one financial effect. Stock-only Store Session inventory adjustments (Complimentary, Wastage, Damaged, Staff meal, Other) have zero financial effect and are excluded.
+- A **CLOSED** session reports its persisted close-time values: reconciliation snapshot, expected, actual, per-channel variance, closing note, closed by and closed at. Nothing is recomputed from browser state. A legacy closed session without a snapshot uses its append-only payment, expense and correction records, and a missing close value is shown as Not available. Negative expected balances are shown exactly. Cash and Cashless variances are never netted: a shortage in either channel makes the session a Shortage.
+- An **OPEN** session appears as LIVE with provisional figures from the same canonical read-only reconciliation. It has no actual closing counts. Its expected balance is unavailable while a correction allocation is pending.
+- A Store Session with zero activity still appears under its business date with 0.00 values.
+- Reporting is read-only for Owner and Super Admin (`reports.view` with business-wide scope). It has no POST/PATCH/DELETE route and never closes a Store, edits, voids, settles, records expenses or adjusts stock.
+
+## 38. Phase 16B–16D Owner workspace completion - 2026-09-24
+
+**Status: COMPLETE — USER MANUAL QA passed (by the user) and FINAL QA passed on 2026-09-24.** Where a line below was refined during manual QA, the refinement is stated in place.
+
+### Business date, periods and comparison
+
+- Phase 16A business-date semantics are unchanged: a period selects the Store Sessions that **opened** on its Asia/Manila business dates. A date with several Store Sessions combines all of them; the Store Session filter drills into one and is additional, never a replacement for the date.
+- Reports period tabs follow the Owner standalone: Daily (today), Weekly (last 7 days), Monthly (last 30 days), Yearly (last 12 calendar months, month buckets) and Custom (≤ 31 dates). Yesterday and This month remain valid server presets. The Dashboard tabs are Today, 7 days and 30 days.
+- The previous period is the immediately preceding equal span (today → yesterday, N days → the previous N days, 12 months → the same months a year earlier, This month → the same days last month). It uses the same filters and bucket count. Drilling into one Store Session has no comparison. Deltas are computed on the server from exact integers (percent, percentage points for the cashless share, seconds for prep time). A zero previous value with a positive current value reads "New".
+- Trend buckets: one day → Manila clock hour of `committed_at`; up to 31 days → business date; 12 months → calendar month of the business date. Hour charts show 6 AM–9 PM, widened to include any real activity outside it.
+
+### Metric definitions (one authority: `SalesAnalytics` over `StoreSessionSalesReport` and `StoreSessionReconciliation`)
+
+- **Total sales** = Phase 16A Net Sales: the current final `orders.total` of committed Active/Completed Orders. **Transactions** = those Orders. **Items sold** = their Order Item quantities. **Average order** = sales ÷ transactions (half-up to the centavo). Voided Orders contribute nothing to any of them.
+- **Collections / Dashboard payment mix** = Cash and Cashless net collections from Payment.amount (− allocated corrections − payments of voided Orders), attributed to the Store Session that received the payment, exactly as Close Store. A CLOSED session uses its close-time snapshot. Split legs are already inside Cash and Cashless and are never added again. `amount_received` and change are never sales. **Cashless share** = Cashless ÷ (Cash + Cashless) collections; it is "—" when nothing was collected.
+- **Reports Payment method donut** (manual-QA decision) = shares of **paid sales (₱)** of the same eligible, filtered Orders, in exact 0.1% steps that add up to 100%. *Include split* OFF (default, `combined`): Cash = Cash-only Orders + the cash part of Split Orders, Cashless = Cashless-only Orders + the cashless part (₱100 Cash Order + ₱50/₱50 Split → Cash ₱150, Cashless ₱50). *Include split* ON (`separate`): Cash-only, Cashless-only and Split Orders, each Order once (→ ₱100 / ₱0 / ₱100). Split parts are Payment legs net of allocated corrections; a correction awaiting Cash/Cashless allocation is shown as pending, never guessed. Unpaid Pay Later Orders are listed separately and are not in the donut. In an OPEN session an edited Order whose raised balance is not yet settled is classified by its existing legs at its full current total until it is settled (Close Store blocks while any balance is outstanding).
+- **Sales by category / Top products / Product performance** sum immutable Order Item `line_total` snapshots and name products by `product_name_snapshot`. Order Items do not snapshot a category, so categories group by each product's **current** category (a deleted product is "Uncategorized"); this is labelled in the UI and never recomputes amounts from current prices. More than seven categories fold the rest into one "N other categories" row.
+- **Peak sales hours** = sales per Manila clock hour of `committed_at` (fixed UTC+8; Manila has no DST). The Dashboard groups them into two-hour blocks.
+- **Order type** = sales, transactions, items and average per Dine in / Take out.
+- **Kitchen performance**: Orders completed = eligible Orders whose Kitchen status is Done; Average prep time = committed_at → ready_at for Orders that reached Ready (Orders that skipped Ready are not timed); per-hour averages mark the fastest and slowest hours. Preparing now / Ready to serve are live counts of open Store Sessions.
+- **Cashier performance**: an Order is credited to its POS creator, or to the cashier who loaded it from the Customer QR queue ("Unattributed" otherwise). Cash / Cashless / Split are sales of that cashier's Orders by how the Order was paid; unpaid Pay Later value is shown separately.
+- **Period highlights** are plain selections of the period's figures (top category, peak hour, top product, cashless share, strongest day or month) — no estimates or projections. Since Phase 20 they sit immediately after the KPI cards.
+- **Branch comparison** (All Branches only): per Branch Store Sessions, Orders, sales, Cash, Cashless and expenses, alphabetical, with no ranking language and no stock figures.
+
+### Report filters
+
+- Order type, Payment method (how the Order was paid from all of its legs: Cash only, Cashless only or Split; unpaid Pay Later Orders match none) and Cashier are server-side filters. They narrow every KPI, chart, table and the CSV, **including Cash/Cashless collections**, which are then computed from the same reconciliation formula over the matching Orders.
+- Category is **not** a report-wide filter: Payments are recorded per Order, not per item, so Cash and Cashless cannot be split by category truthfully. Category narrows Top products, Product performance and the CSV product table only; KPIs, collections, the payment donut, the category card and Store Session figures are unchanged. Categories are each product's **current** category (Order Items have no category snapshot; disclosed in the UI, CSV and here).
+- Choosing a Payment method (any subset of Cash / Cashless / Split) leaves out unpaid Pay Later Orders, which match none of them; the filter dialog says so. Selecting all three is unfiltered.
+- Store Session reconciliation (Collections & drawer effects, Daily summary, Store Sessions and their detail) always covers the whole drawer and is never narrowed by order filters; the page says so while a filter is active. Expenses in the Branch comparison show "—" while an order filter is active.
+
+### Store Session summaries
+
+- Reports lists the Store Sessions of the period (the latest 100 for long periods; totals always include all). The detail shows Branch, opened/closed at and by, orders, Net Sales, Cash/Cashless collections, Split, expenses, corrections, void reversals, opening, expected, actual and variance per channel, closing note and the count of unclaimed Customer QR orders archived at close. CLOSED sessions use the persisted snapshot/close columns; OPEN sessions are LIVE and provisional. The Dashboard shows the latest four with a link that drills Reports into that session.
+
+### Print and export
+
+- Print uses the browser print view (Save as PDF); the management shell navigation is hidden in print. Export offers CSV (`GET workspaces/reports/export`, same validation, scope and filters, throttled, formula-injection safe) and PDF via print. No PDF library was added.
+
+### Owner Dashboard live state
+
+- Inventory attention uses `InventoryState` per Branch for active tracked products: a selected Branch lists out-of-stock then low-stock products with Adjust links into Inventory; All Branches shows low/out **counts per Branch** and never sums stock quantities.
+- Kitchen snapshot counts Kitchen / Preparing / Ready tickets of currently OPEN Store Sessions and times the oldest Kitchen/Preparing ticket from `committed_at`; it exposes no money. All Branches sums the discrete ticket counts and names the oldest ticket's Branch.
+- Recent transactions are the latest five committed, non-voided Orders in scope; each opens the shared Transaction History detail and receipt.
+- Dashboard and Reports are live (Final QA): the private `reports` channel carries only an invalidation signal (event id, Branch, reason, time) after each Order commit/edit/settlement/allocation/void, Kitchen status change, Store expense, stock adjustment, Store Open and Store Close; the page partially reloads its authorized props and keeps every filter. A selected Branch ignores other Branches' signals. The only timer is a 30-second fallback check while realtime is disconnected; reconnecting refreshes once. A reload waits while the page runs its own period/filter visit and a stale in-flight reload is cancelled, so it can never overwrite newer filters. Kitchen ages are shown "As of" their snapshot time.
+
+### Owner Transactions
+
+- Owner and Super Admin use the **same** Transaction History page (`workspaces/transaction-history`, `surface = business`) at `GET workspaces/transactions` inside their management shell, across All Branches or the selected Branch, with the same server search, filters, metrics, pagination (10 per page), cards, details and receipt. All Branches cards carry the Branch code; details carry Branch identity. Voided Orders stay excluded.
+- Edit, Settle and Void are offered only when the viewer also holds POS access to the selected Branch (Super Admin) and the Order belongs to that Branch's OPEN Store Session. The Owner is always read-only: Take payment, Void and Edit are not rendered for a view-only viewer (only Details and Receipt/Print), invoice proofs show that they exist but open only from the Branch POS, and Show QR receipt sharing is hidden. Every write endpoint keeps its POS authorization, so hidden buttons are never the control.
+
+## 39. Phase 16E Owner Operations & Pamamalengke - 2026-09-24
+
+**Status: IMPLEMENTATION COMPLETE · FINAL AUTOMATED QA COMPLETE (§39.2).** USER MANUAL QA of the Final QA UI changes is pending. Not merged. Approved product/UX reference: `context/design/PONGSKILOG Owner Operations v2 (standalone).html` (decoded `__bundler/template`); its mock data is never used in production.
+
+### Structure
+
+- **Operations** is a section of the existing Owner sidebar (and a Super Admin *Operations* section): Pamalengke Plans, Overview, Ingredients, Ingredient Stock, Recipes, Pamamalengke, Purchases (Phase 20 order). Transactions and Reports now sit under **Sales**. Each page is a real route; the active Plan is in the URL (`?plan=`).
+- A **Pamalengke Plan** groups existing Catalog Products, their recipes, Ingredients, replenishment and reporting. **A Plan never owns stock.** Plans are archived, never deleted.
+- A sellable Product belongs to **at most one active Plan** (database unique). Choosing it in another Plan moves it for **future sales only**; every committed sale keeps the Plan recorded when it was first committed. Products outside every Plan sell normally and are excluded from Plan metrics (business totals still include them, as uncosted where no recipe applies).
+
+### Ingredients and stock
+
+- Ingredient **definitions** are business-wide, like Catalog Products; **stock is per Branch**: exactly one canonical balance per **Branch + Ingredient**, shared by every Plan that shows the Ingredient. Catalog › Inventory (type filter All / Products / Ingredients) and Operations › Ingredient Stock read the same balance.
+- Quantities are exact `numeric(18,4)` values in the Ingredient's base unit (`pc`, `pack`, `bottle`, `ml`, `L`, `g`, `kg`), entered with at most four decimals and computed server-side as integer ten-thousandths — never floats, never silently rounded (29.5 stays 29.5). Purchase quantities convert exactly: actual purchase units × purchase-unit size.
+- Every stock change is an **append-only movement** written together with the balance by one primitive: opening balance, sale consumption, order-edit adjustment, void restoration, purchase restock, wastage, count correction. Opening stock is recorded once, at creation, as an opening-balance movement for the selected Branch; afterwards there is no direct balance edit. Wastage cannot exceed current stock; a count appends *counted − system stock* (a zero difference records nothing).
+- The **base unit locks** once movements, a recipe or a recipe snapshot use it. Changing target, purchase unit, cost or rule never rewrites movements or snapshotted costs. An Ingredient used by a current recipe cannot be archived.
+
+### Recipes and committed sales
+
+- Recipes attach to existing Products and their existing **Size** options (a Product without a Size group has one base recipe). States: **Recipe set**, **Some sizes missing**, **Missing recipe**, **No recipe needed** (direct resale).
+- **One sale never consumes both Product stock and Ingredient stock:** a recipe cannot be saved for a Product that tracks Product stock at any Branch, tracking cannot be enabled while the Product has recipes, and at sale time a Product that tracks Product stock at the Branch uses Product stock only.
+- On first commitment — **Pay Now and Pay Later through the same `ApplyOrderInventory` path** — each Order Product/size is snapshotted (recipe state, recipe lines per unit, purchase-unit cost basis, Plan) and recipe-backed lines append one sale-consumption movement per Ingredient (database-unique per snapshot line). A Product that has never had a recipe sells as before, moves nothing and is reported as not costed. ~~Negative Ingredient stock is allowed for sales~~ — **superseded by §39.1**: sales can no longer oversell Recipe stock. Negative balances from older sales or manual corrections are still shown as "Negative · count needed" and simply give zero sellable servings.
+- Pay Later settlement, payment corrections and allocations, Kitchen transitions, Store Close, report refreshes and broadcasts never move Ingredient stock.
+- **Edit** appends only the compensating delta between recorded net consumption and the consumption now required, computed from the Order's own snapshot (a Product/size added by the edit snapshots the current recipe). **Void** restores the current net recorded consumption (post-edit) exactly once, from the recorded movements — never today's recipe — protected by the existing Void idempotency and a database-unique restoration per snapshot line.
+
+### Cost, recommendations and purchases
+
+- **Estimated COGS**: each consumption movement snapshots its signed estimated cost = quantity × purchase-unit cost ÷ purchase-unit size (half-up to the centavo); edits and voids net against the recorded cost, so history never changes when costs, recipes or Plans change. An unknown cost is stored as unknown and reported as an incomplete estimate — never ₱0. Direct-resale products have no trusted product cost and are reported as uncosted.
+- **Replenishment** (`ReplenishmentAdvisor`, the only authority): *Top up to target* suggests whole purchase units for any shortfall below target; *Reorder at a threshold* waits until current ≤ reorder point and then buys back to target (at least one unit); *No automatic suggestion* never suggests. No purchase unit = Needs setup. Only purchase-unit counts round up; negative stock widens the gap.
+- **Pamamalengke**: Plan mode (auto suggestions with *Skip this run*, needs-setup, manual items, no-purchase-needed) and a mobile Shopping checklist (bought, actual quantity, actual unit cost, not available, note). Manual items and skips are saved per Branch + Plan; checklist progress is kept on the device until confirmed. Recommended and actual quantities may differ.
+- **Confirm Pamamalengke** requires one concrete active Branch and that Branch's **OPEN Store Session (existing Store Purchase rule kept)**, plus Cash or Cashless as the paid-from source (added to the approved design because a canonical Store Purchase needs a source). One transaction writes **one** canonical Store Session expense through `RecordStoreSessionExpense::persist()` (same row, audit and event as a Cashier Store Purchase; it reduces that channel's expected closing balance), the exact Ingredient restocks, the purchase metadata (recommended vs actual, estimated vs actual cost), the latest purchase-unit cost for future estimates, clears the confirmed list and audits the run. Manual items share the expense but never restock. A retry with the same key replays; a changed payload is rejected. **Operations › Purchases** is a view over those expenses plus metadata; Pamamalengke keeps no ledger or total of its own.
+
+### Summary
+
+- **Cash view** = Sales today − Pamamalengke today − other Store expenses (All plans only) = **Cash after purchases**, labelled as not profit because bought stock may remain on the shelf.
+- **Profit view (estimated)** = Net sales − Estimated ingredient COGS = Estimated gross profit; minus non-stock pamamalengke items (Plan) or non-stock items and other Store expenses (All plans) = Estimated operating profit. Store-wide expenses are never allocated to a Plan and are counted once. Business Net Sales are the Phase 16 Net Sales of the same business-date Store Sessions; Plan sales are the Order line totals attributed by the snapshotted Plan.
+- **Divide estimated profit** (1, 2, 3, Custom up to 20 shares) is a display-only calculator; it writes nothing and reports centavos that cannot be split equally.
+- **All Branches** shows read-only analytics only; Ingredient stock, Pamamalengke suggestions, opening stock, adjustments and confirmations require one selected Branch.
+
+### 39.1 Manual QA follow-up — Recipe configuration, Add-on effects and Recipe-based availability (2026-09-24)
+
+**Mental model**
+
+- **Product → one optional Size group → one base recipe per Size.** Only the active `size` Group defines base recipe variants (Small / Medium / Large). A Product without a Size group has one **Regular** recipe. A Product may have **at most one active Size group**; assigning a second, or turning an assigned Group into an active Size group, is rejected on the server. Legacy data with two is a configuration error ("Size groups need fixing"), never resolved by guessing.
+- **Add-on / Modifier** (the existing `semantic_role = null`, previously labelled "Standard options") may add price and an optional **Product-specific Ingredient effect** (for example *Extra Yakult on Lemon Yakult → Yakult +1 pc*). Effects are per Product + option, because Groups are reusable across Products. "No ingredient effect" is valid.
+- **Instructions** (No ice, Less sugar) stay optional, multiple, price-neutral and structured; they never create Ingredient usage and never affect availability.
+- Sale usage = item quantity × base recipe + Σ (item quantity × modifier quantity × Add-on effect). Exact decimal math only.
+
+**Recipes page states**
+
+- **Uses Product stock** (Product stock tracking on at any Branch): names **every Branch that still tracks it** ("…tracks direct Product stock in: QAVE (Quezon Ave)") and gives one **Open {CODE} product settings** action per Branch, which switches to that Branch through the existing Branch context and opens the Product's Branch configuration (superseded wording: a single "Open Product settings" that used whatever Branch was selected). Nothing is changed or zeroed automatically.
+- **No recipe needed** (explicit direct resale): **Use ingredient recipe** switches back.
+- **Recipe required** (was "Recipe not set"): **Set up recipe** (Regular, or per-Size tabs), plus Copy from another size; the missing Size is outlined red (§39.2).
+- **Add-on / Modifier effects** is a separate section; Sizes and Instructions never appear there.
+
+**Recipe-based availability** (`RecipeCapacity`, server only)
+
+- A Product is **Recipe-backed** once it has at least one recipe and does not use Product stock or No recipe needed. Products that never had a recipe keep their existing availability, so the existing catalog is not made unavailable.
+- Available servings of a configuration = **minimum over required Ingredients of floor(max(Branch stock, 0) ÷ quantity per serving)**; a missing balance counts as 0, a negative balance gives 0 servings.
+- Availability is **per Size**. The Product tile is sellable while at least one Size can be made; the POS dialog shows each Size ("15 available", "Out of stock", "Recipe required"). A Size without a recipe on a Recipe-backed Product is **Recipe required** and cannot be sold. Existing gates (Product/Category active, Branch availability, Product stock) keep precedence.
+- The **selected configuration** (Size + selected Add-ons) and the rest of the cart set the quantity cap; an Add-on that cannot be fulfilled is shown unavailable while the base drink stays sellable. Customer QR sees whether a choice can be made, never Branch serving counts.
+
+**Enforcement (rule change)**
+
+- **Sale-driven Ingredient consumption may no longer oversell Recipe stock.** New sales (Pay Now, Pay Later, Customer QR submission pre-check) and **usage-increasing edits** are validated across the whole order (shared Ingredients, Sizes, Add-ons, quantities) and rejected cleanly when any required Ingredient would go below zero. The authoritative check runs under the locked Ingredient balances, so of two concurrent sales for the last stock exactly one wins, with no partial Payment, Order, Kitchen ticket or movement.
+- Edits validate only the additional net usage; reductions, Voids and restorations are always allowed. Voids restore the historical (snapshotted) base and Add-on usage exactly once.
+- Recipe capacity refreshes in POS and Customer QR after sales, edits, voids, wastage, count corrections, opening balances, Pamamalengke restocks and recipe/effect changes (invalidation events only; no polling).
+
+### 39.2 Final QA corrections (2026-09-24)
+
+**Recipe mode is global; price, stock and availability are per Branch.** A Product's recipes and Add-on effects are shared by every Branch. Once a Product has an Ingredient recipe or effect, **no Branch may track direct Product stock for it** (recipe save, effect save and Branch configuration all enforce this), so one sale never deducts both stocks. Each Branch keeps its own effective selling price (e.g. MAIN ₱45, QAVE ₱50), availability, Ingredient stock and therefore Recipe capacity.
+
+**Recipe completeness.** Once Recipe-backed, a selected active Size without a recipe is "Recipe required" and cannot be sold through POS drafts, Pay Now, Pay Later, Customer QR submission or a committed edit, whatever a stale client sends.
+
+**Required-field visual rule (manual QA).** Anything REQUIRED that is still empty, invalid or unconfigured has a **red outline plus readable text** ("Required …", "Recipe required") and `aria-invalid`; once valid it returns to the **neutral gray** outline. Optional configuration (Add-on with "No ingredient effect", Instructions, notes, receipts, No recipe needed / direct Product stock) is never red. Applied to Open Store balances, Add expense / purchase (description, amount, restock product and quantity), Stock correction (reason, product, quantity, note when Other), Record giveaway (product, required Size group, quantity, reason, note when Other, reversal reason), the POS/giveaway customization dialog's required Groups, and Recipes (missing Size recipe, recipe configuration error).
+
+**Giveaway (Record giveaway).** A real Product given away free during the current OPEN Store Session: physical stock leaves the store, revenue is **₱0**.
+- It is **not** a sale, Order, Payment, Store Expense, Store Purchase or generic inventory adjustment. It creates no Payment leg, no Expense row and never changes Net Sales, order counts, Cash/Cashless, Store Close reconciliation, COGS or Pamamalengke.
+- It is its own Store Session action next to Add expense / purchase and Stock correction, and uses the canonical customization engine (Product → Size → Add-ons → Instructions → quantity), then a required reason (Complimentary / on the house, Service recovery, Promo / sampling, Staff meal, Other + note), Review and Confirm.
+- Stock: a Recipe-backed Product deducts (base recipe of the Size + each selected Add-on's Product-specific effect) × quantity from the Branch Ingredient balances; a direct-resale Product deducts its Product stock; never both; Instructions move nothing; a Product with neither is recorded for history only. Normal availability rules apply and a Giveaway can never drive stock below zero.
+- History: immutable record of Branch, Store Session, Product and name, Size, Add-ons, Instructions, quantity, reason/note, actor, time, the per-serving recipe basis and the exact movements, with an idempotency key (a changed payload under a used key is a conflict).
+- Reversal: while the Giveaway's own Store Session is OPEN, an authorized operator may reverse it once with a reason; it restores exactly the recorded movements (never today's recipe or effects), is append-only and idempotent, and the Giveaway stays in the history marked Reversed.
+- Reporting: Operations › View summary (All plans) shows **Giveaways today** separately — items, count and **Estimated giveaway cost** from the cost recorded on its movements (incomplete, never ₱0, when direct-stock or unknown); it is never subtracted from sales profit. Ingredient Stock shows a separate **Giveaway** column.
+
+**Lock order for every Store Session writer.** Store Expenses/Purchases, Store Session inventory adjustments, Catalog inventory adjustments, Pay Later settlement, payment-correction allocation and Giveaways take the **Branch FOR SHARE first**, then the OPEN Store Session (share), then their rows. POS commits hold the Branch FOR UPDATE before the Store Session and every insert needs a KEY SHARE on the Branch, so the previous Session-first order deadlocked (reproduced on PostgreSQL, see `11-testing-qa.md`).
+
+
+## Phase 18 Manual QA refinement #2.1 — Branch-owned catalog configuration and Operations — 2026-09-25
+
+Supersedes the earlier "shared Operations definitions", "Recipe mode is global" and "no Branch row = sold at the default price" rules.
+
+- **Global (shared by every Branch):** Product (name, category, image, description, base price, active), Category, Modifier Group, Modifier Option and the Product ↔ Group assignment. Never duplicated per Branch.
+- **Branch Product (explicit assortment):** a `branch_products` row means the Product belongs to that Branch; no row means it is not sold there (POS, Customer QR, Giveaway, drafts and every commit path reject it). The row holds the Branch price, availability, Product stock tracking, low-stock threshold and the Branch recipe mode.
+- **Unavailable vs Remove:** *Mark unavailable* keeps the Product in the Branch (visible in Products, temporarily not sellable). *Remove from {CODE}* ends membership: no longer in that Branch's POS/QR/Products list or Plans; the global Product, other Branches, the Branch's stock balance, movement history, Orders and recipe snapshots are kept (stock is never zeroed); it can be added back later.
+- **New Branch / new Product:** a new Branch starts with zero Products, Plans, Ingredients, Recipes and Ingredient stock (empty POS and QR). A new global Product joins only the Branches explicitly selected in the editor; otherwise it is sold nowhere yet.
+- **Branch Operations setup:** Plans, Ingredients (unit, target, purchase unit, purchase cost, replenishment rule, reorder point), Recipes (per Branch + Product + Size), Add-on Ingredient effects (per Branch + Product + option), recipe mode, Ingredient stock and movements, the Pamamalengke list and purchases belong to one Branch. MAIN and QAVE may configure the same Product differently (MAIN recipe with 20 ml, QAVE 25 ml; MAIN Recipe while QAVE sells it directly from Product stock). One sale never deducts Product stock and Ingredient stock for the same Branch configuration.
+- **Copy = configuration only, clone once:** *Copy products from another Branch* (optionally *Copy Operations setup for selected products*) and *Operations › Copy setup from another Branch* copy configuration; afterwards each Branch changes independently. Never copied: Product/Ingredient stock, movements, purchases, Store expenses, Store Sessions, Orders/sales, recipe snapshots, audit. Default keeps what the destination already has (skip); *Replace* overwrites matched configuration for future sales only (historical sales unchanged). Review before confirm.
+- **Cutover (existing data):** every existing Branch kept the Products it sold (explicit rows created; existing prices/availability kept; unavailable stays unavailable) and received its own independent copy of the previous shared Operations setup; stock, movements, purchases and Order snapshots now point at that Branch's own records with unchanged quantities and costs.
+
+## 40. Phase 20 final business rules — 2026-09-28
+
+Supersedes earlier rules where they conflict (the Store Session "Adjust inventory" reasons, Pamamalengke needing an open Store, the per-surface receipts).
+
+- **Stock Correction (Store Session › Stock correction; was "Adjust inventory").** Fixes a Product stock count; never a sale, purchase or expense and never money. Reasons: Physical count / discrepancy (add or remove), Found stock (add), Missing stock (remove), Wastage (remove), Damaged (remove), Other (either; a note is required). It records one signed movement (`Stock correction: …`) with before/after stock in the audit, cannot take stock below zero and is idempotent. Complimentary and Staff meal are no longer correction reasons (legacy rows keep their labels): free items given away are a **Giveaway** (₱0 revenue, its own reversible action, recipe-aware).
+- **Pamamalengke funding Store Session.** Confirming a run needs no open Store. The buyer chooses the Store Session whose drawer paid (the open one, or one of the 10 most recent closed ones; the server accepts any session of the same Branch and re-checks that its open/closed state has not changed meanwhile). Funded by the **open** session it is that session's Store Purchase (a Store expense row, counted by Close Store). Funded by a **closed** session it is an allocation only: the purchase keeps its payment source and funding session, stock is restocked, **no expense row is written and the closed session's reconciliation never changes**. If the chosen open session closes while confirming, the confirmation is refused ("closed while you were confirming") and nothing is written.
+- **Operations figures.** Pamamalengke spend belongs to its funding session's business date; *Other store expenses* exclude only the expense-backed runs, so nothing is subtracted twice. The duplicate *Cash View* card is removed (Profit view and the Purchases history already show sales, expenses and each run's funding). **Products Sold** (Overview, first section) groups the plan's sales today by Catalog category → Product × size, with size counts; names and sizes come from each Order line's own snapshot (never today's modifier definitions), the category from the Product's current Catalog category (lines carry no category snapshot); voided orders are excluded.
+- **One receipt.** Every receipt — POS print, Transaction History reprint, shared receipt link, Customer QR, Pickup and the Settings preview — is the same document built from the Order's snapshots and Payment rows (never today's catalog), rendered by one component. Receipt Settings is the configuration authority: logo on/off, store name / address / contact (blank = follow the Branch details), header line, order reference, date/time, cashier, customer/table, items with options and instructions, subtotal/total, payment breakdown (every payment of the order), up to five plain-text custom rows, thank-you message, an optional order-again QR, dashed/solid/no separators, and the order of the Details and Footer blocks. Store name, order number, items and totals always print; no HTML is accepted. The audience only removes data: the Pickup receipt never shows the customer name, table or notes; staff ids, invoices and balances stay on staff receipts.
+- **Preferred Name.** Staff may set their own Preferred Name (and photo, appearance); legal name, email, employee ID, position, role, Branches and status stay admin-managed. Friendly display (shell, menus) uses Preferred Name, else the legal name. The receipt cashier line uses Preferred Name, else only the first given name (leading titles/abbreviations such as "Dr." or "Ma." skipped) — customers never receive a staff member's full legal name. Audit, security and staff administration always identify the real account.
+- **Store status on every Store Operations page.** One control: OPEN opens the current Store Session details and actions (accounts with POS access and Store expenses); CLOSED opens Open Store for accounts the server would accept; everyone else sees the status only. Opening from any page returns to that page; other devices leave Store Closed at once (`store.opened`). A Branch cannot leave Active while its Store is open.
+- **Store Close summary** shows when the Store opened, who opened it and the opening Cash / Cashless, beside the existing blockers, expected balances, variances and audit.
+- **QR Orders.** Archived orders list newest-archived first; only an order of the currently open Store Session offers Restore. The 30-minute auto-archive and the deterministic Store Close archive are unchanged.
+- **Void PIN.** Five wrong PINs for one account (or fifteen across all accounts) lock Void approval until the 15-minute window that began with the first wrong PIN ends; every wrong PIN is audited and reaching a lock alerts Super Admins. Setting a new PIN clears the lock.

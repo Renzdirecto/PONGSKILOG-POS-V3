@@ -38,7 +38,7 @@ Cashier may view allowed information but cannot:
 - Save Pay Later
 - Void
 - Delete
-- Adjust inventory
+- Stock correction (was Adjust inventory)
 - Record Store Purchase
 - Perform other operational CRUD
 
@@ -712,6 +712,16 @@ Audit includes:
 - Variances
 - Store Close
 
+For Void approval, a Super Admin configures the single global four-digit PIN. An active assigned Cashier or Cashier+Kitchen operator, or another full-access Super Admin on the selected Branch, supplies that PIN with a reason from the current Store Session transaction. The configuring Super Admin is recorded as authorizer, the operator is recorded separately as initiator, and the two identities must differ. The PIN is never returned or audited in plaintext.
+
+### Staff account creation (2026-09-24)
+
+Super Admin -> Control -> Staff -> Add Staff -> full name, email, temporary password + confirmation, role, Branch access, Active/Inactive -> Create Staff -> "Staff account created."
+
+The Super Admin chooses the temporary password and hands the credentials to the staff member directly. The staff member signs in with them immediately. There is no invite email, forced password change, first-login setup, or self-service profile editing in this slice. Operational roles need at least one active Branch; Owner and Super Admin are business-wide.
+
+Operational workspaces: Super Admin selects a Branch from the header, then opens Cashier Dashboard, POS, QR Orders, Transaction History, Kitchen, or Customer Display in their existing operational shells, with a Control Center link back.
+
 ---
 
 ## 31. Branch Realtime
@@ -757,6 +767,12 @@ POS paid receipt -> Show QR -> temporary signed public digital receipt. This rep
 
 The relative signature authorizes only one receipt. BaconQrCode encodes the current request origin (including LAN IP/port) plus the signed path. Availability ends at the existing payment timestamp + 24 hours, never 24 hours from opening Show QR. Tampered paths/signatures return 403/404; expired receipts return 410. The public route is throttled and serves private/no-store responses without employee shared props or a Customer QR cookie. Existing session-owned Customer QR receipt authorization remains unchanged.
 
-The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states. Phase 12 remains deferred. No migration or new dependency is required.
+The standalone receipt-only page reuses the customer receipt card, persisted branch name/address/contact/footer/logo settings, official Order number/REF, item and payment snapshots, and receipt-card-only 2x PNG exporter. POS QR has loading, retry, expired and Back states.
 
 USER MANUAL QA REQUIRED: Open normal POS -> create Pay Now order -> View Receipt -> Show QR -> scan using a second phone/tablet -> confirm the public receipt opens without login, correct REF/items/payment/branding -> save PNG. Repeat for a loaded Customer QR Order and settled Pay Later Order. Final device/visual acceptance is pending; no broad browser QA was performed.
+
+## Phase 12 transaction history flow
+
+Cashier opens History, server filters the assigned branch's committed Orders, then Details fetches fresh authoritative state. A current-session edit revalidates version, catalog and stock, commits item snapshots plus net inventory deltas, reconciles money, appends Audit Log, then broadcasts compact POS/Kitchen invalidations. A resulting balance opens the shared Cash/Cashless/Split collection experience and appends a new Payment group only.
+
+For a Cashless Payment row, Invoice opens authorized private proof management. The cashier can choose an image or use `getUserMedia` camera capture where supported, then view, replace, or remove that one proof. File selection/capture remains the fallback. Prior-session details and proofs are readable but not mutable.

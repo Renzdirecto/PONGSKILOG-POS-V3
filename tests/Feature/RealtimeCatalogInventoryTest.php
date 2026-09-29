@@ -5,6 +5,7 @@ use App\Enums\InventoryMovementType;
 use App\Events\InventoryChanged;
 use App\Events\ProductAvailabilityChanged;
 use App\Events\ProductBranchConfigurationChanged;
+use App\Events\ReportsChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\ModifierGroup;
@@ -117,7 +118,7 @@ test('product disable and enable schedule one availability and configuration eve
     Event::fake([ProductAvailabilityChanged::class, ProductBranchConfigurationChanged::class]);
     $user = realtimeUser('owner');
     $branches = Branch::factory()->count(2)->create();
-    $product = Product::factory()->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
+    $product = Product::factory()->soldAt(...$branches->all())->create(['name' => 'Bangsilog', 'default_price' => '105.00']);
     $payload = [
         'name' => 'Bangsilog',
         'category_id' => $product->category_id,
@@ -155,7 +156,7 @@ test('branch availability changes schedule only the affected branch events witho
     $user = realtimeUser('owner');
     $main = Branch::factory()->create(['code' => 'MAIN']);
     Branch::factory()->create(['code' => 'QAVE']);
-    $product = Product::factory()->create(['default_price' => '105.00']);
+    $product = Product::factory()->soldAt($main)->create(['default_price' => '105.00']);
 
     $this->actingAs($user)->put(route('products.branches.update', [$product, $main]), [
         'price_override' => '99.00',
@@ -172,6 +173,25 @@ test('branch availability changes schedule only the affected branch events witho
             && $event->broadcastWith()['product_id'] === $product->id
             && $event->broadcastWith()['is_available'] === false
             && $event->broadcastWith()['effective_price'] === '99.00'))->toBeTrue();
+});
+
+test('turning branch product stock tracking on or off refreshes only that branch operations pages', function () {
+    Event::fake([ReportsChanged::class]);
+    $user = realtimeUser('owner');
+    $main = Branch::factory()->create(['code' => 'MAIN']);
+    Branch::factory()->create(['code' => 'QAVE']);
+    $product = Product::factory()->soldAt($main)->create(['default_price' => '105.00']);
+    $configuration = ['price_override' => null, 'is_available' => true, 'tracks_inventory' => false, 'low_stock_threshold' => null];
+
+    $this->actingAs($user)->put(route('products.branches.update', [$product, $main]), [...$configuration, 'price_override' => '99.00'])
+        ->assertSessionHasNoErrors();
+    Event::assertNotDispatched(ReportsChanged::class);
+
+    $this->actingAs($user)->put(route('products.branches.update', [$product, $main]), [...$configuration, 'tracks_inventory' => true])
+        ->assertSessionHasNoErrors();
+    Event::assertDispatchedTimes(ReportsChanged::class, 1);
+    Event::assertDispatched(ReportsChanged::class, fn (ReportsChanged $event): bool => $event->broadcastWith()['branch_id'] === $main->id
+        && $event->broadcastOn()[1]->name === 'private-branch.'.$main->id.'.reports');
 });
 
 test('moving an option refreshes products assigned to both Groups', function () {

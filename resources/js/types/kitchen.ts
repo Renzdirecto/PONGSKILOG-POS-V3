@@ -42,8 +42,19 @@ export type KitchenTransitionFlash = {
 
 export type CustomerDisplayData = {
     is_open: boolean;
-    preparing: string[];
-    ready: string[];
+    preparing: { number: string; order_type: 'dine_in' | 'take_out' }[];
+    ready: { number: string; order_type: 'dine_in' | 'take_out' }[];
+    /** Dine In / Take Out orders in the Preparing column (the active queue), counted by the server. */
+    counts: { dine_in: number; take_out: number };
+};
+
+/** Present only for a Ready Take Out order whose customer turned notifications on (Phase 19.6B). */
+export type PosReadyBuzz = {
+    count: number;
+    max: number;
+    remaining: number;
+    last_buzzed_at: string | null;
+    cooldown_until: string | null;
 };
 
 export type PosReadyOrder = KitchenTicket & {
@@ -51,6 +62,7 @@ export type PosReadyOrder = KitchenTicket & {
     payment_term: 'immediate' | 'pay_later' | null;
     payment_methods: ('cash' | 'cashless')[];
     total: string;
+    buzz: PosReadyBuzz | null;
 };
 
 export type KitchenRealtimeEvent = {

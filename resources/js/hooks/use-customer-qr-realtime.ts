@@ -31,8 +31,14 @@ export function useCustomerQrRealtime(branchId: string, trackingId?: string) {
             35,
         );
         const online = () => refresh.schedule(0);
+        /** Sleeping phones can miss socket events; refetch authoritative Store state when shown again. */
+        const visible = () => {
+            if (document.visibilityState === 'visible') refresh.schedule(0);
+        };
         window.addEventListener('online', online);
         window.addEventListener('focus', online);
+        window.addEventListener('pageshow', online);
+        document.addEventListener('visibilitychange', visible);
         const key = import.meta.env.VITE_REVERB_APP_KEY;
         if (!key) {
             setStatus('unavailable');
@@ -40,6 +46,8 @@ export function useCustomerQrRealtime(branchId: string, trackingId?: string) {
                 refresh.dispose();
                 window.removeEventListener('online', online);
                 window.removeEventListener('focus', online);
+                window.removeEventListener('pageshow', online);
+                document.removeEventListener('visibilitychange', visible);
             };
         }
         const client = new Pusher(key, {
@@ -106,6 +114,8 @@ export function useCustomerQrRealtime(branchId: string, trackingId?: string) {
             echo.disconnect();
             window.removeEventListener('online', online);
             window.removeEventListener('focus', online);
+            window.removeEventListener('pageshow', online);
+            document.removeEventListener('visibilitychange', visible);
         };
     }, [branchId, trackingId]);
     return status;

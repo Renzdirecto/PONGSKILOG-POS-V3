@@ -2,9 +2,12 @@
 
 namespace App\Actions\StoreSessions;
 
+use App\Actions\Audit\AuditRecorder;
 use App\Enums\BranchStatus;
 use App\Enums\StoreSessionStatus;
 use App\Events\CustomerCatalogChanged;
+use App\Events\ReportsChanged;
+use App\Events\StoreOpened;
 use App\Models\Branch;
 use App\Models\StoreSession;
 use App\Models\User;
@@ -16,6 +19,8 @@ use Illuminate\Support\Facades\Validator;
 
 class OpenStoreSession
 {
+    public function __construct(private AuditRecorder $audit) {}
+
     public function execute(
         User $user,
         Branch $branch,
@@ -32,10 +37,9 @@ class OpenStoreSession
 
             Gate::forUser($user)->authorize('select', $branch);
 
-            /** Frozen security rules require a Cashier role and assignment, even for business-wide users. */
-            if ((! $user->hasRole('cashier') && ! $user->hasRole('cashier_kitchen'))
-                || ! $user->branches()->whereKey($branch->getKey())->wherePivot('is_active', true)->exists()) {
-                throw new AuthorizationException('Only an assigned cashier may open this store.');
+            /** A Cashier role with an active assignment is required; only full-access Super Admin is business-wide here. */
+            if (! $user->hasCashierOperationsRole() || ! $user->hasOperationalBranchAccess($branch)) {
+                throw new AuthorizationException('Only an assigned cashier or Super Admin may open this store.');
             }
 
             if ($branch->status !== BranchStatus::Active) {
@@ -70,7 +74,23 @@ class OpenStoreSession
                     'opening_cash_amount' => $openingCashAmount,
                     'opening_cashless_amount' => $openingCashlessAmount,
                 ]));
+                $this->audit->record(
+                    branch: $branch,
+                    actor: $user,
+                    module: 'store_sessions',
+                    action: 'store.opened',
+                    auditableType: StoreSession::class,
+                    auditableId: $session->id,
+                    after: [
+                        'status' => $session->status->value,
+                        'opening_cash_amount' => $session->opening_cash_amount,
+                        'opening_cashless_amount' => $session->opening_cashless_amount,
+                        'opened_at' => $session->opened_at->toIso8601String(),
+                    ],
+                );
                 CustomerCatalogChanged::dispatch($branch->id);
+                ReportsChanged::dispatch((string) $branch->id, 'store.opened');
+                StoreOpened::dispatch($session);
 
                 return $session;
             } catch (UniqueConstraintViolationException $exception) {

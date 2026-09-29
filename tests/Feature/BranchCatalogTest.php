@@ -55,7 +55,7 @@ test('availability requires an active product and category and no branch disable
 
     expect(app(BranchCatalog::class)->isAvailable($product, $branch))->toBe($expected);
 })->with([
-    'global defaults' => [true, true, null, true],
+    'not in the branch assortment' => [true, true, null, false],
     'enabled override' => [true, true, true, true],
     'disabled override' => [true, true, false, false],
     'inactive product' => [true, false, null, false],
@@ -66,10 +66,10 @@ test('availability requires an active product and category and no branch disable
 ]);
 
 test('one branch availability override does not disable another branch or another product', function () {
-    $product = Product::factory()->create();
-    $otherProduct = Product::factory()->create();
     $main = Branch::factory()->create();
     $qave = Branch::factory()->create();
+    $product = Product::factory()->soldAt($qave)->create();
+    $otherProduct = Product::factory()->soldAt($main)->create();
     BranchProduct::factory()->for($product)->for($main)->create(['is_available' => false]);
     $product->load('branchProducts');
     $catalog = app(BranchCatalog::class);
@@ -77,6 +77,20 @@ test('one branch availability override does not disable another branch or anothe
     expect($catalog->isAvailable($product, $main))->toBeFalse();
     expect($catalog->isAvailable($product, $qave))->toBeTrue();
     expect($catalog->isAvailable($otherProduct, $main))->toBeTrue();
+    expect($catalog->isAvailable($otherProduct, $qave))->toBeFalse();
+});
+
+test('a product without a branch row is not sold there and the browse list omits it and empty categories', function () {
+    $branch = Branch::factory()->create();
+    $sold = Product::factory()->soldAt($branch)->create(['name' => 'Sold here']);
+    $notHere = Product::factory()->create(['name' => 'Sold nowhere']);
+    BranchProduct::factory()->for($sold)->for(Branch::factory()->create())->create();
+
+    $browse = app(BranchCatalog::class)->browse($branch);
+
+    expect(array_column($browse['products'], 'name'))->toBe(['Sold here'])
+        ->and(array_column($browse['categories'], 'id'))->toBe([$sold->category_id])
+        ->and(app(BranchCatalog::class)->resolveLoaded(app(BranchCatalog::class)->productsForOrder($branch, [$notHere->id])->sole())['availability_reason'])->toBe('not_in_branch');
 });
 
 test('availability rechecks persisted global and branch disablement', function (string $disabled) {
@@ -97,8 +111,8 @@ test('availability rechecks persisted global and branch disablement', function (
 })->with(['category', 'product', 'override']);
 
 test('catalog availability is independent of store sessions and branch status', function (BranchStatus $status) {
-    $product = Product::factory()->create();
     $branch = Branch::factory()->create(['status' => $status]);
+    $product = Product::factory()->soldAt($branch)->create();
     $catalog = app(BranchCatalog::class);
     expect($catalog->isAvailable($product, $branch))->toBeTrue();
 

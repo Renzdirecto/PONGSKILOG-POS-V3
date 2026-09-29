@@ -1,0 +1,187 @@
+const RES = {
+    liemposilog: '/images/landing-liemposilog.png',
+    chicksilog: '/images/landing-chicksilog.png',
+    hotsilog: '/images/landing-hotsilog.png',
+    porkchopsilog: '/images/landing-porkchopsilog.png',
+    beefpares: '/images/landing-beefpares.png',
+    tapsilog: '/images/landing-tapsilog.png',
+    lechonpares: '/images/landing-lechonpares.png',
+    bangsilog: '/images/landing-bangsilog.png',
+    'https://unpkg.com/react@18.3.1/umd/react.production.min.js':
+        '/images/landing-https://unpkg.com/react@18.3.1/umd/react.production.min.js.png',
+    'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js':
+        '/images/landing-https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js.png',
+};
+const COPY_ADDRESS = 'PONGSKILOG Adarna Street, Quezon City';
+
+const BEST = [
+    {
+        n: 'Chicken Silog',
+        p: '₱110',
+        img: RES.chicksilog,
+        d: "Fried chicken, garlic rice and egg. The board's top seller.",
+        alt: 'Chicken silog plate with garlic rice and fried egg',
+    },
+    {
+        n: 'Bangus Silog',
+        p: '₱110',
+        img: RES.bangsilog,
+        d: 'Boneless bangus, garlic rice, egg. Best with toyomansi.',
+        alt: 'Bangus silog plate with garlic rice and fried egg',
+    },
+    {
+        n: 'Tapa Silog',
+        p: '₱100',
+        img: RES.tapsilog,
+        d: 'Beef tapa with garlic rice and egg. The house standard.',
+        alt: 'Tapsilog plate with beef tapa, garlic rice and fried egg',
+    },
+    {
+        n: 'Liempo Silog',
+        p: '₱100',
+        img: RES.liemposilog,
+        d: 'Grilled pork belly, cut thick, with garlic rice and egg.',
+        alt: 'Liempo silog plate with pork belly, garlic rice and fried egg',
+    },
+    {
+        n: 'Porkchop Silog',
+        p: '₱95',
+        img: RES.porkchopsilog,
+        d: 'Fried porkchop, garlic rice and egg. Simple and filling.',
+        alt: 'Porkchop silog plate with garlic rice and fried egg',
+    },
+    {
+        n: 'Lechon Pares',
+        p: '₱85',
+        img: RES.lechonpares,
+        d: 'Lechon pares with rice. Rich, slow-braised, served hot.',
+        alt: 'Lechon pares with a bowl of rice',
+    },
+    {
+        n: 'Beef Pares',
+        p: '₱75',
+        img: RES.beefpares,
+        d: 'Beef pares with rice. The late-night order.',
+        alt: 'Beef pares with a bowl of rice',
+    },
+    {
+        n: 'Hotdog Silog',
+        p: '₱70',
+        img: RES.hotsilog,
+        d: "Hotdog, garlic rice and egg. Everybody's first order.",
+        alt: 'Hotsilog plate with hotdog, garlic rice and fried egg',
+    },
+];
+
+const MENU = {
+    silog: {
+        label: 'Silog',
+        note: 'Every silog comes with garlic rice and egg. Prices may vary.',
+        items: [
+            { n: 'Chicken Silog', p: '₱110' },
+            { n: 'Bangus Silog', p: '₱110' },
+            { n: 'Tapa Silog', p: '₱100' },
+            { n: 'Liempo Silog', p: '₱100' },
+            { n: 'MIX Silog', p: '₱100' },
+            { n: 'Porkchop Silog', p: '₱95' },
+            { n: 'Tocino Silog', p: '₱95' },
+            { n: 'Hungarian Silog', p: '₱90' },
+            { n: 'Chicken Fillet Silog', p: '₱90' },
+            { n: 'Lechon Pares with Rice', p: '₱85' },
+            { n: 'Longganisa Silog', p: '₱80' },
+            { n: 'Maling Silog', p: '₱80' },
+            { n: 'Ham Silog', p: '₱80' },
+            { n: 'Siomai Silog', p: '₱85' },
+            { n: 'Shanghai Silog', p: '₱85' },
+            { n: 'Beef Pares with Rice', p: '₱75' },
+            { n: 'Nugget Silog', p: '₱75' },
+            { n: 'Hotdog Silog', p: '₱70' },
+            { n: 'Embutido Silog', p: '₱70' },
+            { n: 'Burger Steak', p: '₱60' },
+        ],
+    },
+    short: {
+        label: 'Short orders',
+        note: 'Good for sharing. Availability changes through the night.',
+        items: [
+            { n: 'Bulalo', p: '₱150' },
+            { n: 'Pancit Canton', p: '₱130' },
+            { n: 'Miki Bihon', p: '₱130' },
+            { n: 'Miki Guisado', p: '₱130' },
+            { n: 'Lechon Kawali', p: '₱130' },
+            { n: "Tokwa't Baboy", p: '₱130' },
+            { n: 'Pancit Bihon', p: '₱120' },
+            { n: 'Pork Sisig', p: '₱100' },
+            { n: 'Caldereta', p: '₱80' },
+        ],
+    },
+    ala: {
+        label: 'Ala carte',
+        note: 'Ulam and add-ons on their own, no rice unless listed.',
+        items: [
+            { n: 'Chicken Only', p: '₱80' },
+            { n: 'Bangus Only', p: '₱80' },
+            { n: 'Lechon Pares Only', p: '₱75' },
+            { n: 'Porkchop Only', p: '₱75' },
+            { n: 'Liempo Only', p: '₱70' },
+            { n: 'Hungarian Only', p: '₱60' },
+            { n: 'Beef Pares Only', p: '₱60' },
+            { n: 'Beef Mami', p: '₱50' },
+            { n: 'Shanghai Only', p: '₱50' },
+            { n: 'Siomai Only', p: '₱50' },
+            { n: 'Ham', p: '₱50' },
+            { n: 'Silog', p: '₱40' },
+            { n: 'Hotdog Only', p: '₱35' },
+            { n: 'Maling Only', p: '₱30' },
+            { n: 'Rice', p: '₱20' },
+            { n: 'Half Rice', p: '₱15' },
+            { n: 'Egg', p: '₱15' },
+            { n: 'Siomai (per pc)', p: '₱5' },
+            { n: 'Mang Tomas', p: '₱5' },
+        ],
+    },
+    drinks: {
+        label: 'Drinks',
+        note: "Three'S Lemonade — fresh lemonade only. Prices shown Small 12oz / Medium 16oz / Large 22oz.",
+        items: [
+            { n: 'Pure Lemonade', p: '₱45 / 55 / 65' },
+            { n: 'Lemon + Yakult', p: '₱55 / 65 / 75' },
+            { n: 'Lemon + Dutch Mill', p: '₱55 / 65 / 75' },
+            { n: 'Lemon + Cucumber', p: '₱55 / 65 / 75' },
+            { n: 'Lemon + Calamansi', p: '₱55 / 65 / 75' },
+            { n: 'Lemon + Lychee', p: '₱55 / 65 / 75' },
+            { n: 'Lemon + Cola', p: '₱55 / 65 / 75' },
+            { n: 'Mango Shake', p: '₱55' },
+            { n: 'Yakult only', p: '₱20' },
+            { n: 'Crystal / Nata add-on', p: '₱10' },
+        ],
+    },
+    dessert: {
+        label: 'Dessert',
+        note: 'Chilled graham bars, made in-house.',
+        items: [
+            { n: 'Mango Graham Bar', p: '₱35' },
+            { n: 'Oreo Graham Bar', p: '₱30' },
+            { n: 'Classic Graham Bar', p: '₱25' },
+        ],
+    },
+};
+const CAT_ORDER: (keyof typeof MENU)[] = [
+    'silog',
+    'short',
+    'ala',
+    'drinks',
+    'dessert',
+];
+
+const HOURS = [
+    { day: 'Monday', time: '6:00 PM – 12:00 AM', s: 1 },
+    { day: 'Tuesday', time: '6:00 PM – 12:00 AM', s: 1 },
+    { day: 'Wednesday', time: 'Closed (sometimes open)', s: 0.5 },
+    { day: 'Thursday', time: '6:00 PM – 12:00 AM', s: 1 },
+    { day: 'Friday', time: '6:00 PM – 12:00 AM', s: 1 },
+    { day: 'Saturday', time: '6:00 PM – 12:00 AM', s: 1 },
+    { day: 'Sunday', time: 'Always closed', s: 0 },
+];
+
+export { BEST, MENU, CAT_ORDER, HOURS, COPY_ADDRESS };

@@ -79,6 +79,8 @@ return new class extends Migration
         Schema::dropIfExists('order_adjustments');
 
         Schema::table('payments', function (Blueprint $table) {
+            $table->dropIndex(['payment_group_id']);
+            $table->dropIndex(['payment_context']);
             $table->dropColumn(['payment_group_id', 'payment_context']);
         });
 

@@ -33,6 +33,8 @@ class ReportCsvExport
             ['Transactions', $kpis['transactions']['value'], $kpis['transactions']['previous']],
             ['Average order value', $kpis['average_order']['value'], $kpis['average_order']['previous']],
             ['Items sold', $kpis['items']['value'], $kpis['items']['previous']],
+            ['Cash sales (net collections)', $kpis['cash_sales']['value'], $kpis['cash_sales']['previous']],
+            ['Cashless sales (net collections)', $kpis['cashless_sales']['value'], $kpis['cashless_sales']['previous']],
             ['Cashless share %', $share($kpis['cashless_share']['value']), $share($kpis['cashless_share']['previous'])],
             [],
             ['Collections', 'Amount'],

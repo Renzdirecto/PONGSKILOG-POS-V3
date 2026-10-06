@@ -5,6 +5,7 @@ import {
     ChevronRight,
     CircleCheck,
     Clock3,
+    CupSoda,
     Flame,
     PackageSearch,
     ReceiptText,
@@ -38,6 +39,7 @@ type CashierDashboardData = {
         sales: string;
         cash: string;
         cashless: string;
+        drinks: string;
         corrections: string;
         unallocated_corrections: string;
         split: { count: number; cash: string; cashless: string };
@@ -247,6 +249,16 @@ export default function CashierDashboard({
             icon: Smartphone,
             tone: 'bg-[#eff6ff] text-[#1d4ed8]',
         },
+        {
+            key: 'drinks',
+            label: 'Drinks sales',
+            value: summary ? pesos(summary.drinks) : '—',
+            hint: summary
+                ? 'Drinks category items sold this Store Session'
+                : closedHint,
+            icon: CupSoda,
+            tone: 'bg-[#fff7ed] text-[#c2410c]',
+        },
     ];
     const operationTiles: Tile[] = [
         {
@@ -370,7 +382,7 @@ export default function CashierDashboard({
                                     ? 'Split legs are already in Cash and Cashless'
                                     : undefined
                             }
-                            columns="grid-cols-2 min-[680px]:grid-cols-4 min-[1100px]:grid-cols-2 min-[1400px]:grid-cols-4"
+                            columns="grid-cols-2 min-[680px]:grid-cols-5 min-[1100px]:grid-cols-2 min-[1400px]:grid-cols-5"
                         >
                             {sessionTiles.map((tile) => (
                                 <DashboardTile key={tile.key} tile={tile} />

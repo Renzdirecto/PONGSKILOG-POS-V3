@@ -189,11 +189,20 @@ test('high-impact staff edits require a plain-language confirmation', () => {
 test('branch staff with only custom reports see reports in the operational shell, branch managers in the management shell', () => {
     const layout = source('layouts/workspace-layout.tsx');
 
+    /** A Branch manager still reads Reports in its management shell unless the operational shell opened it. */
     assert.match(
         layout,
-        /page\.component === 'workspaces\/reports' &&\s*!branchContext\.businessWide &&\s*!branchManager;/,
+        /page\.component === 'workspaces\/reports' &&\s*\([\s\S]{0,160}!branchContext\.businessWide && !branchManager\)\);/,
     );
+    /**
+     * The shell a report renders in still depends on the account, but the operational Reports item itself is gated
+     * only by the permission, so Super Admin and other business-wide viewers keep it inside the POS workspace.
+     */
     assert.match(
+        layout,
+        /label: 'Reports',[\s\S]{0,120}available: auth\.permissions\.includes\('reports\.view'\),/,
+    );
+    assert.doesNotMatch(
         layout,
         /auth\.permissions\.includes\('reports\.view'\) &&\s*!branchContext\.businessWide/,
     );

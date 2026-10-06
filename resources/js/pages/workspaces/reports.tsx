@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import {
     CalendarDays,
     Check,
+    ChevronDown,
     Download,
     FileSpreadsheet,
     FileText,
@@ -62,6 +63,7 @@ import {
 import type {
     Analytics,
     KitchenNow,
+    ProductSizeRow,
     ProductSort,
 } from '@/lib/owner-analytics';
 import {
@@ -82,6 +84,7 @@ import { reports } from '@/routes/workspaces';
 import { exportMethod as exportReport } from '@/routes/workspaces/reports';
 
 type ChannelMoney = { cash: string; cashless: string };
+type NullableChannelMoney = { cash: string | null; cashless: string | null };
 
 type Report = {
     period: {
@@ -113,6 +116,15 @@ type Report = {
         cash: string;
         cashless: string;
         collected: string;
+        /** Gross Payment rows, before corrections and void reversals: the drawer ladder's Collections step. */
+        payments: ChannelMoney & { total: string; count: number };
+        reconciliation: {
+            opening: ChannelMoney;
+            expected: NullableChannelMoney;
+            closing: NullableChannelMoney;
+            variance: NullableChannelMoney;
+            sessions: { live: number; closed: number };
+        };
         expenses: ChannelMoney & { total: string; count: number };
         sessions: { count: number; open: number };
         split: ChannelMoney & { count: number; total: string };
@@ -133,6 +145,16 @@ type Report = {
         cashless: string;
         expenses: string;
     }[];
+    expense_items: {
+        items: {
+            id: string;
+            description: string;
+            amount: string;
+            source: string;
+        }[];
+        listed: number;
+        total: number;
+    };
     sessions: SessionRow[];
     sessions_listed: { shown: number; total: number };
 };
@@ -145,6 +167,9 @@ type Props = {
 };
 
 const peso = formatDecimalPeso;
+
+/** The quick filter's read-only entry for a grouped multi-category selection made elsewhere. */
+const MANY_CATEGORIES = 'many';
 
 export default function Reports({
     report,
@@ -187,6 +212,14 @@ export default function Reports({
         ? `${report.scope.code} · ${report.scope.name}`
         : 'All Branches';
     const pendingAllocation = !isZero(summary.corrections.unallocated);
+    const reconciliation = summary.reconciliation;
+    /** A period with a LIVE Store Session has no counted close yet, so its closing balance is the expected one. */
+    const liveDrawer = reconciliation.sessions.live > 0;
+    const closingLabel = (channel: string) =>
+        liveDrawer ? `Closing ${channel} (expected)` : `Closing ${channel}`;
+    const closingNote = liveDrawer
+        ? 'Provisional while a Store Session is open'
+        : 'Counted at Close Store';
     const comparison = analytics.comparison.available
         ? `vs ${analytics.comparison.description}`
         : null;
@@ -206,6 +239,13 @@ export default function Reports({
                   .join(', ');
     /** Category narrows the product views only, so it reloads the report with the same order filters. */
     const pickCategories = (categories: string[]) => visit({ categories });
+    /** The quick filter shows the one selected category, or that a grouped Sales by category row selected several. */
+    const categoryChoice =
+        selectedCategories.length === 0
+            ? ''
+            : selectedCategories.length === 1
+              ? selectedCategories[0]
+              : MANY_CATEGORIES;
     const productRows = sortProducts(analytics.products, productSort, null);
     const cashiers = [...analytics.cashiers].sort((a, b) =>
         cashierSort === 'transactions'
@@ -262,17 +302,14 @@ export default function Reports({
         }
     }
 
-    /** Product performance chips toggle the same category filter as the modal and Sales by category. */
-    function toggleCategoryChip(value: string) {
-        pickCategories(
-            appliedSelection(
-                toggleFilterValue(
-                    draftSelection(selectedCategories, categoryOptions),
-                    value,
-                ),
-                categoryOptions,
-            ),
-        );
+    /**
+     * The Product performance quick filter: one category, or every category. It writes the same shareable category
+     * filter the Sales by category card and the Filter dialog use — there is no second filtering system.
+     */
+    function chooseCategory(value: string) {
+        if (value !== MANY_CATEGORIES) {
+            pickCategories(value === '' ? [] : [value]);
+        }
     }
 
     return (
@@ -526,7 +563,7 @@ export default function Reports({
                             hint={
                                 categoryScope
                                     ? 'Top products and Product performance show only the selected category — tap it again to show all. Sales, payments and collections are unchanged.'
-                                    : 'Tap a category to filter Top products and Product performance.'
+                                    : 'Tap a category to filter Top products and Product performance. A category never filters Cash, Cashless or other money figures.'
                             }
                             action={
                                 categoryScope && (
@@ -549,13 +586,6 @@ export default function Reports({
                                     )
                                 }
                             />
-                            <p className="text-[11px] leading-[1.5] text-[#8a8a8a]">
-                                Grouped by each product’s current category —
-                                order items do not record the category at the
-                                time of sale. Payments are recorded per order,
-                                so a category never filters Cash, Cashless or
-                                other money figures.
-                            </p>
                         </AnalyticsCard>
                         <AnalyticsCard
                             title="Payment method"
@@ -583,94 +613,395 @@ export default function Reports({
                         </AnalyticsCard>
                     </div>
 
-                    <div className="grid gap-3 min-[1100px]:grid-cols-2">
-                        <AnalyticsCard
-                            title="Order type"
-                            hint="Dine in against take out for this period"
-                        >
-                            <ul className="flex flex-col gap-[13px]">
-                                {analytics.order_types.map((type, index) => (
-                                    <li
-                                        key={type.type}
-                                        className={`${insetClass} flex flex-col gap-2 p-[13px]`}
-                                    >
-                                        <div className="flex items-center gap-2.5">
-                                            <span className="min-w-0 flex-1 text-[13.5px] font-bold">
-                                                {type.label}
-                                            </span>
-                                            <span className="text-[15px] font-bold whitespace-nowrap tabular-nums">
-                                                {peso(type.sales)}
-                                            </span>
-                                            <span className="w-[52px] text-right text-xs text-[#767676] tabular-nums">
-                                                {shareLabel(type.share)}
-                                            </span>
-                                        </div>
-                                        <div className="h-2 overflow-hidden rounded-full bg-[#ededed]">
-                                            <div
-                                                className="h-full rounded-full"
-                                                style={{
-                                                    width: `${typeMax > 0 ? Math.max(type.sales_cents > 0 ? 1.5 : 0, (type.sales_cents / typeMax) * 100) : 0}%`,
-                                                    background:
-                                                        index === 0
-                                                            ? '#111111'
-                                                            : '#8A8A8A',
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="flex flex-wrap gap-3.5 text-[11.5px] text-[#666] tabular-nums">
-                                            <span>
-                                                {plural(
-                                                    type.transactions,
-                                                    'transaction',
-                                                )}
-                                            </span>
-                                            <span>
-                                                {plural(type.items, 'item')}
-                                            </span>
-                                            <span>
-                                                Avg order{' '}
-                                                {type.average === null
-                                                    ? '—'
-                                                    : peso(type.average)}
-                                            </span>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        </AnalyticsCard>
-                        <AnalyticsCard
-                            title="Peak sales hours"
-                            hint={
-                                analytics.peak_hour
-                                    ? `${peso(analytics.peak_hour.sales)} · ${plural(analytics.peak_hour.transactions, 'transaction')} · Philippine time`
-                                    : 'No sales in this period'
-                            }
-                            action={
-                                <SegmentedTabs
-                                    label="Peak hours metric"
-                                    value={hourMetric}
-                                    options={[
-                                        ['sales', 'Sales'],
-                                        ['transactions', 'Transactions'],
-                                    ]}
-                                    onChange={setHourMetric}
-                                    size="sm"
-                                />
-                            }
-                        >
-                            {analytics.peak_hour && (
-                                <span className="inline-flex h-7 items-center self-start rounded-full bg-[#111] px-[11px] text-[11.5px] font-bold whitespace-nowrap text-white">
-                                    Peak {analytics.peak_hour.label}
-                                </span>
-                            )}
-                            <HourBars
-                                bars={analytics.hours}
-                                metric={hourMetric}
-                                height={176}
-                                labelEvery={2}
+                    <AnalyticsCard
+                        title="Order type"
+                        hint="Dine in against take out for this period"
+                    >
+                        <ul className="flex flex-col gap-[13px]">
+                            {analytics.order_types.map((type, index) => (
+                                <li
+                                    key={type.type}
+                                    className={`${insetClass} flex flex-col gap-2 p-[13px]`}
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="min-w-0 flex-1 text-[13.5px] font-bold">
+                                            {type.label}
+                                        </span>
+                                        <span className="text-[15px] font-bold whitespace-nowrap tabular-nums">
+                                            {peso(type.sales)}
+                                        </span>
+                                        <span className="w-[52px] text-right text-xs text-[#767676] tabular-nums">
+                                            {shareLabel(type.share)}
+                                        </span>
+                                    </div>
+                                    <div className="h-2 overflow-hidden rounded-full bg-[#ededed]">
+                                        <div
+                                            className="h-full rounded-full"
+                                            style={{
+                                                width: `${typeMax > 0 ? Math.max(type.sales_cents > 0 ? 1.5 : 0, (type.sales_cents / typeMax) * 100) : 0}%`,
+                                                background:
+                                                    index === 0
+                                                        ? '#111111'
+                                                        : '#8A8A8A',
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap gap-3.5 text-[11.5px] text-[#666] tabular-nums">
+                                        <span>
+                                            {plural(
+                                                type.transactions,
+                                                'transaction',
+                                            )}
+                                        </span>
+                                        <span>
+                                            {plural(type.items, 'item')}
+                                        </span>
+                                        <span>
+                                            Avg order{' '}
+                                            {type.average === null
+                                                ? '—'
+                                                : peso(type.average)}
+                                        </span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </AnalyticsCard>
+
+                    <AnalyticsCard
+                        title="Collections & drawer effects"
+                        hint={`Store Session reconciliation for every order: Net sales ${peso(summary.net_sales)} · collected ${peso(summary.collected)}. The same components Close Store uses — never a second calculation.`}
+                    >
+                        {analytics.filters.active && (
+                            <Notice tone="neutral">
+                                Order filters do not apply here: Store Session
+                                reconciliation always covers the whole drawer.
+                            </Notice>
+                        )}
+                        {/* Opening · Expenses · Closing; the ladder and the expense records stay one tap away. */}
+                        <div className="grid grid-cols-2 gap-2.5">
+                            <MiniStat
+                                label="Opening Cash"
+                                value={peso(reconciliation.opening.cash)}
+                                note="Counted into the drawer at open"
                             />
-                        </AnalyticsCard>
-                    </div>
+                            <MiniStat
+                                label="Opening Cashless"
+                                value={peso(reconciliation.opening.cashless)}
+                                note="Cashless balance at open"
+                            />
+                        </div>
+                        <ExpenseBreakdown
+                            expenses={summary.expenses}
+                            records={report.expense_items}
+                        />
+                        <div className="grid grid-cols-2 gap-2.5">
+                            <MiniStat
+                                label={closingLabel('Cash')}
+                                value={
+                                    <span className="text-[#15803D]">
+                                        {reconciliation.closing.cash === null
+                                            ? 'Not available'
+                                            : peso(reconciliation.closing.cash)}
+                                    </span>
+                                }
+                                note={closingNote}
+                            />
+                            <MiniStat
+                                label={closingLabel('Cashless')}
+                                value={
+                                    <span className="text-[#1D4ED8]">
+                                        {reconciliation.closing.cashless === null
+                                            ? 'Not available'
+                                            : peso(
+                                                  reconciliation.closing
+                                                      .cashless,
+                                              )}
+                                    </span>
+                                }
+                                note={closingNote}
+                            />
+                        </div>
+                        <CalculationDetails summary={summary} />
+                        {summary.split.count > 0 && (
+                            <p className="text-[11px] leading-[1.5] text-[#8a8a8a] tabular-nums">
+                                {plural(summary.split.count, 'split payment')} ·{' '}
+                                {peso(summary.split.cash)} cash +{' '}
+                                {peso(summary.split.cashless)} cashless, already
+                                inside Collections and never added again.
+                            </p>
+                        )}
+                    </AnalyticsCard>
+
+                    <AnalyticsCard
+                        title="Product performance"
+                        hint={`${plural(productRows.length, 'product')}${categoryScope ? ` in ${categoryScope}` : ''} · % of sales is of all sales in this period`}
+                        action={
+                            /*
+                             * Sort and Category share one row and split the width on phones, so the table starts
+                             * higher. Their 16px text is deliberate: a smaller font makes iOS Safari zoom the page
+                             * when a select is tapped.
+                             */
+                            <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                                <label className="min-w-0 flex-1 md:flex-none">
+                                    <span className="sr-only">
+                                        Sort products
+                                    </span>
+                                    <select
+                                        value={productSort}
+                                        onChange={(event) =>
+                                            setProductSort(
+                                                event.target
+                                                    .value as ProductSort,
+                                            )
+                                        }
+                                        className={`${ownerControlClass} w-full font-semibold md:h-[40px] md:w-auto`}
+                                    >
+                                        {PRODUCT_SORTS.map(([value, label]) => (
+                                            <option key={value} value={value}>
+                                                {label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                {categoryOptions.length > 0 && (
+                                    <label className="min-w-0 flex-1 md:flex-none">
+                                        <span className="sr-only">
+                                            Filter products by category
+                                        </span>
+                                        <select
+                                            value={categoryChoice}
+                                            onChange={(event) =>
+                                                chooseCategory(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className={`${ownerControlClass} w-full font-semibold md:h-[40px] md:w-auto`}
+                                        >
+                                            <option value="">
+                                                All categories
+                                            </option>
+                                            {categoryOptions.map((category) => (
+                                                <option
+                                                    key={category.value}
+                                                    value={category.value}
+                                                >
+                                                    {category.label}
+                                                </option>
+                                            ))}
+                                            {selectedCategories.length > 1 && (
+                                                <option value={MANY_CATEGORIES}>
+                                                    {selectedCategories.length}{' '}
+                                                    categories
+                                                </option>
+                                            )}
+                                        </select>
+                                    </label>
+                                )}
+                            </div>
+                        }
+                    >
+                        {productRows.length === 0 ? (
+                            <EmptyNote>
+                                {categoryScope
+                                    ? `No products in ${categoryScope} sold in this period.`
+                                    : 'No products sold in this period.'}
+                            </EmptyNote>
+                        ) : (
+                            /*
+                             * One table at every width: phones and tablets scroll it sideways inside this bounded
+                             * box (never the page) and about ten rows deep before the body scrolls, with the header
+                             * pinned. Rank, Product, Qty and Sales come first so the four figures that matter fit a
+                             * 360px screen; Category, Orders, % and Avg price are reached by scrolling sideways.
+                             */
+                            <div className="overflow-hidden rounded-[13px] border border-[#efefef]">
+                                <div className="owner-scrollbar max-h-[468px] overflow-auto min-[1000px]:max-h-[680px] print:max-h-none print:overflow-visible">
+                                    <table className="w-full min-w-[700px] table-fixed text-left tabular-nums">
+                                        <caption className="sr-only">
+                                            Product performance
+                                        </caption>
+                                        <thead className="sticky top-0 z-10 bg-[#fafafa]">
+                                            <tr className="text-[10px] font-semibold tracking-[0.07em] text-[#949494] uppercase">
+                                                <th
+                                                    scope="col"
+                                                    className="w-10 px-2 py-[11px] font-semibold"
+                                                >
+                                                    Rank
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="px-2 py-[11px] font-semibold"
+                                                >
+                                                    Product
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-[56px] px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    Qty
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-[100px] px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    Sales
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-28 px-2 py-[11px] font-semibold"
+                                                >
+                                                    Category
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-[84px] px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    Orders
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-20 px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    % of sales
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-24 px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    Avg price
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[#f7f7f7] text-[13px]">
+                                            {productRows.map(
+                                                (product, index) => (
+                                                    <tr key={product.key}>
+                                                        <td className="px-2 py-[11px] align-top text-xs font-bold text-[#8a8a8a]">
+                                                            {index + 1}
+                                                        </td>
+                                                        <th
+                                                            scope="row"
+                                                            className="px-2 py-[11px] text-left align-top font-semibold"
+                                                        >
+                                                            {/* The product name wraps to two lines rather than truncating into something unreadable. */}
+                                                            <span className="block line-clamp-2 leading-[1.3] [overflow-wrap:anywhere]">
+                                                                {product.name}
+                                                            </span>
+                                                            <ProductSizes
+                                                                sizes={
+                                                                    product.sizes
+                                                                }
+                                                            />
+                                                        </th>
+                                                        <td className="px-2 py-[11px] text-right align-top">
+                                                            {product.quantity.toLocaleString(
+                                                                'en-PH',
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-[11px] text-right align-top font-bold">
+                                                            {peso(
+                                                                product.sales,
+                                                            )}
+                                                        </td>
+                                                        <td className="truncate px-2 py-[11px] align-top text-xs text-[#666]">
+                                                            <CategoryDot
+                                                                category={
+                                                                    product.category
+                                                                }
+                                                                categories={analytics.categories.map(
+                                                                    (row) =>
+                                                                        row.name,
+                                                                )}
+                                                            />
+                                                            {product.category}
+                                                        </td>
+                                                        <td className="px-2 py-[11px] text-right align-top text-[#666]">
+                                                            {product.orders.toLocaleString(
+                                                                'en-PH',
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-[11px] text-right align-top text-[12.5px] text-[#666]">
+                                                            {shareLabel(
+                                                                product.share,
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-[11px] text-right align-top text-[12.5px] text-[#666]">
+                                                            {product.average_price ===
+                                                            null
+                                                                ? '—'
+                                                                : peso(
+                                                                      product.average_price,
+                                                                  )}
+                                                        </td>
+                                                    </tr>
+                                                ),
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </AnalyticsCard>
+
+                    <AnalyticsCard
+                        title="Top products"
+                        hint={
+                            categoryScope
+                                ? `Ranked for the selected period and filters · Category: ${categoryScope}`
+                                : 'Ranked for the selected period and filters'
+                        }
+                        action={
+                            <SegmentedTabs
+                                label="Top products metric"
+                                value={topMetric}
+                                options={[
+                                    ['sales', 'Sales'],
+                                    ['quantity', 'Qty sold'],
+                                ]}
+                                onChange={setTopMetric}
+                                size="sm"
+                            />
+                        }
+                    >
+                        <TopProductBars
+                            products={analytics.products}
+                            metric={topMetric}
+                            limit={10}
+                        />
+                    </AnalyticsCard>
+
+                    <AnalyticsCard
+                        title="Peak sales hours"
+                        hint={
+                            analytics.peak_hour
+                                ? `${peso(analytics.peak_hour.sales)} · ${plural(analytics.peak_hour.transactions, 'transaction')} · Philippine time`
+                                : 'No sales in this period'
+                        }
+                        action={
+                            <SegmentedTabs
+                                label="Peak hours metric"
+                                value={hourMetric}
+                                options={[
+                                    ['sales', 'Sales'],
+                                    ['transactions', 'Transactions'],
+                                ]}
+                                onChange={setHourMetric}
+                                size="sm"
+                            />
+                        }
+                    >
+                        {analytics.peak_hour && (
+                            <span className="inline-flex h-7 items-center self-start rounded-full bg-[#111] px-[11px] text-[11.5px] font-bold whitespace-nowrap text-white">
+                                Peak {analytics.peak_hour.label}
+                            </span>
+                        )}
+                        <HourBars
+                            bars={analytics.hours}
+                            metric={hourMetric}
+                            height={176}
+                            labelEvery={2}
+                        />
+                    </AnalyticsCard>
 
                     <AnalyticsCard
                         title="Sales trend"
@@ -704,272 +1035,6 @@ export default function Reports({
                             height={260}
                         />
                         {compare && <CompareLegend />}
-                    </AnalyticsCard>
-
-                    <AnalyticsCard
-                        title="Top products"
-                        hint={
-                            categoryScope
-                                ? `Ranked for the selected period and filters · Category: ${categoryScope}`
-                                : 'Ranked for the selected period and filters'
-                        }
-                        action={
-                            <SegmentedTabs
-                                label="Top products metric"
-                                value={topMetric}
-                                options={[
-                                    ['sales', 'Sales'],
-                                    ['quantity', 'Qty sold'],
-                                ]}
-                                onChange={setTopMetric}
-                                size="sm"
-                            />
-                        }
-                    >
-                        <TopProductBars
-                            products={analytics.products}
-                            metric={topMetric}
-                            limit={10}
-                        />
-                    </AnalyticsCard>
-
-                    <AnalyticsCard
-                        title="Product performance"
-                        hint={`${plural(productRows.length, 'product')}${categoryScope ? ` in ${categoryScope}` : ''} · % of sales is of all sales in this period`}
-                        action={
-                            <label className="flex items-center gap-2">
-                                <span className="sr-only">Sort products</span>
-                                <select
-                                    value={productSort}
-                                    onChange={(event) =>
-                                        setProductSort(
-                                            event.target.value as ProductSort,
-                                        )
-                                    }
-                                    className={`${ownerControlClass} min-h-11 font-semibold md:h-[42px]`}
-                                >
-                                    {PRODUCT_SORTS.map(([value, label]) => (
-                                        <option key={value} value={value}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                        }
-                    >
-                        {categoryOptions.length > 1 && (
-                            <div
-                                role="group"
-                                aria-label="Product performance categories"
-                                className="flex flex-wrap gap-[7px] print:hidden"
-                            >
-                                {categoryOptions.map((category) => {
-                                    const on =
-                                        selectedCategories.length === 0 ||
-                                        selectedCategories.includes(
-                                            category.value,
-                                        );
-
-                                    return (
-                                        <button
-                                            key={category.value}
-                                            type="button"
-                                            aria-pressed={on}
-                                            onClick={() =>
-                                                toggleCategoryChip(
-                                                    category.value,
-                                                )
-                                            }
-                                            className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-[11px] text-xs font-semibold whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-[34px] ${on ? 'border-[#111] bg-[#111] text-white' : 'border-[#d8d8d8] bg-white text-[#666]'}`}
-                                        >
-                                            {on && (
-                                                <Check
-                                                    className="size-3"
-                                                    aria-hidden="true"
-                                                />
-                                            )}
-                                            {category.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                        {productRows.length === 0 ? (
-                            <EmptyNote>
-                                {categoryScope
-                                    ? `No products in ${categoryScope} sold in this period.`
-                                    : 'No products sold in this period.'}
-                            </EmptyNote>
-                        ) : (
-                            <>
-                                <div className="hidden overflow-hidden rounded-[13px] border border-[#efefef] min-[1000px]:block">
-                                    <div className="owner-scrollbar max-h-[680px] overflow-y-auto print:max-h-none">
-                                        <table className="w-full table-fixed text-left tabular-nums">
-                                            <caption className="sr-only">
-                                                Product performance
-                                            </caption>
-                                            <thead className="sticky top-0 bg-[#fafafa]">
-                                                <tr className="text-[10px] font-semibold tracking-[0.07em] text-[#949494] uppercase">
-                                                    <th scope="col" className="w-12 px-3.5 py-[11px] font-semibold">
-                                                        Rank
-                                                    </th>
-                                                    <th scope="col" className="px-2.5 py-[11px] font-semibold">
-                                                        Product
-                                                    </th>
-                                                    <th scope="col" className="w-28 px-2.5 py-[11px] font-semibold">
-                                                        Category
-                                                    </th>
-                                                    <th scope="col" className="w-[78px] px-2.5 py-[11px] text-right font-semibold">
-                                                        Qty
-                                                    </th>
-                                                    <th scope="col" className="w-[104px] px-2.5 py-[11px] text-right font-semibold">
-                                                        Orders
-                                                    </th>
-                                                    <th scope="col" className="w-[118px] px-2.5 py-[11px] text-right font-semibold">
-                                                        Total sales
-                                                    </th>
-                                                    <th scope="col" className="w-[88px] px-2.5 py-[11px] text-right font-semibold">
-                                                        % of sales
-                                                    </th>
-                                                    <th scope="col" className="w-28 px-3.5 py-[11px] text-right font-semibold">
-                                                        Avg price
-                                                    </th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-[#f7f7f7] text-[13px]">
-                                                {productRows.map(
-                                                    (product, index) => (
-                                                        <tr key={product.key}>
-                                                            <td className="px-3.5 py-[11px] text-xs font-bold text-[#8a8a8a]">
-                                                                {index + 1}
-                                                            </td>
-                                                            <th
-                                                                scope="row"
-                                                                className="truncate px-2.5 py-[11px] text-left font-semibold"
-                                                            >
-                                                                {product.name}
-                                                            </th>
-                                                            <td className="truncate px-2.5 py-[11px] text-xs text-[#666]">
-                                                                <CategoryDot
-                                                                    category={
-                                                                        product.category
-                                                                    }
-                                                                    categories={analytics.categories.map(
-                                                                        (row) =>
-                                                                            row.name,
-                                                                    )}
-                                                                />
-                                                                {
-                                                                    product.category
-                                                                }
-                                                            </td>
-                                                            <td className="px-2.5 py-[11px] text-right">
-                                                                {product.quantity.toLocaleString(
-                                                                    'en-PH',
-                                                                )}
-                                                            </td>
-                                                            <td className="px-2.5 py-[11px] text-right text-[#666]">
-                                                                {product.orders.toLocaleString(
-                                                                    'en-PH',
-                                                                )}
-                                                            </td>
-                                                            <td className="px-2.5 py-[11px] text-right font-bold">
-                                                                {peso(
-                                                                    product.sales,
-                                                                )}
-                                                            </td>
-                                                            <td className="px-2.5 py-[11px] text-right text-[12.5px] text-[#666]">
-                                                                {shareLabel(
-                                                                    product.share,
-                                                                )}
-                                                            </td>
-                                                            <td className="px-3.5 py-[11px] text-right text-[12.5px] text-[#666]">
-                                                                {product.average_price ===
-                                                                null
-                                                                    ? '—'
-                                                                    : peso(
-                                                                          product.average_price,
-                                                                      )}
-                                                            </td>
-                                                        </tr>
-                                                    ),
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                <ul className="flex flex-col gap-[9px] min-[1000px]:hidden">
-                                    {productRows.map((product, index) => (
-                                        <li
-                                            key={product.key}
-                                            className={`${insetClass} flex flex-col gap-[9px] p-[13px]`}
-                                        >
-                                            <div className="flex items-center gap-2.5">
-                                                <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-[7px] border border-[#e5e5e5] bg-white text-[11px] font-bold tabular-nums">
-                                                    {index + 1}
-                                                </span>
-                                                <span className="flex min-w-0 flex-1 flex-col">
-                                                    <span className="truncate text-[13.5px] font-bold">
-                                                        {product.name}
-                                                    </span>
-                                                    <span className="text-[11px] text-[#767676]">
-                                                        {product.category}
-                                                    </span>
-                                                </span>
-                                                <span className="text-sm font-bold whitespace-nowrap tabular-nums">
-                                                    {peso(product.sales)}
-                                                </span>
-                                            </div>
-                                            <dl className="grid grid-cols-2 gap-2 text-[12.5px] tabular-nums">
-                                                {(
-                                                    [
-                                                        [
-                                                            'Qty sold',
-                                                            product.quantity.toLocaleString(
-                                                                'en-PH',
-                                                            ),
-                                                        ],
-                                                        [
-                                                            'Orders',
-                                                            product.orders.toLocaleString(
-                                                                'en-PH',
-                                                            ),
-                                                        ],
-                                                        [
-                                                            '% of sales',
-                                                            shareLabel(
-                                                                product.share,
-                                                            ),
-                                                        ],
-                                                        [
-                                                            'Avg price',
-                                                            product.average_price ===
-                                                            null
-                                                                ? '—'
-                                                                : peso(
-                                                                      product.average_price,
-                                                                  ),
-                                                        ],
-                                                    ] as const
-                                                ).map(([label, value]) => (
-                                                    <div
-                                                        key={label}
-                                                        className="flex flex-col gap-px"
-                                                    >
-                                                        <dt className="text-[10px] tracking-[0.06em] text-[#8a8a8a] uppercase">
-                                                            {label}
-                                                        </dt>
-                                                        <dd className="font-semibold">
-                                                            {value}
-                                                        </dd>
-                                                    </div>
-                                                ))}
-                                            </dl>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </>
-                        )}
                     </AnalyticsCard>
 
                     <div className="grid gap-3 min-[1100px]:grid-cols-2">
@@ -1227,40 +1292,6 @@ export default function Reports({
                         </AnalyticsCard>
                     )}
 
-                    <AnalyticsCard
-                        title="Collections & drawer effects"
-                        hint={`Store Session totals for every order: Net sales ${peso(summary.net_sales)} · collected ${peso(summary.collected)}. These explain the Cash and Cashless totals and are not added again.`}
-                    >
-                        {analytics.filters.active && (
-                            <Notice tone="neutral">
-                                Order filters do not apply here: Store Session
-                                reconciliation always covers the whole drawer.
-                            </Notice>
-                        )}
-                        <div className="grid gap-2.5 md:grid-cols-2 min-[1250px]:grid-cols-4">
-                            <MiniStat
-                                label="Split payments"
-                                value={peso(summary.split.total)}
-                                note={`${plural(summary.split.count, 'order')} · Cash ${peso(summary.split.cash)} · Cashless ${peso(summary.split.cashless)} · already in Cash and Cashless`}
-                            />
-                            <MiniStat
-                                label="Expenses"
-                                value={peso(summary.expenses.total)}
-                                note={`${plural(summary.expenses.count, 'expense')} · Cash ${peso(summary.expenses.cash)} · Cashless ${peso(summary.expenses.cashless)}`}
-                            />
-                            <MiniStat
-                                label="Corrections"
-                                value={peso(summary.corrections.total)}
-                                note={`Cash ${peso(summary.corrections.cash)} · Cashless ${peso(summary.corrections.cashless)}${pendingAllocation ? ` · ${peso(summary.corrections.unallocated)} pending allocation` : ''}`}
-                            />
-                            <MiniStat
-                                label="Void reversals"
-                                value={peso(summary.voids.reversal)}
-                                note={`${plural(summary.voids.count, 'voided order')} · payments reversed, excluded from sales`}
-                            />
-                        </div>
-                    </AnalyticsCard>
-
                     {period.days > 1 && report.days.length > 0 && (
                         <AnalyticsCard
                             title="Daily summary"
@@ -1435,6 +1466,222 @@ export default function Reports({
                 </DialogContent>
             </Dialog>
         </>
+    );
+}
+
+/**
+ * The historical Size breakdown of one product, from its immutable order modifier snapshots. A product that was
+ * never sold with a Size group has none, and today's modifier configuration never reinterprets an old order.
+ */
+function ProductSizes({ sizes }: { sizes: ProductSizeRow[] }) {
+    if (sizes.length === 0) {
+        return null;
+    }
+
+    return (
+        <span className="mt-1 flex flex-wrap gap-x-2 gap-y-px text-[10.5px] leading-[1.5] font-normal text-[#767676] tabular-nums">
+            {sizes.map((size) => (
+                <span key={size.name} className="whitespace-nowrap">
+                    {size.name} {size.quantity.toLocaleString('en-PH')}
+                </span>
+            ))}
+        </span>
+    );
+}
+
+/**
+ * Why one channel's balance is what it is, from the server's Store Session reconciliation components only:
+ * Opening + Collections − Expenses − Corrections − Void reversals = Expected. A CLOSED period also shows the
+ * variance against the amount counted at Close Store; nothing is recalculated here.
+ */
+function DrawerLadder({
+    channel,
+    label,
+    tone,
+    summary,
+}: {
+    channel: 'cash' | 'cashless';
+    label: string;
+    tone: string;
+    summary: Report['summary'];
+}) {
+    const { reconciliation } = summary;
+    const live = reconciliation.sessions.live > 0;
+    const expected = reconciliation.expected[channel];
+    const closing = reconciliation.closing[channel];
+    const variance = reconciliation.variance[channel];
+    const steps: { label: string; sign: string; value: string }[] = [
+        { label: 'Opening', sign: '', value: reconciliation.opening[channel] },
+        { label: 'Collections', sign: '+', value: summary.payments[channel] },
+        { label: 'Expenses', sign: '−', value: summary.expenses[channel] },
+        { label: 'Corrections', sign: '−', value: summary.corrections[channel] },
+        { label: 'Void reversals', sign: '−', value: summary.voids[channel] },
+    ];
+
+    return (
+        <div className={`${insetClass} flex min-w-0 flex-col gap-2 p-[13px]`}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className={labelClass}>{label}</span>
+                <span
+                    className="text-[19px] font-bold tracking-[-0.02em] tabular-nums"
+                    style={{ color: tone }}
+                >
+                    {closing === null ? 'Not available' : peso(closing)}
+                </span>
+            </div>
+            <dl className="flex flex-col divide-y divide-[#f0f0f0] text-[12.5px] tabular-nums">
+                {steps.map((step) => (
+                    <div
+                        key={step.label}
+                        className="flex items-baseline justify-between gap-3 py-1.5"
+                    >
+                        <dt className="text-[#666]">
+                            {step.sign && (
+                                <span
+                                    aria-hidden="true"
+                                    className="mr-1 text-[#8a8a8a]"
+                                >
+                                    {step.sign}
+                                </span>
+                            )}
+                            {step.label}
+                        </dt>
+                        <dd className="font-semibold">{peso(step.value)}</dd>
+                    </div>
+                ))}
+                <div className="flex items-baseline justify-between gap-3 py-1.5">
+                    <dt className="font-semibold">
+                        = {live ? 'Expected now' : 'Expected at close'}
+                    </dt>
+                    <dd className="font-bold">
+                        {expected === null ? 'Not available' : peso(expected)}
+                    </dd>
+                </div>
+                {!live && (
+                    <div className="flex items-baseline justify-between gap-3 py-1.5">
+                        <dt className="text-[#666]">Variance at close</dt>
+                        <dd className="font-semibold">
+                            {variance === null
+                                ? 'Not available'
+                                : peso(variance)}
+                        </dd>
+                    </div>
+                )}
+            </dl>
+            <p className="text-[10.5px] leading-[1.4] text-[#8a8a8a]">
+                {live
+                    ? 'A Store Session is still open, so this is the current expected balance.'
+                    : 'Closed Store Sessions report the amount counted at Close Store.'}
+            </p>
+        </div>
+    );
+}
+
+const disclosureClass =
+    'group rounded-xl border border-[#efefef] bg-[#fafafa] open:bg-white';
+const disclosureSummaryClass =
+    'flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none [&::-webkit-details-marker]:hidden';
+
+function DisclosureChevron() {
+    return (
+        <ChevronDown
+            className="size-4 shrink-0 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+        />
+    );
+}
+
+/**
+ * The Expenses total with the real Store expense records one tap away — descriptions exactly as recorded, never
+ * invented, and never tall enough to push the Closing balances off a phone screen.
+ */
+function ExpenseBreakdown({
+    expenses,
+    records,
+}: {
+    expenses: Report['summary']['expenses'];
+    records: Report['expense_items'];
+}) {
+    return (
+        <details className={disclosureClass}>
+            <summary className={disclosureSummaryClass}>
+                <span className="flex min-w-0 flex-col gap-1">
+                    <span className={labelClass}>Expenses</span>
+                    <span className="text-[21px] leading-[1.05] font-bold tracking-[-0.02em] tabular-nums">
+                        {peso(expenses.total)}
+                    </span>
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] font-semibold text-[#666]">
+                    View details
+                    <DisclosureChevron />
+                </span>
+            </summary>
+            <div className="flex flex-col gap-1.5 border-t border-[#efefef] px-3 py-2.5">
+                {records.items.length === 0 ? (
+                    <p className="text-[11.5px] text-[#8a8a8a]">
+                        No Store expense was recorded in this period.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col divide-y divide-[#f0f0f0]">
+                        {records.items.map((item) => (
+                            <li
+                                key={item.id}
+                                className="flex items-baseline justify-between gap-3 py-[7px] text-[12.5px]"
+                            >
+                                <span className="min-w-0 [overflow-wrap:anywhere]">
+                                    {item.description}
+                                </span>
+                                <span className="shrink-0 font-semibold tabular-nums">
+                                    {peso(item.amount)}
+                                    <span className="ml-1.5 text-[10.5px] font-normal text-[#8a8a8a]">
+                                        {item.source}
+                                    </span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                {records.total > records.listed && (
+                    <span className="text-[11px] text-[#8a8a8a] tabular-nums">
+                        Showing the first {records.listed} of {records.total}{' '}
+                        expense records.
+                    </span>
+                )}
+                <span className="text-[10.5px] text-[#8a8a8a] tabular-nums">
+                    Cash {peso(expenses.cash)} · Cashless{' '}
+                    {peso(expenses.cashless)} ·{' '}
+                    {plural(expenses.count, 'record')}
+                </span>
+            </div>
+        </details>
+    );
+}
+
+/** The drawer ladder, kept out of the way until someone asks why a balance is what it is. */
+function CalculationDetails({ summary }: { summary: Report['summary'] }) {
+    return (
+        <details className={disclosureClass}>
+            <summary className={disclosureSummaryClass}>
+                <span className="text-[12.5px] font-semibold">
+                    How was this calculated?
+                </span>
+                <DisclosureChevron />
+            </summary>
+            <div className="grid gap-2.5 border-t border-[#efefef] px-3 py-2.5 min-[900px]:grid-cols-2">
+                <DrawerLadder
+                    channel="cash"
+                    label="Cash balance"
+                    tone="#15803D"
+                    summary={summary}
+                />
+                <DrawerLadder
+                    channel="cashless"
+                    label="Cashless balance"
+                    tone="#1D4ED8"
+                    summary={summary}
+                />
+            </div>
+        </details>
     );
 }
 

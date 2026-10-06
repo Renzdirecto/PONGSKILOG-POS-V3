@@ -39,6 +39,8 @@ class ReportsRequest extends FormRequest
             'from' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d'],
             'to' => ['nullable', 'required_if:date,custom', 'date_format:Y-m-d', 'after_or_equal:from'],
             'session' => ['nullable', 'uuid'],
+            /** Which shell opened the report: `pos` keeps the Store Operations navigation around it. */
+            'shell' => ['nullable', Rule::in(['pos'])],
             'order_types' => ['nullable', 'array', 'max:'.count(SalesAnalytics::ORDER_TYPES)],
             'order_types.*' => ['string', 'distinct', Rule::in(array_keys(SalesAnalytics::ORDER_TYPES))],
             'payment_methods' => ['nullable', 'array', 'max:'.count(SalesAnalytics::PAYMENT_METHODS)],

@@ -112,6 +112,9 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     const [updatedOrderIds, setUpdatedOrderIds] = useState<Set<string>>(
         () => new Set(),
     );
+    /** Done closes a ticket for the shift, so it is confirmed before the authoritative transition is sent. */
+    const [doneConfirmation, setDoneConfirmation] =
+        useState<KitchenTicket | null>(null);
     const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
@@ -210,6 +213,25 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         window.addEventListener('keydown', leave);
         return () => window.removeEventListener('keydown', leave);
     }, [focusView]);
+
+    useEffect(() => {
+        if (doneConfirmation === null) return;
+        const dismiss = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setDoneConfirmation(null);
+        };
+        window.addEventListener('keydown', dismiss);
+        return () => window.removeEventListener('keydown', dismiss);
+    }, [doneConfirmation]);
+
+    /** A ticket that left the board (voided, reloaded away) must not keep a confirmation open. */
+    useEffect(() => {
+        setDoneConfirmation((current) =>
+            current === null ||
+            kitchenBoard.tickets.some((ticket) => ticket.id === current.id)
+                ? current
+                : null,
+        );
+    }, [kitchenBoard.tickets]);
 
     async function toggleFullscreen() {
         if (focusView) {
@@ -391,9 +413,22 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                 }
                                 updated={updatedOrderIds.has(ticket.id)}
                                 onTransition={transition}
+                                onConfirmDone={setDoneConfirmation}
                             />
                         ))}
                     </main>
+                )}
+
+                {doneConfirmation && (
+                    <DoneConfirmation
+                        ticket={doneConfirmation}
+                        onCancel={() => setDoneConfirmation(null)}
+                        onConfirm={() => {
+                            const ticket = doneConfirmation;
+                            setDoneConfirmation(null);
+                            transition(ticket, 'done');
+                        }}
+                    />
                 )}
 
                 {!fullscreen && (
@@ -431,6 +466,7 @@ function TicketCard({
     disabled,
     updated,
     onTransition,
+    onConfirmDone,
 }: {
     ticket: KitchenTicket;
     compact: boolean;
@@ -438,49 +474,56 @@ function TicketCard({
     disabled: boolean;
     updated: boolean;
     onTransition: (ticket: KitchenTicket, status: KitchenStatus) => void;
+    onConfirmDone: (ticket: KitchenTicket) => void;
 }) {
     return (
         <article
             aria-busy={disabled}
             className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
+            {/*
+              * Landscape phones are the production KDS: the order number is the smaller part of the title, the
+              * customer keeps its emphasis, UPDATED sits under the title instead of widening it, and the elapsed
+              * timer sits under the order-type pill. There is no absolute clock time.
+              */}
             <header
-                className={`flex items-start gap-2 border-b px-3 py-2 ${ticketHeaderClass(ticket.order_type)}`}
+                className={`flex items-start gap-2 border-b px-2.5 py-1.5 ${ticketHeaderClass(ticket.order_type)}`}
             >
                 <div className="min-w-0 flex-1">
                     <p className="text-xs leading-4 font-black tracking-tight wrap-anywhere">
-                        <span className="whitespace-nowrap">#{ticket.number}</span>
+                        <span className="text-[10px] whitespace-nowrap">
+                            #{ticket.number}
+                        </span>
                         {ticket.customer && (
                             <span className="text-red-700">
                                 {' | '}
                                 {ticket.customer}
                             </span>
-                        )}{' '}
-                        {disabled && (
-                            <span className="text-[9px] font-normal text-neutral-500">
-                                Saving...{' '}
-                            </span>
                         )}
                     </p>
-                    <p className="text-[9px] leading-3 font-bold tabular-nums">
-                        <span className="text-neutral-500">
-                            {placedTimeLabel(ticket.placed_at)} ·{' '}
-                        </span>
-                        <span className="text-red-700">
-                            {relativePlacedTime(ticket.placed_at, now)}
-                        </span>
-                    </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                    {updated && (
-                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[8px] font-black tracking-wide text-amber-900 uppercase">
-                            Updated
-                        </span>
+                    {(updated || disabled) && (
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1">
+                            {updated && (
+                                <span className="rounded-md border border-amber-300 bg-amber-100 px-1 py-px text-[8px] leading-3 font-black tracking-wide text-amber-900 uppercase">
+                                    Updated
+                                </span>
+                            )}
+                            {disabled && (
+                                <span className="text-[9px] leading-3 font-normal text-neutral-500">
+                                    Saving...
+                                </span>
+                            )}
+                        </p>
                     )}
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
                     <span
-                        className={`rounded-full border bg-white px-2 py-1 text-[9px] font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
+                        className={`rounded-md border bg-white px-1 py-px text-[8px] leading-3 font-black tracking-wide uppercase ${orderTypeChipClass(ticket.order_type)}`}
                     >
                         {orderTypeLabel(ticket.order_type)}
+                    </span>
+                    <span className="text-[9px] leading-3 font-bold text-red-700 tabular-nums">
+                        {relativePlacedTime(ticket.placed_at, now)}
                     </span>
                 </div>
             </header>
@@ -527,7 +570,11 @@ function TicketCard({
                             key={status}
                             type="button"
                             disabled={disabled || current || !allowed}
-                            onClick={() => onTransition(ticket, status)}
+                            onClick={() =>
+                                status === 'done'
+                                    ? onConfirmDone(ticket)
+                                    : onTransition(ticket, status)
+                            }
                             className={`min-h-11 min-w-0 truncate rounded-[8px] border px-1 text-[10.5px] font-bold uppercase transition sm:text-[11px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
                         >
                             {compact && status === 'preparing'
@@ -538,6 +585,61 @@ function TicketCard({
                 })}
             </div>
         </article>
+    );
+}
+
+/**
+ * Marking a ticket Done is confirmed first. It is rendered inside the board surface rather than through a portal so
+ * it stays visible while the KDS is in native full screen, and the authoritative transition runs only on confirm.
+ */
+function DoneConfirmation({
+    ticket,
+    onCancel,
+    onConfirm,
+}: {
+    ticket: KitchenTicket;
+    onCancel: () => void;
+    onConfirm: () => void;
+}) {
+    return (
+        <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
+            onClick={onCancel}
+        >
+            <div
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="kitchen-done-title"
+                onClick={(event) => event.stopPropagation()}
+                className="w-full max-w-sm rounded-2xl bg-white p-5 text-[#111] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
+            >
+                <h2 id="kitchen-done-title" className="text-base font-black">
+                    Are you sure you want to mark this order as Done?
+                </h2>
+                <p className="mt-1.5 text-sm text-neutral-600">
+                    #{ticket.number}
+                    {ticket.customer ? ` · ${ticket.customer}` : ''} leaves the
+                    active board and moves to Done.
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="min-h-12 rounded-xl border border-[#c9c9c9] bg-white text-sm font-bold text-[#111] transition hover:border-[#949494]"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        autoFocus
+                        onClick={onConfirm}
+                        className="min-h-12 rounded-xl bg-[#15803d] text-sm font-bold text-white transition hover:bg-[#166534]"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -586,13 +688,6 @@ function orderTypeChipClass(type: KitchenTicket['order_type']): string {
     return type === 'dine_in'
         ? 'border-[#bbf7d0] text-[#15803d]'
         : 'border-[#bfdbfe] text-[#1d4ed8]';
-}
-
-function placedTimeLabel(placedAt: string): string {
-    return new Date(placedAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
 }
 
 function Summary({ label, value }: { label: string; value: number }) {

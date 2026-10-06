@@ -16,10 +16,13 @@ final class ReportPeriod
 {
     public const TIMEZONE = 'Asia/Manila';
 
-    /** Every accepted preset; the Owner tabs are today, last_7_days, last_30_days, last_12_months and custom. */
-    public const PRESETS = ['today', 'yesterday', 'last_7_days', 'last_30_days', 'month', 'last_12_months', 'custom'];
+    /** Every accepted preset; the Owner tabs are session, today, last_7_days, last_30_days, last_12_months and custom. */
+    public const PRESETS = ['session', 'today', 'yesterday', 'last_7_days', 'last_30_days', 'month', 'last_12_months', 'custom'];
 
     public const MAX_CUSTOM_DAYS = 31;
+
+    /** Reports open on the current (or latest) Store Session. */
+    public const DEFAULT_PRESET = 'session';
 
     /** Store Session drill-down is offered only for periods short enough to list their sessions. */
     public const MAX_SESSION_FILTER_DAYS = 31;
@@ -44,9 +47,10 @@ final class ReportPeriod
     public static function fromFilters(array $filters): self
     {
         $today = CarbonImmutable::now(self::TIMEZONE)->startOfDay();
-        $preset = in_array($filters['date'] ?? null, self::PRESETS, true) ? (string) $filters['date'] : 'today';
+        $preset = in_array($filters['date'] ?? null, self::PRESETS, true) ? (string) $filters['date'] : self::DEFAULT_PRESET;
 
         return match ($preset) {
+            'session' => self::session(null),
             'yesterday' => self::span($preset, $today->subDay(), $today->subDay(), 'previous day', 'Selected day'),
             'last_7_days' => self::span($preset, $today->subDays(6), $today, 'previous 7 days', 'Selected week'),
             'last_30_days' => self::span($preset, $today->subDays(29), $today, 'previous 30 days', 'Selected month'),
@@ -63,6 +67,21 @@ final class ReportPeriod
             'custom' => self::custom($filters, $today),
             default => self::span($preset, $today, $today, 'yesterday', 'Selected day'),
         };
+    }
+
+    /**
+     * The business date of one Store Session, compared with every Store Session opened the day before. The caller
+     * resolves which Session is selected (the live one, otherwise the latest) and passes its business date; without
+     * one the period falls back to today so an empty scope still renders.
+     */
+    public static function session(?CarbonImmutable $businessDate): self
+    {
+        $day = ($businessDate ?? CarbonImmutable::now(self::TIMEZONE))->startOfDay();
+
+        return new self(
+            'session', $day, $day, $day->subDay(), $day->subDay(),
+            'hour', 'all sessions the previous day', 'Store Session',
+        );
     }
 
     public static function day(string $date): ?CarbonImmutable

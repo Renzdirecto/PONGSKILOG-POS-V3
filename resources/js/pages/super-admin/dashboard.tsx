@@ -255,6 +255,10 @@ export default function SuperAdminDashboard({
                                 className="size-4 text-blue-700"
                             />,
                             <Package key="items" className="size-4" />,
+                            <Wallet
+                                key="cash"
+                                className="size-4 text-emerald-700"
+                            />,
                             <QrCode
                                 key="cashless"
                                 className="size-4 text-blue-700"

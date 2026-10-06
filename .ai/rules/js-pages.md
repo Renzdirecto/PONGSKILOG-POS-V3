@@ -16,3 +16,9 @@ Audit Trail and Void Orders search/filter controls must apply without a submit o
 
 ## Business Transactions are mutable only while the Store is OPEN
 `TransactionHistoryController::business()` passes a mutable Branch only when the viewer passes `PosAccess` for the selected Branch and it has an OPEN Store Session; a closed Store renders view-only (`operational = false`). `transactions.view` alone never enables Edit/Settle/Void, and the write endpoints keep their own POS + OPEN Session checks.
+
+## A finished edit or payment returns to the refreshed Details
+After a committed-order edit the Edit modal closes and the server's post-edit transaction opens in Details. After a settlement the page re-reads the transaction and shows Details for it. The balance-resolution step keeps that detail: choosing *Pay later* returns to the refreshed Details, never to the history list. Never show pre-edit or pre-payment data.
+
+## The Cashier Dashboard reports real Drinks sales
+`CashierDashboard::drinks()` sums the committed Active/Completed Order Item `line_total` snapshots of the current Store Session whose Product sits in the current `Drinks` category (`DRINKS_CATEGORY`). It is a product figure: never netted against corrections, never added to Cash or Cashless, and never hard-coded.

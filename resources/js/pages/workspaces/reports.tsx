@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import {
     CalendarDays,
     Check,
+    ChevronDown,
     Download,
     FileSpreadsheet,
     FileText,
@@ -167,6 +168,9 @@ type Props = {
 
 const peso = formatDecimalPeso;
 
+/** The quick filter's read-only entry for a grouped multi-category selection made elsewhere. */
+const MANY_CATEGORIES = 'many';
+
 export default function Reports({
     report,
     analytics,
@@ -235,6 +239,13 @@ export default function Reports({
                   .join(', ');
     /** Category narrows the product views only, so it reloads the report with the same order filters. */
     const pickCategories = (categories: string[]) => visit({ categories });
+    /** The quick filter shows the one selected category, or that a grouped Sales by category row selected several. */
+    const categoryChoice =
+        selectedCategories.length === 0
+            ? ''
+            : selectedCategories.length === 1
+              ? selectedCategories[0]
+              : MANY_CATEGORIES;
     const productRows = sortProducts(analytics.products, productSort, null);
     const cashiers = [...analytics.cashiers].sort((a, b) =>
         cashierSort === 'transactions'
@@ -292,13 +303,13 @@ export default function Reports({
     }
 
     /**
-     * A category chip selects exactly that category; tapping the only selected category again shows every category.
-     * No filter means every chip is active, so a chip is never "unchecked" into an all-but-one filter.
+     * The Product performance quick filter: one category, or every category. It writes the same shareable category
+     * filter the Sales by category card and the Filter dialog use — there is no second filtering system.
      */
-    function toggleCategoryChip(value: string) {
-        pickCategories(
-            nextCategorySelection({ ids: [value] }, selectedCategories),
-        );
+    function chooseCategory(value: string) {
+        if (value !== MANY_CATEGORIES) {
+            pickCategories(value === '' ? [] : [value]);
+        }
     }
 
     return (
@@ -667,7 +678,8 @@ export default function Reports({
                                 reconciliation always covers the whole drawer.
                             </Notice>
                         )}
-                        <div className="grid gap-2.5 md:grid-cols-2 min-[1250px]:grid-cols-4">
+                        {/* Opening · Expenses · Closing; the ladder and the expense records stay one tap away. */}
+                        <div className="grid grid-cols-2 gap-2.5">
                             <MiniStat
                                 label="Opening Cash"
                                 value={peso(reconciliation.opening.cash)}
@@ -678,6 +690,12 @@ export default function Reports({
                                 value={peso(reconciliation.opening.cashless)}
                                 note="Cashless balance at open"
                             />
+                        </div>
+                        <ExpenseBreakdown
+                            expenses={summary.expenses}
+                            records={report.expense_items}
+                        />
+                        <div className="grid grid-cols-2 gap-2.5">
                             <MiniStat
                                 label={closingLabel('Cash')}
                                 value={
@@ -704,24 +722,7 @@ export default function Reports({
                                 note={closingNote}
                             />
                         </div>
-                        <div className="grid gap-2.5 min-[900px]:grid-cols-2">
-                            <DrawerLadder
-                                channel="cash"
-                                label="Cash balance"
-                                tone="#15803D"
-                                summary={summary}
-                            />
-                            <DrawerLadder
-                                channel="cashless"
-                                label="Cashless balance"
-                                tone="#1D4ED8"
-                                summary={summary}
-                            />
-                        </div>
-                        <ExpenseBreakdown
-                            expenses={summary.expenses}
-                            records={report.expense_items}
-                        />
+                        <CalculationDetails summary={summary} />
                         {summary.split.count > 0 && (
                             <p className="text-[11px] leading-[1.5] text-[#8a8a8a] tabular-nums">
                                 {plural(summary.split.count, 'split payment')} ·{' '}
@@ -757,41 +758,32 @@ export default function Reports({
                         }
                     >
                         {categoryOptions.length > 1 && (
-                            <div
-                                role="group"
-                                aria-label="Product performance categories"
-                                className="flex flex-wrap gap-[7px] print:hidden"
-                            >
-                                {categoryOptions.map((category) => {
-                                    const on =
-                                        selectedCategories.length === 0 ||
-                                        selectedCategories.includes(
-                                            category.value,
-                                        );
-
-                                    return (
-                                        <button
+                            <label className="flex flex-wrap items-center gap-2 print:hidden">
+                                <span className={labelClass}>Category</span>
+                                <select
+                                    value={categoryChoice}
+                                    onChange={(event) =>
+                                        chooseCategory(event.target.value)
+                                    }
+                                    className={`${ownerControlClass} min-h-11 min-w-0 flex-1 font-semibold md:h-[42px] md:flex-none md:min-w-[220px]`}
+                                >
+                                    <option value="">All categories</option>
+                                    {categoryOptions.map((category) => (
+                                        <option
                                             key={category.value}
-                                            type="button"
-                                            aria-pressed={on}
-                                            onClick={() =>
-                                                toggleCategoryChip(
-                                                    category.value,
-                                                )
-                                            }
-                                            className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-[11px] text-xs font-semibold whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none md:min-h-[34px] ${on ? 'border-[#111] bg-[#111] text-white' : 'border-[#d8d8d8] bg-white text-[#666]'}`}
+                                            value={category.value}
                                         >
-                                            {on && (
-                                                <Check
-                                                    className="size-3"
-                                                    aria-hidden="true"
-                                                />
-                                            )}
                                             {category.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                        </option>
+                                    ))}
+                                    {selectedCategories.length > 1 && (
+                                        <option value={MANY_CATEGORIES}>
+                                            {selectedCategories.length}{' '}
+                                            categories
+                                        </option>
+                                    )}
+                                </select>
+                            </label>
                         )}
                         {productRows.length === 0 ? (
                             <EmptyNote>
@@ -803,11 +795,12 @@ export default function Reports({
                             /*
                              * One table at every width: phones and tablets scroll it sideways inside this bounded
                              * box (never the page) and about ten rows deep before the body scrolls, with the header
-                             * pinned. Rank and Product stay first so a narrow screen still reads the list.
+                             * pinned. Rank, Product, Qty and Sales come first so the four figures that matter fit a
+                             * 360px screen; Category, Orders, % and Avg price are reached by scrolling sideways.
                              */
                             <div className="overflow-hidden rounded-[13px] border border-[#efefef]">
                                 <div className="owner-scrollbar max-h-[468px] overflow-auto min-[1000px]:max-h-[680px] print:max-h-none print:overflow-visible">
-                                    <table className="w-full min-w-[760px] table-fixed text-left tabular-nums">
+                                    <table className="w-full min-w-[700px] table-fixed text-left tabular-nums">
                                         <caption className="sr-only">
                                             Product performance
                                         </caption>
@@ -815,49 +808,49 @@ export default function Reports({
                                             <tr className="text-[10px] font-semibold tracking-[0.07em] text-[#949494] uppercase">
                                                 <th
                                                     scope="col"
-                                                    className="w-12 px-3.5 py-[11px] font-semibold"
+                                                    className="w-10 px-2 py-[11px] font-semibold"
                                                 >
                                                     Rank
                                                 </th>
                                                 <th
                                                     scope="col"
-                                                    className="px-2.5 py-[11px] font-semibold"
+                                                    className="px-2 py-[11px] font-semibold"
                                                 >
                                                     Product
                                                 </th>
                                                 <th
                                                     scope="col"
-                                                    className="w-28 px-2.5 py-[11px] font-semibold"
-                                                >
-                                                    Category
-                                                </th>
-                                                <th
-                                                    scope="col"
-                                                    className="w-[78px] px-2.5 py-[11px] text-right font-semibold"
+                                                    className="w-[56px] px-2 py-[11px] text-right font-semibold"
                                                 >
                                                     Qty
                                                 </th>
                                                 <th
                                                     scope="col"
-                                                    className="w-[104px] px-2.5 py-[11px] text-right font-semibold"
+                                                    className="w-[100px] px-2 py-[11px] text-right font-semibold"
+                                                >
+                                                    Sales
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-28 px-2 py-[11px] font-semibold"
+                                                >
+                                                    Category
+                                                </th>
+                                                <th
+                                                    scope="col"
+                                                    className="w-[84px] px-2 py-[11px] text-right font-semibold"
                                                 >
                                                     Orders
                                                 </th>
                                                 <th
                                                     scope="col"
-                                                    className="w-[118px] px-2.5 py-[11px] text-right font-semibold"
-                                                >
-                                                    Total sales
-                                                </th>
-                                                <th
-                                                    scope="col"
-                                                    className="w-[88px] px-2.5 py-[11px] text-right font-semibold"
+                                                    className="w-20 px-2 py-[11px] text-right font-semibold"
                                                 >
                                                     % of sales
                                                 </th>
                                                 <th
                                                     scope="col"
-                                                    className="w-28 px-3.5 py-[11px] text-right font-semibold"
+                                                    className="w-24 px-2 py-[11px] text-right font-semibold"
                                                 >
                                                     Avg price
                                                 </th>
@@ -867,14 +860,15 @@ export default function Reports({
                                             {productRows.map(
                                                 (product, index) => (
                                                     <tr key={product.key}>
-                                                        <td className="px-3.5 py-[11px] align-top text-xs font-bold text-[#8a8a8a]">
+                                                        <td className="px-2 py-[11px] align-top text-xs font-bold text-[#8a8a8a]">
                                                             {index + 1}
                                                         </td>
                                                         <th
                                                             scope="row"
-                                                            className="px-2.5 py-[11px] text-left align-top font-semibold"
+                                                            className="px-2 py-[11px] text-left align-top font-semibold"
                                                         >
-                                                            <span className="block truncate">
+                                                            {/* The product name wraps to two lines rather than truncating into something unreadable. */}
+                                                            <span className="block line-clamp-2 leading-[1.3] [overflow-wrap:anywhere]">
                                                                 {product.name}
                                                             </span>
                                                             <ProductSizes
@@ -883,7 +877,17 @@ export default function Reports({
                                                                 }
                                                             />
                                                         </th>
-                                                        <td className="truncate px-2.5 py-[11px] align-top text-xs text-[#666]">
+                                                        <td className="px-2 py-[11px] text-right align-top">
+                                                            {product.quantity.toLocaleString(
+                                                                'en-PH',
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-[11px] text-right align-top font-bold">
+                                                            {peso(
+                                                                product.sales,
+                                                            )}
+                                                        </td>
+                                                        <td className="truncate px-2 py-[11px] align-top text-xs text-[#666]">
                                                             <CategoryDot
                                                                 category={
                                                                     product.category
@@ -895,27 +899,17 @@ export default function Reports({
                                                             />
                                                             {product.category}
                                                         </td>
-                                                        <td className="px-2.5 py-[11px] text-right align-top">
-                                                            {product.quantity.toLocaleString(
-                                                                'en-PH',
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2.5 py-[11px] text-right align-top text-[#666]">
+                                                        <td className="px-2 py-[11px] text-right align-top text-[#666]">
                                                             {product.orders.toLocaleString(
                                                                 'en-PH',
                                                             )}
                                                         </td>
-                                                        <td className="px-2.5 py-[11px] text-right align-top font-bold">
-                                                            {peso(
-                                                                product.sales,
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2.5 py-[11px] text-right align-top text-[12.5px] text-[#666]">
+                                                        <td className="px-2 py-[11px] text-right align-top text-[12.5px] text-[#666]">
                                                             {shareLabel(
                                                                 product.share,
                                                             )}
                                                         </td>
-                                                        <td className="px-3.5 py-[11px] text-right align-top text-[12.5px] text-[#666]">
+                                                        <td className="px-2 py-[11px] text-right align-top text-[12.5px] text-[#666]">
                                                             {product.average_price ===
                                                             null
                                                                 ? '—'
@@ -1567,7 +1561,24 @@ function DrawerLadder({
     );
 }
 
-/** The real Store expense records behind the Expenses step — descriptions as recorded, never invented. */
+const disclosureClass =
+    'group rounded-xl border border-[#efefef] bg-[#fafafa] open:bg-white';
+const disclosureSummaryClass =
+    'flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none [&::-webkit-details-marker]:hidden';
+
+function DisclosureChevron() {
+    return (
+        <ChevronDown
+            className="size-4 shrink-0 transition-transform group-open:rotate-180"
+            aria-hidden="true"
+        />
+    );
+}
+
+/**
+ * The Expenses total with the real Store expense records one tap away — descriptions exactly as recorded, never
+ * invented, and never tall enough to push the Closing balances off a phone screen.
+ */
 function ExpenseBreakdown({
     expenses,
     records,
@@ -1576,42 +1587,85 @@ function ExpenseBreakdown({
     records: Report['expense_items'];
 }) {
     return (
-        <div className="flex flex-col gap-1.5">
-            <span className={labelClass}>
-                Expenses · {peso(expenses.total)} ·{' '}
-                {plural(expenses.count, 'record')}
-            </span>
-            {records.items.length === 0 ? (
-                <p className="text-[11.5px] text-[#8a8a8a]">
-                    No Store expense was recorded in this period.
-                </p>
-            ) : (
-                <ul className="flex flex-col divide-y divide-[#f0f0f0] rounded-xl border border-[#efefef] px-3">
-                    {records.items.map((item) => (
-                        <li
-                            key={item.id}
-                            className="flex items-baseline justify-between gap-3 py-[7px] text-[12.5px]"
-                        >
-                            <span className="min-w-0 truncate">
-                                {item.description}
-                            </span>
-                            <span className="shrink-0 font-semibold tabular-nums">
-                                {peso(item.amount)}
-                                <span className="ml-1.5 text-[10.5px] font-normal text-[#8a8a8a]">
-                                    {item.source}
-                                </span>
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-            )}
-            {records.total > records.listed && (
-                <span className="text-[11px] text-[#8a8a8a] tabular-nums">
-                    Showing the first {records.listed} of {records.total}{' '}
-                    expense records.
+        <details className={disclosureClass}>
+            <summary className={disclosureSummaryClass}>
+                <span className="flex min-w-0 flex-col gap-1">
+                    <span className={labelClass}>Expenses</span>
+                    <span className="text-[21px] leading-[1.05] font-bold tracking-[-0.02em] tabular-nums">
+                        {peso(expenses.total)}
+                    </span>
                 </span>
-            )}
-        </div>
+                <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] font-semibold text-[#666]">
+                    View details
+                    <DisclosureChevron />
+                </span>
+            </summary>
+            <div className="flex flex-col gap-1.5 border-t border-[#efefef] px-3 py-2.5">
+                {records.items.length === 0 ? (
+                    <p className="text-[11.5px] text-[#8a8a8a]">
+                        No Store expense was recorded in this period.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col divide-y divide-[#f0f0f0]">
+                        {records.items.map((item) => (
+                            <li
+                                key={item.id}
+                                className="flex items-baseline justify-between gap-3 py-[7px] text-[12.5px]"
+                            >
+                                <span className="min-w-0 [overflow-wrap:anywhere]">
+                                    {item.description}
+                                </span>
+                                <span className="shrink-0 font-semibold tabular-nums">
+                                    {peso(item.amount)}
+                                    <span className="ml-1.5 text-[10.5px] font-normal text-[#8a8a8a]">
+                                        {item.source}
+                                    </span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                {records.total > records.listed && (
+                    <span className="text-[11px] text-[#8a8a8a] tabular-nums">
+                        Showing the first {records.listed} of {records.total}{' '}
+                        expense records.
+                    </span>
+                )}
+                <span className="text-[10.5px] text-[#8a8a8a] tabular-nums">
+                    Cash {peso(expenses.cash)} · Cashless{' '}
+                    {peso(expenses.cashless)} ·{' '}
+                    {plural(expenses.count, 'record')}
+                </span>
+            </div>
+        </details>
+    );
+}
+
+/** The drawer ladder, kept out of the way until someone asks why a balance is what it is. */
+function CalculationDetails({ summary }: { summary: Report['summary'] }) {
+    return (
+        <details className={disclosureClass}>
+            <summary className={disclosureSummaryClass}>
+                <span className="text-[12.5px] font-semibold">
+                    How was this calculated?
+                </span>
+                <DisclosureChevron />
+            </summary>
+            <div className="grid gap-2.5 border-t border-[#efefef] px-3 py-2.5 min-[900px]:grid-cols-2">
+                <DrawerLadder
+                    channel="cash"
+                    label="Cash balance"
+                    tone="#15803D"
+                    summary={summary}
+                />
+                <DrawerLadder
+                    channel="cashless"
+                    label="Cashless balance"
+                    tone="#1D4ED8"
+                    summary={summary}
+                />
+            </div>
+        </details>
     );
 }
 

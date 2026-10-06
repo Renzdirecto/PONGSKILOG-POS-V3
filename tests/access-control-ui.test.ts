@@ -193,7 +193,15 @@ test('branch staff with only custom reports see reports in the operational shell
         layout,
         /page\.component === 'workspaces\/reports' &&\s*!branchContext\.businessWide &&\s*!branchManager;/,
     );
+    /**
+     * The shell a report renders in still depends on the account, but the operational Reports item itself is gated
+     * only by the permission, so Super Admin and other business-wide viewers keep it inside the POS workspace.
+     */
     assert.match(
+        layout,
+        /label: 'Reports',[\s\S]{0,120}available: auth\.permissions\.includes\('reports\.view'\),/,
+    );
+    assert.doesNotMatch(
         layout,
         /auth\.permissions\.includes\('reports\.view'\) &&\s*!branchContext\.businessWide/,
     );

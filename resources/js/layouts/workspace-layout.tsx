@@ -303,19 +303,18 @@ export default function WorkspaceLayout({
                 href: customerDisplay(),
                 active: false,
             },
-            ...(auth.permissions.includes('reports.view') &&
-            !branchContext.businessWide
-                ? [
-                      {
-                          label: 'Reports',
-                          short: 'Reports',
-                          icon: BarChart3,
-                          available: true,
-                          href: reports(),
-                          active: isBranchReports,
-                      },
-                  ]
-                : []),
+            /**
+             * Reports is the last operational destination for every account holding reports.view, Super Admin and
+             * other business-wide viewers included; the server still decides which shell the report itself renders in.
+             */
+            {
+                label: 'Reports',
+                short: 'Reports',
+                icon: BarChart3,
+                available: auth.permissions.includes('reports.view'),
+                href: reports(),
+                active: isBranchReports,
+            },
         ].filter((item) => item.available);
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111]">

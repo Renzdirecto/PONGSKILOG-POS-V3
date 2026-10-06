@@ -284,7 +284,6 @@ test('sales by category rows filter only the product views and say so', () => {
     assert.match(prose, /A category never filters Cash, Cashless or other money figures\./);
     assert.doesNotMatch(prose, /order items do not record the category at the time of sale/);
     assert.match(page, /Category: \$\{categoryScope\}/);
-    assert.match(page, /toggleCategoryChip\(\s+category\.value,\s+\)/);
     assert.match(page, /Order filters do not apply here/);
     assert.doesNotMatch(page, /tableCategories|this table only/);
     assert.match(components, /aria-pressed=\{on\}\s+onClick=\{\(\) => onPick\(category\)\}/);
@@ -343,7 +342,7 @@ test('Period highlights come immediately after the KPI cards', () => {
     assert.doesNotMatch(page, /Calculated from the figures above/);
 });
 
-test('Reports sits at the very bottom of the operational sidebar for reports.view', () => {
+test('Reports sits at the very bottom of the operational sidebar for every reports.view account', () => {
     const operational = layout.slice(
         layout.indexOf('const navigation = ['),
         layout.indexOf("].filter((item) => item.available)"),
@@ -361,10 +360,23 @@ test('Reports sits at the very bottom of the operational sidebar for reports.vie
         'Display',
         'Reports',
     ]);
+    /** The only gate is the permission: a business-wide viewer (Super Admin in the POS workspace) sees it too. */
     assert.match(
         operational,
-        /auth\.permissions\.includes\('reports\.view'\)[\s\S]{0,260}label: 'Reports'/,
+        /label: 'Reports',\s+short: 'Reports',\s+icon: BarChart3,\s+available: auth\.permissions\.includes\('reports\.view'\),/,
     );
+    assert.doesNotMatch(
+        operational,
+        /reports\.view'\)[\s\S]{0,80}!branchContext\.businessWide/,
+    );
+    /** Hidden without the permission: every item is filtered by its own `available`. */
+    assert.match(
+        layout,
+        /\]\.filter\(\(item\) => item\.available\);/,
+    );
+    /** Both the desktop rail and the mobile dock render that one list, so neither can drop it. */
+    assert.match(layout, /aria-label="Operational navigation"[\s\S]{0,400}navigation\.map\(/);
+    assert.match(layout, /aria-label="Mobile operational navigation"[\s\S]{0,700}navigation\.map\(/);
 });
 
 test('the report sections follow the approved order after Order type', () => {
@@ -386,16 +398,30 @@ test('the report sections follow the approved order after Order type', () => {
     assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
-test('a category chip selects exactly that category and never deselects itself', () => {
+test('Product performance has one category dropdown driving the existing category filter', () => {
+    const card = page.slice(
+        page.indexOf('title="Product performance"'),
+        page.indexOf('title="Top products"'),
+    );
+
+    assert.match(card, /<span className=\{labelClass\}>Category<\/span>/);
+    assert.match(card, /value=\{categoryChoice\}/);
+    assert.match(card, /onChange=\{\(event\) =>\s*chooseCategory\(event\.target\.value\)/);
+    assert.match(card, /<option value="">All categories<\/option>/);
+    assert.match(card, /\{categoryOptions\.map\(\(category\) => \(/);
+    /** The chips are gone: one quick filter, not two. */
+    assert.doesNotMatch(card, /aria-pressed/);
+    assert.doesNotMatch(page, /toggleCategoryChip/);
+    /** It writes the same shareable `categories` filter the dialog and Sales by category use. */
     assert.match(
         page,
-        /function toggleCategoryChip\(value: string\) \{\s*pickCategories\(\s*nextCategorySelection\(\{ ids: \[value\] \}, selectedCategories\),/,
+        /function chooseCategory\(value: string\) \{\s*if \(value !== MANY_CATEGORIES\) \{\s*pickCategories\(value === '' \? \[\] : \[value\]\);/,
     );
-    /** No filter means every chip reads as active. */
     assert.match(
         page,
-        /const on =\s*selectedCategories\.length === 0 \|\|\s*selectedCategories\.includes\(/,
+        /const categoryChoice =\s*selectedCategories\.length === 0\s*\? ''\s*: selectedCategories\.length === 1\s*\? selectedCategories\[0\]\s*: MANY_CATEGORIES;/,
     );
+    /** Sales by category still selects exactly its row's categories. */
     assert.deepEqual(nextCategorySelection({ ids: ['drinks'] }, []), [
         'drinks',
     ]);
@@ -406,24 +432,42 @@ test('a category chip selects exactly that category and never deselects itself',
     assert.deepEqual(nextCategorySelection({ ids: ['food'] }, ['drinks']), [
         'food',
     ]);
-    assert.deepEqual(
-        nextCategorySelection({ ids: ['drinks'] }, ['drinks', 'food']),
-        ['drinks'],
-    );
 });
 
-test('Product performance stays one bounded, scrollable table on phones too', () => {
+test('Product performance leads with Rank, Product, Qty and Sales and scrolls the rest sideways', () => {
     const card = page.slice(
         page.indexOf('title="Product performance"'),
         page.indexOf('title="Top products"'),
     );
+    const head = card.slice(card.indexOf('<thead'), card.indexOf('</thead>'));
+    const columns = [...head.matchAll(/>\s*\n\s*([A-Za-z%][^<\n]*?)\s*\n\s*<\/th>/g)].map(
+        (match) => match[1],
+    );
 
+    assert.deepEqual(columns, [
+        'Rank',
+        'Product',
+        'Qty',
+        'Sales',
+        'Category',
+        'Orders',
+        '% of sales',
+        'Avg price',
+    ]);
     /** No card list fallback: the same table at 360, 390 and 430px. */
     assert.doesNotMatch(card, /min-\[1000px\]:hidden/);
     assert.doesNotMatch(card, /hidden[^"]*min-\[1000px\]:block/);
     assert.match(card, /max-h-\[468px\] overflow-auto min-\[1000px\]:max-h-\[680px\]/);
-    assert.match(card, /min-w-\[760px\] table-fixed/);
+    /** The four leading columns fit a 360px screen; the rest are reached inside this box, never by the page. */
+    assert.match(card, /min-w-\[700px\] table-fixed/);
+    assert.match(card, /<div className="overflow-hidden rounded-\[13px\] border border-\[#efefef\]">/);
     assert.match(card, /<thead className="sticky top-0 z-10 bg-\[#fafafa\]">/);
+    /** The product name wraps to two lines instead of truncating into something unreadable. */
+    assert.match(
+        card,
+        /<span className="block line-clamp-2 leading-\[1\.3\] \[overflow-wrap:anywhere\]">\s*\{product\.name\}/,
+    );
+    assert.doesNotMatch(card, /<span className="block truncate">\s*\{product\.name\}/);
     assert.match(card, /<ProductSizes\s+sizes=\{\s*product\.sizes\s*\}/);
 });
 
@@ -437,28 +481,50 @@ test('the Size breakdown is read-only snapshot data under the product name', () 
     assert.match(component, /\{size\.name\} \{size\.quantity\.toLocaleString\('en-PH'\)\}/);
 });
 
-test('Collections & drawer effects reuses the one reconciliation ladder', () => {
+test('Collections & drawer effects is Opening, Expenses then Closing, with the detail one tap away', () => {
     const card = page.slice(
         page.indexOf('title="Collections & drawer effects"'),
         page.indexOf('title="Product performance"'),
     );
+    const rows = [
+        card.indexOf('label="Opening Cash"'),
+        card.indexOf('<ExpenseBreakdown'),
+        card.indexOf("label={closingLabel('Cash')}"),
+        card.indexOf('<CalculationDetails'),
+    ];
 
-    for (const label of [
-        'Opening Cash',
-        'Opening Cashless',
-        'Cash balance',
-        'Cashless balance',
-    ]) {
-        assert.ok(card.includes(label), label);
-    }
-    assert.match(card, /text-\[#15803D\]/);
-    assert.match(card, /text-\[#1D4ED8\]/);
-    assert.match(card, /<ExpenseBreakdown\s+expenses=\{summary\.expenses\}\s+records=\{report\.expense_items\}/);
-    assert.doesNotMatch(card, /label="Split payments"/);
+    assert.ok(rows.every((index) => index > 0), 'every row is rendered');
+    assert.deepEqual(rows, [...rows].sort((a, b) => a - b));
+    assert.match(card, /<div className="grid grid-cols-2 gap-2\.5">/);
+    assert.ok(card.includes('label="Opening Cashless"'));
+    assert.ok(card.includes("label={closingLabel('Cashless')}"));
+    /** Closing Cash is green, Closing Cashless is blue. */
+    assert.match(card, /text-\[#15803D\]">\s*\{reconciliation\.closing\.cash/);
+    assert.match(card, /text-\[#1D4ED8\]">\s*\{reconciliation\.closing\.cashless/);
+    /** The tall per-channel ladder is no longer always visible on the page. */
+    assert.doesNotMatch(card, /<DrawerLadder/);
 
+    const expenses = page.slice(
+        page.indexOf('function ExpenseBreakdown('),
+        page.indexOf('function CalculationDetails('),
+    );
+    assert.match(expenses, /<details className=\{disclosureClass\}>/);
+    assert.match(expenses, /View details\s*\n\s*<DisclosureChevron \/>/);
+    /** Real expense descriptions only, never an invented item name. */
+    assert.match(expenses, /\{item\.description\}/);
+
+    const calculation = page.slice(
+        page.indexOf('function CalculationDetails('),
+        page.indexOf('function CategoryDot('),
+    );
+    assert.match(calculation, /<details className=\{disclosureClass\}>/);
+    assert.match(calculation, /How was this calculated\?/);
+    assert.match(calculation, /<DrawerLadder[\s\S]{0,200}channel="cashless"/);
+
+    /** The backend ladder itself is untouched. */
     const ladder = page.slice(
         page.indexOf('function DrawerLadder('),
-        page.indexOf('function ExpenseBreakdown('),
+        page.indexOf('const disclosureClass ='),
     );
     assert.deepEqual(
         [...ladder.matchAll(/label: '([^']+)', sign/g)].map(
@@ -468,9 +534,6 @@ test('Collections & drawer effects reuses the one reconciliation ladder', () => 
     );
     assert.match(ladder, /reconciliation\.expected\[channel\]/);
     assert.match(ladder, /reconciliation\.closing\[channel\]/);
-    /** Real expense descriptions only, never an invented item name. */
-    const expenses = page.slice(page.indexOf('function ExpenseBreakdown('));
-    assert.match(expenses, /\{item\.description\}/);
 });
 
 test('Period highlights report the kitchen average and the Store Session duration', () => {

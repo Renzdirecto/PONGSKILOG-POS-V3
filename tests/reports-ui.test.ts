@@ -542,3 +542,26 @@ test('Period highlights report the kitchen average and the Store Session duratio
     assert.match(sessions, /sessionTimeline\(session, now\)/);
     assert.match(sessions, /sessionElapsedLabel\(/);
 });
+
+test('Reports opened from Store Operations keeps that shell through every filter change', () => {
+    /** The operational link marks the shell, exactly like the POS QR view does. */
+    assert.match(
+        layout,
+        /href: reports\(\{ query: \{ shell: 'pos' \} \}\),/,
+    );
+    assert.match(
+        layout,
+        /page\.component === 'workspaces\/reports' &&\s*\(new URL\(page\.url, 'http:\/\/localhost'\)\.searchParams\.get\('shell'\) ===\s*'pos' \|\|\s*\(!branchContext\.businessWide && !branchManager\)\);/,
+    );
+    /** The marker rides along with the shareable filters, so a period or category change cannot drop the shell. */
+    assert.deepEqual(reportQuery({ shell: 'pos' }, { date: 'today' }), {
+        shell: 'pos',
+        date: 'today',
+    });
+    assert.deepEqual(
+        reportQuery({ shell: 'pos', session: 'a' }, { categories: ['c1'] }),
+        { shell: 'pos', session: 'a', categories: ['c1'] },
+    );
+    /** Opening Reports from a management shell has no marker, so that shell is kept. */
+    assert.deepEqual(reportQuery({}, { date: 'today' }), { date: 'today' });
+});

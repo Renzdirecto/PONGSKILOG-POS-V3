@@ -19,6 +19,11 @@ export type ReportFilters = {
     cashiers?: (number | string)[];
     /** Category UUIDs or "uncategorized"; narrows the product views only. */
     categories?: string[];
+    /**
+     * Which shell opened the report. `pos` keeps the Store Operations navigation around it for an account that also
+     * has a management shell (Super Admin, a Branch manager); it never changes a figure or the Branch scope.
+     */
+    shell?: 'pos';
 };
 
 /** Every filter the Filter this report dialog applies; an empty list means every value. */

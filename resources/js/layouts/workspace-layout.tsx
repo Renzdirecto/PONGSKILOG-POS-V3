@@ -172,11 +172,16 @@ export default function WorkspaceLayout({
         page.component === 'workspaces/transaction-history' &&
         !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
-    /** Branch staff with only custom Reports access read their own Branch report inside the operational shell. */
+    /**
+     * Reports keeps the Store Operations navigation when it was opened from it (`?shell=pos`, like `?view=qr`), and
+     * always for Branch staff whose only Reports access is this shell. An account with a management shell that opens
+     * Reports from there has no marker, so it still reads the report inside that shell.
+     */
     const isBranchReports =
         page.component === 'workspaces/reports' &&
-        !branchContext.businessWide &&
-        !branchManager;
+        (new URL(page.url, 'http://localhost').searchParams.get('shell') ===
+            'pos' ||
+            (!branchContext.businessWide && !branchManager));
     const isOperational =
         isPos || isKitchen || isHistory || isDashboard || isBranchReports;
     const isOwnerManagement =
@@ -312,7 +317,7 @@ export default function WorkspaceLayout({
                 short: 'Reports',
                 icon: BarChart3,
                 available: auth.permissions.includes('reports.view'),
-                href: reports(),
+                href: reports({ query: { shell: 'pos' } }),
                 active: isBranchReports,
             },
         ].filter((item) => item.available);

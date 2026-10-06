@@ -737,55 +737,70 @@ export default function Reports({
                         title="Product performance"
                         hint={`${plural(productRows.length, 'product')}${categoryScope ? ` in ${categoryScope}` : ''} · % of sales is of all sales in this period`}
                         action={
-                            <label className="flex items-center gap-2">
-                                <span className="sr-only">Sort products</span>
-                                <select
-                                    value={productSort}
-                                    onChange={(event) =>
-                                        setProductSort(
-                                            event.target.value as ProductSort,
-                                        )
-                                    }
-                                    className={`${ownerControlClass} min-h-11 font-semibold md:h-[42px]`}
-                                >
-                                    {PRODUCT_SORTS.map(([value, label]) => (
-                                        <option key={value} value={value}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                            /*
+                             * Sort and Category share one row and split the width on phones, so the table starts
+                             * higher. Their 16px text is deliberate: a smaller font makes iOS Safari zoom the page
+                             * when a select is tapped.
+                             */
+                            <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                                <label className="min-w-0 flex-1 md:flex-none">
+                                    <span className="sr-only">
+                                        Sort products
+                                    </span>
+                                    <select
+                                        value={productSort}
+                                        onChange={(event) =>
+                                            setProductSort(
+                                                event.target
+                                                    .value as ProductSort,
+                                            )
+                                        }
+                                        className={`${ownerControlClass} w-full font-semibold md:h-[40px] md:w-auto`}
+                                    >
+                                        {PRODUCT_SORTS.map(([value, label]) => (
+                                            <option key={value} value={value}>
+                                                {label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                {categoryOptions.length > 0 && (
+                                    <label className="min-w-0 flex-1 md:flex-none">
+                                        <span className="sr-only">
+                                            Filter products by category
+                                        </span>
+                                        <select
+                                            value={categoryChoice}
+                                            onChange={(event) =>
+                                                chooseCategory(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className={`${ownerControlClass} w-full font-semibold md:h-[40px] md:w-auto`}
+                                        >
+                                            <option value="">
+                                                All categories
+                                            </option>
+                                            {categoryOptions.map((category) => (
+                                                <option
+                                                    key={category.value}
+                                                    value={category.value}
+                                                >
+                                                    {category.label}
+                                                </option>
+                                            ))}
+                                            {selectedCategories.length > 1 && (
+                                                <option value={MANY_CATEGORIES}>
+                                                    {selectedCategories.length}{' '}
+                                                    categories
+                                                </option>
+                                            )}
+                                        </select>
+                                    </label>
+                                )}
+                            </div>
                         }
                     >
-                        {/* The quick filter shows whenever this period sold anything, even from a single category. */}
-                        {categoryOptions.length > 0 && (
-                            <label className="flex flex-wrap items-center gap-2 print:hidden">
-                                <span className={labelClass}>Category</span>
-                                <select
-                                    value={categoryChoice}
-                                    onChange={(event) =>
-                                        chooseCategory(event.target.value)
-                                    }
-                                    className={`${ownerControlClass} min-h-11 min-w-0 flex-1 font-semibold md:h-[42px] md:flex-none md:min-w-[220px]`}
-                                >
-                                    <option value="">All categories</option>
-                                    {categoryOptions.map((category) => (
-                                        <option
-                                            key={category.value}
-                                            value={category.value}
-                                        >
-                                            {category.label}
-                                        </option>
-                                    ))}
-                                    {selectedCategories.length > 1 && (
-                                        <option value={MANY_CATEGORIES}>
-                                            {selectedCategories.length}{' '}
-                                            categories
-                                        </option>
-                                    )}
-                                </select>
-                            </label>
-                        )}
                         {productRows.length === 0 ? (
                             <EmptyNote>
                                 {categoryScope

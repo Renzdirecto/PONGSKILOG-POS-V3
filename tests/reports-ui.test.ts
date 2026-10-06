@@ -407,10 +407,22 @@ test('Product performance has one category dropdown driving the existing categor
     /** It is hidden only when the period sold nothing at all, never because one category sold everything. */
     assert.match(card, /\{categoryOptions\.length > 0 && \(/);
     assert.doesNotMatch(card, /categoryOptions\.length > 1/);
-    assert.match(card, /<span className=\{labelClass\}>Category<\/span>/);
+    /** Sort and Category share one compact row and split the width on phones; no visible "Category" heading. */
+    assert.match(
+        card,
+        /<div className="flex w-full min-w-0 items-center gap-2 md:w-auto">/,
+    );
+    assert.equal(
+        card.match(/className="min-w-0 flex-1 md:flex-none"/g)?.length,
+        2,
+    );
+    assert.match(card, /<span className="sr-only">\s*Filter products by category\s*<\/span>/);
+    assert.doesNotMatch(card, /<span className=\{labelClass\}>Category<\/span>/);
+    /** 16px on phones keeps iOS Safari from zooming the page when a select is tapped. */
+    assert.match(card, /md:h-\[40px\] md:w-auto/);
     assert.match(card, /value=\{categoryChoice\}/);
-    assert.match(card, /onChange=\{\(event\) =>\s*chooseCategory\(event\.target\.value\)/);
-    assert.match(card, /<option value="">All categories<\/option>/);
+    assert.match(card, /onChange=\{\(event\) =>\s*chooseCategory\(\s*event\.target\.value,?\s*\)/);
+    assert.match(card, /<option value="">\s*All categories\s*<\/option>/);
     assert.match(card, /\{categoryOptions\.map\(\(category\) => \(/);
     /** The chips are gone: one quick filter, not two. */
     assert.doesNotMatch(card, /aria-pressed/);

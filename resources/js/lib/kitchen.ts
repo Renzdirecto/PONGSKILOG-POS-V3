@@ -24,6 +24,11 @@ export function canOpenCustomerDisplay(
     return permissions.includes('customer_display.launch');
 }
 
+/** All orders is the active kitchen queue: Ready tickets live in Ready and Done tickets in Done. */
+export function isActiveKitchenWork(status: KitchenStatus): boolean {
+    return status === 'kitchen' || status === 'preparing';
+}
+
 const STATUS_POSITION: Record<KitchenStatus, number> = {
     kitchen: 0,
     preparing: 1,
@@ -50,7 +55,9 @@ export function filterKitchenTickets(
 
     return tickets.filter((ticket) => {
         const matchesTab =
-            tab === 'all' ? ticket.status !== 'done' : ticket.status === tab;
+            tab === 'all'
+                ? isActiveKitchenWork(ticket.status)
+                : ticket.status === tab;
         const matchesSearch =
             needle === '' ||
             ticket.number.toLocaleLowerCase().includes(numberNeedle) ||

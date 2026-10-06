@@ -6,6 +6,7 @@ import {
     LineChart,
     Package,
     QrCode,
+    Wallet,
     ReceiptText,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -210,6 +211,7 @@ export default function OwnerDashboard({
                             <ReceiptText key="tx" className="size-4" />,
                             <LineChart key="aov" className="size-4" />,
                             <Package key="items" className="size-4" />,
+                            <Wallet key="cash" className="size-4" />,
                             <QrCode key="cashless" className="size-4" />,
                         ]}
                     />

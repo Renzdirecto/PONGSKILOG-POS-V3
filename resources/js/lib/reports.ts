@@ -1,4 +1,6 @@
 export type ReportPreset =
+    /** The live Store Session of the scope, otherwise the latest one. The default Reports view. */
+    | 'session'
     | 'today'
     | 'yesterday'
     | 'last_7_days'
@@ -52,8 +54,9 @@ export function appliedSelection<T extends string | number>(
         : checked;
 }
 
-/** The Owner standalone Reports period tabs, backed by server presets. */
+/** The Owner standalone Reports period tabs, backed by server presets. Session is the default. */
 export const REPORT_TABS: readonly [ReportPreset, string][] = [
+    ['session', 'Session'],
     ['today', 'Daily'],
     ['last_7_days', 'Weekly'],
     ['last_30_days', 'Monthly'],
@@ -89,9 +92,13 @@ export const REPORT_PRESETS: readonly [ReportPreset, string][] = [
     ['custom', 'Custom'],
 ];
 
+/** Mirrors `ReportPeriod::DEFAULT_PRESET`: the default period is left out of the shareable query. */
+export const DEFAULT_REPORT_PRESET: ReportPreset = 'session';
+
 /**
  * The next shareable report query. Changing the period clears the Store Session selection because
  * session options belong to the selected business dates; only Custom keeps a from/to pair.
+ * The Session period keeps its selection: that selection *is* the period.
  */
 export function reportQuery(
     current: ReportFilters,
@@ -100,7 +107,9 @@ export function reportQuery(
     const periodChanged = 'date' in next || 'from' in next || 'to' in next;
     const merged: ReportFilters = {
         ...current,
-        ...(periodChanged ? { session: undefined } : {}),
+        ...(periodChanged && next.date !== 'session'
+            ? { session: undefined }
+            : {}),
         ...next,
     };
     if (merged.date !== 'custom') {
@@ -119,7 +128,7 @@ export function reportQuery(
 
                 return typeof value === 'string' &&
                     value !== '' &&
-                    !(key === 'date' && value === 'today')
+                    !(key === 'date' && value === DEFAULT_REPORT_PRESET)
                     ? [[key, value]]
                     : [];
             },
@@ -180,6 +189,43 @@ export const SESSION_RESULTS: Record<
     shortage: { label: 'Shortage', tone: 'red' },
     unavailable: { label: 'Not available', tone: 'neutral' },
 };
+
+/** Hours and minutes of an open Store Session, from server timestamps only. */
+export function sessionElapsedLabel(seconds: number): string {
+    const minutes = Math.max(0, Math.floor(seconds / 60));
+
+    return minutes < 60
+        ? `${minutes}m`
+        : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+export type SessionTiming = {
+    status: 'open' | 'closed';
+    opened_at: string;
+    opened_at_time: string;
+    closed_at_time: string | null;
+    time_range: string;
+    duration_seconds: number | null;
+};
+
+/**
+ * How long a Store Session has been open: a LIVE session is measured from its server `opened_at` up to now, a CLOSED
+ * one shows its server time range and persisted duration. No time is ever invented.
+ */
+export function sessionTimeline(session: SessionTiming, now: number): string {
+    if (session.status === 'open') {
+        const elapsed = Math.max(
+            0,
+            (now - new Date(session.opened_at).getTime()) / 1000,
+        );
+
+        return `Opened ${session.opened_at_time} · Live ${sessionElapsedLabel(elapsed)}`;
+    }
+
+    return session.duration_seconds === null
+        ? session.time_range
+        : `${session.time_range} · ${sessionElapsedLabel(session.duration_seconds)}`;
+}
 
 export const VARIANCE_LABELS: Record<string, string> = {
     balanced: 'Balanced',

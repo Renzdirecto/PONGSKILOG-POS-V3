@@ -179,3 +179,34 @@ test('a view-only business viewer gets no cashier pay, void or edit controls', (
     assert.match(page, /\{detail\.operational !== false && \(\s+<>/);
     assert.match(page, /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/);
 });
+
+test('a successful edit or settlement returns to the refreshed details, never the list', () => {
+    /** Edit: the server's post-edit transaction becomes the selected detail and the Edit modal closes. */
+    assert.match(
+        page,
+        /onSaved=\{\(detail\) => \{\s*setSelected\(detail\);\s*setEditing\(false\);\s*refresh\(\);/,
+    );
+    /** Settlement re-reads the transaction before showing it again. */
+    assert.match(
+        page,
+        /await http\.getClient\(\)\.request\(\{\s*\.\.\.show\(detail\.id\),[\s\S]{0,300}onPaid\(/,
+    );
+    assert.match(
+        page,
+        /onPaid=\{\(detail\) => \{\s*setSelected\(detail\);\s*setSettling\(false\);\s*setResolution\(null\);\s*refresh\(\);/,
+    );
+    /** Choosing Later on the balance-resolution step keeps the refreshed details open. */
+    assert.match(
+        page,
+        /onLater=\{\(\) => \{\s*setResolution\(null\);\s*setSelected\(resolution\);/,
+    );
+    assert.doesNotMatch(
+        page,
+        /onLater=\{\(\) => \{\s*setResolution\(null\);\s*setSelected\(null\);/,
+    );
+    /** The details dialog is what opens once no action dialog is in the way. */
+    assert.match(
+        page,
+        /open=\{\s*selected !== null &&\s*!editing &&\s*!settling &&\s*!voiding &&\s*!receiptOpen &&\s*resolution === null\s*\}/,
+    );
+});

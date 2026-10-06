@@ -5,6 +5,7 @@ import {
     canOpenCustomerDisplay,
     canTransitionKitchenStatus,
     filterKitchenTickets,
+    isActiveKitchenWork,
     kitchenItemLabel,
     orderTypeLabel,
     POS_READY_REALTIME_EVENTS,
@@ -12,7 +13,23 @@ import {
     statusLabel,
 } from '../resources/js/lib/kitchen.ts';
 import type { KitchenTicket } from '../resources/js/types/kitchen.ts';
-import { KitchenTransitionStore } from '../resources/js/lib/kitchen-transitions.ts';
+import { registerHooks } from 'node:module';
+
+// Node's native TypeScript runner requires explicit extensions; Vite resolves these in the app.
+registerHooks({
+    resolve(specifier, context, nextResolve) {
+        return nextResolve(
+            specifier === './kitchen' &&
+                context.parentURL?.endsWith('/kitchen-transitions.ts')
+                ? './kitchen.ts'
+                : specifier,
+            context,
+        );
+    },
+});
+const { KitchenTransitionStore } = await import(
+    '../resources/js/lib/kitchen-transitions.ts'
+);
 
 const tickets: KitchenTicket[] = [
     {
@@ -67,15 +84,26 @@ test('kitchen transitions allow all forward moves and only a one-step rollback',
     assert.equal(canTransitionKitchenStatus('preparing', 'preparing'), true);
 });
 
-test('all orders excludes done while tabs and search use status order number or customer', () => {
+test('all orders is the active kitchen queue only, with Ready and Done in their own tabs', () => {
     assert.deepEqual(
         filterKitchenTickets(tickets, 'all', '').map((ticket) => ticket.id),
-        ['order-1', 'order-2'],
+        ['order-1'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(tickets, 'ready', '').map((ticket) => ticket.id),
+        ['order-2'],
     );
     assert.deepEqual(
         filterKitchenTickets(tickets, 'done', '').map((ticket) => ticket.id),
         ['order-3'],
     );
+    assert.equal(isActiveKitchenWork('kitchen'), true);
+    assert.equal(isActiveKitchenWork('preparing'), true);
+    assert.equal(isActiveKitchenWork('ready'), false);
+    assert.equal(isActiveKitchenWork('done'), false);
+});
+
+test('search matches the order number or the customer inside the chosen tab', () => {
     assert.deepEqual(
         filterKitchenTickets(tickets, 'all', 'maria').map(
             (ticket) => ticket.id,
@@ -83,15 +111,18 @@ test('all orders excludes done while tabs and search use status order number or 
         ['order-1'],
     );
     assert.deepEqual(
-        filterKitchenTickets(tickets, 'all', '#1044').map(
+        filterKitchenTickets(tickets, 'ready', '#1044').map(
             (ticket) => ticket.id,
         ),
         ['order-2'],
     );
     assert.deepEqual(
-        filterKitchenTickets(tickets, 'all', '1044').map((ticket) => ticket.id),
+        filterKitchenTickets(tickets, 'ready', '1044').map(
+            (ticket) => ticket.id,
+        ),
         ['order-2'],
     );
+    assert.deepEqual(filterKitchenTickets(tickets, 'all', '1044'), []);
 });
 
 test('kitchen labels and elapsed time remain presentation-only helpers', () => {
@@ -177,17 +208,31 @@ test('KDS renders one-row controls and split ticket timing', () => {
         kitchenPage,
         /flex flex-wrap items-center gap-2 overflow-hidden[\s\S]*sm:flex-nowrap[\s\S]*!fullscreen \? \([\s\S]*Search orders[\s\S]*KITCHEN DISPLAY/,
     );
-    assert.match(
-        kitchenPage,
-        /text-neutral-500[\s\S]*placedTimeLabel\(ticket\.placed_at\)/,
-    );
+    /** The production landscape header: no absolute clock, only the elapsed timer. */
+    assert.doesNotMatch(kitchenPage, /placedTimeLabel/);
+    assert.doesNotMatch(kitchenPage, /toLocaleTimeString/);
     assert.match(
         kitchenPage,
         /ticket\.customer && \([\s\S]*\{' \| '\}[\s\S]*\{ticket\.customer\}/,
     );
+    /** The order number is the smaller half of the title; the customer keeps its emphasis and colour. */
     assert.match(
         kitchenPage,
-        /flex shrink-0 items-center gap-1\.5[\s\S]*\{updated && \([\s\S]*Updated[\s\S]*orderTypeLabel\(ticket\.order_type\)/,
+        /<span className="text-\[10px\] whitespace-nowrap">\s*#\{ticket\.number\}/,
+    );
+    /** UPDATED sits under the title instead of widening the header row. */
+    assert.match(
+        kitchenPage,
+        /\{\(updated \|\| disabled\) && \([\s\S]{0,400}Updated/,
+    );
+    /** The order-type pill is compact and the elapsed timer sits under it. */
+    assert.match(
+        kitchenPage,
+        /flex shrink-0 flex-col items-end gap-0\.5[\s\S]*orderTypeLabel\(ticket\.order_type\)[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
+    );
+    assert.match(
+        kitchenPage,
+        /rounded-md border bg-white px-1 py-px text-\[8px\]/,
     );
     assert.doesNotMatch(kitchenPage, /8_000/);
     assert.doesNotMatch(kitchenPage, /next\.delete\(orderId\)/);
@@ -200,6 +245,37 @@ test('KDS renders one-row controls and split ticket timing', () => {
         /text-red-700[\s\S]*relativePlacedTime\(ticket\.placed_at, now\)/,
     );
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
+});
+
+test('Done is confirmed before the authoritative transition and other statuses are not', () => {
+    const kitchenPage = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+
+    assert.match(
+        kitchenPage,
+        /status === 'done'\s*\?\s*onConfirmDone\(ticket\)\s*:\s*onTransition\(ticket, status\)/,
+    );
+    assert.match(
+        kitchenPage,
+        /Are you sure you want to mark this order as Done\?/,
+    );
+    assert.match(kitchenPage, /role="alertdialog"/);
+    assert.match(kitchenPage, /onClick=\{onCancel\}[\s\S]{0,400}Cancel/);
+    assert.match(
+        kitchenPage,
+        /bg-\[#15803d\][\s\S]{0,120}>\s*Done\s*<\/button>/,
+    );
+    assert.match(
+        kitchenPage,
+        /setDoneConfirmation\(null\);\s*transition\(ticket, 'done'\);/,
+    );
+    /** Rendered inside the board surface so it is visible while the KDS is in native full screen. */
+    assert.doesNotMatch(kitchenPage, /from '@\/components\/ui\/dialog'/);
 });
 
 test('operational sidebar stays visible on iPad Mini and floating navigation is phone only', () => {

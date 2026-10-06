@@ -4,6 +4,8 @@ use App\Actions\StoreSessions\CloseStoreSession;
 use App\Enums\KitchenStatus;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\ModifierGroup;
+use App\Models\ModifierOption;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
@@ -572,3 +574,175 @@ test('staff without business reporting cannot export reports', function (string 
         ->get(route('workspaces.reports.export', analyticsDay('2026-09-23')))
         ->assertForbidden();
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
+
+test('the Session period opens on the live Store Session and compares it with every session of the day before', function () {
+    $scenario = analyticsScenario('2026-09-22 08:00');
+    $scenario->done($scenario->payNow(1, 'cash'));
+    analyticsClose($scenario, '2026-09-22 12:00');
+    analyticsReopen($scenario, '2026-09-22 13:00');
+    $scenario->done($scenario->payNow(2, 'cash'));
+    analyticsClose($scenario, '2026-09-22 20:00');
+    $live = analyticsReopen($scenario, '2026-09-23 09:00');
+    $scenario->payNow(4, 'cash');
+    analyticsAt('2026-09-23 12:22');
+
+    $response = analyticsReport($scenario->branch, [])->assertOk();
+
+    expect($response->inertiaProps('report.period.preset'))->toBe('session')
+        ->and($response->inertiaProps('report.period.from'))->toBe('2026-09-23')
+        ->and($response->inertiaProps('report.period.comparison'))->toMatchArray(['from' => '2026-09-22', 'to' => '2026-09-22'])
+        ->and($response->inertiaProps('report.session_filter.selected'))->toBe($live->id)
+        ->and(collect($response->inertiaProps('report.sessions'))->pluck('id')->all())->toBe([$live->id])
+        /** One Session is reported, but it is still compared with both of yesterday's sessions combined. */
+        ->and($response->inertiaProps('analytics.comparison.available'))->toBeTrue()
+        ->and($response->inertiaProps('analytics.kpis.sales'))->toMatchArray(['value' => '400.00', 'previous' => '300.00'])
+        ->and($response->inertiaProps('analytics.kpis.cash_sales'))->toMatchArray(['value' => '400.00', 'previous' => '300.00']);
+});
+
+test('a live Store Session reports how long it has been open and a closed one its total duration', function () {
+    $scenario = analyticsScenario('2026-09-23 10:00');
+    $scenario->done($scenario->payNow(1, 'cash'));
+    analyticsAt('2026-09-23 13:22');
+
+    $live = analyticsReport($scenario->branch, [])->assertOk();
+
+    expect($live->inertiaProps('report.sessions.0'))->toMatchArray([
+        'status' => 'open',
+        'opened_at_time' => '10:00 AM',
+        'closed_at_time' => null,
+        'duration_seconds' => null,
+    ])
+        ->and(collect($live->inertiaProps('analytics.highlights'))->firstWhere('label', 'Store Session open for'))
+        ->toMatchArray(['value' => '3h 22m', 'detail' => 'LIVE · opened 10:00 AM']);
+
+    analyticsClose($scenario, '2026-09-23 20:00');
+    $closed = analyticsReport($scenario->branch, [])->assertOk();
+
+    expect($closed->inertiaProps('report.sessions.0'))->toMatchArray([
+        'status' => 'closed',
+        'opened_at_time' => '10:00 AM',
+        'closed_at_time' => '8:00 PM',
+        'duration_seconds' => 36000,
+    ])
+        ->and(collect($closed->inertiaProps('analytics.highlights'))->firstWhere('label', 'Store Session duration'))
+        ->toMatchArray(['value' => '10h 0m', 'detail' => '10:00 AM – 8:00 PM']);
+});
+
+test('the Session period falls back to the latest Store Session when none is live', function () {
+    $scenario = analyticsScenario('2026-09-22 08:00');
+    $scenario->done($scenario->payNow(1, 'cash'));
+    analyticsClose($scenario, '2026-09-22 12:00');
+    $latest = analyticsReopen($scenario, '2026-09-23 09:00');
+    $scenario->done($scenario->payNow(2, 'cash'));
+    analyticsClose($scenario, '2026-09-23 18:00');
+    analyticsAt('2026-09-25 09:00');
+
+    $response = analyticsReport($scenario->branch, [])->assertOk();
+
+    expect($response->inertiaProps('report.session_filter.selected'))->toBe($latest->id)
+        ->and($response->inertiaProps('report.period.from'))->toBe('2026-09-23')
+        ->and($response->inertiaProps('analytics.kpis.sales'))->toMatchArray(['value' => '200.00', 'previous' => '100.00']);
+});
+
+test('Daily reports every Store Session opened on that business date together', function () {
+    $scenario = analyticsScenario('2026-09-23 08:00');
+    $scenario->done($scenario->payNow(1, 'cash'));
+    analyticsClose($scenario, '2026-09-23 12:00');
+    analyticsReopen($scenario, '2026-09-23 17:00');
+    $scenario->payNow(2, 'cash');
+    analyticsAt('2026-09-23 21:00');
+
+    $response = analyticsReport($scenario->branch, ['date' => 'today'])->assertOk();
+
+    expect($response->inertiaProps('report.period.preset'))->toBe('today')
+        ->and($response->inertiaProps('report.sessions'))->toHaveCount(2)
+        ->and($response->inertiaProps('report.summary.sessions'))->toBe(['count' => 2, 'open' => 1])
+        ->and($response->inertiaProps('report.session_filter.selected'))->toBeNull()
+        ->and($response->inertiaProps('analytics.kpis.sales.value'))->toBe('300.00');
+});
+
+test('the Cash and Cashless KPIs report the collected amounts with split legs counted once', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(2, 'cash', null, ['cash_received' => '500.00']);
+    $scenario->payNow(3, 'split', '120.00');
+    $scenario->payNow(1, 'cashless');
+
+    $response = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk();
+    $analytics = $response->inertiaProps('analytics');
+
+    expect($analytics['kpis']['cash_sales']['value'])->toBe('380.00')
+        ->and($analytics['kpis']['cashless_sales']['value'])->toBe('220.00')
+        ->and($analytics['kpis']['cash_sales']['value'])->toBe($analytics['collections']['cash'])
+        ->and($analytics['kpis']['cashless_sales']['value'])->toBe($analytics['collections']['cashless'])
+        /** Split is explanatory: the two channel KPIs add up to Total sales exactly once. */
+        ->and($analytics['kpis']['sales']['value'])->toBe('600.00')
+        ->and($analytics['collections']['total'])->toBe('600.00')
+        ->and($analytics['products'][0]['sizes'])->toBe([]);
+});
+
+test('the drawer ladder and its expense records come from the one reconciliation authority', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->done($scenario->payNow(3, 'cash'));
+    $scenario->expense('120.00', 'cash');
+    analyticsAt('2026-09-23 18:00');
+
+    $response = analyticsReport($scenario->branch, [])->assertOk();
+    $summary = $response->inertiaProps('report.summary');
+
+    expect($summary['payments'])->toMatchArray(['cash' => '300.00', 'cashless' => '0.00', 'total' => '300.00'])
+        ->and($summary['reconciliation']['opening'])->toBe(['cash' => '1000.00', 'cashless' => '0.00'])
+        /** Opening 1000 + collections 300 - expenses 120 = 1180, and a live session has no counted close. */
+        ->and($summary['reconciliation']['expected'])->toBe(['cash' => '1180.00', 'cashless' => '0.00'])
+        ->and($summary['reconciliation']['closing'])->toBe(['cash' => '1180.00', 'cashless' => '0.00'])
+        ->and($summary['reconciliation']['sessions'])->toBe(['live' => 1, 'closed' => 0])
+        ->and($response->inertiaProps('report.expense_items.total'))->toBe(1)
+        ->and($response->inertiaProps('report.expense_items.items.0'))->toMatchArray(['amount' => '120.00', 'source' => 'Cash'])
+        ->and($response->inertiaProps('report.expense_items.items.0.description'))->not->toBeEmpty();
+
+    $session = analyticsClose($scenario, '2026-09-23 20:00');
+    $closed = analyticsReport($scenario->branch, [])->assertOk()->inertiaProps('report.summary.reconciliation');
+
+    expect($closed['closing'])->toBe(['cash' => $session->closing_cash_amount, 'cashless' => $session->closing_cashless_amount])
+        ->and($closed['variance'])->toBe(['cash' => '0.00', 'cashless' => '0.00'])
+        ->and($closed['sessions'])->toBe(['live' => 0, 'closed' => 1]);
+});
+
+test('product Size breakdowns come from the order snapshots, not from today\'s modifier configuration', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $size = ModifierGroup::factory()->create(['name' => 'Size', 'semantic_role' => 'size', 'min_select' => 1, 'max_select' => 1]);
+    $scenario->product->modifierGroups()->attach($size->id);
+    $small = ModifierOption::factory()->for($size)->create(['name' => 'Small', 'price_delta' => '0.00']);
+    $large = ModifierOption::factory()->for($size)->create(['name' => 'Large', 'price_delta' => '0.00']);
+    $line = fn (string $optionId, int $quantity): array => [[
+        'product_id' => $scenario->product->id,
+        'quantity' => $quantity,
+        'notes' => null,
+        'modifiers' => [['group_id' => $size->id, 'option_id' => $optionId]],
+    ]];
+    $scenario->payNow(3, 'cash', null, ['items' => $line($small->id, 3)]);
+    $scenario->payNow(5, 'cash', null, ['items' => $line($large->id, 5)]);
+    /** Renaming the option today must never reinterpret the orders already recorded. */
+    $large->update(['name' => 'Jumbo']);
+
+    $products = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk()->inertiaProps('analytics.products');
+
+    expect($products)->toHaveCount(1)
+        ->and($products[0]['quantity'])->toBe(8)
+        ->and($products[0]['sizes'])->toBe([
+            ['name' => 'Large', 'quantity' => 5],
+            ['name' => 'Small', 'quantity' => 3],
+        ]);
+});
+
+test('a branch-scoped report never reaches another branch session through the Session period', function () {
+    $main = analyticsScenario('2026-09-23 09:00');
+    $main->payNow(2, 'cash');
+    $other = analyticsScenario('2026-09-23 10:00', 'QAVE');
+    $other->payNow(5, 'cash');
+    analyticsAt('2026-09-23 12:00');
+
+    $response = analyticsReport($main->branch, [])->assertOk();
+
+    expect($response->inertiaProps('report.session_filter.selected'))->toBe($main->session->id)
+        ->and($response->inertiaProps('analytics.kpis.sales.value'))->toBe('200.00');
+});

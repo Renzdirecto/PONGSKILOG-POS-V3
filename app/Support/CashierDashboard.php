@@ -18,11 +18,16 @@ use Illuminate\Support\Facades\DB;
  * Split payments are already stored as separate Cash and Cashless Payment rows, so the Split breakdown is
  * explanatory only and is never added to Sales again.
  *
+ * Drinks sales is a product figure, not a drawer figure: the immutable Order Item `line_total` snapshots of committed
+ * Active/Completed Orders of this Store Session whose Product sits in the current Drinks category. It is never netted
+ * against corrections (those belong to an Order, not a line) and is never added to Cash or Cashless.
+ *
  * @phpstan-type SessionSummary array{
  *     orders: int,
  *     sales: string,
  *     cash: string,
  *     cashless: string,
+ *     drinks: string,
  *     corrections: string,
  *     unallocated_corrections: string,
  *     split: array{count: int, cash: string, cashless: string}
@@ -30,6 +35,9 @@ use Illuminate\Support\Facades\DB;
  */
 class CashierDashboard
 {
+    /** The current product category whose sales the Dashboard reports separately. */
+    public const DRINKS_CATEGORY = 'Drinks';
+
     public function __construct(
         private KitchenBoard $kitchenBoard,
         private InventoryState $inventoryState,
@@ -122,6 +130,7 @@ class CashierDashboard
             'sales' => ExactMoney::decimal(max(0, $gross - $correctionTotal)),
             'cash' => ExactMoney::decimal(max(0, $collected['cash'] - $corrections['cash'])),
             'cashless' => ExactMoney::decimal(max(0, $collected['cashless'] - $corrections['cashless'])),
+            'drinks' => ExactMoney::decimal($this->drinks($branch, $session)),
             'corrections' => ExactMoney::decimal($correctionTotal),
             'unallocated_corrections' => ExactMoney::decimal($corrections['unallocated']),
             'split' => [
@@ -130,6 +139,26 @@ class CashierDashboard
                 'cashless' => ExactMoney::decimal((int) $split?->cashless_cents),
             ],
         ];
+    }
+
+    /**
+     * Order Item sales of the current Drinks category in this Store Session, in exact cents. Items are grouped by the
+     * Product's current category because Order Items do not snapshot one; amounts stay the recorded `line_total`.
+     */
+    private function drinks(Branch $branch, StoreSession $session): int
+    {
+        $row = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('products', 'products.id', '=', 'order_items.product_id')
+            ->join('categories', 'categories.id', '=', 'products.category_id')
+            ->where('orders.branch_id', $branch->id)
+            ->where('orders.store_session_id', $session->id)
+            ->whereNotNull('orders.committed_at')
+            ->whereIn('orders.commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value])
+            ->whereRaw('LOWER(categories.name) = ?', [strtolower(self::DRINKS_CATEGORY)])
+            ->first([DB::raw('COALESCE(SUM('.$this->cents('order_items.line_total').'), 0) AS cents')]);
+
+        return (int) $row?->cents;
     }
 
     /** @return array{kitchen: int, preparing: int, ready: int} */

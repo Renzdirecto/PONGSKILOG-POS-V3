@@ -197,7 +197,7 @@ export function KpiCard({
     );
 }
 
-/** The five standalone KPI cards: Total sales, Transactions, Average order, Items sold and Cashless sales. */
+/** The six KPI cards: Total sales, Transactions, Average order, Items sold, Cash sales and Cashless sales. */
 export function KpiGrid({
     analytics,
     comparison,
@@ -238,17 +238,25 @@ export function KpiGrid({
             kpis.items.delta,
         ],
         [
+            'Cash sales',
+            'Cash sales',
+            kpis.cash_sales.value === null ? '—' : peso(kpis.cash_sales.value),
+            kpis.cash_sales.delta,
+        ],
+        [
             'Cashless sales',
             'Cashless sales',
-            roundedShare(kpis.cashless_share.value),
-            kpis.cashless_share.delta,
+            kpis.cashless_sales.value === null
+                ? '—'
+                : peso(kpis.cashless_sales.value),
+            kpis.cashless_sales.delta,
         ],
     ];
 
     return (
         <section
             aria-label="Key figures"
-            className="grid grid-cols-2 gap-3 min-[1250px]:grid-cols-5 min-[900px]:grid-cols-3"
+            className="grid grid-cols-2 gap-3 min-[1250px]:grid-cols-3 min-[1500px]:grid-cols-6 min-[900px]:grid-cols-3"
         >
             {cards.map(([wide, short, value, delta], index) => (
                 <KpiCard

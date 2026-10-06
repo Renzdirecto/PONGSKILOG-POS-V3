@@ -511,7 +511,7 @@ test('a business-wide custom role reads every branch but gains no operation or c
         ->and($manager->hasPermission('pos.access'))->toBeFalse();
 
     $this->actingAs($manager)->get(route('workspace'))->assertRedirectToRoute('workspaces.owner');
-    $this->actingAs($manager)->get(route('workspaces.reports'))
+    $this->actingAs($manager)->get(route('workspaces.reports', ['date' => 'today']))
         ->assertInertia(fn (Assert $page) => $page->where('report.scope', null)->has('report.sessions', 2));
     $this->actingAs($manager)->get(route('staff.index'))
         ->assertInertia(fn (Assert $page) => $page->where('roles', fn ($roles): bool => collect($roles)->pluck('name')->all() === ['cashier', 'kitchen_staff', 'cashier_kitchen']));

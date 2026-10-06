@@ -51,6 +51,9 @@ class StoreSessionSalesReport
     /** The Store Session list is bounded; a longer period keeps every total but lists only the most recent sessions. */
     public const MAX_LISTED_SESSIONS = 100;
 
+    /** The reconciliation card lists real expense descriptions; a busier period reports the rest as a count. */
+    public const MAX_LISTED_EXPENSES = 12;
+
     public function __construct(private StoreSessionReconciliation $reconciliation) {}
 
     /**
@@ -96,6 +99,7 @@ class StoreSessionSalesReport
                 ])->values()->all() : [],
             ],
             'summary' => $this->summary($rows),
+            'expense_items' => $this->expenseItems($rows),
             'days' => $this->days($rows),
             'sessions' => array_map(
                 fn (array $row): array => $this->presentSession($row, $archived[$row['session']->id] ?? 0),
@@ -122,6 +126,38 @@ class StoreSessionSalesReport
             ->orderBy('opened_at')
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * The Store Session the `session` period reports on: the requested one when it belongs to the authorized Branch
+     * scope, otherwise the latest LIVE Store Session of that scope, otherwise the latest Store Session of any status.
+     * Null when the scope has never opened one.
+     */
+    public function currentSession(?Branch $branch, ?string $requested = null): ?StoreSession
+    {
+        if ($requested !== null) {
+            $session = $this->sessionScope($branch)->whereKey($requested)->first();
+            if ($session !== null) {
+                return $session;
+            }
+        }
+
+        return $this->latestSession($this->sessionScope($branch)->where('status', StoreSessionStatus::Open))
+            ?? $this->latestSession($this->sessionScope($branch));
+    }
+
+    /** @return Builder<StoreSession> */
+    private function sessionScope(?Branch $branch): Builder
+    {
+        return StoreSession::query()
+            ->with(['branch:id,name,code', 'openedBy:id,name', 'closedBy:id,name'])
+            ->when($branch !== null, fn (Builder $query) => $query->where('branch_id', $branch?->id));
+    }
+
+    /** @param Builder<StoreSession> $query */
+    private function latestSession(Builder $query): ?StoreSession
+    {
+        return $query->orderByDesc('opened_at')->orderByDesc('id')->first();
     }
 
     /**
@@ -320,6 +356,14 @@ class StoreSessionSalesReport
             'cash' => $this->money($cash),
             'cashless' => $this->money($cashless),
             'collected' => $this->money($cash + $cashless),
+            /** Gross Payment rows before corrections and void reversals: the Collections step of the drawer ladder. */
+            'payments' => [
+                'cash' => $this->money($flow('sales', 'cash')),
+                'cashless' => $this->money($flow('sales', 'cashless')),
+                'total' => $this->money($flow('sales', 'cash') + $flow('sales', 'cashless')),
+                'count' => $flow('sales', 'count'),
+            ],
+            'reconciliation' => $this->reconciliationTotals($rows),
             'expenses' => [
                 'total' => $this->money($flow('expenses', 'cash') + $flow('expenses', 'cashless')),
                 'cash' => $this->money($flow('expenses', 'cash')),
@@ -350,6 +394,121 @@ class StoreSessionSalesReport
                 'cashless' => $this->money($flow('voids', 'cashless')),
             ],
         ];
+    }
+
+    /**
+     * The drawer ladder of every selected Store Session combined, from the one reconciliation authority:
+     * Opening + Payment rows - Expenses - allocated corrections - void reversals = Expected, plus the Closing basis
+     * (a CLOSED session's counted close, an OPEN session's provisional expected balance). A figure no session can
+     * state truthfully (an OPEN session with an unallocated correction, or a close without a stored amount) makes
+     * the combined figure unavailable instead of guessed.
+     *
+     * @param  list<SessionRow>  $rows
+     * @return array<string, mixed>
+     */
+    private function reconciliationTotals(array $rows): array
+    {
+        $opening = ['cash' => 0, 'cashless' => 0];
+        $expected = ['cash' => 0, 'cashless' => 0];
+        $closing = ['cash' => 0, 'cashless' => 0];
+        $known = ['expected' => true, 'closing' => true];
+        $live = 0;
+        foreach ($rows as $row) {
+            $sessionOpening = $this->reconciliation->opening($row['session']);
+            $sessionExpected = $this->expectedCents($row, $sessionOpening);
+            $sessionClosing = $this->closingCents($row, $sessionExpected);
+            $live += $row['session']->status === StoreSessionStatus::Open ? 1 : 0;
+            foreach (['cash', 'cashless'] as $channel) {
+                $opening[$channel] += $sessionOpening[$channel];
+                $known['expected'] = $known['expected'] && $sessionExpected[$channel] !== null;
+                $known['closing'] = $known['closing'] && $sessionClosing[$channel] !== null;
+                $expected[$channel] += $sessionExpected[$channel] ?? 0;
+                $closing[$channel] += $sessionClosing[$channel] ?? 0;
+            }
+        }
+        $present = fn (array $cents, bool $available): array => array_map(
+            fn (int $value): ?string => $available ? $this->money($value) : null,
+            $cents,
+        );
+
+        return [
+            'opening' => $present($opening, true),
+            'expected' => $present($expected, $known['expected']),
+            'closing' => $present($closing, $known['closing']),
+            'variance' => $present(
+                ['cash' => $closing['cash'] - $expected['cash'], 'cashless' => $closing['cashless'] - $expected['cashless']],
+                $known['expected'] && $known['closing'],
+            ),
+            'sessions' => ['live' => $live, 'closed' => count($rows) - $live],
+        ];
+    }
+
+    /**
+     * Real Store expense descriptions of the selected Store Sessions, oldest first and bounded.
+     *
+     * @param  list<SessionRow>  $rows
+     * @return array{items: list<array{id: string, description: string, amount: string, source: string}>, listed: int, total: int}
+     */
+    private function expenseItems(array $rows): array
+    {
+        $sessionIds = array_map(fn (array $row): string => $row['session']->id, $rows);
+        if ($sessionIds === []) {
+            return ['items' => [], 'listed' => 0, 'total' => 0];
+        }
+        $branchIds = array_values(array_unique(array_map(fn (array $row): string => (string) $row['session']->branch_id, $rows)));
+        $expenses = DB::table('store_session_expenses')
+            ->whereIn('store_session_id', $sessionIds)
+            ->whereIn('branch_id', $branchIds)
+            ->orderBy('created_at')
+            ->orderBy('id');
+        $total = (clone $expenses)->count();
+        $items = $expenses->limit(self::MAX_LISTED_EXPENSES)
+            ->get(['id', 'description', 'amount', 'payment_source'])
+            ->map(fn (object $row): array => [
+                'id' => (string) $row->id,
+                'description' => (string) $row->description,
+                'amount' => $this->money(ExactMoney::cents((string) $row->amount)),
+                'source' => $row->payment_source === 'cash' ? 'Cash' : 'Cashless',
+            ])
+            ->all();
+
+        return ['items' => array_values($items), 'listed' => count($items), 'total' => $total];
+    }
+
+    /**
+     * An OPEN Store Session's live expected balance (unknown while a correction awaits allocation), or a CLOSED
+     * Store Session's persisted expected balance.
+     *
+     * @param  SessionRow  $row
+     * @param  array{cash: int, cashless: int}  $opening
+     * @return array{cash: int|null, cashless: int|null}
+     */
+    private function expectedCents(array $row, array $opening): array
+    {
+        $session = $row['session'];
+        if ($session->status !== StoreSessionStatus::Open) {
+            return ['cash' => $this->storedCents($session->expected_cash_amount), 'cashless' => $this->storedCents($session->expected_cashless_amount)];
+        }
+
+        return $row['flows']['corrections']['unallocated'] > 0
+            ? ['cash' => null, 'cashless' => null]
+            : $this->reconciliation->expected($opening, $row['flows']);
+    }
+
+    /**
+     * The closing basis: a CLOSED Store Session's counted close, an OPEN one's provisional expected balance.
+     *
+     * @param  SessionRow  $row
+     * @param  array{cash: int|null, cashless: int|null}  $expected
+     * @return array{cash: int|null, cashless: int|null}
+     */
+    private function closingCents(array $row, array $expected): array
+    {
+        $session = $row['session'];
+
+        return $session->status === StoreSessionStatus::Open
+            ? $expected
+            : ['cash' => $this->storedCents($session->closing_cash_amount), 'cashless' => $this->storedCents($session->closing_cashless_amount)];
     }
 
     /**
@@ -398,11 +557,8 @@ class StoreSessionSalesReport
         $open = $session->status === StoreSessionStatus::Open;
         $opening = $this->reconciliation->opening($session);
         $collections = $this->collections($flows);
-        $pendingAllocation = $flows['corrections']['unallocated'] > 0;
         /** An OPEN session's expected balance is provisional and unknown while a correction awaits allocation. */
-        $expected = $open
-            ? ($pendingAllocation ? ['cash' => null, 'cashless' => null] : $this->reconciliation->expected($opening, $flows))
-            : ['cash' => $this->storedCents($session->expected_cash_amount), 'cashless' => $this->storedCents($session->expected_cashless_amount)];
+        $expected = $this->expectedCents($row, $opening);
         $variance = $open
             ? ['cash' => null, 'cashless' => null]
             : ['cash' => $this->storedCents($session->cash_variance), 'cashless' => $this->storedCents($session->cashless_variance)];
@@ -426,8 +582,12 @@ class StoreSessionSalesReport
             'time_range' => $this->timeRange($session),
             'opened_at' => $opened->toIso8601String(),
             'opened_at_label' => $opened->format('M j, Y · g:i A'),
+            'opened_at_time' => $opened->format('g:i A'),
             'closed_at' => $closed?->toIso8601String(),
             'closed_at_label' => $closed?->format('M j, Y · g:i A'),
+            'closed_at_time' => $closed?->format('g:i A'),
+            /** A CLOSED session's total open time; an OPEN session keeps ticking, so the client measures from opened_at. */
+            'duration_seconds' => $closed === null ? null : max(0, $closed->getTimestamp() - $opened->getTimestamp()),
             'opened_by' => $session->openedBy->name,
             'closed_by' => $session->closedBy?->name,
             'orders' => $row['orders'],

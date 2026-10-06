@@ -367,10 +367,10 @@ class KitchenBoard
             ->pluck('aggregate', 'kitchen_status');
 
         return [
+            /** All orders is the active kitchen queue only: Ready tickets belong to Ready and Done to Done. */
             'all' => (int) $countsByStatus->only([
                 KitchenStatus::Kitchen->value,
                 KitchenStatus::Preparing->value,
-                KitchenStatus::Ready->value,
             ])->sum(),
             'kitchen' => (int) ($countsByStatus[KitchenStatus::Kitchen->value] ?? 0),
             'preparing' => (int) ($countsByStatus[KitchenStatus::Preparing->value] ?? 0),

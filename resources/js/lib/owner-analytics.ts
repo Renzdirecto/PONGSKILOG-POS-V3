@@ -58,6 +58,9 @@ export type CategoryRow = {
     share: number | null;
 };
 
+/** How many of a product sold in one Size, from its immutable order modifier snapshots. */
+export type ProductSizeRow = { name: string; quantity: number };
+
 export type ProductRow = {
     key: string;
     name: string;
@@ -68,6 +71,8 @@ export type ProductRow = {
     sales_cents: number;
     share: number | null;
     average_price: string | null;
+    /** Empty for a product that was never sold with a Size modifier. */
+    sizes: ProductSizeRow[];
 };
 
 export type CashierRow = {
@@ -165,6 +170,9 @@ export type Analytics = {
         transactions: Kpi<number>;
         average_order: Kpi<string>;
         items: Kpi<number>;
+        /** Net collections per channel as amounts (Split legs already inside), never a share. */
+        cash_sales: Kpi<string>;
+        cashless_sales: Kpi<string>;
         cashless_share: Kpi<number>;
     };
     trend: {

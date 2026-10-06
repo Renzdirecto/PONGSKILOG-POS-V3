@@ -1,15 +1,28 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import {
-    KitchenTransitionStore,
-    projectKitchenBoard,
-} from '../resources/js/lib/kitchen-transitions.ts';
 import type { KitchenTransitionResult } from '../resources/js/lib/kitchen-transitions.ts';
 import { filterKitchenTickets } from '../resources/js/lib/kitchen.ts';
 import type {
     KitchenBoardData,
     KitchenTicket,
 } from '../resources/js/types/kitchen.ts';
+import { registerHooks } from 'node:module';
+
+// Node's native TypeScript runner requires explicit extensions; Vite resolves these in the app.
+registerHooks({
+    resolve(specifier, context, nextResolve) {
+        return nextResolve(
+            specifier === './kitchen' &&
+                context.parentURL?.endsWith('/kitchen-transitions.ts')
+                ? './kitchen.ts'
+                : specifier,
+            context,
+        );
+    },
+});
+const { KitchenTransitionStore, projectKitchenBoard } = await import(
+    '../resources/js/lib/kitchen-transitions.ts'
+);
 
 function fixture(): KitchenBoardData {
     return {
@@ -207,4 +220,45 @@ test('older refreshes cannot undo confirmations and newer server versions overri
     );
     store.reconcile(newer);
     assert.deepEqual(store.snapshot(), {});
+});
+
+test('an optimistic move to Ready leaves the All orders count, like the server board', async () => {
+    const board = fixture();
+    const store = new KitchenTransitionStore();
+
+    await store.run(
+        board.tickets[0],
+        'ready',
+        async () => ({
+            order_id: '0',
+            from: 'kitchen',
+            to: 'ready',
+            changed: true,
+            version: 8,
+        }),
+        () => {},
+        assert.fail,
+        () => {},
+    );
+    const optimistic = projectKitchenBoard(board, store.snapshot());
+
+    assert.deepEqual(optimistic.counts, {
+        all: 4,
+        kitchen: 4,
+        preparing: 0,
+        ready: 1,
+        done: 0,
+    });
+    assert.deepEqual(
+        filterKitchenTickets(optimistic.tickets, 'all', '').map(
+            (ticket) => ticket.id,
+        ),
+        ['1', '2', '3', '4'],
+    );
+    assert.deepEqual(
+        filterKitchenTickets(optimistic.tickets, 'ready', '').map(
+            (ticket) => ticket.id,
+        ),
+        ['0'],
+    );
 });

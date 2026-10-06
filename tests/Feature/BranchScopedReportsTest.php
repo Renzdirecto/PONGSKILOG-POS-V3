@@ -122,7 +122,7 @@ test('custom reports access opens the dashboard for the selected assigned branch
 
 test('owner and super admin keep business-wide all branches reports', function (string $role) {
     $this->actingAs(scopedReportsUser($role))
-        ->get(route('workspaces.reports'))
+        ->get(route('workspaces.reports', ['date' => 'today']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('report.scope', null)
             ->has('report.sessions', 2));

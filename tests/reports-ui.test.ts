@@ -2,14 +2,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+    DEFAULT_REPORT_PRESET,
     REPORT_TABS,
     appliedSelection,
     customRangeError,
     draftSelection,
     reportQuery,
     SESSION_RESULTS,
+    sessionElapsedLabel,
+    sessionTimeline,
     toggleFilterValue,
 } from '../resources/js/lib/reports.ts';
+
+import { nextCategorySelection } from '../resources/js/lib/owner-analytics.ts';
 
 const source = (path: string): string =>
     readFileSync(new URL(`../resources/js/${path}`, import.meta.url), 'utf8');
@@ -29,7 +34,7 @@ test('changing the period clears the Store Session and keeps a shareable query',
         reportQuery(
             { date: 'custom', from: '2026-09-01', to: '2026-09-05' },
             {
-                date: 'today',
+                date: 'session',
             },
         ),
         {},
@@ -60,14 +65,69 @@ test('order filters survive a period change and an empty group means all', () =>
     assert.deepEqual(toggleFilterValue(['cash', 'split'], 'cash'), ['split']);
 });
 
-test('the period tabs follow the owner standalone', () => {
+test('the period tabs open on the Store Session and keep the standalone range tabs', () => {
     assert.deepEqual(
         REPORT_TABS.map(([, label]) => label),
-        ['Daily', 'Weekly', 'Monthly', 'Yearly', 'Custom'],
+        ['Session', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Custom'],
     );
     assert.deepEqual(
         REPORT_TABS.map(([key]) => key),
-        ['today', 'last_7_days', 'last_30_days', 'last_12_months', 'custom'],
+        [
+            'session',
+            'today',
+            'last_7_days',
+            'last_30_days',
+            'last_12_months',
+            'custom',
+        ],
+    );
+    /** Session is the default, so it is the preset left out of a shareable query. */
+    assert.equal(DEFAULT_REPORT_PRESET, 'session');
+    assert.deepEqual(reportQuery({}, { date: 'session' }), {});
+    assert.deepEqual(reportQuery({ date: 'today' }, { date: 'session' }), {});
+});
+
+test('a Store Session period keeps its selected session; every other period clears it', () => {
+    assert.deepEqual(
+        reportQuery({ date: 'session', session: 'a' }, { date: 'session' }),
+        { session: 'a' },
+    );
+    assert.deepEqual(reportQuery({ session: 'a' }, { date: 'today' }), {
+        date: 'today',
+    });
+});
+
+test('Store Session duration is formatted from server timestamps only', () => {
+    assert.equal(sessionElapsedLabel(0), '0m');
+    assert.equal(sessionElapsedLabel(47 * 60), '47m');
+    assert.equal(sessionElapsedLabel(3 * 3600 + 22 * 60), '3h 22m');
+    assert.equal(
+        sessionTimeline(
+            {
+                status: 'open',
+                opened_at: '2026-09-23T10:00:00+08:00',
+                opened_at_time: '10:00 AM',
+                closed_at_time: null,
+                time_range: '10:00 AM – LIVE',
+                duration_seconds: null,
+            },
+            new Date('2026-09-23T13:22:00+08:00').getTime(),
+        ),
+        'Opened 10:00 AM · Live 3h 22m',
+    );
+    assert.equal(
+        sessionTimeline(
+            {
+                status: 'closed',
+                opened_at: '2026-09-23T10:00:00+08:00',
+                opened_at_time: '10:00 AM',
+                closed_at_time: '8:00 PM',
+                time_range: '10:00 AM – 8:00 PM',
+                duration_seconds: 36_000,
+            },
+            Date.now(),
+        ),
+        '10:00 AM – 8:00 PM · 10h 0m',
     );
 });
 
@@ -220,8 +280,9 @@ test('sales by category rows filter only the product views and say so', () => {
     assert.match(page, /onClear=\{\(\) => pickCategories\(\[\]\)\}/);
     const prose = page.replace(/\s+/g, ' ');
     assert.match(prose, /Sales, payments and collections are unchanged\./);
-    assert.match(prose, /Grouped by each product’s current category — order items do not record the category at the time of sale\./);
-    assert.match(prose, /a category never filters Cash, Cashless or other money figures\./);
+    /** The explanatory paragraph was removed; its one load-bearing sentence lives in the card hint. */
+    assert.match(prose, /A category never filters Cash, Cashless or other money figures\./);
+    assert.doesNotMatch(prose, /order items do not record the category at the time of sale/);
     assert.match(page, /Category: \$\{categoryScope\}/);
     assert.match(page, /toggleCategoryChip\(\s+category\.value,\s+\)/);
     assert.match(page, /Order filters do not apply here/);
@@ -280,4 +341,141 @@ test('Period highlights come immediately after the KPI cards', () => {
     assert.ok(kpis > 0 && kpis < highlights && highlights < categories);
     assert.match(page, /Calculated from this period's figures/);
     assert.doesNotMatch(page, /Calculated from the figures above/);
+});
+
+test('Reports sits at the very bottom of the operational sidebar for reports.view', () => {
+    const operational = layout.slice(
+        layout.indexOf('const navigation = ['),
+        layout.indexOf("].filter((item) => item.available)"),
+    );
+    const labels = [...operational.matchAll(/label: '([^']+)'/g)].map(
+        (match) => match[1],
+    );
+
+    assert.deepEqual(labels, [
+        'Dashboard',
+        'POS',
+        'QR Orders',
+        'Kitchen',
+        'History',
+        'Display',
+        'Reports',
+    ]);
+    assert.match(
+        operational,
+        /auth\.permissions\.includes\('reports\.view'\)[\s\S]{0,260}label: 'Reports'/,
+    );
+});
+
+test('the report sections follow the approved order after Order type', () => {
+    const order = [
+        'Period highlights',
+        'Sales by category',
+        'Payment method',
+        'Order type',
+        'Collections & drawer effects',
+        'Product performance',
+        'Top products',
+        'Peak sales hours',
+        'Sales trend',
+        'Kitchen performance',
+        'Store Sessions',
+    ].map((title) => page.indexOf(`title="${title}"`));
+
+    assert.ok(order.every((index) => index > 0), 'every section is rendered');
+    assert.deepEqual(order, [...order].sort((a, b) => a - b));
+});
+
+test('a category chip selects exactly that category and never deselects itself', () => {
+    assert.match(
+        page,
+        /function toggleCategoryChip\(value: string\) \{\s*pickCategories\(\s*nextCategorySelection\(\{ ids: \[value\] \}, selectedCategories\),/,
+    );
+    /** No filter means every chip reads as active. */
+    assert.match(
+        page,
+        /const on =\s*selectedCategories\.length === 0 \|\|\s*selectedCategories\.includes\(/,
+    );
+    assert.deepEqual(nextCategorySelection({ ids: ['drinks'] }, []), [
+        'drinks',
+    ]);
+    assert.deepEqual(
+        nextCategorySelection({ ids: ['drinks'] }, ['drinks']),
+        [],
+    );
+    assert.deepEqual(nextCategorySelection({ ids: ['food'] }, ['drinks']), [
+        'food',
+    ]);
+    assert.deepEqual(
+        nextCategorySelection({ ids: ['drinks'] }, ['drinks', 'food']),
+        ['drinks'],
+    );
+});
+
+test('Product performance stays one bounded, scrollable table on phones too', () => {
+    const card = page.slice(
+        page.indexOf('title="Product performance"'),
+        page.indexOf('title="Top products"'),
+    );
+
+    /** No card list fallback: the same table at 360, 390 and 430px. */
+    assert.doesNotMatch(card, /min-\[1000px\]:hidden/);
+    assert.doesNotMatch(card, /hidden[^"]*min-\[1000px\]:block/);
+    assert.match(card, /max-h-\[468px\] overflow-auto min-\[1000px\]:max-h-\[680px\]/);
+    assert.match(card, /min-w-\[760px\] table-fixed/);
+    assert.match(card, /<thead className="sticky top-0 z-10 bg-\[#fafafa\]">/);
+    assert.match(card, /<ProductSizes\s+sizes=\{\s*product\.sizes\s*\}/);
+});
+
+test('the Size breakdown is read-only snapshot data under the product name', () => {
+    const component = page.slice(
+        page.indexOf('function ProductSizes('),
+        page.indexOf('function DrawerLadder('),
+    );
+
+    assert.match(component, /if \(sizes\.length === 0\) \{\s*return null;/);
+    assert.match(component, /\{size\.name\} \{size\.quantity\.toLocaleString\('en-PH'\)\}/);
+});
+
+test('Collections & drawer effects reuses the one reconciliation ladder', () => {
+    const card = page.slice(
+        page.indexOf('title="Collections & drawer effects"'),
+        page.indexOf('title="Product performance"'),
+    );
+
+    for (const label of [
+        'Opening Cash',
+        'Opening Cashless',
+        'Cash balance',
+        'Cashless balance',
+    ]) {
+        assert.ok(card.includes(label), label);
+    }
+    assert.match(card, /text-\[#15803D\]/);
+    assert.match(card, /text-\[#1D4ED8\]/);
+    assert.match(card, /<ExpenseBreakdown\s+expenses=\{summary\.expenses\}\s+records=\{report\.expense_items\}/);
+    assert.doesNotMatch(card, /label="Split payments"/);
+
+    const ladder = page.slice(
+        page.indexOf('function DrawerLadder('),
+        page.indexOf('function ExpenseBreakdown('),
+    );
+    assert.deepEqual(
+        [...ladder.matchAll(/label: '([^']+)', sign/g)].map(
+            (match) => match[1],
+        ),
+        ['Opening', 'Collections', 'Expenses', 'Corrections', 'Void reversals'],
+    );
+    assert.match(ladder, /reconciliation\.expected\[channel\]/);
+    assert.match(ladder, /reconciliation\.closing\[channel\]/);
+    /** Real expense descriptions only, never an invented item name. */
+    const expenses = page.slice(page.indexOf('function ExpenseBreakdown('));
+    assert.match(expenses, /\{item\.description\}/);
+});
+
+test('Period highlights report the kitchen average and the Store Session duration', () => {
+    assert.doesNotMatch(page, /Cashless share/);
+    assert.match(sessions, /label=\{live \? 'Open for' : 'Duration'\}/);
+    assert.match(sessions, /sessionTimeline\(session, now\)/);
+    assert.match(sessions, /sessionElapsedLabel\(/);
 });

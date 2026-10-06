@@ -749,9 +749,10 @@ export default function TransactionHistory({
             {resolution && (
                 <BalanceResolutionDialog
                     detail={resolution}
+                    /** Choosing Later returns to the refreshed Details, never to the history list. */
                     onLater={() => {
                         setResolution(null);
-                        setSelected(null);
+                        setSelected(resolution);
                     }}
                     onNow={() => {
                         setSelected(resolution);

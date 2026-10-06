@@ -5,9 +5,11 @@ namespace App\Support;
 use App\Enums\BranchStatus;
 use App\Enums\CommercialStatus;
 use App\Enums\KitchenStatus;
+use App\Enums\StoreSessionStatus;
 use App\Models\Branch;
 use App\Models\StoreSession;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\JoinClause;
@@ -30,6 +32,11 @@ use Illuminate\Support\Facades\DB;
  *   category (a deleted product is "Uncategorized"); amounts are never recomputed from current prices.
  * - Hours are Manila clock hours of `committed_at`. Prep time runs from `committed_at` to `ready_at`.
  * - The previous period has the same length and granularity; drilling into one Store Session has no comparison.
+ * - The default `session` period reports the live Store Session of the scope (otherwise the latest one) over its own
+ *   business date and compares it with every Store Session opened the day before, never with one earlier session.
+ * - The Cash sales and Cashless sales KPIs are those net collections as amounts; `cashless_share` stays a share.
+ * - Product rows carry the Size breakdown of the Order Item modifier snapshots (`semantic_role_snapshot = size`);
+ *   today's modifier configuration never reinterprets a historical Order.
  *
  * Order filters (order type, how the Order was paid and the attributed cashier) narrow every figure, collections
  * included. The category filter narrows only the product rows (Top products, Product performance): Payments are
@@ -85,13 +92,17 @@ class SalesAnalytics
     {
         /** @var array{date?: string|null, from?: string|null, to?: string|null, session?: string|null} $periodFilters */
         $periodFilters = array_intersect_key($filters, array_flip(['date', 'from', 'to', 'session']));
+        if ($period === null && (($periodFilters['date'] ?? ReportPeriod::DEFAULT_PRESET) === 'session')) {
+            [$period, $periodFilters] = $this->sessionPeriod($branch, $periodFilters);
+        }
         $period ??= ReportPeriod::fromFilters($periodFilters);
         $orderFilters = $this->orderFilters($filters);
         $scope = $orderFilters === [] ? null : fn (QueryBuilder $query) => $this->applyOrderFilters($query, $orderFilters);
 
         $sessions = $this->report->sessions($branch, $period);
         $selected = $this->report->selectedSessions($sessions, $periodFilters, $period);
-        $drillDown = $selected !== $sessions;
+        /** The Store Session period reports one Session but still compares it with every Session of the day before. */
+        $drillDown = $selected !== $sessions && $period->preset !== 'session';
         $rows = $this->report->figures($selected);
         $report = $this->report->present($branch, $periodFilters, $period, $sessions, $rows);
         $collectionRows = $scope === null ? $rows : $this->report->figures($selected, $scope);
@@ -106,6 +117,7 @@ class SalesAnalytics
         }
         $collections = $this->collectionTotals($collectionRows);
         $products = $this->products($selected, $orderFilters);
+        $sizes = $this->productSizes($selected, $orderFilters);
         $categoryFilter = $this->categoryFilter($filters);
         $categoryProducts = $categoryFilter === [] ? $products : array_values(array_filter(
             $products,
@@ -138,13 +150,30 @@ class SalesAnalytics
                 'categories' => $this->categories($products, $current['totals']['sales']),
                 'order_types' => $this->orderTypes($current),
                 ...$this->hours($current, $previous),
-                'products' => $this->presentProducts($categoryProducts, $current['totals']['sales']),
+                'products' => $this->presentProducts($categoryProducts, $current['totals']['sales'], $sizes),
                 'cashiers' => $this->cashiers($current),
                 'kitchen' => $this->kitchen($current, $previous),
-                'highlights' => $this->highlights($period, $current, $products, $collections),
+                'highlights' => $this->highlights($period, $current, $products, $rows),
                 'branches' => $branch === null ? $this->branches($collectionRows, $current, $scope !== null) : null,
             ],
         ];
+    }
+
+    /**
+     * The Store Session period: the live Store Session of the authorized Branch scope, otherwise the latest one (or
+     * the explicitly requested one when it is in scope). The period covers that Session's business date and selects
+     * exactly that Session, so the comparison is every Store Session opened the day before.
+     *
+     * @param  array{date?: string|null, from?: string|null, to?: string|null, session?: string|null}  $filters
+     * @return array{0: ReportPeriod, 1: array{date?: string|null, from?: string|null, to?: string|null, session?: string|null}}
+     */
+    private function sessionPeriod(?Branch $branch, array $filters): array
+    {
+        $requested = is_string($filters['session'] ?? null) ? strtolower($filters['session']) : null;
+        $session = $this->report->currentSession($branch, $requested);
+        $businessDate = $session === null ? null : ReportPeriod::day($this->report->businessDate($session));
+
+        return [ReportPeriod::session($businessDate), [...$filters, 'date' => 'session', 'session' => $session?->id]];
     }
 
     /**
@@ -448,6 +477,11 @@ class SalesAnalytics
             'previous' => $prior,
             'delta' => $prior === null ? null : $this->percentDelta($value, $prior),
         ];
+        $channel = fn (string $key): array => [
+            'value' => ExactMoney::signedDecimal($collections[$key]),
+            'previous' => $previousCollections === null ? null : ExactMoney::signedDecimal($previousCollections[$key]),
+            'delta' => $previousCollections === null ? null : $this->percentDelta($collections[$key], $previousCollections[$key]),
+        ];
 
         return [
             'sales' => [
@@ -462,6 +496,9 @@ class SalesAnalytics
                 'delta' => $currentAverage === null || $previousAverage === null ? null : $this->percentDelta($currentAverage, $previousAverage),
             ],
             'items' => $metric($current['totals']['items'], $previous['totals']['items'] ?? null),
+            /** The amount actually collected per channel (Split legs already inside), never a share. */
+            'cash_sales' => $channel('cash'),
+            'cashless_sales' => $channel('cashless'),
             'cashless_share' => [
                 'value' => $share,
                 'previous' => $previousShare,
@@ -775,10 +812,49 @@ class SalesAnalytics
     }
 
     /**
+     * How many of each Product sold in every Size it was ordered in, from the immutable Order Item modifier snapshots
+     * (`semantic_role_snapshot = size`). Today's modifier configuration never reinterprets a historical Order, so a
+     * Product sold without a Size group simply has no breakdown.
+     *
+     * @param  Collection<int, StoreSession>  $sessions
+     * @param  OrderFilters  $filters
+     * @return array<string, list<array{name: string, quantity: int}>>
+     */
+    private function productSizes(Collection $sessions, array $filters): array
+    {
+        if ($sessions->isEmpty()) {
+            return [];
+        }
+        $query = $this->eligibleOrders($sessions)
+            ->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->join('order_item_modifiers', 'order_item_modifiers.order_item_id', '=', 'order_items.id')
+            ->where('order_item_modifiers.semantic_role_snapshot', 'size');
+        $this->applyOrderFilters($query, $filters);
+
+        $sizes = [];
+        foreach ($query->groupBy('order_items.product_id', 'order_items.product_name_snapshot', 'order_item_modifiers.option_name_snapshot')
+            ->get([
+                DB::raw('order_items.product_id AS product_id'),
+                DB::raw('order_items.product_name_snapshot AS name'),
+                DB::raw('order_item_modifiers.option_name_snapshot AS size'),
+                DB::raw('COALESCE(SUM(order_items.quantity), 0) AS quantity'),
+            ]) as $row) {
+            $sizes[($row->product_id ?? 'deleted').'|'.$row->name][] = ['name' => (string) $row->size, 'quantity' => (int) $row->quantity];
+        }
+
+        return array_map(function (array $rows): array {
+            usort($rows, fn (array $a, array $b): int => [$b['quantity'], $a['name']] <=> [$a['quantity'], $b['name']]);
+
+            return $rows;
+        }, $sizes);
+    }
+
+    /**
      * @param  list<array{key: string, name: string, category: string, category_id: string|null, quantity: int, orders: int, sales: int}>  $products
+     * @param  array<string, list<array{name: string, quantity: int}>>  $sizes
      * @return list<array<string, mixed>>
      */
-    private function presentProducts(array $products, int $totalSales): array
+    private function presentProducts(array $products, int $totalSales, array $sizes): array
     {
         return array_map(fn (array $product): array => [
             'key' => $product['key'],
@@ -790,6 +866,7 @@ class SalesAnalytics
             'sales_cents' => $product['sales'],
             'share' => $this->share($product['sales'], $totalSales),
             'average_price' => $product['quantity'] === 0 ? null : ExactMoney::decimal(intdiv(2 * $product['sales'] + $product['quantity'], 2 * $product['quantity'])),
+            'sizes' => $sizes[$product['key']] ?? [],
         ], $products);
     }
 
@@ -863,17 +940,17 @@ class SalesAnalytics
      *
      * @param  Aggregate  $current
      * @param  list<array{key: string, name: string, category: string, category_id: string|null, quantity: int, orders: int, sales: int}>  $products
-     * @param  array{cash: int, cashless: int}  $collections
+     * @param  list<SessionRow>  $rows  the selected Store Sessions, for the Store Session duration
      * @return list<array{label: string, value: string, amount: string|null, detail: string}>
      */
-    private function highlights(ReportPeriod $period, array $current, array $products, array $collections): array
+    private function highlights(ReportPeriod $period, array $current, array $products, array $rows): array
     {
         $total = $current['totals']['sales'];
         $categories = $this->categories($products, $total);
         $topCategory = $categories[0] ?? null;
         $topProduct = $products[0] ?? null;
         $peak = $this->hours($current, null)['peak_hour'];
-        $share = $this->share($collections['cashless'], $collections['cash'] + $collections['cashless']);
+        $kitchen = $this->kitchen($current, null);
         $highlights = [
             [
                 'label' => 'Top category',
@@ -894,12 +971,18 @@ class SalesAnalytics
                 'detail' => $topProduct === null ? 'No sales in this period' : $topProduct['quantity'].' sold',
             ],
             [
-                'label' => 'Cashless share',
-                'value' => $share === null ? '—' : $this->shareText($share),
-                'amount' => $share === null ? null : ExactMoney::signedDecimal($collections['cashless']),
-                'detail' => $share === null ? 'No collections in this period' : 'of collected sales',
+                'label' => 'Kitchen average time',
+                'value' => $kitchen['average_prep_seconds'] === null ? '—' : $this->durationText($kitchen['average_prep_seconds']),
+                'amount' => null,
+                'detail' => $kitchen['average_prep_seconds'] === null
+                    ? 'No order reached Ready in this period'
+                    : 'committed to ready · '.$this->plural($kitchen['timed_orders'], 'timed order'),
             ],
         ];
+        /** One Store Session in scope (the Store Session period, or a day with a single session) states how long it ran. */
+        if (count($rows) === 1) {
+            $highlights[] = $this->sessionHighlight($rows[0]['session']);
+        }
         if ($period->granularity !== 'hour') {
             $strongest = null;
             foreach ($current['buckets'] as $key => $bucket) {
@@ -916,6 +999,47 @@ class SalesAnalytics
         }
 
         return $highlights;
+    }
+
+    /**
+     * How long one Store Session has run: a LIVE session up to now, a CLOSED one from opening to close.
+     *
+     * @return array{label: string, value: string, amount: string|null, detail: string}
+     */
+    private function sessionHighlight(StoreSession $session): array
+    {
+        $opened = CarbonImmutable::instance($session->opened_at)->setTimezone(ReportPeriod::TIMEZONE);
+        $live = $session->status === StoreSessionStatus::Open;
+        $closed = $session->closed_at === null ? null : CarbonImmutable::instance($session->closed_at)->setTimezone(ReportPeriod::TIMEZONE);
+        $until = $closed ?? CarbonImmutable::now(ReportPeriod::TIMEZONE);
+
+        return [
+            'label' => $live ? 'Store Session open for' : 'Store Session duration',
+            'value' => $this->clockText(max(0, $until->getTimestamp() - $opened->getTimestamp())),
+            'amount' => null,
+            'detail' => $live
+                ? 'LIVE · opened '.$opened->format('g:i A')
+                : $opened->format('g:i A').' – '.$closed?->format('g:i A'),
+        ];
+    }
+
+    /** Minutes and seconds, like the Kitchen performance card. */
+    private function durationText(int $seconds): string
+    {
+        return intdiv($seconds, 60).'m '.str_pad((string) ($seconds % 60), 2, '0', STR_PAD_LEFT).'s';
+    }
+
+    /** Hours and minutes of a Store Session's open time. */
+    private function clockText(int $seconds): string
+    {
+        $minutes = intdiv($seconds, 60);
+
+        return $minutes < 60 ? $minutes.'m' : intdiv($minutes, 60).'h '.($minutes % 60).'m';
+    }
+
+    private function plural(int $count, string $word): string
+    {
+        return number_format($count).' '.$word.($count === 1 ? '' : 's');
     }
 
     /**

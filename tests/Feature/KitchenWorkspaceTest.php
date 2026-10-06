@@ -180,3 +180,21 @@ test('kitchen board query count stays bounded as ticket volume grows', function 
     expect($board['tickets'])->toHaveCount(20)
         ->and($queryCount)->toBeLessThanOrEqual(10);
 });
+
+test('the All orders count is the active kitchen queue only, with Ready and Done counted apart', function () {
+    $branch = Branch::factory()->create();
+    $session = StoreSession::factory()->for($branch)->create();
+    kitchenOrder($branch, $session, KitchenStatus::Kitchen, '1101');
+    kitchenOrder($branch, $session, KitchenStatus::Preparing, '1102');
+    kitchenOrder($branch, $session, KitchenStatus::Ready, '1103');
+    kitchenOrder($branch, $session, KitchenStatus::Done, '1104');
+
+    $this->actingAs(kitchenUser($branch))->get(route('workspaces.kitchen'))
+        ->assertInertia(fn (Assert $page) => $page->where('kitchenBoard.counts', [
+            'all' => 2,
+            'kitchen' => 1,
+            'preparing' => 1,
+            'ready' => 1,
+            'done' => 1,
+        ]));
+});

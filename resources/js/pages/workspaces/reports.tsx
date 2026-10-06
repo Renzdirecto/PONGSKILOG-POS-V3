@@ -757,7 +757,8 @@ export default function Reports({
                             </label>
                         }
                     >
-                        {categoryOptions.length > 1 && (
+                        {/* The quick filter shows whenever this period sold anything, even from a single category. */}
+                        {categoryOptions.length > 0 && (
                             <label className="flex flex-wrap items-center gap-2 print:hidden">
                                 <span className={labelClass}>Category</span>
                                 <select

@@ -404,6 +404,9 @@ test('Product performance has one category dropdown driving the existing categor
         page.indexOf('title="Top products"'),
     );
 
+    /** It is hidden only when the period sold nothing at all, never because one category sold everything. */
+    assert.match(card, /\{categoryOptions\.length > 0 && \(/);
+    assert.doesNotMatch(card, /categoryOptions\.length > 1/);
     assert.match(card, /<span className=\{labelClass\}>Category<\/span>/);
     assert.match(card, /value=\{categoryChoice\}/);
     assert.match(card, /onChange=\{\(event\) =>\s*chooseCategory\(event\.target\.value\)/);

@@ -76,3 +76,25 @@ test('store session details reuse the layout dialog', () => {
     assert.match(layout, /<StoreSessionDetailsContext\.Provider/);
     assert.doesNotMatch(page, /<StoreSessionDetailsDialog/);
 });
+
+test('the current Store Session reports a real Drinks sales figure from the server', () => {
+    assert.match(
+        page,
+        /key: 'drinks',\s+label: 'Drinks sales',\s+value: summary \? pesos\(summary\.drinks\) : '—',/,
+    );
+    assert.match(page, /drinks: string;/);
+    /** Cash stays before Cashless and Drinks sales is an extra tile, not a replacement. */
+    assert.deepEqual(
+        [
+            ...page
+                .slice(
+                    page.indexOf('const sessionTiles: Tile[] = ['),
+                    page.indexOf('const operationTiles: Tile[] = ['),
+                )
+                .matchAll(/key: '([^']+)'/g),
+        ].map((match) => match[1]),
+        ['orders', 'sales', 'cash', 'cashless', 'drinks'],
+    );
+    /** No browser arithmetic: the amount is the server's decimal string. */
+    assert.doesNotMatch(page, /drinks[^\n]*[+*/-]\s*summary/);
+});

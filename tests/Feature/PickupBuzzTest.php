@@ -175,6 +175,7 @@ test('the server enforces a 5-second cooldown and at most 5 Buzzes per order', f
     buzzSubscribe($order);
     $otherCashier = buzzStaff($this->branch, 'cashier_kitchen');
 
+    $this->travelTo(now()->startOfSecond());
     buzzPress($this->cashier, $order)->assertOk();
     buzzPress($otherCashier, $order)->assertTooManyRequests()->assertHeader('Retry-After');
     $this->travel(PickupBuzzPolicy::COOLDOWN_SECONDS - 1)->seconds();

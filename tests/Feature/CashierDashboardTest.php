@@ -3,6 +3,7 @@
 use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
+use App\Models\Category;
 use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\OrderAdjustment;
@@ -163,7 +164,7 @@ test('dashboard exposes only the operational current session projection', functi
         ->has('dashboard', fn (Assert $dashboard) => $dashboard
             ->has('store')
             ->has('summary', fn (Assert $summary) => $summary
-                ->hasAll(['orders', 'sales', 'cash', 'cashless', 'corrections', 'unallocated_corrections', 'split']))
+                ->hasAll(['orders', 'sales', 'cash', 'cashless', 'drinks', 'corrections', 'unallocated_corrections', 'split']))
             ->has('kitchen')
             ->has('payments')
             ->has('expenses')
@@ -197,6 +198,7 @@ test('sales use current session payment rows without voided orders or split doub
             'sales' => '270.00',
             'cash' => '230.00',
             'cashless' => '40.00',
+            'drinks' => '0.00',
             'corrections' => '10.00',
             'unallocated_corrections' => '0.00',
             'split' => ['count' => 1, 'cash' => '60.00', 'cashless' => '40.00'],
@@ -221,6 +223,7 @@ test('cash and cashless are net of the corrections reconciliation attributes to 
             'sales' => '900.00',
             'cash' => '550.00',
             'cashless' => '350.00',
+            'drinks' => '0.00',
             'corrections' => '300.00',
             'unallocated_corrections' => '0.00',
             'split' => ['count' => 1, 'cash' => '300.00', 'cashless' => '200.00'],
@@ -367,3 +370,39 @@ test('cashier login still lands on the pos workspace rather than the dashboard',
 
     $this->get(route('workspace'))->assertRedirectToRoute('workspaces.cashier');
 })->with(['cashier', 'cashier_kitchen']);
+
+test('Drinks sales report the current Drinks category from committed order item snapshots', function () {
+    $scenario = StoreCloseScenario::create();
+    $drinks = Category::factory()->create(['name' => 'Drinks']);
+    $scenario->product->update(['category_id' => $drinks->id, 'name' => 'Lemon Yakult']);
+    $scenario->payNow(3, 'cash');
+    $scenario->void($scenario->payNow(2, 'cash'));
+
+    $response = $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'));
+
+    /** Only the committed, non-voided lines of the Drinks category; never a hard-coded or guessed amount. */
+    $response->assertInertia(fn (Assert $page) => $page->where('dashboard.summary.drinks', '300.00'));
+
+    $scenario->product->update(['category_id' => Category::factory()->create(['name' => 'Silog'])->id]);
+
+    $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('dashboard.summary.drinks', '0.00'));
+});
+
+test('Drinks sales stay a product figure and never move Cash or Cashless', function () {
+    $scenario = StoreCloseScenario::create();
+    $scenario->product->update(['category_id' => Category::factory()->create(['name' => 'Drinks'])->id]);
+    $scenario->payNow(2, 'split', '80.00');
+
+    $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('dashboard.summary', [
+            'orders' => 1,
+            'sales' => '200.00',
+            'cash' => '120.00',
+            'cashless' => '80.00',
+            'drinks' => '200.00',
+            'corrections' => '0.00',
+            'unallocated_corrections' => '0.00',
+            'split' => ['count' => 1, 'cash' => '120.00', 'cashless' => '80.00'],
+        ]));
+});

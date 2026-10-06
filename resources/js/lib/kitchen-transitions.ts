@@ -1,3 +1,4 @@
+import { isActiveKitchenWork } from './kitchen';
 import type {
     KitchenBoardData,
     KitchenStatus,
@@ -121,8 +122,8 @@ export function projectKitchenBoard(
         counts[ticket.status] -= 1;
         counts[transition.target] += 1;
         counts.all +=
-            Number(transition.target !== 'done') -
-            Number(ticket.status !== 'done');
+            Number(isActiveKitchenWork(transition.target)) -
+            Number(isActiveKitchenWork(ticket.status));
         return {
             ...ticket,
             status: transition.target,

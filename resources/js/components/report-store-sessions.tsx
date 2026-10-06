@@ -1,4 +1,5 @@
 import { AlertTriangle, ChevronRight, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
     OwnerStatusBadge,
@@ -11,7 +12,12 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { SESSION_RESULTS, VARIANCE_LABELS } from '@/lib/reports';
+import {
+    SESSION_RESULTS,
+    VARIANCE_LABELS,
+    sessionElapsedLabel,
+    sessionTimeline,
+} from '@/lib/reports';
 import type { ReportSessionResult } from '@/lib/reports';
 import { formatDecimalPeso } from '@/lib/store-close';
 
@@ -33,8 +39,12 @@ export type SessionRow = {
     time_range: string;
     opened_at: string;
     opened_at_label: string;
+    opened_at_time: string;
     closed_at: string | null;
     closed_at_label: string | null;
+    closed_at_time: string | null;
+    /** A CLOSED session's total open time; an OPEN one is measured from opened_at up to now. */
+    duration_seconds: number | null;
     opened_by: string;
     closed_by: string | null;
     orders: number;
@@ -62,6 +72,23 @@ export type SessionRow = {
 };
 
 const peso = formatDecimalPeso;
+
+/** A minute clock so a LIVE Store Session's open time stays current without any other page timer. */
+function useMinuteClock(active: boolean): number {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (!active) {
+            return;
+        }
+        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+
+        return () => window.clearInterval(timer);
+    }, [active]);
+
+    return now;
+}
+
 export const isZero = (value: string) => /^-?0\.00$/.test(value);
 export const plural = (count: number, word: string) =>
     `${count.toLocaleString('en-PH')} ${word}${count === 1 ? '' : 's'}`;
@@ -165,6 +192,7 @@ export function SessionDetail({
 }) {
     const live = session?.status === 'open';
     const reconciliation = session?.reconciliation;
+    const now = useMinuteClock(live);
 
     return (
         <Dialog
@@ -183,7 +211,7 @@ export function SessionDetail({
                             </div>
                             <DialogDescription className="text-[12.5px] text-[#666]">
                                 {session.branch.code} · {session.branch.name} ·{' '}
-                                {session.time_range}
+                                {sessionTimeline(session, now)}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="owner-scrollbar flex min-h-0 flex-col gap-5 overflow-y-auto px-5 pt-4 pb-[max(20px,env(safe-area-inset-bottom))]">
@@ -220,6 +248,11 @@ export function SessionDetail({
                                         session.closed_by ??
                                         (live ? '—' : notAvailable)
                                     }
+                                />
+                                <DetailRow
+                                    label={live ? 'Open for' : 'Duration'}
+                                    value={sessionDurationValue(session, now)}
+                                    strong
                                 />
                                 {!live && (
                                     <DetailRow
@@ -383,6 +416,22 @@ export function SessionDetail({
 }
 
 
+/**
+ * How long a Store Session has run: a LIVE session up to now, a CLOSED one from its persisted duration. The server
+ * supplies every timestamp; only the elapsed minutes of a live session are measured in the browser.
+ */
+function sessionDurationValue(session: SessionRow, now: number): string {
+    if (session.status === 'open') {
+        return sessionElapsedLabel(
+            Math.max(0, (now - new Date(session.opened_at).getTime()) / 1000),
+        );
+    }
+
+    return session.duration_seconds === null
+        ? '—'
+        : sessionElapsedLabel(session.duration_seconds);
+}
+
 /** Store Sessions as a table on wide screens and cards on narrow ones; each opens the read-only detail. */
 export function StoreSessionList({
     sessions,
@@ -393,6 +442,10 @@ export function StoreSessionList({
     emptyMessage: ReactNode;
     onView: (id: string) => void;
 }) {
+    const now = useMinuteClock(
+        sessions.some((session) => session.status === 'open'),
+    );
+
     return (
         <>
                         {sessions.length === 0 ? (
@@ -483,7 +536,10 @@ export function StoreSessionList({
                                                             }
                                                         </span>
                                                         <span className="block text-[11.5px] text-[#767676]">
-                                                            {session.time_range}
+                                                            {sessionTimeline(
+                                                                session,
+                                                                now,
+                                                            )}
                                                         </span>
                                                     </th>
                                                     <td className="px-3 py-2.5 text-[12px] text-[#555]">
@@ -570,7 +626,10 @@ export function StoreSessionList({
                                                         }
                                                     </p>
                                                     <p className="text-[11.5px] text-[#767676]">
-                                                        {session.time_range}
+                                                        {sessionTimeline(
+                                                            session,
+                                                            now,
+                                                        )}
                                                     </p>
                                                 </div>
                                                 <ResultBadge

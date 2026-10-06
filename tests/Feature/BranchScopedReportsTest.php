@@ -122,7 +122,7 @@ test('custom reports access opens the dashboard for the selected assigned branch
 
 test('owner and super admin keep business-wide all branches reports', function (string $role) {
     $this->actingAs(scopedReportsUser($role))
-        ->get(route('workspaces.reports'))
+        ->get(route('workspaces.reports', ['date' => 'today']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('report.scope', null)
             ->has('report.sessions', 2));
@@ -165,4 +165,23 @@ test('a cashier whose baseline loses pos lands on the first workspace still allo
         ->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])
         ->get(route('workspace'))
         ->assertRedirectToRoute('workspaces.transaction-history');
+});
+
+test('the shell marker is accepted, echoed back and changes no figure or scope', function () {
+    $plain = $this->actingAs(scopedReportsUser('super_admin'))
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])
+        ->get(route('workspaces.reports', ['date' => 'today']))->assertOk();
+    $operational = $this->actingAs(scopedReportsUser('super_admin'))
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])
+        ->get(route('workspaces.reports', ['date' => 'today', 'shell' => 'pos']))->assertOk();
+
+    expect($operational->inertiaProps('filters.shell'))->toBe('pos')
+        ->and($plain->inertiaProps('filters'))->not->toHaveKey('shell')
+        ->and($operational->inertiaProps('report.scope.code'))->toBe('MAIN')
+        ->and($operational->inertiaProps('analytics.kpis'))->toBe($plain->inertiaProps('analytics.kpis'));
+
+    $this->actingAs(scopedReportsUser('super_admin'))
+        ->withSession([ActiveBranchContext::SESSION_KEY => $this->main->id])
+        ->get(route('workspaces.reports', ['shell' => 'owner']))
+        ->assertSessionHasErrors('shell');
 });

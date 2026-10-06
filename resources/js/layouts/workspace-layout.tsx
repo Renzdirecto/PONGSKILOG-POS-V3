@@ -172,11 +172,16 @@ export default function WorkspaceLayout({
         page.component === 'workspaces/transaction-history' &&
         !isBusinessHistory;
     const isDashboard = page.component === 'workspaces/cashier-dashboard';
-    /** Branch staff with only custom Reports access read their own Branch report inside the operational shell. */
+    /**
+     * Reports keeps the Store Operations navigation when it was opened from it (`?shell=pos`, like `?view=qr`), and
+     * always for Branch staff whose only Reports access is this shell. An account with a management shell that opens
+     * Reports from there has no marker, so it still reads the report inside that shell.
+     */
     const isBranchReports =
         page.component === 'workspaces/reports' &&
-        !branchContext.businessWide &&
-        !branchManager;
+        (new URL(page.url, 'http://localhost').searchParams.get('shell') ===
+            'pos' ||
+            (!branchContext.businessWide && !branchManager));
     const isOperational =
         isPos || isKitchen || isHistory || isDashboard || isBranchReports;
     const isOwnerManagement =
@@ -303,19 +308,18 @@ export default function WorkspaceLayout({
                 href: customerDisplay(),
                 active: false,
             },
-            ...(auth.permissions.includes('reports.view') &&
-            !branchContext.businessWide
-                ? [
-                      {
-                          label: 'Reports',
-                          short: 'Reports',
-                          icon: BarChart3,
-                          available: true,
-                          href: reports(),
-                          active: isBranchReports,
-                      },
-                  ]
-                : []),
+            /**
+             * Reports is the last operational destination for every account holding reports.view, Super Admin and
+             * other business-wide viewers included; the server still decides which shell the report itself renders in.
+             */
+            {
+                label: 'Reports',
+                short: 'Reports',
+                icon: BarChart3,
+                available: auth.permissions.includes('reports.view'),
+                href: reports({ query: { shell: 'pos' } }),
+                active: isBranchReports,
+            },
         ].filter((item) => item.available);
         return (
             <div className="pos-surface flex h-dvh overflow-hidden bg-[#111111] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-[#111111]">

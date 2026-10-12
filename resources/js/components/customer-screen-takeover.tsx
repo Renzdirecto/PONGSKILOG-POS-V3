@@ -75,16 +75,16 @@ export function CustomerScreenTakeover({
             ? takeover.pickup
             : null;
     const overall = overallPositionText(takeover.overall_position);
-    const tone = orderTypeTone(takeover.order_type);
+    const tone = orderTypeTone(takeover.order_type, true);
     const hasQueue = takeover.queue.length > 0;
 
     return (
         <div
             role="status"
             aria-live="assertive"
-            className="animate-in fade-in fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#07130d] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-white duration-300"
+            className="animate-in fade-in fixed inset-0 z-50 flex flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-neutral-950 duration-300"
         >
-            <div aria-hidden="true" className="h-1.5 shrink-0 bg-white/5">
+            <div aria-hidden="true" className="h-1.5 shrink-0 bg-neutral-50">
                 {showing && (
                     <div
                         className={`h-full origin-left ${tone.bar}`}
@@ -102,11 +102,11 @@ export function CustomerScreenTakeover({
                         className={`flex flex-col items-center justify-center gap-[clamp(10px,2.4vmin,32px)] text-center ${pickup ? '@min-[34rem]:flex-row' : ''}`}
                     >
                         <div className="flex min-w-0 flex-col items-center gap-[clamp(6px,1.4vmin,16px)]">
-                            <p className="flex items-center gap-2 text-[clamp(13px,2.3vmin,24px)] font-bold text-emerald-200">
+                            <p className="flex items-center gap-2 text-[clamp(13px,2.3vmin,24px)] font-bold text-emerald-700">
                                 <CheckCircle2 className="size-[1.2em]" /> Thank
                                 you! Your order is placed
                             </p>
-                            <p className="text-[clamp(13px,2.4vmin,26px)] font-black tracking-[0.28em] text-white/60 uppercase">
+                            <p className="text-[clamp(13px,2.4vmin,26px)] font-black tracking-[0.28em] text-neutral-600 uppercase">
                                 Your order
                             </p>
                             <p
@@ -132,13 +132,13 @@ export function CustomerScreenTakeover({
                                 </div>
                             )}
                             {overall && (
-                                <p className="text-[clamp(13px,2.4vmin,24px)] font-bold text-white/80">
+                                <p className="text-[clamp(13px,2.4vmin,24px)] font-bold text-neutral-800">
                                     {overall}
                                 </p>
                             )}
                             {takeover.order_type === 'take_out' &&
                                 pickup === null && (
-                                    <p className="max-w-md text-[clamp(12px,1.9vmin,18px)] text-white/60">
+                                    <p className="max-w-md text-[clamp(12px,1.9vmin,18px)] text-neutral-600">
                                         Your receipt has your order number.
                                         Please listen for your number.
                                     </p>
@@ -295,14 +295,14 @@ function QueueList({
     return (
         <section
             aria-label="Current queue"
-            className="flex min-h-0 min-w-0 flex-col gap-[clamp(6px,1.4vmin,14px)] rounded-3xl border border-white/10 bg-white/4 p-[clamp(8px,2vmin,20px)]"
+            className="flex min-h-0 min-w-0 flex-col gap-[clamp(6px,1.4vmin,14px)] rounded-3xl border border-neutral-200 bg-neutral-50 p-[clamp(8px,2vmin,20px)]"
         >
             <header className="flex shrink-0 items-baseline justify-between gap-3">
-                <h2 className="text-[clamp(13px,2.2vmin,22px)] font-black tracking-[0.2em] text-white/70">
+                <h2 className="text-[clamp(13px,2.2vmin,22px)] font-black tracking-[0.2em] text-neutral-700">
                     CURRENT QUEUE
                 </h2>
                 {range && (
-                    <span className="text-[clamp(11px,1.8vmin,16px)] text-white/50 tabular-nums">
+                    <span className="text-[clamp(11px,1.8vmin,16px)] text-neutral-500 tabular-nums">
                         {range}
                     </span>
                 )}
@@ -324,7 +324,7 @@ function QueueList({
 }
 
 function QueueRow({ row }: { row: CustomerScreenQueueRow }) {
-    const tone = orderTypeTone(row.order_type);
+    const tone = orderTypeTone(row.order_type, true);
 
     return (
         <li

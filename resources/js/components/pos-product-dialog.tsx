@@ -94,6 +94,7 @@ export function PosProductDialog({
     });
     const line: CartLine = {
         key: initial?.key ?? '',
+        committedPricing: initial?.committedPricing,
         product,
         quantity: validQuantity ? Number(quantity) : 1,
         notes,

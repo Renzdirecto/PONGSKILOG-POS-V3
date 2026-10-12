@@ -161,7 +161,7 @@ export function CustomerScreenAds({
 
     return (
         <div
-            className={`relative flex min-h-0 flex-1 touch-none items-center justify-center overflow-hidden bg-black ${suspended ? 'hidden' : ''}`}
+            className={`relative flex min-h-0 flex-1 touch-none items-center justify-center overflow-hidden bg-neutral-50 ${suspended ? 'hidden' : ''}`}
             onPointerDown={(event) => {
                 pointer.current = {
                     id: event.pointerId,
@@ -203,7 +203,7 @@ export function CustomerScreenAds({
             {current.type === 'image' && advances && (
                 <div
                     aria-hidden="true"
-                    className="absolute inset-x-0 top-0 h-1 bg-white/10"
+                    className="absolute inset-x-0 top-0 h-1 bg-neutral-100"
                 >
                     <div
                         key={`${current.key}:${cycle}`}
@@ -250,7 +250,7 @@ function SlideArrow({
 
 export function IdleBrand({ branchName }: { branchName: string | null }) {
     return (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 bg-[radial-gradient(circle_at_center,#1f2020_0%,#0c0d0d_70%)] px-6 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 bg-amber-50/50 px-6 text-center">
             <img
                 src="/images/branding/pongskilog-emblem.png"
                 alt=""
@@ -260,12 +260,12 @@ export function IdleBrand({ branchName }: { branchName: string | null }) {
                 <p className="text-[clamp(28px,6vmin,64px)] font-black tracking-[0.16em]">
                     PONGSKILOG
                 </p>
-                <p className="mt-1 text-[clamp(13px,2.2vmin,20px)] font-semibold tracking-[0.3em] text-[#f5c542] uppercase">
+                <p className="mt-1 text-[clamp(13px,2.2vmin,20px)] font-semibold tracking-[0.3em] text-amber-800 uppercase">
                     Est. 2022
                 </p>
             </div>
             {branchName && (
-                <p className="text-[clamp(14px,2.4vmin,22px)] font-semibold text-white/55">
+                <p className="text-[clamp(14px,2.4vmin,22px)] font-semibold text-neutral-600">
                     Welcome to {branchName}
                 </p>
             )}

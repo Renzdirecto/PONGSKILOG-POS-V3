@@ -37,6 +37,7 @@ export class KitchenTransitionStore {
         onReady: () => void,
         onError: (error: unknown) => void,
         refresh: () => void,
+        onConfirmed?: () => void,
     ): Promise<void> {
         if (this.state[ticket.id]?.pending) {
             return;
@@ -65,6 +66,7 @@ export class KitchenTransitionStore {
                     pending: false,
                 },
             });
+            onConfirmed?.();
             if (target === 'ready' && result.changed) {
                 onReady();
             }

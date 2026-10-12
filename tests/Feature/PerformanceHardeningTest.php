@@ -302,3 +302,32 @@ test('shared props run no queries for json endpoints and a selected branch loads
         ->and($eagerLoad['bindings'])->toContain($branches[2]->id)
         ->and($page->inertiaProps('products.data.0.branch_prices'))->toHaveCount(1);
 });
+
+test('History navigation skips the edit catalog and a catalog-only visit skips history queries', function () {
+    $scenario = StoreCloseScenario::create();
+    [$count, $page] = countedRequest(fn () => test()->actingAs($scenario->cashier)
+        ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+        ->get(route('workspaces.transaction-history'))->assertOk());
+    $initialQueries = collect(DB::getQueryLog())->pluck('query')->implode("\n");
+    $page->assertInertia(fn (Assert $page) => $page->missing('catalog')->has('transactions')->has('metrics'));
+    expect($initialQueries)->not->toContain('from "products"')->not->toContain('from "modifier_groups"');
+
+    [$queries, $response] = partialReload($scenario->cashier, route('workspaces.transaction-history'), 'workspaces/transaction-history', 'catalog', $scenario->branch);
+
+    $response->assertOk()->assertJsonPath('props.catalog.products.0.id', $scenario->product->id);
+    expect(array_keys($response->json('props')))->not->toContain('transactions')->not->toContain('metrics')
+        ->and(implode("\n", $queries))->not->toContain('from "order_items"')->not->toContain('from "payments"');
+});
+
+test('a report board-only refresh skips financial analytics queries', function () {
+    $owner = performanceUser('owner');
+    $scenario = StoreCloseScenario::create();
+    $scenario->payNow(1, 'cash');
+
+    [$queries, $response] = partialReload($owner, route('workspaces.reports'), 'workspaces/reports', 'kitchenNow', $scenario->branch);
+
+    $response->assertOk()->assertJsonPath('props.kitchenNow.ready', 0);
+    expect(array_keys($response->json('props')))->not->toContain('report')->not->toContain('analytics')
+        ->and(implode("\n", $queries))->not->toContain('from "payments"')->not->toContain('from "order_items"')
+        ->not->toContain('from "order_adjustments"');
+});

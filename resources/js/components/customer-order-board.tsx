@@ -10,16 +10,22 @@ import type { CustomerDisplayData } from '@/types';
  */
 export function CustomerOrderBoard({
     display,
+    light = false,
 }: {
     display: CustomerDisplayData;
+    light?: boolean;
 }) {
     if (!display.is_open) {
         return (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-20 text-center">
-                <Store className="size-12 text-white/30" />
+                <Store
+                    className={`${light ? 'size-12 text-neutral-400' : 'size-12 text-white/30'}`}
+                />
                 <div>
                     <h2 className="text-3xl font-black">Store closed</h2>
-                    <p className="mt-2 text-white/50">
+                    <p
+                        className={`${light ? 'mt-2 text-neutral-600' : 'mt-2 text-white/50'}`}
+                    >
                         Order updates will appear when service resumes.
                     </p>
                 </div>
@@ -29,39 +35,51 @@ export function CustomerOrderBoard({
 
     return (
         <>
-            <main className="grid min-h-0 flex-1 gap-px overflow-y-auto bg-white/10 min-[820px]:grid-cols-2">
+            <main
+                className={`${light ? 'grid min-h-0 flex-1 gap-px overflow-y-auto bg-neutral-200 min-[820px]:grid-cols-2' : 'grid min-h-0 flex-1 gap-px overflow-y-auto bg-white/10 min-[820px]:grid-cols-2'}`}
+            >
                 <DisplayColumn
                     title="Preparing"
                     description="We’re making your order"
                     numbers={display.preparing}
                     tone="neutral"
+                    light={light}
                 />
                 <DisplayColumn
                     title="Ready for pickup"
                     description="Please collect your order"
                     numbers={display.ready}
                     tone="green"
+                    light={light}
                 />
             </main>
-            <QueueCounts counts={display.counts} />
+            <QueueCounts counts={display.counts} light={light} />
         </>
     );
 }
 
 /** "Dine In: X · Take Out: Y" — the orders in the queue (the Preparing column), as counted by the server. */
-function QueueCounts({ counts }: { counts: CustomerDisplayData['counts'] }) {
+function QueueCounts({
+    counts,
+    light,
+}: {
+    counts: CustomerDisplayData['counts'];
+    light: boolean;
+}) {
     return (
         <section
             aria-label="Orders in queue"
-            className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-t border-white/10 bg-[#0c0d0d] px-4 py-2 sm:gap-x-5 sm:py-2.5"
+            className={`${light ? 'flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-t border-neutral-200 bg-white px-4 py-2 sm:gap-x-5 sm:py-2.5' : 'flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-t border-white/10 bg-[#0c0d0d] px-4 py-2 sm:gap-x-5 sm:py-2.5'}`}
         >
-            <span className="text-[11px] font-black tracking-[0.18em] text-white/55 sm:text-xs">
+            <span
+                className={`${light ? 'text-[11px] font-black tracking-[0.18em] text-neutral-600 sm:text-xs' : 'text-[11px] font-black tracking-[0.18em] text-white/55 sm:text-xs'}`}
+            >
                 IN QUEUE
             </span>
             {(['dine_in', 'take_out'] as const).map((type) => (
                 <span
                     key={type}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold sm:text-lg ${orderTypeTone(type).tint}`}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold sm:text-lg ${orderTypeTone(type, light).tint}`}
                 >
                     {type === 'dine_in' ? 'Dine In' : 'Take Out'}:
                     <span className="font-black tabular-nums">
@@ -78,15 +96,17 @@ function DisplayColumn({
     description,
     numbers,
     tone,
+    light,
 }: {
     title: string;
     description: string;
     numbers: CustomerDisplayData['preparing'];
     tone: 'neutral' | 'green';
+    light: boolean;
 }) {
     return (
         <section
-            className={`min-w-0 p-5 sm:p-7 ${tone === 'neutral' ? 'bg-[#111212]' : 'bg-[#181919]'}`}
+            className={`min-w-0 p-5 sm:p-7 ${light ? 'bg-white' : tone === 'neutral' ? 'bg-[#111212]' : 'bg-[#181919]'}`}
         >
             <div className="mb-6 flex items-center gap-3">
                 <span
@@ -94,20 +114,24 @@ function DisplayColumn({
                 />
                 <div>
                     <h2 className="text-2xl font-black sm:text-3xl">{title}</h2>
-                    <p className="text-xs text-white/45 sm:text-sm">
+                    <p
+                        className={`${light ? 'text-xs text-neutral-600 sm:text-sm' : 'text-xs text-white/45 sm:text-sm'}`}
+                    >
                         {description}
                     </p>
                 </div>
             </div>
             {numbers.length === 0 ? (
-                <div className="flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-white/10 text-sm font-semibold text-white/25">
+                <div
+                    className={`${light ? 'flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-neutral-200 text-sm font-semibold text-neutral-500' : 'flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-white/10 text-sm font-semibold text-white/25'}`}
+                >
                     No orders yet
                 </div>
             ) : (
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 min-[620px]:grid-cols-[repeat(auto-fit,minmax(160px,1fr))]">
                     {numbers.map(({ number, order_type }) => {
                         /** Ready numbers stand out (solid); waiting numbers are a tint of the same order-type color. */
-                        const colors = orderTypeTone(order_type);
+                        const colors = orderTypeTone(order_type, light);
 
                         return (
                             <div

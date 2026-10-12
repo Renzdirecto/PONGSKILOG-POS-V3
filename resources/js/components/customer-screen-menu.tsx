@@ -43,27 +43,27 @@ function LiveCart({ cart, live }: { cart: CustomerScreenCart; live: boolean }) {
         <section
             aria-label="Your order"
             aria-live="polite"
-            className="flex max-h-[30dvh] min-h-[96px] shrink-0 flex-col border-b-2 border-[#f5c542]/60 bg-[#18191a]"
+            className="flex max-h-[30dvh] min-h-[96px] shrink-0 flex-col border-b-2 border-[#f5c542]/60 bg-amber-50"
         >
             <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:px-6">
-                <ShoppingBag className="size-5 text-[#f5c542]" />
+                <ShoppingBag className="size-5 text-amber-800" />
                 <h2 className="text-base font-black tracking-wide sm:text-lg">
                     Your order
                 </h2>
                 {cart.order_type && (
-                    <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-black tracking-[0.12em]">
+                    <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-[11px] font-black tracking-[0.12em]">
                         {orderTypeText(cart.order_type)}
                     </span>
                 )}
                 {!live && (
-                    <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
+                    <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
                         May not be up to date
                     </span>
                 )}
-                <span className="ml-auto text-sm text-white/60 tabular-nums">
+                <span className="ml-auto text-sm text-neutral-600 tabular-nums">
                     {cart.item_count} {cart.item_count === 1 ? 'item' : 'items'}
                 </span>
-                <strong className="text-lg font-black text-[#f5c542] tabular-nums sm:text-2xl">
+                <strong className="text-lg font-black text-amber-800 tabular-nums sm:text-2xl">
                     {pesos(cart.total)}
                 </strong>
             </header>
@@ -82,7 +82,7 @@ function LiveCart({ cart, live }: { cart: CustomerScreenCart; live: boolean }) {
                             </p>
                             {(line.details.length > 0 ||
                                 line.instructions.length > 0) && (
-                                <p className="truncate text-xs text-white/55">
+                                <p className="truncate text-xs text-neutral-600">
                                     {[
                                         ...line.details.map(
                                             (detail) => `+ ${detail}`,
@@ -119,7 +119,7 @@ function MenuBrowser({ menu }: { menu: CustomerMenuData | null }) {
                 {Array.from({ length: 8 }, (_, index) => (
                     <div
                         key={index}
-                        className="h-56 animate-pulse rounded-2xl bg-white/6"
+                        className="h-56 animate-pulse rounded-2xl bg-neutral-100"
                     />
                 ))}
             </div>
@@ -144,7 +144,7 @@ function MenuBrowser({ menu }: { menu: CustomerMenuData | null }) {
                             setCategory(item.key);
                             scroller.current?.scrollTo({ top: 0 });
                         }}
-                        className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-bold transition ${selected === item.key ? 'border-[#f5c542] bg-[#f5c542] text-neutral-950' : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'}`}
+                        className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-bold transition ${selected === item.key ? 'border-[#f5c542] bg-[#f5c542] text-neutral-950' : 'border-neutral-200 bg-neutral-50 text-neutral-800 hover:bg-neutral-100'}`}
                     >
                         <CategoryIcon
                             iconKey={item.icon_key as CategoryIconKey}
@@ -159,7 +159,7 @@ function MenuBrowser({ menu }: { menu: CustomerMenuData | null }) {
                 className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 sm:px-6"
             >
                 {products.length === 0 ? (
-                    <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 text-center text-white/45">
+                    <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 text-center text-neutral-500">
                         <UtensilsCrossed className="size-10" />
                         <p className="text-lg font-semibold">
                             Menu items will appear here.
@@ -183,9 +183,9 @@ function MenuCard({ product }: { product: CustomerMenuProduct }) {
 
     return (
         <li
-            className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1a1b1b] ${unavailable ? 'opacity-55' : ''}`}
+            className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white ${unavailable ? 'opacity-55' : ''}`}
         >
-            <div className="relative aspect-[4/3] bg-white/5">
+            <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-neutral-50">
                 {product.image_url && !imageFailed ? (
                     <img
                         src={product.image_url}
@@ -193,7 +193,7 @@ function MenuCard({ product }: { product: CustomerMenuProduct }) {
                         loading="lazy"
                         decoding="async"
                         onError={() => setImageFailed(true)}
-                        className="size-full object-cover"
+                        className="size-full object-contain"
                     />
                 ) : (
                     <div className="flex size-full items-center justify-center">
@@ -217,36 +217,36 @@ function MenuCard({ product }: { product: CustomerMenuProduct }) {
                     {product.name}
                 </h3>
                 {product.description && (
-                    <p className="line-clamp-2 text-xs text-white/50">
+                    <p className="line-clamp-2 text-xs text-neutral-500">
                         {product.description}
                     </p>
                 )}
                 <div className="mt-auto pt-1">
                     {product.sizes.length > 0 ? (
-                        <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/70 sm:text-sm">
+                        <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-700 sm:text-sm">
                             {product.sizes.map((size) => (
                                 <li
                                     key={size.name}
                                     className={
                                         size.available
                                             ? ''
-                                            : 'text-white/35 line-through'
+                                            : 'text-neutral-500 line-through'
                                     }
                                 >
                                     {size.name}{' '}
-                                    <strong className="text-[#f5c542]">
+                                    <strong className="text-amber-800">
                                         {pesos(size.price)}
                                     </strong>
                                 </li>
                             ))}
                         </ul>
                     ) : (
-                        <strong className="text-base text-[#f5c542] sm:text-lg">
+                        <strong className="text-base text-amber-800 sm:text-lg">
                             {pesos(product.price)}
                         </strong>
                     )}
                     {product.has_options && (
-                        <p className="text-[11px] text-white/40">
+                        <p className="text-[11px] text-neutral-500">
                             Add-ons available
                         </p>
                     )}

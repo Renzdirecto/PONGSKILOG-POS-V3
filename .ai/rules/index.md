@@ -26,3 +26,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/{components,layouts}/**/*.{ts,tsx},app/Actions/StoreSessions/**/*.php | .ai/rules/store-sessions.md |
 | {app/Actions/Staff/**,app/Http/Controllers/StaffController.php,app/Http/Requests/StoreStaffRequest.php,resources/js/pages/super-admin/staff.tsx}, app/Support/StaffRoles.php | .ai/rules/super-admin.md |
 | resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |
+| {resources/js/pages/customer-screen.tsx,resources/js/components/customer-screen-*.tsx,resources/js/components/customer-order-board.tsx} | .ai/rules/js-components.md |
+| {app/Http/Controllers/TransactionHistoryController.php,resources/js/pages/workspaces/transaction-history.tsx,resources/js/lib/pos-money.ts} | .ai/rules/lib.md |
+| {app/Http/Controllers/ReportsController.php,resources/js/pages/workspaces/reports.tsx} | .ai/rules/pages-workspaces.md |

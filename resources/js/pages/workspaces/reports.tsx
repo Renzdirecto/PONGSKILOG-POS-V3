@@ -1491,7 +1491,7 @@ function ProductSizes({ sizes }: { sizes: ProductSizeRow[] }) {
 
 /**
  * Why one channel's balance is what it is, from the server's Store Session reconciliation components only:
- * Opening + Collections − Expenses − Corrections − Void reversals = Expected. A CLOSED period also shows the
+ * Opening + net channel collections − Expenses = Expected. A CLOSED period also shows the
  * variance against the amount counted at Close Store; nothing is recalculated here.
  */
 function DrawerLadder({
@@ -1511,11 +1511,17 @@ function DrawerLadder({
     const closing = reconciliation.closing[channel];
     const variance = reconciliation.variance[channel];
     const steps: { label: string; sign: string; value: string }[] = [
-        { label: 'Opening', sign: '', value: reconciliation.opening[channel] },
-        { label: 'Collections', sign: '+', value: summary.payments[channel] },
-        { label: 'Expenses', sign: '−', value: summary.expenses[channel] },
-        { label: 'Corrections', sign: '−', value: summary.corrections[channel] },
-        { label: 'Void reversals', sign: '−', value: summary.voids[channel] },
+        {
+            label: `Opening ${label}`,
+            sign: '',
+            value: reconciliation.opening[channel],
+        },
+        { label: `${label} Sales`, sign: '+', value: summary[channel] },
+        {
+            label: `${label} Expenses`,
+            sign: '−',
+            value: summary.expenses[channel],
+        },
     ];
 
     return (
@@ -1550,9 +1556,7 @@ function DrawerLadder({
                     </div>
                 ))}
                 <div className="flex items-baseline justify-between gap-3 py-1.5">
-                    <dt className="font-semibold">
-                        = {live ? 'Expected now' : 'Expected at close'}
-                    </dt>
+                    <dt className="font-semibold">= Expected {label}</dt>
                     <dd className="font-bold">
                         {expected === null ? 'Not available' : peso(expected)}
                     </dd>
@@ -1667,16 +1671,22 @@ function CalculationDetails({ summary }: { summary: Report['summary'] }) {
                 </span>
                 <DisclosureChevron />
             </summary>
+            <div className="border-t border-[#efefef] px-3 py-2.5">
+                <p className={labelClass}>Total sales</p>
+                <strong className="text-lg tabular-nums">
+                    {peso(summary.net_sales)}
+                </strong>
+            </div>
             <div className="grid gap-2.5 border-t border-[#efefef] px-3 py-2.5 min-[900px]:grid-cols-2">
                 <DrawerLadder
                     channel="cash"
-                    label="Cash balance"
+                    label="Cash"
                     tone="#15803D"
                     summary={summary}
                 />
                 <DrawerLadder
                     channel="cashless"
-                    label="Cashless balance"
+                    label="Cashless"
                     tone="#1D4ED8"
                     summary={summary}
                 />

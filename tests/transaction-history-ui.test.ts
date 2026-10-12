@@ -180,11 +180,11 @@ test('a view-only business viewer gets no cashier pay, void or edit controls', (
     assert.match(page, /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/);
 });
 
-test('a successful edit or settlement returns to the refreshed details, never the list', () => {
-    /** Edit: the server's post-edit transaction becomes the selected detail and the Edit modal closes. */
+test('a successful edit returns to the list while settlement still returns to refreshed details', () => {
+    /** Edit clears selection and invalidates a detail refresh already in flight. */
     assert.match(
         page,
-        /onSaved=\{\(detail\) => \{\s*setSelected\(detail\);\s*setEditing\(false\);\s*refresh\(\);/,
+        /onSaved=\{\(detail\) => \{\s*detailRequest\.current \+= 1;\s*setSelected\(null\);\s*setEditing\(false\);\s*refresh\(\);/,
     );
     /** Settlement re-reads the transaction before showing it again. */
     assert.match(
@@ -195,18 +195,24 @@ test('a successful edit or settlement returns to the refreshed details, never th
         page,
         /onPaid=\{\(detail\) => \{\s*setSelected\(detail\);\s*setSettling\(false\);\s*setResolution\(null\);\s*refresh\(\);/,
     );
-    /** Choosing Later on the balance-resolution step keeps the refreshed details open. */
+    /** Deferring an edited balance also returns to the list. */
     assert.match(
         page,
-        /onLater=\{\(\) => \{\s*setResolution\(null\);\s*setSelected\(resolution\);/,
-    );
-    assert.doesNotMatch(
-        page,
         /onLater=\{\(\) => \{\s*setResolution\(null\);\s*setSelected\(null\);/,
+    );
+    assert.match(
+        page,
+        /if \(request !== detailRequest\.current\) return null;/,
     );
     /** The details dialog is what opens once no action dialog is in the way. */
     assert.match(
         page,
         /open=\{\s*selected !== null &&\s*!editing &&\s*!settling &&\s*!voiding &&\s*!receiptOpen &&\s*resolution === null\s*\}/,
     );
+});
+
+test('History requests the current edit catalog only when opening Edit', () => {
+    assert.match(page, /const openEdit = \(\) => \{[\s\S]*?only: \['catalog'\],[\s\S]*?onSuccess: \(\) => setEditing\(true\)/);
+    assert.match(page, /onEdit=\{openEdit\}/);
+    assert.match(page, /detail \? openEdit\(\) : undefined/);
 });

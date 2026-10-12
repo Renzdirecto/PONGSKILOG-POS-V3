@@ -45,6 +45,26 @@ export function selectedOptions(line: CartLine) {
 }
 
 export function lineCents(line: CartLine): bigint {
+    const committed = line.committedPricing;
+    const selectionKey = (modifiers: CartLine['modifiers']) =>
+        modifiers
+            .map(({ group_id, option_id }) => `${group_id}:${option_id}`)
+            .sort()
+            .join('|');
+    if (
+        committed &&
+        selectionKey(committed.modifiers) === selectionKey(line.modifiers)
+    ) {
+        return (
+            committed.modifiers.reduce(
+                (total, modifier) =>
+                    modifier.semantic_role === 'instruction'
+                        ? total
+                        : total + cents(modifier.price_delta),
+                cents(committed.base_price),
+            ) * BigInt(line.quantity)
+        );
+    }
     return (
         selectedOptions(line).reduce(
             (total, option) =>

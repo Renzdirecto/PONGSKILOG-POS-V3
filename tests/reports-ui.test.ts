@@ -508,14 +508,23 @@ test('Collections & drawer effects is Opening, Expenses then Closing, with the d
         card.indexOf('<CalculationDetails'),
     ];
 
-    assert.ok(rows.every((index) => index > 0), 'every row is rendered');
-    assert.deepEqual(rows, [...rows].sort((a, b) => a - b));
+    assert.ok(
+        rows.every((index) => index > 0),
+        'every row is rendered',
+    );
+    assert.deepEqual(
+        rows,
+        [...rows].sort((a, b) => a - b),
+    );
     assert.match(card, /<div className="grid grid-cols-2 gap-2\.5">/);
     assert.ok(card.includes('label="Opening Cashless"'));
     assert.ok(card.includes("label={closingLabel('Cashless')}"));
     /** Closing Cash is green, Closing Cashless is blue. */
     assert.match(card, /text-\[#15803D\]">\s*\{reconciliation\.closing\.cash/);
-    assert.match(card, /text-\[#1D4ED8\]">\s*\{reconciliation\.closing\.cashless/);
+    assert.match(
+        card,
+        /text-\[#1D4ED8\]">\s*\{reconciliation\.closing\.cashless/,
+    );
     /** The tall per-channel ladder is no longer always visible on the page. */
     assert.doesNotMatch(card, /<DrawerLadder/);
 
@@ -536,17 +545,18 @@ test('Collections & drawer effects is Opening, Expenses then Closing, with the d
     assert.match(calculation, /How was this calculated\?/);
     assert.match(calculation, /<DrawerLadder[\s\S]{0,200}channel="cashless"/);
 
-    /** The backend ladder itself is untouched. */
     const ladder = page.slice(
         page.indexOf('function DrawerLadder('),
         page.indexOf('const disclosureClass ='),
     );
-    assert.deepEqual(
-        [...ladder.matchAll(/label: '([^']+)', sign/g)].map(
-            (match) => match[1],
-        ),
-        ['Opening', 'Collections', 'Expenses', 'Corrections', 'Void reversals'],
+    assert.match(ladder, /value: summary\[channel\]/);
+    assert.doesNotMatch(
+        ladder,
+        /summary\.payments\[channel\]|summary\.corrections\[channel\]|summary\.voids\[channel\]/,
     );
+    assert.doesNotMatch(ladder, /label: 'Corrections'|label: 'Void reversals'/);
+    assert.match(calculation, /Total sales/);
+    assert.match(calculation, /peso\(summary\.net_sales\)/);
     assert.match(ladder, /reconciliation\.expected\[channel\]/);
     assert.match(ladder, /reconciliation\.closing\[channel\]/);
 });

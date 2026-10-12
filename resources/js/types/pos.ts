@@ -16,6 +16,16 @@ export type CartLine = {
     quantity: number;
     notes: string;
     modifiers: { group_id: string; option_id: string }[];
+    /** Display-only committed pricing; edit requests still send IDs for server validation. */
+    committedPricing?: {
+        base_price: string;
+        modifiers: {
+            group_id: string;
+            option_id: string;
+            price_delta: string;
+            semantic_role?: 'size' | 'instruction' | null;
+        }[];
+    };
 };
 export type OrderSummary = {
     id: string;

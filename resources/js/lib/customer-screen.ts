@@ -234,8 +234,18 @@ const ORDER_TYPE_TONES: Record<OrderType, OrderTypeTone> = {
     },
 };
 
-export function orderTypeTone(type: OrderType): OrderTypeTone {
-    return ORDER_TYPE_TONES[type];
+export function orderTypeTone(type: OrderType, light = false): OrderTypeTone {
+    const tone = ORDER_TYPE_TONES[type];
+    return light
+        ? {
+              ...tone,
+              tint:
+                  type === 'dine_in'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                      : 'border-blue-200 bg-blue-50 text-blue-900',
+              text: type === 'dine_in' ? 'text-emerald-700' : 'text-blue-700',
+          }
+        : tone;
 }
 
 /**

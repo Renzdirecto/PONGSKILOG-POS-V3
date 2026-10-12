@@ -45,20 +45,20 @@ export function CustomerScreenOrderSummary({
         <section
             aria-label="Your order"
             aria-live="polite"
-            className="animate-in fade-in flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,#1d1e1f_0%,#0f1010_65%)] duration-300"
+            className="animate-in fade-in flex min-h-0 flex-1 flex-col bg-white duration-300"
         >
-            <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/10 px-5 py-4 sm:px-8 sm:py-5">
-                <ShoppingBag className="size-7 text-[#f5c542] sm:size-8" />
+            <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-200 px-5 py-4 sm:px-8 sm:py-5">
+                <ShoppingBag className="size-7 text-amber-800 sm:size-8" />
                 <h2 className="text-[clamp(22px,4vmin,40px)] font-black tracking-tight">
                     Your order
                 </h2>
                 {cart.order_type && (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3.5 py-1 text-xs font-black tracking-[0.14em] sm:text-sm">
+                    <span className="rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-black tracking-[0.14em] sm:text-sm">
                         {orderTypeText(cart.order_type)}
                     </span>
                 )}
                 {!live && (
-                    <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-300">
+                    <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-800">
                         May not be up to date
                     </span>
                 )}
@@ -77,14 +77,14 @@ export function CustomerScreenOrderSummary({
                                 {line.name}
                             </p>
                             {line.details.length > 0 && (
-                                <p className="mt-1 text-[clamp(13px,2vmin,19px)] text-white/60">
+                                <p className="mt-1 text-[clamp(13px,2vmin,19px)] text-neutral-600">
                                     {line.details
                                         .map((detail) => `+ ${detail}`)
                                         .join(' · ')}
                                 </p>
                             )}
                             {line.instructions.length > 0 && (
-                                <p className="mt-1 text-[clamp(13px,2vmin,19px)] text-[#f5c542]/85">
+                                <p className="mt-1 text-[clamp(13px,2vmin,19px)] text-amber-800/85">
                                     {line.instructions.join(' · ')}
                                 </p>
                             )}
@@ -95,15 +95,15 @@ export function CustomerScreenOrderSummary({
                     </li>
                 ))}
             </ul>
-            <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-white/10 bg-black/30 px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:px-8 sm:py-5">
-                <span className="text-sm text-white/60 tabular-nums sm:text-lg">
+            <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-neutral-200 bg-amber-50 px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:px-8 sm:py-5">
+                <span className="text-sm text-neutral-600 tabular-nums sm:text-lg">
                     {cart.item_count} {cart.item_count === 1 ? 'item' : 'items'}
                 </span>
                 <span className="flex items-baseline gap-3">
-                    <span className="text-sm font-bold tracking-[0.18em] text-white/60 uppercase sm:text-base">
+                    <span className="text-sm font-bold tracking-[0.18em] text-neutral-600 uppercase sm:text-base">
                         Total
                     </span>
-                    <strong className="text-[clamp(28px,6vmin,64px)] leading-none font-black text-[#f5c542] tabular-nums">
+                    <strong className="text-[clamp(28px,6vmin,64px)] leading-none font-black text-amber-800 tabular-nums">
                         {pesos(cart.total)}
                     </strong>
                 </span>

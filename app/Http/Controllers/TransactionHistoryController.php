@@ -33,12 +33,12 @@ class TransactionHistoryController extends Controller
         $access->authorize($user, $branch);
 
         return Inertia::render('workspaces/transaction-history', [
-            ...$history->for($branch, $request->validated(), $branch),
+            ...$this->historyProps($history, $branch, $request->validated(), $branch),
             'filters' => $request->safe()->except('page'),
             'surface' => 'pos',
             'scope' => $branch->only(['id', 'name', 'code']),
             'operational' => true,
-            'catalog' => fn () => $catalog->browse($branch, true),
+            'catalog' => Inertia::optional(fn () => $catalog->browse($branch, true)),
             'tables' => fn () => $branch->tables()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
         ]);
     }
@@ -61,14 +61,31 @@ class TransactionHistoryController extends Controller
         $operational = $this->operationalBranch($user, $branch, $access);
 
         return Inertia::render('workspaces/transaction-history', [
-            ...$history->for($branch, $request->validated(), $operational),
+            ...$this->historyProps($history, $branch, $request->validated(), $operational),
             'filters' => $request->safe()->except('page'),
             'surface' => 'business',
             'scope' => $branch?->only(['id', 'name', 'code']),
             'operational' => $operational !== null,
-            'catalog' => $operational === null ? null : fn () => $catalog->browse($operational, true),
+            'catalog' => $operational === null ? null : Inertia::optional(fn () => $catalog->browse($operational, true)),
             'tables' => $operational === null ? [] : fn () => $operational->tables()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
         ]);
+    }
+
+    /** @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function historyProps(TransactionHistory $history, ?Branch $branch, array $filters, ?Branch $mutableBranch): array
+    {
+        $result = null;
+        $resolve = function () use (&$result, $history, $branch, $filters, $mutableBranch): array {
+            return $result ??= $history->for($branch, $filters, $mutableBranch);
+        };
+
+        return [
+            'transactions' => fn () => $resolve()['transactions'],
+            'history_total' => fn () => $resolve()['history_total'],
+            'metrics' => fn () => $resolve()['metrics'],
+        ];
     }
 
     public function show(Request $request, Order $order, ActiveBranchContext $context, PosAccess $access, TransactionProjection $projection, PosReceipt $receipt): JsonResponse

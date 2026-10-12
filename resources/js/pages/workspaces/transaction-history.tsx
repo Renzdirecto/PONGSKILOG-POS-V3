@@ -54,7 +54,10 @@ import { stockAvailabilityLabel } from '@/lib/pos-order';
 import { update as updateKitchenStatus } from '@/routes/orders/kitchen-status';
 import { store as settle } from '@/routes/pos/orders/settlements';
 import { show, update, voidMethod } from '@/routes/pos/transactions';
-import { transactionHistory, transactions as businessTransactions } from '@/routes/workspaces';
+import {
+    transactionHistory,
+    transactions as businessTransactions,
+} from '@/routes/workspaces';
 import { show as showBusiness } from '@/routes/workspaces/transactions';
 import type { Auth, BranchContext } from '@/types';
 import type { CashierCatalog } from '@/types/catalog';
@@ -191,7 +194,7 @@ type Props = {
     surface: 'pos' | 'business';
     scope: { id: string; name: string; code: string } | null;
     operational: boolean;
-    catalog: CashierCatalog | null;
+    catalog?: CashierCatalog | null;
     tables: BranchTable[];
 };
 
@@ -261,6 +264,7 @@ export default function TransactionHistory({
         }
     });
     const [selected, setSelected] = useState<Detail | null>(null);
+    const detailRequest = useRef(0);
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
     const [settling, setSettling] = useState(false);
@@ -305,6 +309,14 @@ export default function TransactionHistory({
 
     const refresh = () =>
         router.reload({ only: ['transactions', 'history_total', 'metrics'] });
+    const openEdit = () => {
+        setLoading(true);
+        router.reload({
+            only: ['catalog'],
+            onSuccess: () => setEditing(true),
+            onFinish: () => setLoading(false),
+        });
+    };
     const onRealtimeEvent = (event: Record<string, unknown>) => {
         const orderId = event.order_id ?? event.entity_id;
 
@@ -318,13 +330,19 @@ export default function TransactionHistory({
     useEffect(() => {
         if (openRequested.current) return;
         openRequested.current = true;
-        const requested = new URL(window.location.href).searchParams.get('open');
-        if (requested && transactions.data.some((item) => item.id === requested)) {
+        const requested = new URL(window.location.href).searchParams.get(
+            'open',
+        );
+        if (
+            requested &&
+            transactions.data.some((item) => item.id === requested)
+        ) {
             void loadDetail(requested);
         }
     }, []);
 
     async function loadDetail(id: string): Promise<Detail | null> {
+        const request = ++detailRequest.current;
         setLoading(true);
         try {
             const response = await http.getClient().request({
@@ -334,6 +352,7 @@ export default function TransactionHistory({
             const detail = (
                 JSON.parse(response.data) as { transaction: Detail }
             ).transaction;
+            if (request !== detailRequest.current) return null;
             setSelected(detail);
             return detail;
         } catch {
@@ -616,7 +635,7 @@ export default function TransactionHistory({
                             onDetails={() => void loadDetail(item.id)}
                             onEdit={() =>
                                 void loadDetail(item.id).then((detail) =>
-                                    detail ? setEditing(true) : undefined,
+                                    detail ? openEdit() : undefined,
                                 )
                             }
                             onPayment={() =>
@@ -687,7 +706,7 @@ export default function TransactionHistory({
                     resolution === null
                 }
                 onClose={() => setSelected(null)}
-                onEdit={() => setEditing(true)}
+                onEdit={openEdit}
                 onSettle={() => setSettling(true)}
                 onVoid={() => setVoiding(true)}
                 onPrint={() => setReceiptOpen(true)}
@@ -704,7 +723,8 @@ export default function TransactionHistory({
                         setSelected(null);
                     }}
                     onSaved={(detail) => {
-                        setSelected(detail);
+                        detailRequest.current += 1;
+                        setSelected(null);
                         setEditing(false);
                         refresh();
                         if (
@@ -749,10 +769,10 @@ export default function TransactionHistory({
             {resolution && (
                 <BalanceResolutionDialog
                     detail={resolution}
-                    /** Choosing Later returns to the refreshed Details, never to the history list. */
+                    /** Deferring the edited balance returns to the refreshed list. */
                     onLater={() => {
                         setResolution(null);
-                        setSelected(resolution);
+                        setSelected(null);
                     }}
                     onNow={() => {
                         setSelected(resolution);
@@ -1969,8 +1989,6 @@ function VoidDialog({
 
 type EditLine = CartLine & {
     existingOrderItemId?: string;
-    committedUnitPrice?: string;
-    committedModifierKey?: string;
 };
 
 function EditDialog({
@@ -2021,15 +2039,17 @@ function EditDialog({
                           quantity: item.quantity,
                           notes: item.notes ?? '',
                           modifiers,
-                          committedUnitPrice: item.unit_price,
-                          committedModifierKey: modifierKey(modifiers),
+                          committedPricing: {
+                              base_price: item.unit_price,
+                              modifiers: item.modifiers,
+                          },
                       },
                   ]
                 : [];
         }),
     );
     const totalCents = lines.reduce(
-        (total, line) => total + editLineCents(line),
+        (total, line) => total + lineCents(line),
         0n,
     );
     const total = centsDecimal(totalCents);
@@ -2647,10 +2667,8 @@ function EditDialog({
                                                 ...saved,
                                                 existingOrderItemId:
                                                     line.existingOrderItemId,
-                                                committedUnitPrice:
-                                                    line.committedUnitPrice,
-                                                committedModifierKey:
-                                                    line.committedModifierKey,
+                                                committedPricing:
+                                                    line.committedPricing,
                                             }
                                           : line,
                                   )
@@ -2732,7 +2750,7 @@ function EditLineRow({
                 </button>
             </div>
             <strong className="col-start-1 row-start-3 text-left text-[13px] tabular-nums sm:col-start-auto sm:row-auto sm:text-right">
-                {pesos(editLineCents(line))}
+                {pesos(lineCents(line))}
             </strong>
             <button
                 type="button"
@@ -3037,26 +3055,6 @@ function shortRange(from?: string, to?: string) {
         return `${first.getDate()}–${second.getDate()} ${month.format(first)}`;
     }
     return `${first.getDate()} ${month.format(first)}–${second.getDate()} ${month.format(second)}`;
-}
-
-function modifierKey(modifiers: CartLine['modifiers']) {
-    return modifiers
-        .map((modifier) => modifier.option_id)
-        .sort()
-        .join('|');
-}
-
-function editLineCents(line: EditLine): bigint {
-    if (
-        line.committedUnitPrice &&
-        line.committedModifierKey === modifierKey(line.modifiers)
-    ) {
-        return (
-            BigInt(Math.round(Number(line.committedUnitPrice) * 100)) *
-            BigInt(line.quantity)
-        );
-    }
-    return lineCents(line);
 }
 
 function centsDecimal(value: bigint): string {

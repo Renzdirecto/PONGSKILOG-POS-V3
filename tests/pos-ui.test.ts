@@ -40,6 +40,18 @@ test('POS product images cover card media while detail images remain contained',
     assert.match(productMedia, /detail \? 'object-contain' : 'object-cover'/);
 });
 
+test('POS image failures are scoped to their URL so a replacement or renewed URL can load', () => {
+    const productMedia = readFileSync(
+        new URL('../resources/js/components/pos-product-media.tsx', import.meta.url),
+        'utf8',
+    );
+
+    assert.match(productMedia, /failedUrl !== product\.image_url/);
+    assert.match(productMedia, /onError=\{\(\) => setFailedUrl\(product\.image_url\)\}/);
+    assert.match(productMedia, /loading="lazy"/);
+    assert.match(productMedia, /decoding="async"/);
+});
+
 test('Store Session detail rows render persisted opening money and Manila time', () => {
     assert.deepEqual(openStoreSessionDialogState(), {
         open: true,

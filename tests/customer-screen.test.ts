@@ -534,17 +534,20 @@ test('Dine In is green and Take Out is blue on the customer-facing queue, always
     const board = source('components/customer-order-board.tsx');
     /** Color is never the only cue: rows and board numbers keep DINE IN / TAKE OUT, the own row says YOU. */
     assert.match(takeoverView, /orderTypeText\(row\.order_type\)/);
-    assert.match(takeoverView, /orderTypeTone\(row\.order_type\)/);
+    assert.match(takeoverView, /orderTypeTone\(row\.order_type, true\)/);
     assert.match(takeoverView, /row\.current \?[\s\S]*ring-4 ring-white/);
     assert.match(takeoverView, />\s*YOU\s*</);
     assert.match(board, /orderTypeText\(order_type\)/);
-    assert.match(board, /orderTypeTone\(order_type\)/);
+    assert.match(board, /orderTypeTone\(order_type, light\)/);
 });
 
 test('the board’s Dine In / Take Out counts come from the server and nothing re-derives the queue in React', () => {
     const board = source('components/customer-order-board.tsx');
     const takeoverView = source('components/customer-screen-takeover.tsx');
-    assert.match(board, /<QueueCounts counts=\{display\.counts\} \/>/);
+    assert.match(
+        board,
+        /<QueueCounts counts=\{display\.counts\} light=\{light\} \/>/,
+    );
     assert.match(board, /\{type === 'dine_in' \? 'Dine In' : 'Take Out'\}:/);
     assert.match(board, /\{counts\[type\]\}/);
     for (const view of [board, takeoverView]) {
@@ -555,4 +558,33 @@ test('the board’s Dine In / Take Out counts come from the server and nothing r
     }
     /** The takeover never ranks orders itself: positions are read from the server rows. */
     assert.doesNotMatch(takeoverView, /position:\s*(index|i)\s*\+/);
+});
+
+test('paired screen offers a confirmed device reset and a light rectangular menu', () => {
+    const page = source('pages/customer-screen.tsx');
+    const header = source('components/customer-screen-header.tsx');
+    const menu = source('components/customer-screen-menu.tsx');
+    assert.match(header, /onClick=\{onDevice\}/);
+    assert.match(header, /aria-label="Device controls"/);
+    assert.match(page, /setDeviceOpen\(true\)/);
+    assert.match(page, /<Dialog\s+open=\{deviceOpen\}/);
+    assert.match(page, /role=\{confirmUnpair \? 'alertdialog' : 'dialog'\}/);
+    assert.match(page, /Unpair Device/);
+    assert.match(
+        page,
+        /confirmUnpair\s*\? void resetDevice\(\)\s*: setConfirmUnpair\(true\)/,
+    );
+    assert.match(page, /await qrRequest\(resetRoute\(\)\)/);
+    assert.doesNotMatch(page, /qrRequest\(resetRoute\(\),/);
+    assert.match(page, /bg-white[^"\n]*text-neutral-950 select-none/);
+    assert.match(menu, /aspect-\[16\/10\]/);
+    assert.match(menu, /size-full object-contain/);
+    assert.match(
+        orderTypeTone('dine_in', true).tint,
+        /bg-emerald-50 text-emerald-900/,
+    );
+    assert.match(
+        orderTypeTone('take_out', true).tint,
+        /bg-blue-50 text-blue-900/,
+    );
 });

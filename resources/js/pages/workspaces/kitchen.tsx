@@ -112,9 +112,10 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     const [updatedOrderIds, setUpdatedOrderIds] = useState<Set<string>>(
         () => new Set(),
     );
-    /** Done closes a ticket for the shift, so it is confirmed before the authoritative transition is sent. */
-    const [doneConfirmation, setDoneConfirmation] =
-        useState<KitchenTicket | null>(null);
+    const [confirmation, setConfirmation] = useState<{
+        ticket: KitchenTicket;
+        status: 'ready' | 'done';
+    } | null>(null);
     const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
@@ -123,7 +124,9 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                 const orderId =
                     typeof event.order_id === 'string' ? event.order_id : null;
                 if (orderId) {
-                    setUpdatedOrderIds((current) => new Set(current).add(orderId));
+                    setUpdatedOrderIds((current) =>
+                        new Set(current).add(orderId),
+                    );
                 }
                 return;
             }
@@ -215,19 +218,21 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     }, [focusView]);
 
     useEffect(() => {
-        if (doneConfirmation === null) return;
+        if (confirmation === null) return;
         const dismiss = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setDoneConfirmation(null);
+            if (event.key === 'Escape') setConfirmation(null);
         };
         window.addEventListener('keydown', dismiss);
         return () => window.removeEventListener('keydown', dismiss);
-    }, [doneConfirmation]);
+    }, [confirmation]);
 
     /** A ticket that left the board (voided, reloaded away) must not keep a confirmation open. */
     useEffect(() => {
-        setDoneConfirmation((current) =>
+        setConfirmation((current) =>
             current === null ||
-            kitchenBoard.tickets.some((ticket) => ticket.id === current.id)
+            kitchenBoard.tickets.some(
+                (ticket) => ticket.id === current.ticket.id,
+            )
                 ? current
                 : null,
         );
@@ -413,20 +418,23 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                 }
                                 updated={updatedOrderIds.has(ticket.id)}
                                 onTransition={transition}
-                                onConfirmDone={setDoneConfirmation}
+                                onConfirm={(ticket, status) =>
+                                    setConfirmation({ ticket, status })
+                                }
                             />
                         ))}
                     </main>
                 )}
 
-                {doneConfirmation && (
-                    <DoneConfirmation
-                        ticket={doneConfirmation}
-                        onCancel={() => setDoneConfirmation(null)}
+                {confirmation && (
+                    <StatusConfirmation
+                        ticket={confirmation.ticket}
+                        status={confirmation.status}
+                        onCancel={() => setConfirmation(null)}
                         onConfirm={() => {
-                            const ticket = doneConfirmation;
-                            setDoneConfirmation(null);
-                            transition(ticket, 'done');
+                            const { ticket, status } = confirmation;
+                            setConfirmation(null);
+                            transition(ticket, status);
                         }}
                     />
                 )}
@@ -466,7 +474,7 @@ function TicketCard({
     disabled,
     updated,
     onTransition,
-    onConfirmDone,
+    onConfirm,
 }: {
     ticket: KitchenTicket;
     compact: boolean;
@@ -474,12 +482,12 @@ function TicketCard({
     disabled: boolean;
     updated: boolean;
     onTransition: (ticket: KitchenTicket, status: KitchenStatus) => void;
-    onConfirmDone: (ticket: KitchenTicket) => void;
+    onConfirm: (ticket: KitchenTicket, status: 'ready' | 'done') => void;
 }) {
     return (
         <article
             aria-busy={disabled}
-            className={`overflow-hidden rounded-[14px] border border-t-[3px] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
+            className={`overflow-hidden rounded-[14px] border border-t-[3px] shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
         >
             {/*
               * Landscape phones are the production KDS: the order number is the smaller part of the title, the
@@ -571,8 +579,8 @@ function TicketCard({
                             type="button"
                             disabled={disabled || current || !allowed}
                             onClick={() =>
-                                status === 'done'
-                                    ? onConfirmDone(ticket)
+                                status === 'ready' || status === 'done'
+                                    ? onConfirm(ticket, status)
                                     : onTransition(ticket, status)
                             }
                             className={`min-h-11 min-w-0 truncate rounded-[8px] border px-1 text-[10.5px] font-bold uppercase transition sm:text-[11px] ${current ? statusButtonClass(status) : allowed ? 'border-[#c9c9c9] bg-white text-[#111] hover:border-[#949494]' : 'border-[#ededed] bg-white text-[#c9c9c9]'}`}
@@ -589,15 +597,17 @@ function TicketCard({
 }
 
 /**
- * Marking a ticket Done is confirmed first. It is rendered inside the board surface rather than through a portal so
+ * Ready and Done are confirmed first. Render inside the board surface so
  * it stays visible while the KDS is in native full screen, and the authoritative transition runs only on confirm.
  */
-function DoneConfirmation({
+function StatusConfirmation({
     ticket,
+    status,
     onCancel,
     onConfirm,
 }: {
     ticket: KitchenTicket;
+    status: 'ready' | 'done';
     onCancel: () => void;
     onConfirm: () => void;
 }) {
@@ -609,17 +619,21 @@ function DoneConfirmation({
             <div
                 role="alertdialog"
                 aria-modal="true"
-                aria-labelledby="kitchen-done-title"
+                aria-labelledby="kitchen-confirmation-title"
                 onClick={(event) => event.stopPropagation()}
                 className="w-full max-w-sm rounded-2xl bg-white p-5 text-[#111] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
             >
-                <h2 id="kitchen-done-title" className="text-base font-black">
-                    Are you sure you want to mark this order as Done?
+                <h2
+                    id="kitchen-confirmation-title"
+                    className="text-base font-black"
+                >
+                    Are you sure you want to mark this order as{' '}
+                    {statusLabel(status)}?
                 </h2>
                 <p className="mt-1.5 text-sm text-neutral-600">
                     #{ticket.number}
-                    {ticket.customer ? ` · ${ticket.customer}` : ''} leaves the
-                    active board and moves to Done.
+                    {ticket.customer ? ` · ${ticket.customer}` : ''} moves to{' '}
+                    {statusLabel(status)}.
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
@@ -635,7 +649,7 @@ function DoneConfirmation({
                         onClick={onConfirm}
                         className="min-h-12 rounded-xl bg-[#15803d] text-sm font-bold text-white transition hover:bg-[#166534]"
                     >
-                        Done
+                        {statusLabel(status)}
                     </button>
                 </div>
             </div>
@@ -674,8 +688,8 @@ function activeCountClass(tab: 'all' | KitchenStatus): string {
 
 function ticketCardClass(type: KitchenTicket['order_type']): string {
     return type === 'dine_in'
-        ? 'border-[#bbf7d0] border-t-[#15803d]'
-        : 'border-[#bfdbfe] border-t-[#1d4ed8]';
+        ? 'border-[#bbf7d0] border-t-[#15803d] bg-[#f0fdf4]'
+        : 'border-[#bfdbfe] border-t-[#1d4ed8] bg-[#eff6ff]';
 }
 
 function ticketHeaderClass(type: KitchenTicket['order_type']): string {

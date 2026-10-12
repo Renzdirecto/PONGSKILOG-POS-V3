@@ -247,7 +247,7 @@ test('KDS renders one-row controls and split ticket timing', () => {
     assert.doesNotMatch(kitchenPage, /<span>Status<\/span>/);
 });
 
-test('Done is confirmed before the authoritative transition and other statuses are not', () => {
+test('Ready and Done share the confirmation before the authoritative transition', () => {
     const kitchenPage = readFileSync(
         new URL(
             '../resources/js/pages/workspaces/kitchen.tsx',
@@ -255,27 +255,27 @@ test('Done is confirmed before the authoritative transition and other statuses a
         ),
         'utf8',
     );
-
     assert.match(
         kitchenPage,
-        /status === 'done'\s*\?\s*onConfirmDone\(ticket\)\s*:\s*onTransition\(ticket, status\)/,
+        /status === 'ready' \|\| status === 'done'\s*\?\s*onConfirm\(ticket, status\)\s*:\s*onTransition\(ticket, status\)/,
     );
     assert.match(
         kitchenPage,
-        /Are you sure you want to mark this order as Done\?/,
+        /Are you sure you want to mark this order as\{' '\}\s*\{statusLabel\(status\)\}\?/,
     );
     assert.match(kitchenPage, /role="alertdialog"/);
-    assert.match(kitchenPage, /onClick=\{onCancel\}[\s\S]{0,400}Cancel/);
+    assert.match(kitchenPage, /onCancel=\{\(\) => setConfirmation\(null\)\}/);
     assert.match(
         kitchenPage,
-        /bg-\[#15803d\][\s\S]{0,120}>\s*Done\s*<\/button>/,
+        /setConfirmation\(null\);\s*transition\(ticket, status\);/,
     );
     assert.match(
         kitchenPage,
-        /setDoneConfirmation\(null\);\s*transition\(ticket, 'done'\);/,
+        /bg-\[#15803d\][\s\S]{0,140}>\s*\{statusLabel\(status\)\}/,
     );
-    /** Rendered inside the board surface so it is visible while the KDS is in native full screen. */
     assert.doesNotMatch(kitchenPage, /from '@\/components\/ui\/dialog'/);
+    assert.match(kitchenPage, /border-t-\[#15803d\] bg-\[#f0fdf4\]/);
+    assert.match(kitchenPage, /border-t-\[#1d4ed8\] bg-\[#eff6ff\]/);
 });
 
 test('operational sidebar stays visible on iPad Mini and floating navigation is phone only', () => {
@@ -301,7 +301,10 @@ test('operational sidebar stays visible on iPad Mini and floating navigation is 
         workspaceLayout,
         /pb-\[calc\(max\(12px,env\(safe-area-inset-bottom\)\)\+64px\)\] md:pb-0/,
     );
-    assert.match(kitchenPage, /grid-cols-1 md:grid-cols-2 min-\[1180px\]:grid-cols-3/);
+    assert.match(
+        kitchenPage,
+        /grid-cols-1 md:grid-cols-2 min-\[1180px\]:grid-cols-3/,
+    );
     assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });
 
@@ -318,18 +321,39 @@ test('Vite keeps hot assets and generated development font URLs on one fixed ser
 
 test('Kitchen full screen falls back to a fixed focus view where the Fullscreen API is missing, with the round logo', () => {
     const kitchen = readFileSync(
-        new URL('../resources/js/pages/workspaces/kitchen.tsx', import.meta.url),
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
         'utf8',
     );
     const layout = readFileSync(
-        new URL('../resources/js/layouts/workspace-layout.tsx', import.meta.url),
+        new URL(
+            '../resources/js/layouts/workspace-layout.tsx',
+            import.meta.url,
+        ),
         'utf8',
     );
-    assert.match(kitchen, /const fullscreen = nativeFullscreen \|\| focusView;/);
-    assert.match(kitchen, /if \(!fullscreenSupported\(document\)\) \{\s*setFocusView\(true\);/);
+    assert.match(
+        kitchen,
+        /const fullscreen = nativeFullscreen \|\| focusView;/,
+    );
+    assert.match(
+        kitchen,
+        /if \(!fullscreenSupported\(document\)\) \{\s*setFocusView\(true\);/,
+    );
     assert.match(kitchen, /catch \{\s*setFocusView\(true\);/);
     assert.match(kitchen, /event\.key === 'Escape'\) setFocusView\(false\)/);
-    assert.match(kitchen, /\{fullscreen && \(\s*<img\s+src="\/images\/branding\/logo\.png"[\s\S]*?rounded-full/);
-    assert.match(kitchen, /min-h-11 min-w-0 truncate rounded-\[8px\] border px-1 text-\[10\.5px\]/);
-    assert.match(layout, /className="theme-static size-9 shrink-0 rounded-full bg-\[#111\] object-contain p-1 md:hidden"/);
+    assert.match(
+        kitchen,
+        /\{fullscreen && \(\s*<img\s+src="\/images\/branding\/logo\.png"[\s\S]*?rounded-full/,
+    );
+    assert.match(
+        kitchen,
+        /min-h-11 min-w-0 truncate rounded-\[8px\] border px-1 text-\[10\.5px\]/,
+    );
+    assert.match(
+        layout,
+        /className="theme-static size-9 shrink-0 rounded-full bg-\[#111\] object-contain p-1 md:hidden"/,
+    );
 });

@@ -9,18 +9,19 @@ export function PosProductMedia({
     product: Pick<PosProduct, 'name' | 'category_name' | 'image_url'>;
     detail?: boolean;
 }) {
-    const [failed, setFailed] = useState(false);
+    const [failedUrl, setFailedUrl] = useState<string | null>(null);
     const Icon = /drink|coffee|beverage/i.test(product.category_name)
         ? Coffee
         : /silog|meal|rice/i.test(product.category_name)
           ? UtensilsCrossed
           : Grid2X2;
-    return product.image_url && !failed ? (
+    return product.image_url && failedUrl !== product.image_url ? (
         <img
             src={product.image_url}
             alt={product.name}
             loading="lazy"
-            onError={() => setFailed(true)}
+            decoding="async"
+            onError={() => setFailedUrl(product.image_url)}
             className={`h-full w-full ${detail ? 'object-contain' : 'object-cover'}`}
         />
     ) : detail ? (

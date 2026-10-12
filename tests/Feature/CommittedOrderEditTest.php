@@ -9,11 +9,14 @@ use App\Models\Branch;
 use App\Models\BranchInventory;
 use App\Models\BranchProduct;
 use App\Models\BranchTable;
+use App\Models\ModifierGroup;
+use App\Models\ModifierOption;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
+use App\Support\ActiveBranchContext;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -164,3 +167,51 @@ test('stale and closed-session edits are rejected without side effects', functio
     expect($order->fresh()->total)->toBe('100.00')->and($this->balance->fresh()->on_hand)->toBe(9);
     expect(AuditLog::query()->where('action', 'committed_order_edited')->count())->toBe(0);
 })->with(['stale', 'closed']);
+
+test('History size edits preserve committed pricing and recompute changed sizes with exact balances and refunds', function () {
+    $this->product->update(['name' => 'Lemon Yakult', 'default_price' => '50.00']);
+    $group = ModifierGroup::factory()->create(['name' => 'Size', 'semantic_role' => 'size', 'min_select' => 1]);
+    $medium = ModifierOption::factory()->for($group)->create(['name' => 'Medium', 'price_delta' => '10.00']);
+    $large = ModifierOption::factory()->for($group)->create(['name' => 'Large', 'price_delta' => '20.00']);
+    $this->product->modifierGroups()->attach($group);
+    $draft = app(CreatePosDraftOrder::class)->execute($this->cashier, $this->branch, [
+        'order_type' => 'take_out', 'items' => [[
+            'product_id' => $this->product->id, 'quantity' => 1, 'modifiers' => [['group_id' => $group->id, 'option_id' => $medium->id]],
+        ]],
+    ]);
+    $order = app(CommitPayLaterOrder::class)->execute($this->cashier, $this->branch, $draft, ['idempotency_key' => (string) Str::uuid()]);
+    app(SettlePayLaterOrder::class)->execute($this->cashier, $this->branch, $order, [
+        'idempotency_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'cash_received' => '60.00', 'cashless_amount' => null,
+    ]);
+    $this->actingAs($this->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $this->branch->id]);
+    $this->getJson(route('pos.transactions.show', $order))->assertOk()
+        ->assertJsonPath('transaction.total', '60.00')->assertJsonPath('transaction.items.0.unit_price', '50.00')
+        ->assertJsonPath('transaction.items.0.modifiers.0.price_delta', '10.00')->assertJsonPath('transaction.items.0.line_total', '60.00');
+    $edit = function (ModifierOption $option) use ($order, $group) {
+        $current = $order->fresh();
+
+        return $this->patchJson(route('pos.transactions.update', $order), [
+            'idempotency_key' => (string) Str::uuid(), 'expected_version' => $current->version, 'order_type' => 'take_out',
+            'items' => [[
+                'existing_order_item_id' => $current->items()->sole()->id, 'product_id' => $this->product->id, 'quantity' => 1,
+                'unit_price' => '0.00', 'modifiers' => [['group_id' => $group->id, 'option_id' => $option->id, 'price_delta' => '0.00']],
+            ]],
+        ])->assertOk();
+    };
+
+    $this->product->update(['default_price' => '55.00']);
+    $medium->update(['price_delta' => '15.00']);
+    $edit($medium)->assertJsonPath('transaction.total', '60.00')->assertJsonPath('transaction.outstanding', '0.00');
+    expect($order->adjustments()->count())->toBe(0);
+    $edit($large)->assertJsonPath('transaction.total', '75.00')->assertJsonPath('transaction.outstanding', '15.00');
+    app(SettlePayLaterOrder::class)->execute($this->cashier, $this->branch, $order->fresh(), [
+        'idempotency_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'cash_received' => '15.00', 'cashless_amount' => null,
+    ]);
+    $edit($medium)->assertJsonPath('transaction.total', '70.00')->assertJsonPath('transaction.outstanding', '0.00')
+        ->assertJsonPath('transaction.adjustment_total', '5.00');
+    $edit($medium)->assertJsonPath('transaction.total', '70.00')->assertJsonPath('transaction.adjustment_total', '5.00');
+
+    expect($order->payments()->count())->toBe(2)->and($order->payments()->sum('amount'))->toEqual(75)
+        ->and($order->adjustments()->sole()->cash_amount)->toBe('5.00')
+        ->and($this->balance->fresh()->on_hand)->toBe(9);
+});

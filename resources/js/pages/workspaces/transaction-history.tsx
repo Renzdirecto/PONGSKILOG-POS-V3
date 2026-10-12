@@ -267,6 +267,7 @@ export default function TransactionHistory({
     const detailRequest = useRef(0);
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
+    const [editLoading, setEditLoading] = useState(false);
     const [settling, setSettling] = useState(false);
     const [voiding, setVoiding] = useState(false);
     const [receiptOpen, setReceiptOpen] = useState(false);
@@ -309,14 +310,38 @@ export default function TransactionHistory({
 
     const refresh = () =>
         router.reload({ only: ['transactions', 'history_total', 'metrics'] });
-    const openEdit = () => {
-        setLoading(true);
+    async function openEdit(id: string) {
+        setEditing(true);
+        setEditLoading(true);
+        setSelected(null);
+        const pendingDetail = loadDetail(id, false);
+        const request = detailRequest.current;
+        const detail = await pendingDetail;
+        if (request !== detailRequest.current) return;
+        if (!detail) {
+            setEditing(false);
+            setEditLoading(false);
+            return;
+        }
+        let catalogLoaded = false;
         router.reload({
             only: ['catalog'],
-            onSuccess: () => setEditing(true),
-            onFinish: () => setLoading(false),
+            onSuccess: (page) => {
+                if (request !== detailRequest.current || !page.props.catalog)
+                    return;
+                catalogLoaded = true;
+                setSelected(detail);
+                setEditLoading(false);
+            },
+            onFinish: () => {
+                if (request !== detailRequest.current || catalogLoaded) return;
+                setSelected(null);
+                setEditing(false);
+                setEditLoading(false);
+                toast.error('The edit catalog could not be loaded.');
+            },
         });
-    };
+    }
     const onRealtimeEvent = (event: Record<string, unknown>) => {
         const orderId = event.order_id ?? event.entity_id;
 
@@ -341,7 +366,10 @@ export default function TransactionHistory({
         }
     }, []);
 
-    async function loadDetail(id: string): Promise<Detail | null> {
+    async function loadDetail(
+        id: string,
+        select = true,
+    ): Promise<Detail | null> {
         const request = ++detailRequest.current;
         setLoading(true);
         try {
@@ -353,7 +381,7 @@ export default function TransactionHistory({
                 JSON.parse(response.data) as { transaction: Detail }
             ).transaction;
             if (request !== detailRequest.current) return null;
-            setSelected(detail);
+            if (select) setSelected(detail);
             return detail;
         } catch {
             toast.error('Transaction details could not be loaded.');
@@ -633,11 +661,7 @@ export default function TransactionHistory({
                             compact={view === 'list'}
                             readOnly={!operational}
                             onDetails={() => void loadDetail(item.id)}
-                            onEdit={() =>
-                                void loadDetail(item.id).then((detail) =>
-                                    detail ? openEdit() : undefined,
-                                )
-                            }
+                            onEdit={() => void openEdit(item.id)}
                             onPayment={() =>
                                 void loadDetail(item.id).then((detail) =>
                                     detail ? setSettling(true) : undefined,
@@ -706,13 +730,31 @@ export default function TransactionHistory({
                     resolution === null
                 }
                 onClose={() => setSelected(null)}
-                onEdit={openEdit}
+                onEdit={() => selected && void openEdit(selected.id)}
                 onSettle={() => setSettling(true)}
                 onVoid={() => setVoiding(true)}
                 onPrint={() => setReceiptOpen(true)}
                 onInvoice={setInvoicePayment}
             />
-            {selected && editing && catalog && (
+            <Dialog
+                open={editing && editLoading}
+                onOpenChange={(open) => {
+                    if (open) return;
+                    detailRequest.current += 1;
+                    setSelected(null);
+                    setEditing(false);
+                    setEditLoading(false);
+                }}
+            >
+                <DialogContent className="pos-surface max-w-md p-5">
+                    <DialogTitle>Edit transaction</DialogTitle>
+                    <DialogDescription>
+                        Loading transaction and products…
+                    </DialogDescription>
+                    <div className="h-24 animate-pulse rounded-xl bg-neutral-100" />
+                </DialogContent>
+            </Dialog>
+            {selected && editing && catalog && !editLoading && (
                 <EditDialog
                     detail={selected}
                     catalog={catalog}

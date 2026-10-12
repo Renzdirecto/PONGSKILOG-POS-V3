@@ -27,6 +27,7 @@ import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import {
     canTransitionKitchenStatus,
     filterKitchenTickets,
+    isActiveKitchenWork,
     kitchenItemLabel,
     KITCHEN_REALTIME_EVENTS,
     orderTypeLabel,
@@ -116,6 +117,17 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
         ticket: KitchenTicket;
         status: 'ready' | 'done';
     } | null>(null);
+    const [departingTickets, setDepartingTickets] = useState<
+        Record<string, { ticket: KitchenTicket; exiting: boolean }>
+    >({});
+    const removeDepartingTicket = useCallback((id: string) => {
+        setDepartingTickets((current) => {
+            const next = { ...current };
+            delete next[id];
+            return next;
+        });
+    }, []);
+    useEffect(() => setDepartingTickets({}), [branch?.id, tab]);
     const { playNewOrderSounds, playReadySound } = useKitchenAudio();
 
     const handleRealtimeEvent = useCallback(
@@ -204,8 +216,17 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     }, []);
 
     const tickets = useMemo(
-        () => filterKitchenTickets(projectedBoard.tickets, tab, search),
-        [projectedBoard.tickets, search, tab],
+        () =>
+            filterKitchenTickets(
+                projectedBoard.tickets.map((ticket) =>
+                    tab === 'all'
+                        ? (departingTickets[ticket.id]?.ticket ?? ticket)
+                        : ticket,
+                ),
+                tab,
+                search,
+            ),
+        [projectedBoard.tickets, departingTickets, search, tab],
     );
 
     useEffect(() => {
@@ -259,8 +280,21 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
     }
 
     function transition(ticket: KitchenTicket, status: KitchenStatus) {
-        if (!kitchenBoard.is_open) {
+        if (
+            !kitchenBoard.is_open ||
+            transitions.snapshot()[ticket.id]?.pending
+        ) {
             return;
+        }
+        if (
+            tab === 'all' &&
+            isActiveKitchenWork(ticket.status) &&
+            (status === 'ready' || status === 'done')
+        ) {
+            setDepartingTickets((current) => ({
+                ...current,
+                [ticket.id]: { ticket, exiting: false },
+            }));
         }
         void transitions.run(
             ticket,
@@ -296,13 +330,24 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                 }
             },
             playReadySound,
-            (error) =>
+            (error) => {
+                removeDepartingTicket(ticket.id);
                 toast.error(
                     error instanceof Error
                         ? error.message
                         : 'The kitchen status could not be changed.',
-                ),
+                );
+            },
             scheduleRefresh,
+            () =>
+                setDepartingTickets((current) =>
+                    current[ticket.id]
+                        ? {
+                              ...current,
+                              [ticket.id]: { ticket, exiting: true },
+                          }
+                        : current,
+                ),
         );
     }
 
@@ -417,6 +462,12 @@ export default function KitchenWorkspace({ kitchenBoard }: Props) {
                                     false
                                 }
                                 updated={updatedOrderIds.has(ticket.id)}
+                                exiting={
+                                    tab === 'all' &&
+                                    (departingTickets[ticket.id]?.exiting ??
+                                        false)
+                                }
+                                onExited={removeDepartingTicket}
                                 onTransition={transition}
                                 onConfirm={(ticket, status) =>
                                     setConfirmation({ ticket, status })
@@ -473,6 +524,8 @@ function TicketCard({
     now,
     disabled,
     updated,
+    exiting,
+    onExited,
     onTransition,
     onConfirm,
 }: {
@@ -481,13 +534,21 @@ function TicketCard({
     now: number;
     disabled: boolean;
     updated: boolean;
+    exiting: boolean;
+    onExited: (id: string) => void;
     onTransition: (ticket: KitchenTicket, status: KitchenStatus) => void;
     onConfirm: (ticket: KitchenTicket, status: 'ready' | 'done') => void;
 }) {
+    useEffect(() => {
+        if (!exiting) return;
+        const timeout = window.setTimeout(() => onExited(ticket.id), 250);
+        return () => window.clearTimeout(timeout);
+    }, [exiting, onExited, ticket.id]);
+
     return (
         <article
             aria-busy={disabled}
-            className={`overflow-hidden rounded-[14px] border border-t-[3px] shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] ${ticketCardClass(ticket.order_type)}`}
+            className={`overflow-hidden rounded-[14px] border border-t-[3px] shadow-[0_1px_2px_rgba(17,17,17,0.05),0_10px_26px_-14px_rgba(17,17,17,0.22)] transition-[opacity,scale] duration-250 ease-out motion-reduce:transition-none ${exiting ? 'pointer-events-none scale-95 opacity-0' : ''} ${ticketCardClass(ticket.order_type)}`}
         >
             {/*
               * Landscape phones are the production KDS: the order number is the smaller part of the title, the
@@ -577,7 +638,9 @@ function TicketCard({
                         <button
                             key={status}
                             type="button"
-                            disabled={disabled || current || !allowed}
+                            disabled={
+                                disabled || exiting || current || !allowed
+                            }
                             onClick={() =>
                                 status === 'ready' || status === 'done'
                                     ? onConfirm(ticket, status)

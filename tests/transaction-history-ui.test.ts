@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import ts from 'typescript';
 
 const page = readFileSync(
     new URL(
@@ -212,7 +213,178 @@ test('a successful edit returns to the list while settlement still returns to re
 });
 
 test('History requests the current edit catalog only when opening Edit', () => {
-    assert.match(page, /const openEdit = \(\) => \{[\s\S]*?only: \['catalog'\],[\s\S]*?onSuccess: \(\) => setEditing\(true\)/);
-    assert.match(page, /onEdit=\{openEdit\}/);
-    assert.match(page, /detail \? openEdit\(\) : undefined/);
+    assert.match(
+        page,
+        /async function openEdit\(id: string\)[\s\S]*?loadDetail\(id, false\)[\s\S]*?only: \['catalog'\]/,
+    );
+    assert.match(page, /onEdit=\{\(\) => void openEdit\(item\.id\)\}/);
+    assert.match(
+        page,
+        /onEdit=\{\(\) => selected && void openEdit\(selected\.id\)\}/,
+    );
+    assert.match(page, /open=\{editing && editLoading\}/);
+    assert.match(page, /selected && editing && catalog && !editLoading/);
+    assert.match(page, /if \(select\) setSelected\(detail\)/);
 });
+
+function editHarness() {
+    const state = {
+        editing: false,
+        editLoading: false,
+        selected: { id: 'stale' } as { id: string } | null,
+    };
+    const detailRequest = { current: 0 };
+    const errors: string[] = [];
+    const reloads: {
+        only: string[];
+        onSuccess: (page: { props: { catalog: unknown } }) => void;
+        onFinish: () => void;
+    }[] = [];
+    let resolve!: (response: { data: string }) => void;
+    let reject!: (error: Error) => void;
+    const response = new Promise<{ data: string }>((yes, no) => {
+        resolve = yes;
+        reject = no;
+    });
+    const handlers = ts.transpileModule(
+        page.slice(
+            page.indexOf('    async function openEdit('),
+            page.indexOf('    const onRealtimeEvent'),
+        ) +
+            page.slice(
+                page.indexOf('    async function loadDetail('),
+                page.indexOf('    async function reloadDetail('),
+            ),
+        {
+            compilerOptions: {
+                target: ts.ScriptTarget.ESNext,
+                module: ts.ModuleKind.None,
+            },
+        },
+    ).outputText;
+    const { openEdit } = new Function(
+        'dependencies',
+        `
+        const { setEditing, setEditLoading, setSelected, setLoading, detailRequest, router, http, showRoute, toast } = dependencies;
+        ${handlers}
+        return { openEdit };
+    `,
+    )({
+        setEditing: (value: boolean) => {
+            state.editing = value;
+        },
+        setEditLoading: (value: boolean) => {
+            state.editLoading = value;
+        },
+        setSelected: (value: { id: string } | null) => {
+            state.selected = value;
+        },
+        setLoading: () => {},
+        detailRequest,
+        router: {
+            reload: (options: (typeof reloads)[number]) =>
+                reloads.push(options),
+        },
+        http: { getClient: () => ({ request: () => response }) },
+        showRoute: (id: string) => ({ url: id }),
+        toast: { error: (message: string) => errors.push(message) },
+    }) as { openEdit: (id: string) => Promise<void> };
+    return { state, detailRequest, errors, reloads, resolve, reject, openEdit };
+}
+
+test('direct Edit hides stale Details throughout authoritative detail and catalog loading', async () => {
+    const ui = editHarness();
+    const pending = ui.openEdit('current');
+    assert.deepEqual(ui.state, {
+        editing: true,
+        editLoading: true,
+        selected: null,
+    });
+    assert.equal(ui.reloads.length, 0);
+
+    ui.resolve({ data: JSON.stringify({ transaction: { id: 'current' } }) });
+    await pending;
+    assert.equal(ui.state.selected, null);
+    assert.equal(ui.state.editLoading, true);
+    assert.deepEqual(ui.reloads[0].only, ['catalog']);
+
+    ui.reloads[0].onSuccess({ props: { catalog: {} } });
+    ui.reloads[0].onFinish();
+    assert.deepEqual(ui.state, {
+        editing: true,
+        editLoading: false,
+        selected: { id: 'current' },
+    });
+    assert.deepEqual(ui.errors, []);
+});
+
+test('detail or catalog failure returns to the list without showing Details', async () => {
+    const detailFailure = editHarness();
+    const first = detailFailure.openEdit('current');
+    detailFailure.reject(new Error('offline'));
+    await first;
+    assert.deepEqual(detailFailure.state, {
+        editing: false,
+        editLoading: false,
+        selected: null,
+    });
+    assert.equal(detailFailure.reloads.length, 0);
+    assert.equal(detailFailure.errors.length, 1);
+
+    const catalogFailure = editHarness();
+    const second = catalogFailure.openEdit('current');
+    catalogFailure.resolve({
+        data: JSON.stringify({ transaction: { id: 'current' } }),
+    });
+    await second;
+    catalogFailure.reloads[0].onFinish();
+    assert.deepEqual(catalogFailure.state, {
+        editing: false,
+        editLoading: false,
+        selected: null,
+    });
+    assert.equal(catalogFailure.errors.length, 1);
+
+    const catalogUnavailable = editHarness();
+    const third = catalogUnavailable.openEdit('current');
+    catalogUnavailable.resolve({
+        data: JSON.stringify({ transaction: { id: 'current' } }),
+    });
+    await third;
+    catalogUnavailable.reloads[0].onSuccess({ props: { catalog: null } });
+    catalogUnavailable.reloads[0].onFinish();
+    assert.deepEqual(catalogUnavailable.state, {
+        editing: false,
+        editLoading: false,
+        selected: null,
+    });
+    assert.equal(catalogUnavailable.errors.length, 1);
+});
+
+for (const stage of ['detail', 'catalog']) {
+    test(`cancelling Edit during ${stage} loading ignores the late response`, async () => {
+        const ui = editHarness();
+        const pending = ui.openEdit('current');
+        if (stage === 'catalog') {
+            ui.resolve({
+                data: JSON.stringify({ transaction: { id: 'current' } }),
+            });
+            await pending;
+        }
+        ui.detailRequest.current += 1;
+        ui.state.editing = false;
+        ui.state.editLoading = false;
+        if (stage === 'detail') {
+            ui.resolve({
+                data: JSON.stringify({ transaction: { id: 'current' } }),
+            });
+            await pending;
+            assert.equal(ui.reloads.length, 0);
+        } else {
+            ui.reloads[0].onSuccess({ props: { catalog: {} } });
+            ui.reloads[0].onFinish();
+        }
+        assert.equal(ui.state.selected, null);
+        assert.equal(ui.state.editing, false);
+    });
+}

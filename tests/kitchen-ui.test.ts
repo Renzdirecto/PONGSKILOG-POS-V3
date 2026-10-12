@@ -308,6 +308,40 @@ test('operational sidebar stays visible on iPad Mini and floating navigation is 
     assert.match(kitchenPage, /flex-wrap[\s\S]*sm:flex-nowrap/);
 });
 
+test('All orders retains the pending card and fades it for 250ms after confirmation', () => {
+    const page = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/kitchen.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(
+        page,
+        /tab === 'all'[\s\S]*departingTickets\[ticket\.id\]\?\.ticket \?\? ticket/,
+    );
+    assert.match(page, /\[ticket\.id\]: \{ ticket, exiting: false \}/);
+    assert.match(
+        page,
+        /scheduleRefresh,[\s\S]*\[ticket\.id\]: \{ ticket, exiting: true \}/,
+    );
+    assert.match(
+        page,
+        /if \(!exiting\) return;\s*const timeout = window\.setTimeout\(\(\) => onExited\(ticket\.id\), 250\)/,
+    );
+    assert.match(page, /window\.clearTimeout\(timeout\)/);
+    assert.match(
+        page,
+        /transition-\[opacity,scale\] duration-250 ease-out motion-reduce:transition-none/,
+    );
+    assert.match(page, /pointer-events-none scale-95 opacity-0/);
+    assert.match(
+        page,
+        /disabled=\{\s*disabled \|\| exiting \|\| current \|\| !allowed\s*\}/,
+    );
+    assert.match(page, /removeDepartingTicket\(ticket\.id\);\s*toast\.error/);
+});
+
 test('Vite keeps hot assets and generated development font URLs on one fixed server', () => {
     const viteConfig = readFileSync(
         new URL('../vite.config.ts', import.meta.url),

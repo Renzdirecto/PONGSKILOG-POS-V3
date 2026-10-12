@@ -30,11 +30,14 @@ class ReportsController extends Controller
         if ($branch === false) {
             return to_route('workspace');
         }
-        $result = $analytics->for($branch, $filters);
+        $result = null;
+        $resolve = function () use (&$result, $analytics, $branch, $filters): array {
+            return $result ??= $analytics->for($branch, $filters);
+        };
 
         return Inertia::render('workspaces/reports', [
-            'report' => $result['report'],
-            'analytics' => $result['analytics'],
+            'report' => fn () => $resolve()['report'],
+            'analytics' => fn () => $resolve()['analytics'],
             'kitchenNow' => fn () => $snapshot->kitchen($branch),
             'filters' => $filters,
         ]);

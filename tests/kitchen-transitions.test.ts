@@ -262,3 +262,76 @@ test('an optimistic move to Ready leaves the All orders count, like the server b
         ['0'],
     );
 });
+
+for (const target of ['ready', 'done'] as const) {
+    test(`${target} exit starts only after a matching server success, with destination and counts already updated`, async () => {
+        const board = fixture();
+        const store = new KitchenTransitionStore();
+        const response = deferred();
+        let exits = 0;
+        const task = store.run(
+            board.tickets[0],
+            target,
+            () => response.promise,
+            () => {},
+            assert.fail,
+            () => {},
+            () => {
+                exits += 1;
+                const confirmed = projectKitchenBoard(board, store.snapshot());
+                assert.equal(store.snapshot()['0'].pending, false);
+                assert.equal(confirmed.counts.all, 4);
+                assert.equal(confirmed.counts[target], 1);
+                assert.deepEqual(
+                    filterKitchenTickets(confirmed.tickets, target, '').map(
+                        (ticket) => ticket.id,
+                    ),
+                    ['0'],
+                );
+            },
+        );
+        assert.equal(exits, 0);
+
+        response.resolve({
+            order_id: '0',
+            from: 'kitchen',
+            to: target,
+            changed: true,
+            version: 8,
+        });
+        await task;
+        assert.equal(exits, 1);
+    });
+}
+
+test('failed and mismatched kitchen responses never start an exit animation', async () => {
+    const board = fixture();
+    for (const request of [
+        async (): Promise<KitchenTransitionResult> => {
+            throw new Error('offline');
+        },
+        async (): Promise<KitchenTransitionResult> => ({
+            order_id: 'another-order',
+            from: 'kitchen',
+            to: 'ready',
+            changed: true,
+            version: 8,
+        }),
+    ]) {
+        const store = new KitchenTransitionStore();
+        let errors = 0;
+        await store.run(
+            board.tickets[0],
+            'ready',
+            request,
+            assert.fail,
+            () => {
+                errors += 1;
+            },
+            () => {},
+            assert.fail,
+        );
+        assert.equal(errors, 1);
+        assert.deepEqual(projectKitchenBoard(board, store.snapshot()), board);
+    }
+});

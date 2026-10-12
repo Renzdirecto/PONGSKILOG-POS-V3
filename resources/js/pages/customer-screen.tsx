@@ -7,6 +7,12 @@ import { CustomerScreenHeader } from '@/components/customer-screen-header';
 import { CustomerScreenMenu } from '@/components/customer-screen-menu';
 import { CustomerScreenOrderSummary } from '@/components/customer-screen-order-summary';
 import { CustomerScreenTakeover } from '@/components/customer-screen-takeover';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { useCustomerScreen } from '@/hooks/use-customer-screen';
 import {
     activeLayer,
@@ -51,20 +57,31 @@ export default function CustomerScreen({
     const notice = paired ? connectionNotice(connection) : null;
     const branchName = screen.branch?.name ?? null;
     const live = connection === 'connected';
+    const [deviceOpen, setDeviceOpen] = useState(false);
+    const [confirmUnpair, setConfirmUnpair] = useState(false);
+    const [resetting, setResetting] = useState(false);
+    const [resetError, setResetError] = useState<string | null>(null);
+    const resetDevice = async () => {
+        if (resetting) return;
+        setResetting(true);
+        setResetError(null);
+        try {
+            await qrRequest(resetRoute());
+            setDeviceOpen(false);
+            setConfirmUnpair(false);
+            refresh();
+        } catch {
+            setResetError('Device could not be unpaired. Please try again.');
+        } finally {
+            setResetting(false);
+        }
+    };
 
     return (
         <>
             <Head title="Customer screen" />
-            <div className="relative flex h-dvh flex-col overflow-hidden bg-[#0f1010] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-white select-none">
-                {paired && (
-                    <ResetCorner
-                        onReset={() => {
-                            qrRequest(resetRoute())
-                                .catch(() => undefined)
-                                .finally(refresh);
-                        }}
-                    />
-                )}
+            <div className="relative flex h-dvh flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-neutral-950 select-none">
+                {paired && <ResetCorner onReset={() => void resetDevice()} />}
                 {base === 'pairing' ? (
                     <PairingView code={pairingCode} />
                 ) : (
@@ -73,6 +90,11 @@ export default function CustomerScreen({
                             branchName={branchName}
                             mode={screen.mode}
                             onControl={pressControl}
+                            onDevice={() => {
+                                setDeviceOpen(true);
+                                setConfirmUnpair(false);
+                                setResetError(null);
+                            }}
                         />
                         {screen.mode === 'ads' && (
                             <CustomerScreenAds
@@ -102,11 +124,12 @@ export default function CustomerScreen({
                                 {screen.board ? (
                                     <CustomerOrderBoard
                                         display={screen.board}
+                                        light
                                     />
                                 ) : (
                                     <IdleBrand branchName={branchName} />
                                 )}
-                                <footer className="shrink-0 border-t border-white/10 px-5 py-3 text-center text-sm font-semibold text-white/65 sm:text-base">
+                                <footer className="shrink-0 border-t border-neutral-200 px-5 py-3 text-center text-sm font-semibold text-neutral-600 sm:text-base">
                                     Please listen for your number. Salamat po!
                                 </footer>
                             </>
@@ -129,6 +152,66 @@ export default function CustomerScreen({
                     >
                         <WifiOff className="size-3.5" /> {notice}
                     </p>
+                )}
+                {paired && (
+                    <Dialog
+                        open={deviceOpen}
+                        onOpenChange={(open) => {
+                            if (!resetting) setDeviceOpen(open);
+                        }}
+                    >
+                        <DialogContent
+                            role={confirmUnpair ? 'alertdialog' : 'dialog'}
+                            showCloseButton={false}
+                            overlayClassName="z-[80] bg-black/40"
+                            className="z-[90] gap-0 rounded-2xl border-neutral-200 bg-white p-5 text-neutral-950 sm:max-w-sm"
+                        >
+                            <DialogTitle className="text-lg font-black">
+                                {confirmUnpair
+                                    ? 'Unpair this device?'
+                                    : 'Device controls'}
+                            </DialogTitle>
+                            <DialogDescription className="mt-2 text-sm text-neutral-600">
+                                {confirmUnpair
+                                    ? 'This screen will show a new pairing code for a POS to enter.'
+                                    : branchName}
+                            </DialogDescription>
+                            {resetError && (
+                                <p
+                                    role="alert"
+                                    className="mt-3 text-sm text-red-700"
+                                >
+                                    {resetError}
+                                </p>
+                            )}
+                            <div className="mt-5 flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={resetting}
+                                    onClick={() =>
+                                        confirmUnpair
+                                            ? setConfirmUnpair(false)
+                                            : setDeviceOpen(false)
+                                    }
+                                    className="min-h-12 flex-1 rounded-xl border border-neutral-300 font-bold disabled:opacity-60"
+                                >
+                                    {confirmUnpair ? 'Cancel' : 'Close'}
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={resetting}
+                                    onClick={() =>
+                                        confirmUnpair
+                                            ? void resetDevice()
+                                            : setConfirmUnpair(true)
+                                    }
+                                    className="min-h-12 flex-1 rounded-xl bg-red-700 px-3 font-bold text-white hover:bg-red-800 disabled:opacity-60"
+                                >
+                                    {resetting ? 'Unpairing…' : 'Unpair Device'}
+                                </button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
                 )}
             </div>
         </>
@@ -254,25 +337,25 @@ function PairingView({
                 <h1 className="text-2xl font-black sm:text-4xl">
                     Customer screen
                 </h1>
-                <p className="mt-2 text-sm text-white/60 sm:text-lg">
+                <p className="mt-2 text-sm text-neutral-600 sm:text-lg">
                     Pair this screen with a POS station
                 </p>
             </div>
-            <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6">
-                <p className="text-xs font-bold tracking-[0.25em] text-white/50 uppercase">
+            <div className="rounded-3xl border border-neutral-200 bg-neutral-50 px-8 py-6">
+                <p className="text-xs font-bold tracking-[0.25em] text-neutral-500 uppercase">
                     Pairing code
                 </p>
-                <p className="mt-2 font-mono text-[clamp(44px,12vmin,110px)] font-black tracking-[0.12em] text-[#f5c542]">
+                <p className="mt-2 font-mono text-[clamp(44px,12vmin,110px)] font-black tracking-[0.12em] text-amber-800">
                     {code ? formatPairingCode(code.code) : '— — —'}
                 </p>
-                <p className="mt-1 text-xs text-white/45 tabular-nums">
+                <p className="mt-1 text-xs text-neutral-500 tabular-nums">
                     {code
                         ? `New code in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
                         : 'Getting a pairing code…'}
                 </p>
             </div>
-            <p className="flex max-w-md items-start gap-2 text-left text-sm text-white/65 sm:text-base">
-                <MonitorSmartphone className="mt-0.5 size-5 shrink-0 text-white/40" />
+            <p className="flex max-w-md items-start gap-2 text-left text-sm text-neutral-600 sm:text-base">
+                <MonitorSmartphone className="mt-0.5 size-5 shrink-0 text-neutral-500" />
                 On the POS, open the customer screen button in the top bar,
                 choose Pair customer screen and enter this code.
             </p>

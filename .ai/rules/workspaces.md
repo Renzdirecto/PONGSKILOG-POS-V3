@@ -16,3 +16,6 @@ All orders holds only `kitchen` and `preparing` tickets (`isActiveKitchenWork`),
 
 ## The landscape ticket header is compact
 Header order: `#number` (smaller) | customer (red, unchanged emphasis), then UPDATED beneath the title; the Dine In / Take Out pill sits top-right with the elapsed timer directly under it. There is no absolute clock time. Pills are `rounded-md px-1 py-px text-[8px]` so an UPDATED ticket never stretches the header.
+
+## Ready and Done both require confirmation
+Supersedes the Done-only confirmation rule: Ready and Done use the same in-surface confirmation before sending one authoritative transition. Cancel sends nothing; Ready audio remains driven only by confirmed store/server success. Tint the entire Dine In card light green and Take Out light blue while retaining labels, borders, status and UPDATED indicators.

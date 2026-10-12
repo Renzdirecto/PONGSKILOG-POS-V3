@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     cents,
+    lineCents,
     exactCash,
     paymentTotals,
     validPayment,
@@ -153,4 +154,91 @@ test('only an explicit size group prefixes the canonical product name', () => {
 
     line.product.modifier_groups[0].semantic_role = null;
     assert.equal(cartItemName(line).displayName, 'Yakult');
+});
+
+test('History size edits preserve committed prices and reprice changed combinations once', () => {
+    const line: CartLine = {
+        key: 'lemon-yakult',
+        quantity: 1,
+        notes: '',
+        modifiers: [{ group_id: 'size', option_id: 'medium' }],
+        product: {
+            id: 'yakult',
+            name: 'Lemon Yakult',
+            category_id: 'drinks',
+            category_name: 'Drinks',
+            effective_price: '50.00',
+            is_available: true,
+            stock_status: 'not_tracked',
+            tracks_inventory: false,
+            on_hand: null,
+            image_url: null,
+            has_modifiers: true,
+            modifier_groups: [
+                {
+                    id: 'size',
+                    name: 'Size',
+                    semantic_role: 'size',
+                    selection_type: 'single',
+                    min_select: 1,
+                    max_select: 1,
+                    options: [
+                        {
+                            id: 'medium',
+                            name: 'Medium',
+                            price_delta: '10.00',
+                            sort_order: 0,
+                        },
+                        {
+                            id: 'large',
+                            name: 'Large',
+                            price_delta: '20.00',
+                            sort_order: 1,
+                        },
+                    ],
+                },
+            ],
+        },
+        committedPricing: {
+            base_price: '50.00',
+            modifiers: [
+                {
+                    group_id: 'size',
+                    option_id: 'medium',
+                    price_delta: '10.00',
+                    semantic_role: 'size',
+                },
+            ],
+        },
+    };
+    assert.equal(lineCents(line), 6000n);
+    assert.equal(lineCents({ ...line, committedPricing: undefined }), 6000n);
+    line.modifiers = [{ group_id: 'size', option_id: 'large' }];
+    assert.equal(lineCents(line), 7000n);
+    assert.equal(paymentTotals(lineCents(line), 6000n, 0n).remaining, 1000n);
+    line.modifiers = [{ group_id: 'size', option_id: 'medium' }];
+    assert.equal(lineCents(line), 6000n);
+    line.product.effective_price = '55.00';
+    line.product.modifier_groups![0].options[0].price_delta = '15.00';
+    assert.equal(lineCents(line), 6000n);
+    assert.equal(
+        lineCents({ ...line, quantity: 2, notes: 'Less ice' }),
+        12000n,
+    );
+    line.modifiers = [{ group_id: 'size', option_id: 'large' }];
+    assert.equal(lineCents(line), 7500n);
+    line.committedPricing = {
+        base_price: '55.00',
+        modifiers: [
+            {
+                group_id: 'size',
+                option_id: 'large',
+                price_delta: '20.00',
+                semantic_role: 'size',
+            },
+        ],
+    };
+    line.modifiers = [{ group_id: 'size', option_id: 'medium' }];
+    assert.equal(lineCents(line), 7000n);
+    assert.equal(paymentTotals(lineCents(line), 7500n, 0n).change, 500n);
 });

@@ -17,10 +17,12 @@ export function CustomerScreenHeader({
     branchName,
     mode,
     onControl,
+    onDevice,
 }: {
     branchName: string | null;
     mode: CustomerScreenMode;
     onControl: (control: CustomerScreenControl) => Promise<void>;
+    onDevice: () => void;
 }) {
     const [busy, setBusy] = useState(false);
     const press = (control: CustomerScreenControl) => {
@@ -32,15 +34,20 @@ export function CustomerScreenHeader({
     };
 
     return (
-        <header className="relative z-10 flex min-h-[60px] shrink-0 items-center gap-2 border-b border-white/10 bg-[#0f1010] px-3 py-2 sm:gap-3 sm:px-5">
+        <header className="relative z-10 flex min-h-[60px] shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 py-2 sm:gap-3 sm:px-5">
             <img
                 src="/images/branding/logo.png"
                 alt="PONGSKILOG"
                 className="w-[48px] shrink-0 sm:w-[64px]"
             />
-            <p className="min-w-0 flex-1 truncate text-sm font-bold text-white/80 sm:text-lg">
+            <button
+                type="button"
+                onClick={onDevice}
+                aria-label="Device controls"
+                className="min-h-11 min-w-0 flex-1 truncate rounded-xl px-2 text-left text-sm font-bold text-neutral-800 hover:bg-neutral-100 sm:text-lg"
+            >
                 {branchName}
-            </p>
+            </button>
             <nav
                 aria-label="Screen display"
                 className="flex shrink-0 items-center gap-1.5 sm:gap-2"
@@ -88,7 +95,7 @@ function HeaderToggle({
             aria-label={label}
             disabled={disabled}
             onClick={onPress}
-            className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-black tracking-[0.08em] transition-colors disabled:opacity-60 sm:px-3.5 sm:text-xs ${active ? 'border-[#f5c542] bg-[#f5c542] text-neutral-950' : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'}`}
+            className={`inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-black tracking-[0.08em] transition-colors disabled:opacity-60 sm:px-3.5 sm:text-xs ${active ? 'border-[#f5c542] bg-[#f5c542] text-neutral-950' : 'border-neutral-200 bg-neutral-50 text-neutral-800 hover:bg-neutral-100'}`}
         >
             <Icon className="size-4 shrink-0" />
             <span className="hidden min-[520px]:inline">
@@ -145,7 +152,7 @@ function FullscreenButton() {
                     /** Refused by the browser (e.g. no user gesture): the page simply stays as it is. */
                 }
             }}
-            className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-800 hover:bg-neutral-100"
         >
             {active ? (
                 <Minimize className="size-4" />

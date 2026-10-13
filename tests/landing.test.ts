@@ -96,6 +96,7 @@ function experienceHarness() {
     const document = {
         scrollingElement,
         documentElement: scrollingElement,
+        getElementById: () => null,
         removeEventListener: (name: string) => listeners.push(name),
     };
     const Experience = new Function(
@@ -638,6 +639,12 @@ test('the landing page reports only its own page view and link taps as anonymous
     /** A double tap inside one second is one event. */
     ui.pickBoardCat('silog')();
     assert.deepEqual(tracked.slice(3), ['menu_click', 'menu_click']);
+
+    /** The hero uses a button; a Menu anchor also bubbles through trackLink and must still count only once. */
+    clock.now += 2000;
+    ui.nav('board')({ preventDefault() {} });
+    ui.trackLink({ target: { closest: () => ({ getAttribute: () => '#board' }) } });
+    assert.deepEqual(tracked.slice(5), ['menu_click']);
 
     const source = readFileSync(
         new URL(

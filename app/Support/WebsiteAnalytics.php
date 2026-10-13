@@ -51,7 +51,7 @@ class WebsiteAnalytics
      * Manila clock hour, a longer period by Manila date. Visitors are distinct daily session hashes, so a multi-day
      * total is the sum of each day's visitors.
      *
-     * @return array{period: array{preset: string, from: string, to: string, label: string, days: int, granularity: string}, totals: array{page_views: int, visitors: int, facebook_clicks: int, directions_clicks: int, menu_clicks: int, review_submissions: int}, series: list<array{key: string, label: string, full: string, page_views: int, visitors: int}>, tracking_since: string|null}
+     * @return array{refreshed_at: string, period: array{preset: string, from: string, to: string, label: string, days: int, granularity: string}, totals: array{page_views: int, visitors: int, facebook_clicks: int, directions_clicks: int, menu_clicks: int, review_submissions: int}, series: list<array{key: string, label: string, full: string, page_views: int, visitors: int}>, tracking_since: string|null}
      */
     public function report(ReportPeriod $period): array
     {
@@ -92,6 +92,7 @@ class WebsiteAnalytics
                 'review_submissions' => $total(self::REVIEW_SUBMISSION),
             ],
             'series' => $series,
+            'refreshed_at' => CarbonImmutable::now(ReportPeriod::TIMEZONE)->toIso8601String(),
             'tracking_since' => is_string($first) ? ReportPeriod::day(substr($first, 0, 10))?->format('M j, Y') : null,
         ];
     }

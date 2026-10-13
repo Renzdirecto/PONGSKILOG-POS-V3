@@ -446,6 +446,7 @@ export default class LandingExperience extends React.Component {
     }
     nav = (id) => (e) => {
         if (e) e.preventDefault();
+        if (id === 'board') track('menu_click');
         const el = document.getElementById(id);
         if (el) this.jumpTo(this.docTop(el) - 60);
     };

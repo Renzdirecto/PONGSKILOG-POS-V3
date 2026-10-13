@@ -43,6 +43,7 @@ export type WebsiteSeriesBucket = {
 };
 
 export type WebsiteReport = {
+    refreshed_at: string;
     period: {
         preset: WebsitePeriod;
         from: string;
@@ -62,6 +63,19 @@ export type WebsiteReport = {
     series: WebsiteSeriesBucket[];
     tracking_since: string | null;
 };
+
+export function websiteRefreshLabel(timestamp: string): string {
+    return new Intl.DateTimeFormat('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+    }).format(new Date(timestamp));
+}
 
 /** The shareable query of a period: Today is the default and only Custom carries a range. */
 export function websiteAnalyticsQuery(

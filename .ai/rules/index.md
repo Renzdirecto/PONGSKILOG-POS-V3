@@ -15,6 +15,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | phpunit.xml | .ai/rules/general.md |
 | {app/Events/**,app/Actions/**,app/Http/Controllers/**,resources/js/hooks/**} | .ai/rules/hooks.md |
 | {resources/js/pages/customer-screen.tsx,resources/js/components/customer-screen-*.tsx,resources/js/components/customer-order-board.tsx} | .ai/rules/js-components.md |
+| {app/Support/WebsiteAnalytics.php,resources/js/pages/workspaces/website-analytics.tsx,resources/js/hooks/use-website-analytics-refresh.ts} | .ai/rules/js-hooks.md |
 | {resources/js/components/workspace-link.tsx,resources/js/lib/workspace-navigation.ts} | .ai/rules/js-lib.md |
 | {app/Events/**,resources/js/pages/workspaces/transaction-history.tsx} | .ai/rules/js-pages-workspaces.md |
 | {app/Http/Controllers/**,app/Support/**,resources/js/pages/**} | .ai/rules/js-pages.md |

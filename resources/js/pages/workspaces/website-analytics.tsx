@@ -4,11 +4,13 @@ import {
     Eye,
     MapPin,
     MessageCircle,
+    RefreshCw,
     Star,
     Users,
     UtensilsCrossed,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useWebsiteAnalyticsRefresh } from '@/hooks/use-website-analytics-refresh';
 import {
     AnalyticsCard,
     KpiCard,
@@ -26,6 +28,7 @@ import { customRangeError } from '@/lib/reports';
 import {
     WEBSITE_PERIODS,
     websiteAnalyticsQuery,
+    websiteRefreshLabel,
 } from '@/lib/website-analytics';
 import type { WebsitePeriod, WebsiteReport } from '@/lib/website-analytics';
 import { websiteAnalytics } from '@/routes/workspaces';
@@ -47,6 +50,7 @@ export default function WebsiteAnalytics({
     const [to, setTo] = useState(period.to);
     const [customError, setCustomError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { refreshing, failed, refresh } = useWebsiteAnalyticsRefresh();
     const active: WebsitePeriod = customOpen ? 'custom' : period.preset;
     const visitors = new Map(
         series.map((bucket) => [bucket.key, bucket.visitors]),
@@ -149,6 +153,38 @@ export default function WebsiteAnalytics({
             <OwnerPage
                 title="Website Analytics"
                 description="Real visits and taps on the public landing page, counted by PONGSKILOG itself. Business-wide: the website is not tied to one Branch."
+                action={
+                    <div className="flex w-full items-center justify-end gap-2.5">
+                        <div className="text-right text-[11px] leading-5 text-[#767676]">
+                            <div>Last updated · Philippine time</div>
+                            <time
+                                dateTime={report.refreshed_at}
+                                className="font-semibold text-[#555]"
+                            >
+                                {websiteRefreshLabel(report.refreshed_at)}
+                            </time>
+                            {failed && (
+                                <p role="status">
+                                    Refresh failed. Showing the last update.
+                                </p>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            aria-label="Refresh analytics"
+                            aria-busy={refreshing}
+                            title="Refresh analytics"
+                            disabled={refreshing || loading}
+                            onClick={refresh}
+                            className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#555] hover:border-[#111] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none disabled:opacity-60"
+                        >
+                            <RefreshCw
+                                aria-hidden="true"
+                                className={`size-4 ${refreshing ? 'motion-safe:animate-spin' : ''}`}
+                            />
+                        </button>
+                    </div>
+                }
             >
                 <section
                     aria-label="Reporting period"

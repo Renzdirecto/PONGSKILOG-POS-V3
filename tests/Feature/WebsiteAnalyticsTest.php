@@ -12,6 +12,7 @@ use App\Support\ActiveBranchContext;
 use App\Support\WebsiteAnalytics;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -252,3 +253,42 @@ test('a failing counter never blocks a guest review', function () {
 
     $this->assertDatabaseCount('customer_reviews', 1);
 });
+
+test('a partial refresh returns fresh totals and chart together with a successful Manila timestamp', function (array $query) {
+    websiteAt('2026-10-13 21:00:00');
+    $owner = websiteUser('owner');
+    $initial = websiteAnalytics($query, $owner)->assertInertia(fn (Assert $page) => $page
+        ->where('report.totals.page_views', 0)
+        ->where('report.refreshed_at', '2026-10-13T21:00:00+08:00'));
+
+    auth()->logout();
+    websiteEvent('page_view')->assertNoContent();
+    websiteEvent('menu_click')->assertNoContent();
+    websiteEvent('directions_click')->assertNoContent();
+    websiteEvent('facebook_click')->assertNoContent();
+    websiteAt('2026-10-13 21:00:30');
+
+    DB::enableQueryLog();
+    $response = $this->actingAs($owner)->withHeaders([
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => $initial->viewData('page')['version'],
+        'X-Inertia-Partial-Component' => 'workspaces/website-analytics',
+        'X-Inertia-Partial-Data' => 'report',
+    ])->get(route('workspaces.website-analytics', $query))
+        ->assertOk()
+        ->assertJsonPath('props.report.period.preset', $query['period'] ?? 'today')
+        ->assertJsonPath('props.report.totals.page_views', 1)
+        ->assertJsonPath('props.report.totals.visitors', 1)
+        ->assertJsonPath('props.report.totals.menu_clicks', 1)
+        ->assertJsonPath('props.report.totals.directions_clicks', 1)
+        ->assertJsonPath('props.report.totals.facebook_clicks', 1)
+        ->assertJsonPath('props.report.refreshed_at', '2026-10-13T21:00:30+08:00')
+        ->assertJsonMissingPath('props.auth')->assertJsonMissingPath('props.branchContext');
+    expect(collect($response->json('props.report.series'))->sum('page_views'))->toBe(1);
+    $queries = collect(DB::getQueryLog())->filter(fn (array $entry): bool => str_contains($entry['query'], 'website_events'));
+    DB::disableQueryLog();
+    expect($queries)->toHaveCount(3);
+})->with([
+    'today' => [[]],
+    'custom' => [['period' => 'custom', 'from' => '2026-10-12', 'to' => '2026-10-13']],
+]);

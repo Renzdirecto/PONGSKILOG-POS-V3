@@ -132,7 +132,8 @@ test('guest submission is rate limited independently from landing reads', functi
     for ($attempt = 0; $attempt < 5; $attempt++) {
         $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['description' => 'Visit '.$attempt]))->assertOk();
     }
-    $this->postJson(route('reviews.store'), customerReviewPayload($branch))->assertTooManyRequests();
+    $limited = $this->postJson(route('reviews.store'), customerReviewPayload($branch))->assertTooManyRequests();
+    expect((int) $limited->headers->get('Retry-After'))->toBeGreaterThan(0)->toBeLessThanOrEqual(3600);
     $this->get(route('home'))->assertOk();
     $this->assertDatabaseCount('customer_reviews', 5);
 });
@@ -228,7 +229,8 @@ test('partial storage failure rolls back the record cleans the attempted directo
     }))->andReturn(true);
     Storage::shouldReceive('disk')->with('s3')->andReturn($disk);
     $payload = customerReviewPayload($branch, ['review_images' => [UploadedFile::fake()->image('a.jpg', 100, 100), UploadedFile::fake()->image('b.jpg', 100, 100)]]);
-    $this->postJson(route('reviews.store'), $payload)->assertUnprocessable()->assertJsonValidationErrors('submission');
+    $this->postJson(route('reviews.store'), $payload)->assertServiceUnavailable()->assertJsonMissingPath('errors')
+        ->assertJsonPath('message', 'Your review could not be saved right now. Please try again in a moment.');
     $this->assertDatabaseCount('customer_reviews', 0);
     Storage::swap(new FilesystemManager($this->app));
     Storage::fake('s3');

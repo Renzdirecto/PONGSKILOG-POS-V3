@@ -38,6 +38,28 @@ export function reviewFileError(
         return 'Choose JPEG, PNG or WebP images.';
     return null;
 }
+/** What a guest is told when a submission fails for a reason that is not a field error (those arrive as a 422). */
+export function reviewSubmitFailure(
+    status: number,
+    retryAfter?: string,
+): string {
+    if (status === 429) {
+        const seconds = Number(retryAfter);
+        const wait = !(seconds > 0)
+            ? 'later'
+            : seconds <= 60
+              ? 'in about a minute'
+              : `in about ${Math.ceil(seconds / 60)} minutes`;
+        return `Too many review attempts from this device. Your review is still here - please try again ${wait}.`;
+    }
+    if (status === 419)
+        return 'Your session expired and was renewed. Please submit again.';
+    if (status === 413)
+        return 'Your photos are too large to send together. Remove a photo or choose smaller ones.';
+    if (status === 0)
+        return 'We could not reach PONGSKILOG. Check your connection and submit again - your review is still here.';
+    return 'Your review could not be saved right now. Nothing was posted - please try again in a moment.';
+}
 export function advanceReviewScroll(
     position: number,
     maximum: number,

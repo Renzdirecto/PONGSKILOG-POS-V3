@@ -9,6 +9,7 @@ import {
     advanceReviewScroll,
     reviewCharacterCount,
     reviewFileError,
+    reviewSubmitFailure,
 } from '../resources/js/lib/customer-reviews.ts';
 
 const require = createRequire(import.meta.url);
@@ -96,6 +97,7 @@ function exportsFor(react: unknown, jsx: unknown, httpForm?: any) {
                 advanceReviewScroll,
                 reviewCharacterCount,
                 reviewFileError,
+                reviewSubmitFailure,
             };
         if (name === '@/lib/landing')
             return {
@@ -115,7 +117,12 @@ function exportsFor(react: unknown, jsx: unknown, httpForm?: any) {
                     },
             };
         if (name === '@/lib/qr-http')
-            return { qrError: () => ({ status: 422, message: 'Invalid' }) };
+            return {
+                qrError: (failure: any) => ({
+                    status: failure?.response?.status ?? 0,
+                    message: 'Invalid',
+                }),
+            };
         if (name.startsWith('@/components/')) return {};
         if (name.endsWith('.css')) return {};
         throw new Error(`Unexpected import ${name}`);
@@ -533,11 +540,90 @@ test('a rejected submission keeps the form open instead of thanking the customer
         noticeVersion: 'v1',
         onClose() {},
     });
+    let scrolled = '';
+    const invalidField = {
+        scrollIntoView: (options: { block: string }) => {
+            scrolled = options.block;
+        },
+    };
     await elements(tree)
         .find((element) => element.type === 'form')!
-        .props.onSubmit({ preventDefault() {} });
+        .props.onSubmit({
+            preventDefault() {},
+            currentTarget: {
+                querySelector: () => ({ closest: () => invalidField }),
+            },
+        });
     assert.equal(states[2], false);
-    assert.match(states[1], /highlighted fields/);
+    assert.match(states[1], /marked in red/);
+    await new Promise((done) => setTimeout(done));
+    assert.equal(scrolled, 'center');
+});
+
+test('a rate-limited or failed submission explains the wait keeps the form and never claims a field error', async () => {
+    for (const [response, expected] of [
+        [{ status: 429, headers: { 'retry-after': '1500' } }, /25 minutes/],
+        [{ status: 503, headers: {} }, /could not be saved right now/],
+        [undefined, /Check your connection/],
+    ] as const) {
+        const states: any[] = [];
+        let stateIndex = 0;
+        const data = {
+            visibility: 'public',
+            description: 'Sulit!',
+            submission_key: 'stable-form-key',
+        };
+        const form = {
+            data,
+            errors: {},
+            processing: false,
+            post: async () => {
+                throw { response };
+            },
+        };
+        const exports = exportsFor(
+            {
+                useState: (value: any) => {
+                    const index = stateIndex++;
+                    states[index] = value;
+                    return [
+                        value,
+                        (next: any) => {
+                            states[index] = next;
+                        },
+                    ];
+                },
+                useRef: (value: any) => ({ current: value }),
+                useEffect: () => {},
+            },
+            {
+                jsx: (type: any, props: any) => ({ type, props }),
+                jsxs: (type: any, props: any) => ({ type, props }),
+            },
+            form,
+        );
+        const tree = exports.WriteReview({
+            branches: [{ id: 'main' }],
+            noticeVersion: 'v1',
+            onClose() {},
+        });
+        await elements(tree)
+            .find((element) => element.type === 'form')!
+            .props.onSubmit({ preventDefault() {} });
+        assert.equal(states[2], false);
+        assert.match(states[1], expected);
+        assert.doesNotMatch(states[1], /marked in red|highlighted/);
+        assert.deepEqual(form.data, data);
+    }
+});
+
+test('submission failures are described by their real cause', () => {
+    assert.match(reviewSubmitFailure(429, '45'), /about a minute/);
+    assert.match(reviewSubmitFailure(429, '3600'), /60 minutes/);
+    assert.match(reviewSubmitFailure(429), /try again later/);
+    assert.match(reviewSubmitFailure(419), /session expired/);
+    assert.match(reviewSubmitFailure(413), /too large/);
+    assert.match(reviewSubmitFailure(500), /Nothing was posted/);
 });
 
 test('Settings keeps the Reviews tab reachable on a phone and ignores a superseded review request', () => {

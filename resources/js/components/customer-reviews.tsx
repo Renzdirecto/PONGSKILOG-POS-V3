@@ -15,6 +15,7 @@ import {
     advanceReviewScroll,
     reviewCharacterCount,
     reviewFileError,
+    reviewSubmitFailure,
 } from '@/lib/customer-reviews';
 import type { CustomerReview, ReviewBranch } from '@/lib/customer-reviews';
 import { qrError } from '@/lib/qr-http';
@@ -521,22 +522,54 @@ function WriteReview({
                                 if (sending.current || form.processing) return;
                                 sending.current = true;
                                 setFeedback('');
+                                const sheet = event.currentTarget;
                                 try {
                                     /* useHttp resolves without a body on a 422: only a confirmed save shows the thank-you. */
                                     const result = (await form.post(
                                         store.url(),
                                     )) as { saved?: boolean } | undefined;
                                     if (result?.saved) setSaved(true);
-                                    else
+                                    else {
                                         setFeedback(
-                                            'Please check the highlighted fields above.',
+                                            'Please fix the errors marked in red above.',
                                         );
+                                        /* The errors render after this handler, so the first one is found on the next task. */
+                                        setTimeout(() =>
+                                            sheet
+                                                ?.querySelector(
+                                                    '.review-sheet-body [role="alert"]',
+                                                )
+                                                ?.closest(
+                                                    '.review-field, [role="alert"]',
+                                                )
+                                                ?.scrollIntoView({
+                                                    block: 'center',
+                                                }),
+                                        );
+                                    }
                                 } catch (failure) {
-                                    const result = qrError(failure);
+                                    const { status } = qrError(failure);
+                                    /* An expired session also expired the CSRF cookie: renew it so the next submit works without losing the form. */
+                                    if (status === 419)
+                                        await fetch(window.location.href, {
+                                            credentials: 'same-origin',
+                                        }).catch(() => undefined);
                                     setFeedback(
-                                        result.status === 429
-                                            ? 'Too many attempts. Please wait before trying again.'
-                                            : result.message,
+                                        reviewSubmitFailure(
+                                            status,
+                                            (
+                                                failure as {
+                                                    response?: {
+                                                        headers?: Record<
+                                                            string,
+                                                            string
+                                                        >;
+                                                    };
+                                                }
+                                            ).response?.headers?.[
+                                                'retry-after'
+                                            ],
+                                        ),
                                     );
                                 } finally {
                                     sending.current = false;
@@ -827,6 +860,19 @@ function WriteReview({
                                         </small>
                                     )}
                                     {error('review_images')}
+                                    {Object.entries(form.errors)
+                                        .filter(([key]) =>
+                                            key.startsWith('review_images.'),
+                                        )
+                                        .map(([key, message]) => (
+                                            <small
+                                                key={key}
+                                                role="alert"
+                                                className="review-field-error"
+                                            >
+                                                {message}
+                                            </small>
+                                        ))}
                                 </div>
                                 <label className="review-field">
                                     <span className="review-label">
@@ -1175,6 +1221,7 @@ function WriteReview({
                                         'description',
                                         'profile_photo',
                                         'review_images',
+                                        /^review_images\./,
                                         'purchased_items',
                                         'acknowledgment',
                                         'public_consent',

@@ -8,8 +8,10 @@ use App\Support\CustomerReviewImages;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Throwable;
 
 class SubmitCustomerReview
@@ -54,9 +56,11 @@ class SubmitCustomerReview
         } catch (ValidationException) {
             $this->images->deleteDirectory($id);
             throw ValidationException::withMessages(['attachments' => 'An image could not be decoded safely. Choose a smaller JPEG, PNG or WebP image.']);
-        } catch (Throwable) {
+        } catch (Throwable $failure) {
             $this->images->deleteDirectory($id);
-            throw ValidationException::withMessages(['submission' => 'Your review could not be saved. Please try again with the same form.']);
+            /** A storage or database failure is not the guest's input: answer 503, never a field error. Only the class is logged, never customer text. */
+            Log::error('Review submission failed.', ['exception' => $failure::class]);
+            throw new ServiceUnavailableHttpException(null, 'Your review could not be saved right now. Please try again in a moment.');
         }
     }
 

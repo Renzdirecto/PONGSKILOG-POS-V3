@@ -474,10 +474,10 @@ export default class LandingExperience extends React.Component {
         if (ht) ht.style.flex = side ? '1 1 0' : '1 1 420px';
         if (hm) hm.style.flex = side ? '0 1 47%' : '1 1 400px';
         if (this.wmRef.current)
-            this.wmRef.current.style.marginTop = side ? '-.28em' : '-.02em';
+            this.wmRef.current.style.marginTop = side ? '-.42em' : '-.22em';
         if (hi)
             hi.style.maxHeight = side
-                ? 'max(240px, calc(100svh - 360px))'
+                ? 'max(220px, calc(100svh - 440px))'
                 : 'clamp(130px, calc(100svh - 530px), 34svh)';
         if (this.heroRef.current)
             this.heroRef.current.style.minHeight = side
@@ -1906,6 +1906,20 @@ export default class LandingExperience extends React.Component {
                                     <br />
                                     of the menu.
                                 </h2>
+                                <p className="menu-availability">
+                                    Menu availability is unverified.{' '}
+                                    <a
+                                        href="https://www.facebook.com/profile.php?id=100094575655003"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        Contact us to confirm items and prices.
+                                    </a>
+                                </p>
+                                <p className="v3-s101">
+                                    Silog, pares, bulalo and short orders. Every
+                                    silog comes with garlic rice and egg.
+                                </p>
                                 <div
                                     className="menu-lens"
                                     role="group"
@@ -1922,17 +1936,46 @@ export default class LandingExperience extends React.Component {
                                                 this.setMenuLens(lens)
                                             }
                                         >
+                                            <svg
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                aria-hidden="true"
+                                            >
+                                                {lens === 'pics' ? (
+                                                    <>
+                                                        <rect
+                                                            x="3"
+                                                            y="3"
+                                                            width="18"
+                                                            height="18"
+                                                            rx="3"
+                                                        />
+                                                        <circle
+                                                            cx="9"
+                                                            cy="9"
+                                                            r="2"
+                                                        />
+                                                        <path d="M21 15l-5-5L5 21" />
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <path d="M8 6h13M8 12h13M8 18h13" />
+                                                        <path d="M3 6h.01M3 12h.01M3 18h.01" />
+                                                    </>
+                                                )}
+                                            </svg>
                                             {lens === 'pics'
                                                 ? 'Pics'
                                                 : 'Prices'}
                                         </button>
                                     ))}
                                 </div>
-
-                                <p className="v3-s101">
-                                    Silog, pares, bulalo and short orders. Every
-                                    silog comes with garlic rice and egg.
-                                </p>
                             </div>
                             <div className="board-controls">
                                 {showBoardChips && (
@@ -2085,16 +2128,7 @@ export default class LandingExperience extends React.Component {
                                 <span aria-hidden="true">×</span>
                             </button>
                         )}
-                        <p className="menu-availability">
-                            Menu availability is unverified.{' '}
-                            <a
-                                href="https://www.facebook.com/profile.php?id=100094575655003"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                Contact us to confirm items and prices.
-                            </a>
-                        </p>
+
                         {this.state.menuLens === 'prices' && (
                             <LandingMenuPrices category={this.state.boardCat} />
                         )}

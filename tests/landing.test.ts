@@ -108,7 +108,18 @@ function experienceHarness() {
                 ? react
                 : name === '@/lib/landing'
                   ? landingData
-                  : {},
+                  : name === 'react/jsx-runtime'
+                    ? {
+                          jsx: (type: unknown, props: unknown) => ({
+                              type,
+                              props,
+                          }),
+                          jsxs: (type: unknown, props: unknown) => ({
+                              type,
+                              props,
+                          }),
+                      }
+                    : {},
         {},
         window,
         document,
@@ -145,6 +156,7 @@ function experienceHarness() {
     ui.slideBarRef.current = { style: {} };
     return {
         ui,
+        window,
         document,
         listeners,
         cancelled,
@@ -152,6 +164,31 @@ function experienceHarness() {
         disconnected: () => disconnected,
     };
 }
+
+test('hero sizing preserves the approved desktop marquee space and mobile image bounds', () => {
+    const { ui, window } = experienceHarness();
+    ui.applyMobile = () => {};
+    ui.heroRef.current = { style: {} };
+    ui.wmRef.current = { style: {} };
+    ui.heroImgRef.current = { style: {} };
+
+    ui.responsive();
+    assert.equal(ui.wmRef.current.style.marginTop, '-.42em');
+    assert.equal(
+        ui.heroImgRef.current.style.maxHeight,
+        'max(220px, calc(100svh - 440px))',
+    );
+    assert.equal(ui.heroRef.current.style.minHeight, 'calc(100svh - 60px)');
+
+    window.innerWidth = 390;
+    ui.responsive();
+    assert.equal(ui.wmRef.current.style.marginTop, '-.22em');
+    assert.equal(
+        ui.heroImgRef.current.style.maxHeight,
+        'clamp(130px, calc(100svh - 530px), 34svh)',
+    );
+    assert.equal(ui.heroRef.current.style.minHeight, '0');
+});
 
 test('standalone carousel buttons and arrow keys snap to bounded cards with the correct counter', () => {
     const { ui } = experienceHarness();
@@ -280,6 +317,38 @@ test('leaving the landing page cleans up animation, map, observers, and event li
         'pointermove',
         'wheel',
     ]);
+});
+
+test('menu availability stays under its heading and compact icon lenses switch views', () => {
+    const { ui } = experienceHarness();
+    const nodes: any[] = [];
+    const visit = (node: any) => {
+        if (Array.isArray(node)) return node.forEach(visit);
+        if (!node?.props) return;
+        nodes.push(node);
+        visit(node.props.children);
+    };
+    visit(ui.render());
+    const headingGroup = nodes.find(
+        (node) => node.props.className === 'v3-s99',
+    );
+    const children = headingGroup.props.children.filter(Boolean);
+    assert.equal(children[0].type, 'h2');
+    assert.equal(children[1].props.className, 'menu-availability');
+    assert.equal(
+        nodes.filter((node) => node.props.className === 'menu-availability')
+            .length,
+        1,
+    );
+    const lens = nodes.find((node) => node.props['aria-label'] === 'Menu view');
+    const [pics, prices] = lens.props.children;
+    assert.equal(pics.props.children[0].type, 'svg');
+    assert.equal(prices.props.children[0].type, 'svg');
+    assert.equal(pics.props['aria-pressed'], true);
+    prices.props.onClick();
+    assert.equal(ui.state.menuLens, 'prices');
+    pics.props.onClick();
+    assert.equal(ui.state.menuLens, 'pics');
 });
 
 test('V2 menu lenses share category filters and reset when changing view', () => {

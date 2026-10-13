@@ -12,20 +12,21 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** @property list<array{path: string, kind: string, width: int, height: int, bytes: int}>|null $images */
-#[Fillable(['branch_id', 'submission_key', 'submission_digest', 'rating', 'preferred_name', 'description', 'purchased_items', 'visit_type', 'visibility', 'status', 'public_consent', 'consented_at', 'notice_version', 'images', 'moderated_by', 'moderated_at'])]
+#[Fillable(['branch_id', 'submission_key', 'submission_digest', 'rating', 'preferred_name', 'customer_email', 'description', 'purchased_items', 'visit_type', 'visibility', 'status', 'public_consent', 'consented_at', 'notice_version', 'images', 'moderated_by', 'moderated_at'])]
 class CustomerReview extends Model
 {
     /** @use HasFactory<CustomerReviewFactory> */
     use HasFactory, HasUuids;
 
-    public const NOTICE_VERSION = '2026-10-13-v1';
+    public const NOTICE_VERSION = '2026-10-13-v2';
 
-    protected $hidden = ['submission_key', 'submission_digest', 'images'];
+    /** The optional customer email is private contact data: encrypted at rest and never serialized. */
+    protected $hidden = ['submission_key', 'submission_digest', 'images', 'customer_email'];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['rating' => 'integer', 'images' => 'array', 'public_consent' => 'boolean', 'consented_at' => 'immutable_datetime', 'moderated_at' => 'immutable_datetime'];
+        return ['rating' => 'integer', 'images' => 'array', 'customer_email' => 'encrypted', 'public_consent' => 'boolean', 'consented_at' => 'immutable_datetime', 'moderated_at' => 'immutable_datetime'];
     }
 
     /** @return BelongsTo<Branch, $this> */

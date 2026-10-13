@@ -393,3 +393,53 @@ test('hero marquee pause and resume retain its current animation offset', () => 
     assert.equal(ui._marqueePaused, false);
     assert.equal(ui._mOff, 321);
 });
+
+test('the map uses keyless OpenStreetMap tiles and keeps its marker, zoom control and recenter', () => {
+    const { ui } = experienceHarness();
+    const tiles: { url: string; options: { attribution: string } }[] = [];
+    const flights: unknown[][] = [];
+    let markers = 0,
+        zoomControls = 0;
+    const map = {
+        setView: () => map,
+        flyTo: (...call: unknown[]) => flights.push(call),
+    };
+    ui._leaflet = {
+        Browser: { mobile: true },
+        map: () => map,
+        control: { zoom: () => ({ addTo: () => (zoomControls += 1) }) },
+        tileLayer: (url: string, options: { attribution: string }) => {
+            tiles.push({ url, options });
+            return { addTo() {} };
+        },
+        divIcon: () => ({}),
+        marker: () => ({ addTo: () => (markers += 1) }),
+    };
+    ui.mapRef.current = {};
+    ui.initMap();
+    assert.equal(tiles.length, 1);
+    assert.equal(
+        tiles[0].url,
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    );
+    assert.doesNotMatch(tiles[0].url, /key|token|carto/i);
+    assert.match(tiles[0].options.attribution, /OpenStreetMap/);
+    assert.equal(markers, 1);
+    assert.equal(zoomControls, 1);
+    ui.recenter();
+    assert.equal(flights.length, 1);
+});
+
+test('the mobile About statement is sized by its content instead of a viewport-height block', () => {
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    const mobile = css.slice(css.indexOf('@media (max-width: 699px)'));
+    const about = mobile.slice(
+        mobile.indexOf('.landing-v3 .v3-s68 {'),
+        mobile.indexOf('}'),
+    );
+    assert.match(about, /padding: 56px 16px;/);
+    assert.doesNotMatch(about, /min-height/);
+});

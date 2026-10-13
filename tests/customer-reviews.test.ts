@@ -352,6 +352,7 @@ test('review form caps Unicode text at 200 characters and rejects too many selec
                 ];
             },
             useRef: (value: any) => ({ current: value }),
+            useEffect: () => {},
         },
         {
             jsx: (type: any, props: any) => ({ type, props }),
@@ -414,6 +415,7 @@ test('the review form blocks double submit keeps its request key and reports pen
                 ];
             },
             useRef: (value: any) => ({ current: value }),
+            useEffect: () => {},
         },
         {
             jsx: (type: any, props: any) => ({ type, props }),
@@ -453,4 +455,104 @@ test('automatic sliding accumulates fractional motion on browsers that round scr
     } finally {
         h.dispose();
     }
+});
+
+test('the review form offers an optional email that is never required', () => {
+    const form = {
+        data: { description: '', visibility: 'public', customer_email: '' },
+        errors: {} as Record<string, string>,
+        processing: false,
+        setData: (key: string, value: any) => {
+            (form.data as any)[key] = value;
+        },
+    };
+    const exports = exportsFor(
+        {
+            useState: (value: any) => [value, () => {}],
+            useRef: (value: any) => ({ current: value }),
+            useEffect: () => {},
+        },
+        {
+            jsx: (type: any, props: any) => ({ type, props }),
+            jsxs: (type: any, props: any) => ({ type, props }),
+        },
+        form,
+    );
+    const tree = exports.WriteReview({
+        branches: [{ id: 'main' }],
+        noticeVersion: 'v1',
+        onClose() {},
+    });
+    const email = elements(tree).find(
+        (element) => element.props.type === 'email',
+    )!;
+    assert.ok(!email.props.required);
+    assert.equal(email.props.autoComplete, 'email');
+    assert.equal(email.props['aria-invalid'], false);
+    email.props.onChange({ target: { value: 'suki@example.com' } });
+    assert.equal(form.data.customer_email, 'suki@example.com');
+    const submit = elements(tree).find(
+        (element) => element.props.type === 'submit',
+    )!;
+    assert.equal(submit.props.disabled, false);
+});
+
+test('a rejected submission keeps the form open instead of thanking the customer', async () => {
+    const states: any[] = [];
+    let stateIndex = 0;
+    const form = {
+        data: { visibility: 'public', description: '' },
+        errors: {},
+        processing: false,
+        /** useHttp resolves without a body when the server answers 422. */
+        post: async () => undefined,
+    };
+    const exports = exportsFor(
+        {
+            useState: (value: any) => {
+                const index = stateIndex++;
+                states[index] = value;
+                return [
+                    value,
+                    (next: any) => {
+                        states[index] = next;
+                    },
+                ];
+            },
+            useRef: (value: any) => ({ current: value }),
+            useEffect: () => {},
+        },
+        {
+            jsx: (type: any, props: any) => ({ type, props }),
+            jsxs: (type: any, props: any) => ({ type, props }),
+        },
+        form,
+    );
+    const tree = exports.WriteReview({
+        branches: [{ id: 'main' }],
+        noticeVersion: 'v1',
+        onClose() {},
+    });
+    await elements(tree)
+        .find((element) => element.type === 'form')!
+        .props.onSubmit({ preventDefault() {} });
+    assert.equal(states[2], false);
+    assert.match(states[1], /highlighted fields/);
+});
+
+test('Settings keeps the Reviews tab reachable on a phone and ignores a superseded review request', () => {
+    const settings = readFileSync(
+        new URL('../resources/js/pages/branches/index.tsx', import.meta.url),
+        'utf8',
+    );
+    assert.match(settings, /<SegmentedTabs\s+wrap\s+label="Settings section"/);
+    assert.match(settings, /\['reviews', 'Reviews'\]/);
+    const panel = readFileSync(
+        new URL(
+            '../resources/js/components/customer-review-settings.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(panel, /!controller\.signal\.aborted/);
 });

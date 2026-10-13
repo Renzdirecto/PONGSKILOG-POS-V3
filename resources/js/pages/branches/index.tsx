@@ -162,8 +162,9 @@ export default function Branches({
                 }
                 maxWidth="max-w-[1180px]"
             >
-                <div className="self-start">
+                <div className="max-w-full min-w-0 self-start">
                     <SegmentedTabs
+                        wrap
                         label="Settings section"
                         value={section}
                         options={tabs}

@@ -2697,8 +2697,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 }
 @media (max-width: 699px) {
     .landing-v3 .v3-s68 {
-        padding: 40px 16px;
-        min-height: 64svh;
+        padding: 56px 16px;
         align-items: center;
     }
     .landing-v3 .v3-s71 {

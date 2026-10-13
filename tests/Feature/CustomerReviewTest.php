@@ -82,8 +82,26 @@ test('invalid review values return 422 without saving', function (string $field,
     'long name' => ['preferred_name', str_repeat('x', 61)], 'no acknowledgment' => ['acknowledgment', false],
     'no public permission' => ['public_consent', false], 'outdated notice' => ['notice_version', 'old'],
     'spam honeypot' => ['website', 'https://spam.example'], 'invalid visibility' => ['visibility', 'approved'],
+    'malformed email' => ['customer_email', 'not-an-email'], 'long email' => ['customer_email', str_repeat('x', 250).'@a.ph'],
     'invalid visit' => ['visit_type', 'delivery'], 'unknown branch' => ['branch_id', '00000000-0000-4000-8000-000000000001'],
 ]);
+
+test('an optional customer email is stored encrypted and never leaves the server', function () {
+    $this->seed(RbacSeeder::class);
+    $branch = Branch::factory()->create();
+    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['customer_email' => 'suki@example.com']))->assertExactJson(['saved' => true]);
+    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['description' => 'No email this time.', 'customer_email' => '']))->assertOk();
+
+    $review = CustomerReview::query()->whereNotNull('customer_email')->sole();
+    expect($review->customer_email)->toBe('suki@example.com')
+        ->and($review->getRawOriginal('customer_email'))->not->toContain('suki@example.com')
+        ->and($review->toArray())->not->toHaveKey('customer_email');
+    $this->assertDatabaseCount('customer_reviews', 2);
+    $review->update(['status' => 'approved']);
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviews.0.id', $review->id)->missing('reviews.0.customer_email'));
+    $this->actingAs(customerReviewUser('owner'))->getJson(route('branches.reviews.index', [$branch, 'section' => 'approved']))
+        ->assertJsonPath('reviews.0.id', $review->id)->assertJsonMissingPath('reviews.0.customer_email')->assertDontSee('suki@example.com');
+});
 
 test('the 200 unicode character boundary is accepted', function () {
     $branch = Branch::factory()->create();
@@ -247,7 +265,7 @@ test('the owner filters by branch approves rejects and audits without customer t
     $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->has('reviews', 0));
 });
 
-test('only authorized active Owners can manage reviews', function (string $role) {
+test('accounts other than the Owner and Super Admin cannot manage reviews', function (string $role) {
     $this->seed(RbacSeeder::class);
     $user = customerReviewUser($role);
     $review = CustomerReview::factory()->create();
@@ -255,7 +273,23 @@ test('only authorized active Owners can manage reviews', function (string $role)
     $this->putJson(route('branches.reviews.update', [$review->branch, $review]), ['status' => 'approved'])->assertForbidden();
     $this->deleteJson(route('branches.reviews.destroy', [$review->branch, $review]))->assertForbidden();
     expect($review->fresh()->status)->toBe('pending');
-})->with(['cashier', 'kitchen_staff', 'cashier_kitchen', 'super_admin']);
+})->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
+
+test('a Super Admin opens Reviews in Settings and approves and rejects but cannot publish private feedback', function () {
+    $this->seed(RbacSeeder::class);
+    $admin = customerReviewUser('super_admin');
+    $review = CustomerReview::factory()->create();
+    $private = CustomerReview::factory()->for($review->branch)->create(['visibility' => 'private', 'public_consent' => false]);
+    $this->actingAs($admin)->get(route('branches.index'))->assertInertia(fn (Assert $page) => $page->where('scope.can_manage_reviews', true));
+    $this->getJson(route('branches.reviews.index', $review->branch))->assertJsonCount(1, 'reviews')->assertJsonPath('reviews.0.id', $review->id);
+    $this->putJson(route('branches.reviews.update', [$review->branch, $review]), ['status' => 'approved'])->assertExactJson(['saved' => true]);
+    expect($review->fresh()->status)->toBe('approved')->and($review->fresh()->moderated_by)->toBe($admin->id);
+    $this->putJson(route('branches.reviews.update', [$review->branch, $review]), ['status' => 'rejected'])->assertOk();
+    expect($review->fresh()->status)->toBe('rejected');
+    $this->getJson(route('branches.reviews.index', [$review->branch, 'section' => 'private']))->assertJsonPath('reviews.0.id', $private->id);
+    $this->putJson(route('branches.reviews.update', [$review->branch, $private]), ['status' => 'approved'])->assertForbidden();
+    expect($private->fresh()->status)->toBe('pending');
+});
 
 test('a mismatched branch review route returns 404 without changing the review', function () {
     $this->seed(RbacSeeder::class);

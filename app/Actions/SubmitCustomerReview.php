@@ -18,7 +18,7 @@ class SubmitCustomerReview
 
     public function execute(StoreCustomerReviewRequest $request): void
     {
-        $data = $request->safe()->only(['branch_id', 'rating', 'preferred_name', 'description', 'purchased_items', 'visit_type', 'visibility']);
+        $data = $request->safe()->only(['branch_id', 'rating', 'preferred_name', 'customer_email', 'description', 'purchased_items', 'visit_type', 'visibility']);
         $digest = hash_hmac('sha256', $request->session()->getId().'|'.json_encode($data, JSON_THROW_ON_ERROR), (string) config('app.key'));
         $key = $request->validated('submission_key');
         $existing = CustomerReview::query()->where('submission_key', $key)->orWhere('submission_digest', $digest)->first();

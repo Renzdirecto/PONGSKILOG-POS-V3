@@ -726,14 +726,11 @@ export default class LandingExperience extends React.Component {
             attributionControl: true,
         }).setView(SHOP, motion ? 14 : 17);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
-        L.tileLayer(
-            'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-            {
-                subdomains: 'abcd',
-                maxZoom: 19,
-                attribution: '© OpenStreetMap contributors © CARTO',
-            },
-        ).addTo(map);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution:
+                '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+        }).addTo(map);
         const icon = L.divIcon({
             className: '',
             iconSize: [28, 28],
@@ -1710,7 +1707,7 @@ export default class LandingExperience extends React.Component {
 
                     <section aria-label="About" className="v3-s67">
                         <div
-                            data-mobile="padding:40px 16px;min-height:64svh;align-items:center"
+                            data-mobile="padding:56px 16px;align-items:center"
                             className="v3-s68 v3-s69"
                         >
                             <p

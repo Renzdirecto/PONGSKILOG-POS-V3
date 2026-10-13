@@ -29,6 +29,7 @@ class StoreCustomerReviewRequest extends FormRequest
             'submission_key' => ['required', 'uuid'],
             'rating' => ['required', 'integer', 'between:1,5'],
             'preferred_name' => ['required', 'string', 'max:60'],
+            'customer_email' => ['nullable', 'string', 'email:rfc', 'max:254'],
             'description' => ['required', 'string', 'max:200'],
             'purchased_items' => ['nullable', 'string', 'max:200'],
             'visit_type' => ['nullable', Rule::in(['dine_in', 'takeout'])],

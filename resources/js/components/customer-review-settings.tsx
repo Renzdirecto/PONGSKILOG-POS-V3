@@ -45,7 +45,8 @@ export function CustomerReviewSettings({
         )
             .then(setResult)
             .catch((failure) => {
-                if (!qrAborted(failure)) setError(qrError(failure).message);
+                if (!controller.signal.aborted && !qrAborted(failure))
+                    setError(qrError(failure).message);
             });
         return () => controller.abort();
     }, [branchId, section, page, revision]);
@@ -73,8 +74,8 @@ export function CustomerReviewSettings({
                 <div>
                     <h2 className="text-lg font-bold">Customer Reviews</h2>
                     <p className="text-muted-foreground text-sm">
-                        Approve public submissions and read feedback intended
-                        only for the Owner.
+                        Approve or reject public submissions and read private
+                        feedback.
                     </p>
                 </div>
                 <label className="flex flex-col gap-1 text-sm">
@@ -118,9 +119,9 @@ export function CustomerReviewSettings({
             </div>
             {section === 'private' && (
                 <p className="rounded-lg border p-3 text-sm">
-                    Private feedback is visible only to the Owner and cannot be
-                    approved or published. New customer permission requires a
-                    new public submission.
+                    Private feedback is visible only to the Owner and Super
+                    Admin and cannot be approved or published. New customer
+                    permission requires a new public submission.
                 </p>
             )}
             {error && (

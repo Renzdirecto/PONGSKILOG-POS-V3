@@ -18,7 +18,7 @@ class CustomerReview extends Model
     /** @use HasFactory<CustomerReviewFactory> */
     use HasFactory, HasUuids;
 
-    public const NOTICE_VERSION = '2026-10-14-v4';
+    public const NOTICE_VERSION = '2026-10-14-v5';
 
     /** New submissions only: the column keeps 60 characters so names saved before v1.2.1 Manual QA are never cut. */
     public const PREFERRED_NAME_MAX = 10;

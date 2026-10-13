@@ -951,6 +951,13 @@ test('the privacy notice discloses the anonymous website counters and opens with
         text,
         /shared heart count, kept only as hourly totals with nothing about who tapped/,
     );
+    /** v1.3.0 Batch 2: Shippy sends what a visitor types to Gemini and keeps no conversation. */
+    assert.match(text, /to write a reply, to Google’s Gemini AI service/);
+    assert.match(
+        text,
+        /does not save your conversation or link it to you: only daily totals/,
+    );
+    assert.match(text, /do not type personal information in the chat/);
 });
 
 test('the rating summary formats the server average and count and is absent until a review is published', () => {

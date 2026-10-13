@@ -147,15 +147,13 @@ test('a refused batch is never retried', async (t) => {
     assert.equal(loveRetryable(500), true);
 });
 
-test('a request that throws is treated as a lost connection and leaving the page stops sending', async (t) => {
+test('a request that throws is treated as a lost connection, and leaving hands the unsaved batch over once', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-    const keys: string[] = [];
-    let calls = 0;
+    const sent: [string, boolean][] = [];
     const queue = createLoveQueue(
         0,
-        async (batch) => {
-            keys.push(batch.key);
-            calls += 1;
+        async (batch, leaving) => {
+            sent.push([batch.key, leaving === true]);
             throw new Error('offline');
         },
         () => 'only-key',
@@ -166,13 +164,105 @@ test('a request that throws is treated as a lost connection and leaving the page
     await settle();
     t.mock.timers.tick(LOVE_SEND_EVERY_MS);
     await settle();
-    assert.deepEqual(keys, ['only-key', 'only-key']);
+    assert.deepEqual(sent, [
+        ['only-key', false],
+        ['only-key', false],
+    ]);
 
+    /** v1.3.0 Batch 2: the batch still unsaved is handed over as the page is left, with the key it always had. */
     queue.dispose();
+    assert.deepEqual(sent.at(-1), ['only-key', true]);
     queue.tap();
+    queue.dispose();
     t.mock.timers.tick(LOVE_SEND_EVERY_MS * 5);
     await settle();
-    assert.equal(calls, 2);
+    assert.equal(sent.length, 3);
+});
+
+test('taps still waiting for their batch are handed over at once when the page is left', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const sent: { key: string; taps: number; leaving: boolean }[] = [];
+    let keys = 0;
+    const queue = createLoveQueue(
+        60,
+        async (batch, leaving) => {
+            sent.push({ ...batch, leaving: leaving === true });
+            return { total: 61 };
+        },
+        () => `key-${++keys}`,
+        () => {},
+    );
+    /** Six quick taps: the first travels at once, five wait for the two-second batch. */
+    queue.tap();
+    t.mock.timers.tick(0);
+    await settle();
+    for (let tap = 0; tap < 5; tap++) queue.tap();
+    assert.deepEqual(sent, [{ key: 'key-1', taps: 1, leaving: false }]);
+
+    queue.leave();
+    assert.deepEqual(sent.at(-1), { key: 'key-2', taps: 5, leaving: true });
+    /** Nothing is sent twice afterwards: the batch that was due later is already on its way. */
+    t.mock.timers.tick(LOVE_SEND_EVERY_MS * 5);
+    await settle();
+    assert.equal(sent.length, 2);
+    assert.equal(
+        sent.reduce((total, batch) => total + batch.taps, 0),
+        6,
+    );
+});
+
+test('a batch already on its way is handed over with the same key, and many taps leave in whole batches', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const sent: { key: string; taps: number; leaving: boolean }[] = [];
+    let keys = 0;
+    const queue = createLoveQueue(
+        0,
+        (batch, leaving) => {
+            sent.push({ ...batch, leaving: leaving === true });
+            /** The first request never answers: the page is left while it is still travelling. */
+            return new Promise(() => {});
+        },
+        () => `key-${++keys}`,
+        () => {},
+    );
+    for (let tap = 0; tap < LOVE_MAX_TAPS * 2 + 6; tap++) queue.tap();
+    t.mock.timers.tick(0);
+    await settle();
+    assert.deepEqual(sent, [
+        { key: 'key-1', taps: LOVE_MAX_TAPS, leaving: false },
+    ]);
+
+    queue.leave();
+    assert.deepEqual(sent.slice(1), [
+        { key: 'key-1', taps: LOVE_MAX_TAPS, leaving: true },
+        { key: 'key-2', taps: LOVE_MAX_TAPS, leaving: true },
+        { key: 'key-3', taps: 6, leaving: true },
+    ]);
+});
+
+test('the count starts from what this visitor already saw, a tap still adds one and it never goes backwards', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const shown: number[] = [];
+    const replies = [{ total: 74 }, { total: 70 }];
+    /** After a Back the page was handed 67, a total from before this visitor's five taps: they saw 72. */
+    const queue = createLoveQueue(
+        67,
+        async () => replies.shift()!,
+        () => 'key',
+        (count) => shown.push(count),
+        72,
+    );
+    queue.tap();
+    assert.deepEqual(shown, [73]);
+    t.mock.timers.tick(0);
+    await settle();
+    /** The server's total now includes everyone's taps and is shown as soon as it is the larger number. */
+    assert.equal(shown.at(-1), 74);
+    queue.tap();
+    assert.equal(shown.at(-1), 75);
+    t.mock.timers.tick(LOVE_SEND_EVERY_MS);
+    await settle();
+    assert.equal(shown.at(-1), 75);
 });
 
 const source = readFileSync(
@@ -196,8 +286,34 @@ function elements(value: any): Element[] {
 }
 
 /** The tap-to-love widget with hand-driven React state, a pretend server and a page that records floating hearts. */
-function loveHarness(t: TestContext, total: number, reduced = false) {
+function loveHarness(
+    t: TestContext,
+    total: number,
+    reduced = false,
+    remembered: number | null = null,
+) {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    /** What the browser tab keeps and what leaves it for good: session storage, page events and keepalive requests. */
+    const stored = new Map<string, string>(
+        remembered === null ? [] : [['pongskilog.loveShown', `${remembered}`]],
+    );
+    const listening: Record<string, () => void> = {};
+    const beacons: { url: string; init: Record<string, any> }[] = [];
+    const page = { visibilityState: 'visible' };
+    const browser = {
+        sessionStorage: (globalThis as any).sessionStorage,
+        fetch: globalThis.fetch,
+    };
+    Object.assign(globalThis, {
+        sessionStorage: {
+            getItem: (key: string) => stored.get(key) ?? null,
+            setItem: (key: string, value: string) => stored.set(key, value),
+        },
+        fetch: async (url: string, init: Record<string, any>) => {
+            beacons.push({ url, init });
+            return { ok: true };
+        },
+    });
     const states: any[] = [];
     const refs: { current: any }[] = [];
     const effects: (() => (() => void) | void)[] = [];
@@ -280,8 +396,26 @@ function loveHarness(t: TestContext, total: number, reduced = false) {
         value: { vibrate: () => true },
     });
     Object.assign(globalThis, {
-        window: { matchMedia: () => ({ matches: reduced }) },
+        window: {
+            matchMedia: () => ({ matches: reduced }),
+            addEventListener: (name: string, listener: () => void) => {
+                listening[name] = listener;
+            },
+            removeEventListener: (name: string) => {
+                delete listening[name];
+            },
+        },
         document: {
+            cookie: 'theme=light; XSRF-TOKEN=abc%3D%3D; other=1',
+            get visibilityState() {
+                return page.visibilityState;
+            },
+            addEventListener: (name: string, listener: () => void) => {
+                listening[name] = listener;
+            },
+            removeEventListener: (name: string) => {
+                delete listening[name];
+            },
             createElement: () => {
                 const heart = {
                     removed: false,
@@ -310,6 +444,10 @@ function loveHarness(t: TestContext, total: number, reduced = false) {
         requests,
         hearts,
         animated,
+        stored,
+        listening,
+        beacons,
+        page,
         async wait(milliseconds: number) {
             t.mock.timers.tick(milliseconds);
             await settle();
@@ -319,6 +457,8 @@ function loveHarness(t: TestContext, total: number, reduced = false) {
             Object.assign(globalThis, {
                 window: previous.window,
                 document: previous.document,
+                sessionStorage: browser.sessionStorage,
+                fetch: browser.fetch,
             });
             if (previous.navigator)
                 Object.defineProperty(
@@ -432,6 +572,107 @@ test('reduced motion still counts a tap but floats no hearts and pulses nothing'
         assert.equal(h.requests.length, 1);
         assert.deepEqual(h.animated, []);
         assert.equal(h.hearts.length, 0);
+    } finally {
+        h.dispose();
+    }
+});
+
+test('quick taps followed by leaving the page are saved by a keepalive request with the page CSRF token', async (t) => {
+    const h = loveHarness(t, 60);
+    try {
+        chefButton(h.render()).props.onClick();
+        await h.wait(0);
+        for (let tap = 0; tap < 5; tap++)
+            chefButton(h.render()).props.onClick();
+        assert.deepEqual(counted(h.render()), ['66']);
+        /** Only the first tap has travelled; the other five were still waiting for their batch. */
+        assert.deepEqual(
+            h.requests.map(({ data }) => data.taps),
+            [1],
+        );
+        assert.deepEqual(Object.keys(h.listening).sort(), [
+            'pagehide',
+            'visibilitychange',
+        ]);
+
+        h.listening.pagehide();
+        assert.equal(h.beacons.length, 1);
+        const { url, init } = h.beacons[0];
+        assert.equal(url, '/landing-loves');
+        assert.equal(init.method, 'POST');
+        assert.equal(init.keepalive, true);
+        assert.equal(init.credentials, 'same-origin');
+        assert.equal(init.headers['X-XSRF-TOKEN'], 'abc==');
+        assert.equal(init.headers['Content-Type'], 'application/json');
+        assert.equal(JSON.parse(init.body).taps, 5);
+        /** The batch is not sent a second time by the timer it was waiting for. */
+        await h.wait(LOVE_SEND_EVERY_MS * 3);
+        assert.equal(h.requests.length, 1);
+        assert.equal(h.beacons.length, 1);
+    } finally {
+        h.dispose();
+    }
+});
+
+test('a phone switching to another app saves waiting taps, and a tab that stays visible keeps batching', async (t) => {
+    const h = loveHarness(t, 0);
+    try {
+        chefButton(h.render()).props.onClick();
+        await h.wait(0);
+        chefButton(h.render()).props.onClick();
+        chefButton(h.render()).props.onClick();
+
+        h.listening.visibilitychange();
+        assert.equal(h.beacons.length, 0);
+        h.page.visibilityState = 'hidden';
+        h.listening.visibilitychange();
+        assert.deepEqual(
+            h.beacons.map(({ init }) => JSON.parse(init.body).taps),
+            [2],
+        );
+    } finally {
+        h.dispose();
+    }
+});
+
+test('leaving for another page of the site hands over waiting taps and stops listening', async (t) => {
+    const h = loveHarness(t, 0);
+    chefButton(h.render()).props.onClick();
+    await h.wait(0);
+    chefButton(h.render()).props.onClick();
+    h.dispose();
+    assert.deepEqual(
+        h.beacons.map(({ init }) => JSON.parse(init.body).taps),
+        [1],
+    );
+    assert.deepEqual(h.listening, {});
+});
+
+test('the count a visitor already saw is kept for the tab, so a reload or Back never shows a smaller number', async (t) => {
+    /** The server handed this page 67, a total from before the visitor's last five taps; the tab had shown 72. */
+    const h = loveHarness(t, 67, false, 72);
+    try {
+        assert.deepEqual(counted(h.first), ['72']);
+        chefButton(h.first).props.onClick();
+        assert.deepEqual(counted(h.render()), ['73']);
+        assert.equal(h.stored.get('pongskilog.loveShown'), '73');
+    } finally {
+        h.dispose();
+    }
+    /** Only a number is kept, and only for the tab: never the invitation, an identity or anything permanent. */
+    const lib = readFileSync(
+        new URL('../resources/js/lib/landing-love.ts', import.meta.url),
+        'utf8',
+    );
+    assert.doesNotMatch(lib, /localStorage/);
+    assert.equal(lib.split('sessionStorage.setItem').length - 1, 1);
+    assert.equal(loveLib.loveFloor(), 0);
+});
+
+test('a server total larger than the number the tab remembers is the one shown', async (t) => {
+    const h = loveHarness(t, 90, false, 72);
+    try {
+        assert.deepEqual(counted(h.first), ['90']);
     } finally {
         h.dispose();
     }

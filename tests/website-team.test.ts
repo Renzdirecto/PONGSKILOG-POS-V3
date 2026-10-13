@@ -40,6 +40,15 @@ test('Website offers only the tabs the server allows, in a fixed order', () => {
         'reviews',
         'team',
     ]);
+    /** v1.3.0 Batch 2: Shippy is the last tab, for the accounts that manage website content. */
+    assert.deepEqual(
+        keys({ analytics: true, reviews: true, team: true, shippy: true }),
+        ['analytics', 'reviews', 'team', 'shippy'],
+    );
+    assert.match(
+        page,
+        /tab === 'shippy' && can\.shippy && shippy !== null && \(\s*<WebsiteShippySettings shippy=\{shippy\} \/>/,
+    );
     assert.match(page, /<Head title="Website" \/>/);
     assert.match(page, /<OwnerPage\s+title="Website"/);
     /** The first tab the account may use opens, and a tab without access never renders its content. */
@@ -111,7 +120,11 @@ function words(value: any): string {
 }
 
 /** One card of Website → Team with hand-driven React state and a pretend server. */
-function editorHarness(card: TeamCard, reply: () => Promise<unknown>) {
+function editorHarness(
+    card: TeamCard,
+    reply: () => Promise<unknown>,
+    place?: Record<string, unknown>,
+) {
     const compiled = ts.transpileModule(source, {
         compilerOptions: {
             module: ts.ModuleKind.CommonJS,
@@ -128,8 +141,10 @@ function editorHarness(card: TeamCard, reply: () => Promise<unknown>) {
     let state = 0;
     let reference = 0;
     const named = new Proxy({}, { get: (_module, key) => key });
-    const exports: Record<string, (props: { member: TeamCard }) => unknown> =
-        {};
+    const exports: Record<
+        string,
+        (props: { member: TeamCard; place?: unknown }) => unknown
+    > = {};
     new Function(
         'require',
         'exports',
@@ -193,7 +208,7 @@ function editorHarness(card: TeamCard, reply: () => Promise<unknown>) {
     const render = () => {
         state = 0;
         reference = 0;
-        return elements(exports.TeamMemberEditor({ member: card }));
+        return elements(exports.TeamMemberEditor({ member: card, place }));
     };
     return {
         render,
@@ -332,4 +347,349 @@ test('a change the server refuses shows its reason and does not pretend to be sa
     /** The form stays open with what was typed, ready to fix and save again. */
     assert.equal(h.find('name').props.value, 'Someone Else');
     assert.equal(h.button('Save card').props.disabled, false);
+});
+
+test('moving a member earlier or later gives the whole new order, and the ends cannot move further', () => {
+    assert.deepEqual(teamLib.movedTeamOrder([1, 2, 3, 4], 3, -1), [1, 3, 2, 4]);
+    assert.deepEqual(teamLib.movedTeamOrder([1, 2, 3, 4], 3, 1), [1, 2, 4, 3]);
+    assert.equal(teamLib.movedTeamOrder([1, 2, 3, 4], 1, -1), null);
+    assert.equal(teamLib.movedTeamOrder([1, 2, 3, 4], 4, 1), null);
+    assert.equal(teamLib.movedTeamOrder([1, 2, 3, 4], 9, 1), null);
+    assert.equal(teamLib.TEAM_MAX_MEMBERS, 30);
+});
+
+/** The whole Team tab, or its add dialog, with hand-driven React state and a pretend server. */
+function teamHarness(
+    component: 'WebsiteTeamSettings' | 'AddTeamMemberDialog',
+    props: Record<string, unknown>,
+    reply: () => Promise<unknown> = async () => ({ saved: true }),
+) {
+    const compiled = ts.transpileModule(source, {
+        compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ESNext,
+            jsx: ts.JsxEmit.ReactJSX,
+            esModuleInterop: true,
+        },
+    }).outputText;
+    const states: any[] = [];
+    const refs: { current: any }[] = [];
+    const requests: { route: string; data: any }[] = [];
+    const reloads: { only: string[]; onFinish: () => void }[] = [];
+    const toasts: string[] = [];
+    let state = 0;
+    let reference = 0;
+    const named = new Proxy({}, { get: (_module, key) => key });
+    const exports: Record<string, (props: any) => unknown> = {};
+    new Function(
+        'require',
+        'exports',
+        `${compiled}; exports.AddTeamMemberDialog = AddTeamMemberDialog;`,
+    )((name: string) => {
+        if (name === 'react')
+            return {
+                useState: (initial: unknown) => {
+                    const index = state++;
+                    if (!(index in states)) states[index] = initial;
+                    return [
+                        states[index],
+                        (next: unknown) => {
+                            states[index] =
+                                typeof next === 'function'
+                                    ? next(states[index])
+                                    : next;
+                        },
+                    ];
+                },
+                useRef: (value: unknown) => {
+                    const index = reference++;
+                    refs[index] ??= { current: value };
+                    return refs[index];
+                },
+            };
+        if (name === 'react/jsx-runtime')
+            return {
+                jsx: (type: unknown, props: unknown) => ({ type, props }),
+                jsxs: (type: unknown, props: unknown) => ({ type, props }),
+            };
+        if (name === '@inertiajs/react')
+            return {
+                router: {
+                    reload: (options: (typeof reloads)[number]) =>
+                        reloads.push(options),
+                },
+            };
+        if (name === 'sonner')
+            return {
+                toast: { success: (message: string) => toasts.push(message) },
+            };
+        if (name === '@/lib/website-team') return teamLib;
+        if (name === '@/lib/qr-http')
+            return {
+                qrRequest: (route: string, data: unknown) => {
+                    requests.push({ route, data });
+                    return reply();
+                },
+                qrError: (failure: Error) => ({ message: failure.message }),
+            };
+        if (name === '@/routes/workspaces/website/team')
+            return {
+                update: (id: number) => `PUT team/${id}`,
+                destroy: (id: number) => `DELETE team/${id}`,
+                reorder: () => 'PUT team/order',
+                store: () => 'POST team',
+            };
+        return named;
+    }, exports);
+    const render = () => {
+        state = 0;
+        reference = 0;
+        return elements(exports[component](props));
+    };
+    return {
+        render,
+        requests,
+        reloads,
+        toasts,
+        button: (text: string) =>
+            render().find(
+                (node) => node.type === 'Button' && words(node).includes(text),
+            )!,
+        cards: () =>
+            render().filter((node) => typeof node.props.place === 'object'),
+    };
+}
+const team: TeamCard[] = [
+    { ...member, id: 1, code: 'CEO', name: null, img: null },
+    member,
+    { ...member, id: 3, code: 'CTO', name: 'Samantha Faustino' },
+];
+
+test('each member can be moved one place and the whole new order is saved at once', async () => {
+    const h = teamHarness('WebsiteTeamSettings', { members: team });
+    assert.deepEqual(
+        h
+            .cards()
+            .map((card) => [
+                card.props.member.code,
+                card.props.place.position,
+                card.props.place.total,
+            ]),
+        [
+            ['CEO', 1, 3],
+            ['COO', 2, 3],
+            ['CTO', 3, 3],
+        ],
+    );
+    assert.ok(
+        words(h.render()).includes('3 of up to 30 members.'),
+        'the count of members is shown',
+    );
+
+    h.cards()[1].props.place.onMove(-1);
+    /** While the order is being saved every card's controls are locked, so two moves cannot cross. */
+    assert.equal(h.cards()[0].props.place.locked, true);
+    h.cards()[2].props.place.onMove(-1);
+    await settle();
+    assert.deepEqual(h.requests, [
+        { route: 'PUT team/order', data: { ids: [2, 1, 3] } },
+    ]);
+    assert.deepEqual(h.toasts, ['Team order saved']);
+    assert.deepEqual(
+        h.reloads.map(({ only }) => only),
+        [['team']],
+    );
+    h.reloads[0].onFinish();
+    assert.equal(h.cards()[0].props.place.locked, false);
+
+    /** The first member cannot move earlier: nothing is sent. */
+    h.cards()[0].props.place.onMove(-1);
+    await settle();
+    assert.equal(h.requests.length, 1);
+});
+
+test('a card shows its place and offers Earlier, Later and Delete with labels that name the card', () => {
+    const controls = (place: Record<string, unknown>) => {
+        const h = editorHarness(member, async () => ({}), place);
+        return { nodes: h.render(), labelled: h.find };
+    };
+    const moves: number[] = [];
+    let removed = 0;
+    const first = controls({
+        position: 1,
+        total: 3,
+        locked: false,
+        onMove: (direction: number) => moves.push(direction),
+        onRemove: () => removed++,
+    });
+    assert.ok(words(first.nodes).includes('Place 1 of 3'));
+    assert.equal(
+        first.labelled('Move the COO card earlier').props.disabled,
+        true,
+    );
+    assert.equal(
+        first.labelled('Move the COO card later').props.disabled,
+        false,
+    );
+    first.labelled('Move the COO card later').props.onClick();
+    first.labelled('Delete the COO card').props.onClick();
+    assert.deepEqual(moves, [1]);
+    assert.equal(removed, 1);
+
+    const last = controls({
+        position: 3,
+        total: 3,
+        locked: false,
+        onMove() {},
+        onRemove() {},
+    });
+    assert.equal(last.labelled('Move the COO card later').props.disabled, true);
+    const locked = controls({
+        position: 2,
+        total: 3,
+        locked: true,
+        onMove() {},
+        onRemove() {},
+    });
+    assert.equal(locked.labelled('Delete the COO card').props.disabled, true);
+});
+
+test('deleting a member asks for confirmation and only then deletes', async () => {
+    const h = teamHarness('WebsiteTeamSettings', { members: team });
+    const dialog = () => h.render().find((node) => node.type === 'Dialog')!;
+    assert.equal(dialog().props.open, false);
+
+    h.cards()[2].props.place.onRemove();
+    assert.equal(dialog().props.open, true);
+    assert.equal(h.requests.length, 0);
+    const text = words(dialog());
+    assert.ok(text.includes('Delete this team member?'));
+    assert.ok(text.includes('Samantha Faustino'));
+    assert.ok(text.includes('This cannot be undone.'));
+
+    /** Closing the dialog cancels: nothing is deleted. */
+    dialog().props.onOpenChange(false);
+    assert.equal(dialog().props.open, false);
+    assert.equal(h.requests.length, 0);
+
+    h.cards()[2].props.place.onRemove();
+    const confirm = elements(dialog()).find((node) => node.type === 'Button')!;
+    assert.equal(confirm.props.variant, 'destructive');
+    confirm.props.onClick();
+    await settle();
+    assert.deepEqual(h.requests, [{ route: 'DELETE team/3', data: undefined }]);
+    assert.deepEqual(h.toasts, ['Team member deleted']);
+    assert.equal(dialog().props.open, false);
+});
+
+test('Add team member opens a form, and a full team cannot add another', () => {
+    const h = teamHarness('WebsiteTeamSettings', { members: team });
+    assert.equal(h.button('Add team').props.disabled, false);
+    assert.equal(
+        h.render().some((node) => node.props.onClose !== undefined),
+        false,
+    );
+    h.button('Add team').props.onClick();
+    assert.equal(
+        h.render().filter((node) => node.props.onClose !== undefined).length,
+        1,
+    );
+
+    const full = teamHarness('WebsiteTeamSettings', {
+        members: Array.from({ length: 30 }, (_, index) => ({
+            ...member,
+            id: index + 1,
+        })),
+    });
+    assert.equal(full.button('Add team').props.disabled, true);
+});
+
+test('a new member is sent with their details and optional photo in one request', async () => {
+    let closed = 0;
+    const h = teamHarness('AddTeamMemberDialog', { onClose: () => closed++ });
+    const field = (id: string) =>
+        h.render().find((node) => node.props.id === `team-new-${id}`)!;
+    assert.equal(h.button('Add team member').props.disabled, true);
+    assert.ok(words(h.render()).includes('Required: a role label and a role.'));
+
+    field('label').props.onChange({ target: { value: ' CREW ' } });
+    field('title').props.onChange({ target: { value: 'Kitchen Crew' } });
+    field('name').props.onChange({ target: { value: 'Ana Reyes' } });
+    const picker = h
+        .render()
+        .find(
+            (node) =>
+                node.props['aria-label'] ===
+                'Choose a photo for the new team member',
+        )!;
+    picker.props.onChange({
+        target: { files: [{ size: 5 * 1024 * 1024 + 1 }], value: 'big.jpg' },
+    });
+    assert.ok(words(h.render()).includes('Choose an image of at most 5 MB.'));
+    const photo = new File(['portrait'], 'ana.jpg', { type: 'image/jpeg' });
+    picker.props.onChange({ target: { files: [photo], value: 'ana.jpg' } });
+    assert.ok(words(h.render()).includes('ana.jpg'));
+    h.render()
+        .find((node) => node.type === 'SettingSwitch')!
+        .props.onChange(false);
+
+    const form = () => h.render().find((node) => node.type === 'form')!;
+    form().props.onSubmit({ preventDefault() {} });
+    form().props.onSubmit({ preventDefault() {} });
+    await settle();
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].route, 'POST team');
+    const sent = h.requests[0].data as FormData;
+    assert.deepEqual(
+        [
+            sent.get('role_label'),
+            sent.get('role_title'),
+            sent.get('name'),
+            sent.get('bio'),
+            sent.get('is_visible'),
+        ],
+        ['CREW', 'Kitchen Crew', 'Ana Reyes', '', '0'],
+    );
+    assert.equal(sent.get('image'), photo);
+    assert.deepEqual(h.toasts, ['Team member added']);
+    assert.deepEqual(
+        h.reloads.map(({ only }) => only),
+        [['team']],
+    );
+    /** The dialog closes once the refreshed team has arrived. */
+    assert.equal(closed, 0);
+    h.reloads[0].onFinish();
+    assert.equal(closed, 1);
+});
+
+test('a new member the server refuses keeps the form open with the reason', async () => {
+    let closed = 0;
+    const h = teamHarness(
+        'AddTeamMemberDialog',
+        { onClose: () => closed++ },
+        async () => {
+            throw new Error(
+                'The team already has 30 members. Delete one before adding another.',
+            );
+        },
+    );
+    const field = (id: string) =>
+        h.render().find((node) => node.props.id === `team-new-${id}`)!;
+    field('label').props.onChange({ target: { value: 'CREW' } });
+    field('title').props.onChange({ target: { value: 'Kitchen Crew' } });
+    h.render()
+        .find((node) => node.type === 'form')!
+        .props.onSubmit({ preventDefault() {} });
+    await settle();
+    const message = h
+        .render()
+        .find((node) => node.type === 'p' && node.props.role === 'alert')!;
+    assert.equal(
+        words(message),
+        'The team already has 30 members. Delete one before adding another.',
+    );
+    assert.deepEqual(h.toasts, []);
+    assert.equal(closed, 0);
+    assert.equal(field('label').props.value, 'CREW');
+    assert.equal(h.button('Add team member').props.disabled, false);
 });

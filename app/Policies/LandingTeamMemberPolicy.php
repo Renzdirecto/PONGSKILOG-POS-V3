@@ -17,7 +17,17 @@ class LandingTeamMemberPolicy
             && $user->hasPermission('settings.manage');
     }
 
+    public function create(User $user): bool
+    {
+        return $this->viewAny($user);
+    }
+
     public function update(User $user): bool
+    {
+        return $this->viewAny($user);
+    }
+
+    public function delete(User $user): bool
     {
         return $this->viewAny($user);
     }

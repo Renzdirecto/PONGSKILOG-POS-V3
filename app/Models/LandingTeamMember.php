@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use Database\Factories\LandingTeamMemberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * One of the six people on the landing page's Meet the Team rail (v1.3.0), edited in Website → Team. The six rows are
- * created by the migration and never added or deleted: a card is filled in, cleared or hidden. An empty name, bio or
- * photo shows as a marked placeholder on the landing page, so nothing about a person is ever made up.
+ * One person on the landing page's Meet the Team rail (v1.3.0), managed in Website → Team: members are added, edited,
+ * hidden, reordered and deleted there, and the landing page shows the visible ones in `position` order. An empty name,
+ * bio or photo shows as a marked placeholder on the landing page, so nothing about a person is ever made up.
  *
  * @property int $id
  * @property int $position
@@ -22,8 +24,14 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable(['role_label', 'role_title', 'name', 'bio', 'is_visible'])]
 class LandingTeamMember extends Model
 {
+    /** @use HasFactory<LandingTeamMemberFactory> */
+    use HasFactory;
+
     /** Uploaded portraits live under this prefix on object storage; any other path is an image bundled in `public/`. */
     public const UPLOADS = 'landing-team/';
+
+    /** The most members the team may have: the landing rail and Website → Team load them all at once. */
+    public const MAX_MEMBERS = 30;
 
     protected $hidden = ['image_path'];
 

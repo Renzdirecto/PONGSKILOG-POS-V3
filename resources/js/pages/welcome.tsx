@@ -24,6 +24,7 @@ export default function Welcome({
     reviewNoticeVersion,
     team,
     loveTotal,
+    shippy,
     seo,
 }: {
     reviews: CustomerReview[];
@@ -32,6 +33,7 @@ export default function Welcome({
     reviewNoticeVersion: string;
     team: TeamCard[];
     loveTotal: number;
+    shippy: { presets: string[] } | null;
     seo: Seo;
 }) {
     const { auth } = usePage().props;
@@ -134,6 +136,7 @@ export default function Welcome({
                 reviewNoticeVersion={reviewNoticeVersion}
                 team={team}
                 loveTotal={loveTotal}
+                shippy={shippy}
             />
         </>
     );

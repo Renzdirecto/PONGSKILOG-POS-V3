@@ -56,6 +56,7 @@ use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SeoController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
+use App\Http\Controllers\ShippyController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
@@ -79,6 +80,8 @@ Route::post('reviews', [CustomerReviewController::class, 'store'])->middleware('
 Route::post('website-events', WebsiteEventController::class)->middleware('throttle:website-events')->name('website-events.store');
 /** Tap-to-love on the landing page (App\Support\LandingLove): one shared total, nothing about the visitor is stored. */
 Route::post('landing-loves', LandingLoveController::class)->middleware('throttle:landing-love')->name('landing-loves.store');
+/** Shippy, the landing page chat (App\Support\ShippyAssistant): a question is answered and never stored. */
+Route::post('shippy/messages', [ShippyController::class, 'message'])->middleware('throttle:shippy-chat')->name('shippy.messages.store');
 /** The portrait of a team card the landing page shows; a hidden card's portrait is for its managers only. */
 Route::get('landing-team/{member}/photo', [LandingTeamController::class, 'photo'])->whereNumber('member')->middleware('throttle:landing-team-photos')->name('landing-team.photo');
 Route::get('reviews/{review}/images/{image}', [CustomerReviewController::class, 'image'])->whereUuid('review')->whereNumber('image')->middleware('throttle:customer-review-images')->name('reviews.images.show');
@@ -243,12 +246,19 @@ Route::middleware(['auth'])->group(function () {
      * or with website content access open it; each tab keeps its own authorization (WebsiteAnalyticsRequest).
      */
     Route::get('workspaces/website-analytics', WebsiteAnalyticsController::class)->name('workspaces.website-analytics');
-    /** Website → Team: the Owner and Super Admin edit the landing page's six team cards (LandingTeamMemberPolicy). */
+    /** Website → Team: the Owner and Super Admin add, edit, order and delete the landing page's team (LandingTeamMemberPolicy). */
+    Route::prefix('workspaces/website/team')->name('workspaces.website.team.')->middleware('throttle:website-content')->group(function (): void {
+        Route::post('/', [LandingTeamController::class, 'store'])->name('store');
+        Route::put('order', [LandingTeamController::class, 'reorder'])->name('reorder');
+    });
     Route::prefix('workspaces/website/team/{member}')->whereNumber('member')->name('workspaces.website.team.')->middleware('throttle:website-content')->group(function (): void {
         Route::put('/', [LandingTeamController::class, 'update'])->name('update');
+        Route::delete('/', [LandingTeamController::class, 'destroy'])->name('destroy');
         Route::post('photo', [LandingTeamController::class, 'storePhoto'])->name('photo.store');
         Route::delete('photo', [LandingTeamController::class, 'destroyPhoto'])->name('photo.destroy');
     });
+    /** Website → Shippy: the Owner and Super Admin switch the landing page chat on or off (ShippySettingPolicy). */
+    Route::put('workspaces/website/shippy', [ShippyController::class, 'update'])->middleware('throttle:website-content')->name('workspaces.website.shippy.update');
 
     Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
         ->middleware('permission:transactions.view')

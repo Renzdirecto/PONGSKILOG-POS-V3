@@ -1,0 +1,442 @@
+<?php
+
+namespace App\Support;
+
+use App\Enums\CommercialStatus;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Everything Shippy, the landing page chat, may say (v1.3.0): the published menu, the scheduled hours, the address,
+ * the best sellers that real sales support and the four places a reply may link to. The menu is the landing page's own
+ * file, so a name or price here is always the one a visitor reads on the page; the POS catalog, its availability and
+ * every customer, order and staff record stay out of reach. The same facts answer on their own (`answer()`) whenever
+ * Gemini is not used.
+ *
+ * @phpstan-type Item array{name: string, price: string, amount: int, prices: list<int>, category: string, img: string|null}
+ * @phpstan-type Row array{name: string, price: string, img: string|null}
+ * @phpstan-type Answer array{text: string, items: list<Row>, actions: list<string>}
+ */
+class ShippyKnowledge
+{
+    public const ADDRESS = '1511, Unit V, Purok 8 Adarna St., Quezon City';
+
+    /**
+     * The only destinations a reply may offer. A reply names a key; the address behind it is always this one.
+     *
+     * @var array<string, array{label: string, href: string}>
+     */
+    public const ACTIONS = [
+        'menu' => ['label' => 'See the menu', 'href' => '#board'],
+        'maps' => ['label' => 'Open in Google Maps', 'href' => 'https://maps.app.goo.gl/nivpx3cxuP56wAXo8'],
+        'messenger' => ['label' => 'Message on Facebook', 'href' => 'https://www.facebook.com/profile.php?id=100094575655003'],
+        'reviews' => ['label' => 'See the reviews', 'href' => '#reviews'],
+    ];
+
+    /**
+     * The six questions offered as buttons in the chat.
+     *
+     * @var list<string>
+     */
+    public const PRESETS = [
+        'Open ba kayo ngayon?', 'Ano ang best seller?', 'Magkano ang tapsilog?',
+        'Saan kayo located?', 'Lemonade flavors', 'May ₱100 ako, ano pwede?',
+    ];
+
+    /** The most product cards one reply carries. */
+    public const MAX_ITEMS = 8;
+
+    /** Best sellers are read from this many days of sales, and an item needs this many sold to be named. */
+    public const BEST_SELLER_DAYS = 30;
+
+    public const BEST_SELLER_MINIMUM = 10;
+
+    /** The categories that are a meal on their own: what a budget question is answered from. */
+    private const MEALS = ['silog', 'pares', 'short'];
+
+    /**
+     * The photo of a menu item, from the landing page's own menu cards.
+     *
+     * @var array<string, string>
+     */
+    private const PHOTOS = [
+        'Tapa Silog' => '822fd717', 'Bangus Silog' => '2f7901fa', 'Chicken Silog' => '1bba3869', 'Liempo Silog' => '2be3bb14',
+        'Porkchop Silog' => '8611ee78', 'Longganisa Silog' => 'eebdc746', 'Tocino Silog' => 'd8225368', 'Hungarian Silog' => 'f3b60af7',
+        'MIX Silog' => 'a061b274', 'Chicken Fillet Silog' => '7d660de0', 'Ham Silog' => 'b51e6b5d', 'Hotdog Silog' => 'a74425f2',
+        'Embutido Silog' => 'cb95c141', 'Maling Silog' => '3c8f2dab', 'Nuggets Silog' => '09894ed2', 'Shanghai Silog' => '7547940c',
+        'Siomai Silog' => '5da3d399', 'Burger Steak' => '54e8c470', 'Bulalo' => 'b0bbc3cb', 'Beef Pares with Rice' => '63dcbd0b',
+        'Beef Pares Only' => 'fcd12624', 'Lechon Pares with Rice' => '6ae3a027', 'Lechon Pares Only' => '450058c9', 'Beef Mami' => 'c8b27d2f',
+        'Pancit Canton' => '8fb7f148', 'Pancit Bihon' => '22d7e1a7', 'Miki Bihon' => 'af229195', 'Miki Guisado' => '56d2c469',
+        'Lechon Kawali' => '12cbd644', 'Pork Sisig' => '2f07f761', "Tokwa't Baboy" => '6544153d', 'Chicken Only' => '0ecf9527',
+        'Bangus Only' => '6a193b10', 'Porkchop Only' => '93911d07', 'Liempo Only' => 'f0f3cc4a', 'Hungarian Only' => 'd8d56c44',
+        'Shanghai Only' => '21029c67', 'Siomai Only' => 'f8953943', 'Silog' => 'd3bcb09c', 'Hotdog Only' => 'ed339048',
+        'Maling Only' => '0cd269f2', 'Rice' => 'fd74d8a0', 'Half Rice' => '7304e306', 'Egg' => 'd0bdf098',
+        'Pure Lemonade' => '3dafa3d6', 'Lemon + Yakult' => '4774659c', 'Lemon + Calamansi' => 'a8ea1cff', 'Lemon + Cola' => 'd5ef5ce2',
+        'Crystal / Nata add-on' => '5c08777b',
+    ];
+
+    /**
+     * Everyday names for menu items, by `key()`: what guests type and what the POS calls the same dish.
+     *
+     * @var array<string, list<string>>
+     */
+    private const ALIASES = [
+        'tapsilog' => ['Tapa Silog'], 'chicksilog' => ['Chicken Silog'], 'chiksilog' => ['Chicken Silog'],
+        'bangsilog' => ['Bangus Silog'], 'liemposilog' => ['Liempo Silog'], 'porksilog' => ['Porkchop Silog'],
+        'porkchopsilog' => ['Porkchop Silog'], 'tocilog' => ['Tocino Silog'], 'tosilog' => ['Tocino Silog'],
+        'longsilog' => ['Longganisa Silog'], 'hungsilog' => ['Hungarian Silog'], 'mixsilog' => ['MIX Silog'],
+        'hamsilog' => ['Ham Silog'], 'hotsilog' => ['Hotdog Silog'], 'embusilog' => ['Embutido Silog'],
+        'malingsilog' => ['Maling Silog'], 'nuggetsilog' => ['Nuggets Silog'], 'nugget' => ['Nuggets Silog'],
+        'shanghaisilog' => ['Shanghai Silog'], 'siomaisilog' => ['Siomai Silog'], 'chickfilletsilog' => ['Chicken Fillet Silog'],
+        'manok' => ['Chicken Silog', 'Chicken Only'], 'pancit' => ['Pancit Canton', 'Pancit Bihon'],
+        'lechon' => ['Lechon Pares with Rice', 'Lechon Pares Only', 'Lechon Kawali'], 'kawali' => ['Lechon Kawali'],
+        'coke' => ['Lemon + Cola'], 'dutchmill' => ['Lemon + Dutch Mill'], 'kaldereta' => ['Caldereta'],
+        'sisig' => ['Pork Sisig'], 'mami' => ['Beef Mami'], 'lemonpure' => ['Pure Lemonade'], 'crystal' => ['Crystal / Nata add-on'],
+    ];
+
+    /** Words in a guest's question that only point at an item when nothing else matched. */
+    private const WEAK_ALIASES = ['rice' => ['Rice', 'Half Rice'], 'kanin' => ['Rice', 'Half Rice'], 'itlog' => ['Egg']];
+
+    /** Words too common in item names to identify one. */
+    private const COMMON_WORDS = ['silog', 'only', 'with', 'rice', 'pares', 'lemon', 'lemonade', 'per', 'pc', 'add', 'on', 'bar', 'and'];
+
+    /** @var array<string, array{label: string, note: string, items: list<Item>}>|null */
+    private static ?array $menu = null;
+
+    /**
+     * The published menu by category, read from the file the landing page renders.
+     *
+     * @return array<string, array{label: string, note: string, items: list<Item>}>
+     */
+    public function menu(): array
+    {
+        if (self::$menu !== null) {
+            return self::$menu;
+        }
+        /** @var array<string, array{label: string, note: string, items: list<array{0: string, 1: string}>}> $published */
+        $published = json_decode((string) file_get_contents(resource_path('js/lib/landing-menu.json')), true, flags: JSON_THROW_ON_ERROR);
+        $menu = [];
+        foreach ($published as $category => $section) {
+            $items = [];
+            foreach ($section['items'] as [$name, $price]) {
+                preg_match_all('/\d+/', $price, $numbers);
+                $prices = array_map(intval(...), $numbers[0]);
+                $photo = self::PHOTOS[$name] ?? null;
+                $items[] = [
+                    'name' => $name, 'price' => $price, 'amount' => $prices === [] ? 0 : min($prices), 'prices' => $prices,
+                    'category' => $category, 'img' => $photo === null ? null : '/images/landing-v121-'.$photo.'.webp',
+                ];
+            }
+            $menu[$category] = ['label' => $section['label'], 'note' => $section['note'], 'items' => $items];
+        }
+
+        return self::$menu = $menu;
+    }
+
+    /** @return list<Item> */
+    public function items(): array
+    {
+        return array_merge(...array_values(array_map(fn (array $section): array => $section['items'], $this->menu())));
+    }
+
+    /** A name reduced to what identifies it: lower case, common respellings joined, letters and digits only. */
+    public static function key(string $name): string
+    {
+        return (string) preg_replace('/[^a-z0-9]+/', '', str_replace(['letchon', 'pansit'], ['lechon', 'pancit'], mb_strtolower($name)));
+    }
+
+    /**
+     * The one menu item a name means, or null when it is not on the published menu or could mean several.
+     *
+     * @return Item|null
+     */
+    public function find(string $name): ?array
+    {
+        $key = self::key($name);
+        $alias = self::ALIASES[$key] ?? [];
+        $wanted = count($alias) === 1 ? self::key($alias[0]) : $key;
+        foreach ($this->items() as $item) {
+            if (self::key($item['name']) === $wanted) {
+                return $item;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  Item  $item
+     * @return Row
+     */
+    public function row(array $item): array
+    {
+        return ['name' => $item['name'], 'price' => $item['price'], 'img' => $item['img']];
+    }
+
+    /**
+     * The buttons behind a reply's action keys; an unknown key is dropped.
+     *
+     * @param  list<string>  $keys
+     * @return list<array{key: string, label: string, href: string, external: bool}>
+     */
+    public function actions(array $keys): array
+    {
+        $actions = [];
+        foreach (array_unique($keys) as $key) {
+            if (isset(self::ACTIONS[$key])) {
+                $actions[] = ['key' => $key, ...self::ACTIONS[$key], 'external' => ! str_starts_with(self::ACTIONS[$key]['href'], '#')];
+            }
+        }
+
+        return $actions;
+    }
+
+    /**
+     * Where the scheduled hours stand at a Manila moment. The schedule is all that is known: whether the store really
+     * opened tonight is never claimed.
+     *
+     * @return array{key: string, text: string, fact: string}
+     */
+    public function status(CarbonImmutable $now): array
+    {
+        $now = $now->setTimezone(ReportPeriod::TIMEZONE);
+
+        return match (true) {
+            $now->isSunday() => ['key' => 'closed', 'text' => 'Sarado kami tuwing Linggo', 'fact' => 'closed today (Sunday)'],
+            $now->isWednesday() => ['key' => 'wednesday', 'text' => 'Miyerkules ngayon: kadalasang sarado kami, pero minsan bukas', 'fact' => 'Wednesday, usually closed and sometimes open'],
+            $now->hour >= 18 => ['key' => 'open', 'text' => 'Ayon sa schedule, bukas kami ngayon hanggang 12:00 AM', 'fact' => 'scheduled open now until 12:00 AM'],
+            default => ['key' => 'later', 'text' => 'Ayon sa schedule, magbubukas kami mamayang 6:00 PM hanggang 12:00 AM', 'fact' => 'scheduled to open today at 6:00 PM until 12:00 AM'],
+        };
+    }
+
+    /** The amount of pesos a guest says they have, when the message is a budget question. */
+    public function budget(string $message): ?int
+    {
+        $message = mb_strtolower($message);
+        if (preg_match('/(?:₱|php|p)?\s?(\d{2,4})/u', $message, $found) !== 1 || (int) $found[1] < 30) {
+            return null;
+        }
+
+        return preg_match('/(budget|₱|php|peso|piso|\blang\b|under|below|mura|cheap|kasya|pasok|\bako\b|meron|\bmay\b)/u', $message) === 1
+            ? (int) $found[1]
+            : null;
+    }
+
+    /**
+     * The published items that sold the most in the last 30 days, best first: names only, from one bounded aggregate
+     * that is kept for six hours. A POS product that is not on the published menu is never named.
+     *
+     * @return list<string>
+     */
+    public function bestSellers(): array
+    {
+        return Cache::remember('shippy:best-sellers', now()->addHours(6), function (): array {
+            $sold = [];
+            $rows = DB::table('order_items')
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->whereNotNull('orders.committed_at')
+                ->where('orders.committed_at', '>=', now()->subDays(self::BEST_SELLER_DAYS))
+                ->whereIn('orders.commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value])
+                ->groupBy('order_items.product_name_snapshot')
+                ->orderByDesc('quantity')
+                ->limit(40)
+                ->get(['order_items.product_name_snapshot AS name', DB::raw('SUM(order_items.quantity) AS quantity')]);
+            foreach ($rows as $row) {
+                $name = (string) $row->name;
+                $item = $this->find($name) ?? $this->find($name.' only') ?? $this->find($name.' with rice');
+                if ($item !== null) {
+                    $sold[$item['name']] = ($sold[$item['name']] ?? 0) + (int) $row->quantity;
+                }
+            }
+            arsort($sold);
+
+            return array_slice(array_keys(array_filter($sold, fn (int $quantity): bool => $quantity >= self::BEST_SELLER_MINIMUM)), 0, 3);
+        });
+    }
+
+    /** The facts handed to Gemini with every question: nothing else about the business is ever sent. */
+    public function facts(CarbonImmutable $now): string
+    {
+        $now = $now->setTimezone(ReportPeriod::TIMEZONE);
+        $lines = [
+            'PONGSKILOG is a Filipino silog and pares eatery. Dine-in and takeout.',
+            'Address: '.self::ADDRESS.'.',
+            'Hours (Asia/Manila): Monday, Tuesday, Thursday, Friday and Saturday 6:00 PM to 12:00 AM. Wednesday is usually closed and sometimes open: message to confirm. Sunday is closed.',
+            'Now in Manila: '.$now->format('l g:i A').'. By the schedule: '.$this->status($now)['fact'].'. Whether the store really opened tonight and which items are available right now are not known here.',
+            'Menu, prices in Philippine pesos:',
+        ];
+        foreach ($this->menu() as $section) {
+            $lines[] = $section['label'].' ('.$section['note'].'): '.implode('; ', array_map(
+                fn (array $item): string => $item['name'].' '.implode('/', $item['prices']),
+                $section['items'],
+            ));
+        }
+        $best = rescue(fn (): array => $this->bestSellers(), [], false);
+        $lines[] = $best === []
+            ? 'Best sellers: not verified yet, so name none.'
+            : 'Best sellers by sales in the last '.self::BEST_SELLER_DAYS.' days, best first: '.implode(', ', $best).'.';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Shippy's own answer from the facts alone: what a guest gets whenever Gemini is not used. It always answers, and
+     * a question it cannot place is sent to Facebook.
+     *
+     * @return Answer
+     */
+    public function answer(string $message, CarbonImmutable $now): array
+    {
+        $question = str_replace(['’', '‘'], "'", mb_strtolower($message));
+        $words = array_values(array_filter(array_map(self::key(...), preg_split('/[^a-z0-9ñ\']+/u', $question) ?: [])));
+        $has = fn (string $pattern): bool => preg_match('/\b('.$pattern.')\b/u', $question) === 1;
+        $status = $this->status($now)['text'];
+
+        if (count($words) <= 4 && $has('salamat|thanks?|thank you|ty|tnx')) {
+            return $this->reply('Walang anuman. Kita-kits sa PONGSKILOG.');
+        }
+        if ($has('sino ka|who are you|ano ka')) {
+            return $this->reply('Ako si Shippy, ang helper ng PONGSKILOG. Sinasagot ko ang tanong tungkol sa menu, presyo, oras at lokasyon.');
+        }
+        if ($has('open|bukas|sarado|close|closed|oras|hours?|schedule|what time|anong oras|hanggang|until|wednesday|sunday|linggo|miyerkules')) {
+            return $this->reply($status.'. Para sigurado, i-message mo kami sa Facebook.', [
+                ['name' => 'Mon, Tue, Thu to Sat', 'price' => '6:00 PM - 12:00 AM', 'img' => null],
+                ['name' => 'Wednesday', 'price' => 'Usually closed', 'img' => null],
+                ['name' => 'Sunday', 'price' => 'Closed', 'img' => null],
+            ], ['messenger']);
+        }
+        if ($has('saan|where|location|located|address|map|directions?|papunta|landmark|adarna|parking')) {
+            return $this->reply('Nasa '.self::ADDRESS.' kami. Dine-in at takeout.', [], ['maps']);
+        }
+        if ($has('(?<!short )orders?|deliver|delivery|reserve|reservation|grab|foodpanda|pickup|pick up|takeout|take out|dine|dine-in')) {
+            return $this->reply('Dine-in at takeout kami. Para sa orders at tanong, i-message mo kami sa Facebook.', [], ['messenger']);
+        }
+        if ($has('gcash|maya|cash|bayad|payment|pay|card')) {
+            return $this->reply('Para sigurado sa payment options, i-message mo kami sa Facebook.', [], ['messenger']);
+        }
+        if ($has('reviews?|feedback|rate|rating|reklamo|complain')) {
+            return $this->reply('Salamat. Mababasa at maiiwan ang reviews dito mismo sa page.', [], ['reviews']);
+        }
+
+        $budget = $this->budget($message);
+        if ($budget !== null) {
+            $meals = array_values(array_filter($this->items(), fn (array $item): bool => in_array($item['category'], self::MEALS, true)));
+            usort($meals, fn (array $a, array $b): int => $b['amount'] <=> $a['amount']);
+            $fits = array_slice(array_values(array_filter($meals, fn (array $item): bool => $item['amount'] <= $budget)), 0, self::MAX_ITEMS);
+            if ($fits === []) {
+                $cheapest = end($meals) ?: null;
+
+                return $cheapest === null
+                    ? $this->reply('Tingnan mo ang buong menu para sa mga presyo.', [], ['menu'])
+                    : $this->reply('Ang pinakamurang meal namin ay '.$cheapest['name'].' sa '.$cheapest['price'].'.', [$this->row($cheapest)], ['menu']);
+            }
+
+            return $this->reply('Pasok sa ₱'.$budget.' ang mga ito. Kasama na sa silog ang garlic rice at itlog.', array_map($this->row(...), $fits), ['menu']);
+        }
+
+        $found = $this->mentioned($words);
+        if ($found !== []) {
+            $shown = array_slice($found, 0, self::MAX_ITEMS);
+            $text = count($shown) === 1
+                ? $shown[0]['name'].' ay '.$shown[0]['price'].'.'
+                : 'Ito ang nahanap ko'.(count($found) > self::MAX_ITEMS ? ', may iba pa sa menu.' : ':');
+            if (array_filter($found, fn (array $item): bool => $item['category'] === 'silog') !== []) {
+                $text .= ' Kasama na sa silog ang garlic rice at itlog.';
+            }
+            if (array_filter($found, fn (array $item): bool => count($item['prices']) > 1) !== []) {
+                $text .= ' Small / Medium / Large ang presyo ng lemonade.';
+            }
+
+            return $this->reply($text, array_map($this->row(...), $shown), ['menu']);
+        }
+
+        if ($has('best|bestseller|best seller|recommend|suggest|masarap|popular|sikat|favorite|paborito|specialty|mabenta')) {
+            $best = array_values(array_filter(array_map($this->find(...), rescue(fn (): array => $this->bestSellers(), [], false))));
+
+            return $best === []
+                ? $this->reply('Wala pa akong verified na best seller sa ngayon. Tingnan mo muna ang buong menu.', [], ['menu'])
+                : $this->reply('Ito ang pinakamabenta namin nitong nakaraang '.self::BEST_SELLER_DAYS.' araw:', array_map($this->row(...), $best), ['menu']);
+        }
+
+        $categories = [
+            'drinks' => 'drinks?|inumin|lemonade|juice|lemon|flavors?', 'dessert' => 'desserts?|sweets?|matamis|panghimagas',
+            'pares' => 'pares|bowls?|sabaw|soup|mainit', 'ala' => 'ala carte|alacarte|add-?ons?|extra',
+            'short' => 'short orders?|ulam|sharing|share|barkada', 'silog' => 'silogs?|almusal|breakfast',
+        ];
+        foreach ($categories as $category => $pattern) {
+            if ($has($pattern)) {
+                $section = $this->menu()[$category];
+                $items = $category === 'drinks'
+                    ? array_values(array_filter($section['items'], fn (array $item): bool => count($item['prices']) > 1))
+                    : $section['items'];
+
+                return $this->reply(
+                    $section['note'].(count($items) > self::MAX_ITEMS ? ' Ilan sa mga ito:' : ''),
+                    array_map($this->row(...), array_slice($items, 0, self::MAX_ITEMS)),
+                    ['menu'],
+                );
+            }
+        }
+        if ($has('menu|presyo|prices?|magkano|how much|list|food|pagkain|kain')) {
+            $ranges = [];
+            foreach ($this->menu() as $section) {
+                $amounts = array_column($section['items'], 'amount');
+                if ($amounts !== []) {
+                    $ranges[] = ['name' => $section['label'], 'price' => '₱'.min($amounts).' to ₱'.max($amounts), 'img' => null];
+                }
+            }
+
+            return $this->reply('Ito ang mga category ng menu namin at ang price range ng bawat isa:', $ranges, ['menu']);
+        }
+        if (preg_match('/^(hi|hello|helo|hey|yo|kumusta|musta|uy|hoy|good (morning|afternoon|evening)|magandang)\b/u', $question) === 1) {
+            return $this->reply('Hello. '.$status.'. Tanong ka lang tungkol sa menu, presyo o lokasyon.');
+        }
+
+        return $this->reply('Hindi ko pa alam ang sagot diyan. I-message mo ang PONGSKILOG sa Facebook para sigurado.', [], ['messenger']);
+    }
+
+    /**
+     * @param  list<Row>  $items
+     * @param  list<string>  $actions
+     * @return Answer
+     */
+    private function reply(string $text, array $items = [], array $actions = []): array
+    {
+        return ['text' => $text, 'items' => $items, 'actions' => $actions];
+    }
+
+    /**
+     * The menu items a guest's words point at, in menu order.
+     *
+     * @param  list<string>  $words
+     * @return list<Item>
+     */
+    private function mentioned(array $words): array
+    {
+        $names = [];
+        foreach ($this->items() as $item) {
+            $own = array_diff(array_filter(array_map(self::key(...), preg_split('/[^a-z0-9\']+/', mb_strtolower($item['name'])) ?: [])), self::COMMON_WORDS);
+            if (array_intersect($own, $words) !== []) {
+                $names[] = $item['name'];
+            }
+        }
+        foreach ($words as $word) {
+            array_push($names, ...(self::ALIASES[$word] ?? []));
+        }
+        if ($names === []) {
+            foreach ($words as $word) {
+                array_push($names, ...(self::WEAK_ALIASES[$word] ?? []));
+            }
+        }
+        $names = array_values(array_unique($names));
+        foreach (['silog', 'only', 'pares', 'rice'] as $word) {
+            $narrowed = array_values(array_filter($names, fn (string $name): bool => str_contains(mb_strtolower($name), $word)));
+            if (in_array($word, $words, true) && $narrowed !== []) {
+                $names = $narrowed;
+            }
+        }
+
+        return array_values(array_filter(array_map($this->find(...), $names)));
+    }
+}

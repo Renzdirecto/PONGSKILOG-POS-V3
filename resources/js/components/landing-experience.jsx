@@ -6,6 +6,7 @@ import {
 } from '@/components/customer-reviews';
 import { LandingLove } from '@/components/landing-love';
 import { LandingMenuPrices } from '@/components/landing-menu-prices';
+import { LandingShippy } from '@/components/landing-shippy';
 import { LandingTeam } from '@/components/landing-team';
 import {
     ULAM,
@@ -2677,6 +2678,13 @@ export default class LandingExperience extends React.Component {
                     onClose={() => this.setState({ privacyOpen: false })}
                 />
                 <LandingLove total={this.props.loveTotal ?? 0} />
+                {/* Shippy is left out while Website → Shippy has the chat switched off. */}
+                {this.props.shippy && (
+                    <LandingShippy
+                        presets={this.props.shippy.presets}
+                        onSection={(id) => this.nav(id)(null)}
+                    />
+                )}
                 <div aria-label="Powered by SEBBY" className="v3-s222">
                     powered by <span className="v3-s223">SEBBY</span>
                 </div>

@@ -44,11 +44,12 @@ export type WebsiteSeriesBucket = {
 };
 
 /** The tabs of the Owner's Website workspace, in order; an account sees only the ones it may use. */
-export type WebsiteTab = 'analytics' | 'reviews' | 'team';
+export type WebsiteTab = 'analytics' | 'reviews' | 'team' | 'shippy';
 export const WEBSITE_TABS: readonly [WebsiteTab, string][] = [
     ['analytics', 'Analytics'],
     ['reviews', 'Reviews'],
     ['team', 'Team'],
+    ['shippy', 'Shippy'],
 ];
 export function websiteTabs(
     can: Record<WebsiteTab, boolean>,

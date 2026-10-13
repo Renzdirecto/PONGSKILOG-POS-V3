@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createClientUuid } from '@/lib/client-uuid';
-import { createLoveQueue } from '@/lib/landing-love';
+import {
+    createLoveQueue,
+    loveFloor,
+    rememberLoveShown,
+    sendLoveOnLeave,
+} from '@/lib/landing-love';
 import { qrError, qrRequest } from '@/lib/qr-http';
 import { store as storeLandingLove } from '@/routes/landing-loves';
 
@@ -50,11 +55,13 @@ function floatHearts(from: HTMLElement): void {
 
 /**
  * Tap-to-love (Landing V6): the chef at the bottom-left. A tap floats a heart and adds to one total every visitor
- * shares; the server gives the total with the page and with each saved batch of taps, so nothing polls. The
- * "Tap tap!" invitation returns on every visit until the chef is tapped or it is dismissed.
+ * shares; the server gives the total with the page and with each saved batch of taps, so nothing polls. Taps not
+ * saved yet are handed over when the page is left, and the count starts from the highest number this tab has
+ * shown, so quick taps before a reload or a link are kept and the number never goes backwards. The "Tap tap!"
+ * invitation returns on every visit until the chef is tapped or it is dismissed.
  */
 export function LandingLove({ total }: { total: number }) {
-    const [shown, setShown] = useState(total);
+    const [shown, setShown] = useState(Math.max(total, loveFloor()));
     const [invited, setInvited] = useState(false);
     const chef = useRef<HTMLButtonElement>(null);
     const count = useRef<HTMLSpanElement>(null);
@@ -63,17 +70,36 @@ export function LandingLove({ total }: { total: number }) {
     useEffect(() => {
         const taps = createLoveQueue(
             total,
-            (batch) =>
-                qrRequest<{ total: number }>(storeLandingLove(), batch).catch(
-                    (failure) => ({ failed: qrError(failure).status }),
-                ),
+            (batch, leaving) => {
+                if (leaving) {
+                    sendLoveOnLeave(storeLandingLove().url, batch);
+                    return Promise.resolve({ failed: 0 });
+                }
+                return qrRequest<{ total: number }>(
+                    storeLandingLove(),
+                    batch,
+                ).catch((failure) => ({ failed: qrError(failure).status }));
+            },
             createClientUuid,
-            setShown,
+            (count) => {
+                rememberLoveShown(count);
+                setShown(count);
+            },
+            loveFloor(),
         );
         queue.current = taps;
         const invitation = setTimeout(() => setInvited(true), 1400);
+        /* A reload, a closed tab or a phone switching apps: the last chance to save taps still waiting. */
+        const leave = () => taps.leave();
+        const hide = () => {
+            if (document.visibilityState === 'hidden') taps.leave();
+        };
+        window.addEventListener('pagehide', leave);
+        document.addEventListener('visibilitychange', hide);
         return () => {
             taps.dispose();
+            window.removeEventListener('pagehide', leave);
+            document.removeEventListener('visibilitychange', hide);
             clearTimeout(invitation);
             document
                 .querySelectorAll('[data-love-heart]')

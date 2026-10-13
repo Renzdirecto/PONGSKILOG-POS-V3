@@ -47,4 +47,20 @@ return [
         'private_key' => env('VAPID_PRIVATE_KEY'),
     ],
 
+    /*
+    | Shippy, the landing page chat (v1.3.0). Gemini is called only from the server; the key stays in the environment:
+    | never committed, sent to a browser, logged or shown in Website → Shippy. Without a key, or past a limit below,
+    | Shippy answers from its own rules (App\Support\ShippyKnowledge) and no other model or key is ever tried.
+    | The two prices are the model's paid list price per million tokens and only feed the Owner's cost estimate.
+    */
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+        'timeout' => (int) env('GEMINI_TIMEOUT', 8),
+        'requests_per_minute' => (int) env('SHIPPY_REQUESTS_PER_MINUTE', 10),
+        'requests_per_day' => (int) env('SHIPPY_REQUESTS_PER_DAY', 300),
+        'input_usd_per_million' => (float) env('GEMINI_INPUT_USD_PER_MILLION', 0.10),
+        'output_usd_per_million' => (float) env('GEMINI_OUTPUT_USD_PER_MILLION', 0.40),
+    ],
+
 ];

@@ -3186,6 +3186,533 @@ svg.leaflet-image-layer.leaflet-interactive path {
     font-variant-numeric: tabular-nums;
     color: #121110;
 }
+/* Landing V6: Shippy, the chat at the bottom-right. Only the launcher and its invitation take pointer events. */
+.landing-v3 .shippy {
+    position: fixed;
+    right: calc(16px + env(safe-area-inset-right));
+    bottom: calc(42px + env(safe-area-inset-bottom));
+    z-index: 75;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    pointer-events: none;
+}
+.landing-v3 .shippy-teaser {
+    position: relative;
+    pointer-events: auto;
+    max-width: min(236px, calc(100vw - 112px));
+    background: #fff;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    border-radius: 18px 18px 6px 18px;
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.06),
+        0 18px 40px rgba(18, 17, 16, 0.16);
+    animation: love-invite 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-teaser button {
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+}
+.landing-v3 .shippy-teaser button:first-child {
+    display: block;
+    width: 100%;
+    padding: 12px 44px 12px 14px;
+    text-align: left;
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: #121110;
+}
+.landing-v3 .shippy-teaser b {
+    font-weight: 700;
+}
+.landing-v3 .shippy-teaser button:last-child {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: rgba(18, 17, 16, 0.5);
+}
+@keyframes shippy-in {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+.landing-v3 .shippy-launcher {
+    position: relative;
+    pointer-events: auto;
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #f4f0e8;
+    box-shadow:
+        0 0 0 2px #c89332,
+        0 14px 32px rgba(18, 17, 16, 0.28);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+        box-shadow 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: shippy-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-launcher:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow:
+        0 0 0 2px #c89332,
+        0 20px 40px rgba(18, 17, 16, 0.32);
+}
+.landing-v3 .shippy-launcher img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.landing-v3 .shippy-launcher > span {
+    position: absolute;
+    right: -1px;
+    bottom: 1px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #2e9a5b;
+    border: 2.5px solid #fff;
+}
+.landing-v3 .shippy :focus-visible,
+.landing-v3 .shippy-panel :focus-visible {
+    outline: 2px solid #c89332;
+    outline-offset: 2px;
+}
+@keyframes shippy-open {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.94);
+    }
+}
+@keyframes shippy-rise {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+}
+/* Below the review and Privacy Notice dialogs (z-index 90), so an open dialog always covers the chat. */
+.landing-v3 .shippy-panel {
+    position: fixed;
+    right: calc(20px + env(safe-area-inset-right));
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    z-index: 85;
+    width: 392px;
+    height: min(660px, calc(100vh - 40px));
+    height: min(660px, calc(100dvh - 40px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f4f0e8;
+    color: #121110;
+    border: 1px solid rgba(18, 17, 16, 0.1);
+    border-radius: 24px;
+    box-shadow:
+        0 2px 6px rgba(18, 17, 16, 0.08),
+        0 30px 80px rgba(18, 17, 16, 0.28);
+    transform-origin: calc(100% - 32px) 100%;
+    animation: shippy-open 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 8px 12px 16px;
+    background: #121110;
+    color: #fff;
+}
+.landing-v3 .shippy-face {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+.landing-v3 .shippy-face img {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f4f0e8;
+    box-shadow: 0 0 0 2px #c89332;
+}
+.landing-v3 .shippy-face span {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #2e9a5b;
+    border: 2px solid #121110;
+}
+.landing-v3 .shippy-head > div {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.landing-v3 .shippy-head strong {
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+}
+.landing-v3 .shippy-head > div span {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.landing-v3 .shippy-head button {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.landing-v3 .shippy-head button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.landing-v3 .shippy-head .shippy-close {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.landing-v3 .shippy-head .shippy-close:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+.landing-v3 .shippy-head button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.landing-v3 .shippy-log {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px 14px 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.landing-v3 .shippy-intro {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0 16px;
+    text-align: center;
+}
+.landing-v3 .shippy-intro img {
+    width: 92px;
+    height: 92px;
+    border: 4px solid #fff;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 12px 28px rgba(18, 17, 16, 0.16);
+}
+.landing-v3 .shippy-intro strong {
+    margin-top: 4px;
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+}
+.landing-v3 .shippy-intro p {
+    max-width: 30ch;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(18, 17, 16, 0.62);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-intro small {
+    max-width: 36ch;
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(18, 17, 16, 0.55);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-theirs {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding-right: 28px;
+}
+.landing-v3 .shippy-theirs > img {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f4f0e8;
+}
+.landing-v3 .shippy-theirs > div {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.landing-v3 .shippy-theirs p,
+.landing-v3 .shippy-mine p {
+    margin: 0;
+    padding: 10px 14px;
+    font-size: 15.5px;
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+.landing-v3 .shippy-theirs p {
+    background: #fff;
+    color: #121110;
+    border-radius: 18px 18px 18px 6px;
+    box-shadow: 0 1px 2px rgba(18, 17, 16, 0.06);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-mine {
+    display: flex;
+    justify-content: flex-end;
+    padding-left: 56px;
+}
+.landing-v3 .shippy-mine p {
+    background: #121110;
+    color: #fff;
+    border-radius: 18px 18px 6px 18px;
+}
+.landing-v3 .shippy-items {
+    align-self: stretch;
+    min-width: 232px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    list-style: none;
+    background: rgba(18, 17, 16, 0.07);
+    border: 1px solid rgba(18, 17, 16, 0.07);
+    border-radius: 16px;
+}
+.landing-v3 .shippy-items li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 8px 14px 8px 8px;
+    background: #fff;
+}
+.landing-v3 .shippy-items img {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #f4f0e8;
+}
+.landing-v3 .shippy-items i {
+    flex: 0 0 auto;
+    width: 6px;
+}
+.landing-v3 .shippy-items span {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14.5px;
+    line-height: 1.3;
+}
+.landing-v3 .shippy-items b {
+    flex: 0 0 auto;
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 800;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.landing-v3 .shippy-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.landing-v3 .shippy-actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: #121110;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+        background 0.15s,
+        transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-actions a:hover {
+    background: #2a2724;
+    color: #fff;
+    transform: translateY(-1px);
+}
+@keyframes shippy-dot {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.35;
+    }
+    40% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+.landing-v3 .shippy-theirs .shippy-typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 41px;
+    padding: 10px 16px;
+}
+.landing-v3 .shippy-typing i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(18, 17, 16, 0.55);
+    animation: shippy-dot 1.1s infinite ease-in-out;
+}
+.landing-v3 .shippy-typing i:nth-child(2) {
+    animation-delay: 0.16s;
+}
+.landing-v3 .shippy-typing i:nth-child(3) {
+    animation-delay: 0.32s;
+}
+/* The six preset questions: one row that scrolls sideways and is reachable by keyboard. */
+.landing-v3 .shippy-chips {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+.landing-v3 .shippy-chips button {
+    flex: 0 0 auto;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid rgba(18, 17, 16, 0.14);
+    border-radius: 12px;
+    background: #fff;
+    color: #121110;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+@media (hover: hover) {
+    .landing-v3 .shippy-chips button:hover {
+        border-color: #121110;
+    }
+}
+.landing-v3 .shippy-chips button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.landing-v3 .shippy-form {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid rgba(18, 17, 16, 0.08);
+}
+.landing-v3 .shippy-form input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 48px;
+    padding: 0 16px;
+    border: 1px solid rgba(18, 17, 16, 0.14);
+    border-radius: 14px;
+    background: #f7f4ee;
+    color: #121110;
+    font-family: inherit;
+    font-size: 16px;
+    outline: none;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+.landing-v3 .shippy-form input:focus {
+    border-color: #121110;
+    background: #fff;
+}
+.landing-v3 .shippy-form button {
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 14px;
+    background: #121110;
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.landing-v3 .shippy-form button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+    .landing-v3 .shippy-teaser,
+    .landing-v3 .shippy-launcher,
+    .landing-v3 .shippy-panel,
+    .landing-v3 .shippy-typing i {
+        animation: none;
+    }
+    .landing-v3 .shippy-launcher,
+    .landing-v3 .shippy-actions a {
+        transition: none;
+    }
+}
 .landing-price-grid {
     display: flex;
     flex-direction: column;
@@ -3325,5 +3852,27 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     .landing-v3 .v3-s17 {
         gap: 6px;
+    }
+    /* Shippy fills the phone screen; its height follows the visible area so the keyboard never hides the input. */
+    .landing-v3 .shippy-panel {
+        top: 0;
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        border: 0;
+        border-radius: 0;
+        animation-name: shippy-rise;
+    }
+    .landing-v3 .shippy-head {
+        padding: calc(10px + env(safe-area-inset-top)) 8px 10px 14px;
+    }
+    .landing-v3 .shippy-chips {
+        scrollbar-width: none;
+    }
+    .landing-v3 .shippy-chips::-webkit-scrollbar {
+        display: none;
     }
 }

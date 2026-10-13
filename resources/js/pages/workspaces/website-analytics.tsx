@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { CustomerReviewSettings } from '@/components/customer-review-settings';
+import { WebsiteShippySettings } from '@/components/website-shippy-settings';
 import { WebsiteTeamSettings } from '@/components/website-team-settings';
 import { useWebsiteAnalyticsRefresh } from '@/hooks/use-website-analytics-refresh';
 import {
@@ -41,6 +42,7 @@ import type {
     WebsiteReport,
     WebsiteTab,
 } from '@/lib/website-analytics';
+import type { WebsiteShippy } from '@/lib/website-shippy';
 import { websiteAnalytics } from '@/routes/workspaces';
 
 const labelClass =
@@ -49,19 +51,22 @@ const labelClass =
 const count = (value: number): string => value.toLocaleString('en-PH');
 
 /**
- * The Owner's Website workspace (v1.3.0): Analytics, Reviews (the moderation that used to sit in Settings) and Team
- * (the landing page's six cards). The server says which tabs the account may use and sends data only for those.
+ * The Owner's Website workspace (v1.3.0): Analytics, Reviews (the moderation that used to sit in Settings), Team (the
+ * landing page's team) and Shippy (the chat's switch and usage). The server says which tabs the account may use and
+ * sends data only for those.
  */
 export default function Website({
     can,
     report,
     reviewBranches,
     team,
+    shippy,
 }: {
     can: Record<WebsiteTab, boolean>;
     report: WebsiteReport | null;
     reviewBranches: ReviewBranch[];
     team: TeamCard[];
+    shippy: WebsiteShippy | null;
 }) {
     const tabs = websiteTabs(can);
     const [tab, setTab] = useState<WebsiteTab>(tabs[0]?.[0] ?? 'analytics');
@@ -74,7 +79,7 @@ export default function Website({
             <Head title="Website" />
             <OwnerPage
                 title="Website"
-                description="The public landing page: its visits and taps, customer reviews and team. Business-wide: the website is not tied to one Branch."
+                description="The public landing page: its visits and taps, customer reviews, team and Shippy chat. Business-wide: the website is not tied to one Branch."
                 action={
                     analytics ? (
                         <div className="flex w-full items-center justify-end gap-2.5">
@@ -134,6 +139,9 @@ export default function Website({
                 )}
                 {tab === 'team' && can.team && (
                     <WebsiteTeamSettings members={team} />
+                )}
+                {tab === 'shippy' && can.shippy && shippy !== null && (
+                    <WebsiteShippySettings shippy={shippy} />
                 )}
             </OwnerPage>
         </>

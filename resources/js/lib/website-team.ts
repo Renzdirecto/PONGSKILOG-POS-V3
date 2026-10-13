@@ -27,3 +27,32 @@ export function teamCardChanged(form: TeamCardForm, member: TeamCard): boolean {
         form.is_visible !== member.visible
     );
 }
+
+/** Mirrors `LandingTeamMember::MAX_MEMBERS`: the most members the team may have. */
+export const TEAM_MAX_MEMBERS = 30;
+
+/** A new member's form: the same details as a card, starting empty and visible. */
+export const NEW_TEAM_MEMBER: TeamCardForm = {
+    role_label: '',
+    role_title: '',
+    name: '',
+    bio: '',
+    is_visible: true,
+};
+
+/**
+ * The team's ids after one member moves one place earlier (-1) or later (1), or null when that member is already at
+ * that end. The whole order is sent to the server, which accepts it only if it still names every member.
+ */
+export function movedTeamOrder(
+    ids: number[],
+    id: number,
+    direction: -1 | 1,
+): number[] | null {
+    const from = ids.indexOf(id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ids.length) return null;
+    const order = [...ids];
+    [order[from], order[to]] = [order[to], order[from]];
+    return order;
+}

@@ -15,8 +15,8 @@ class WebsiteAnalyticsRequest extends FormRequest
 {
     /**
      * Website is business-wide: an active account with a business-wide scope that either reads Reports (the Analytics
-     * tab: Owner, Super Admin, business-wide Custom Role) or manages website content (Reviews and Team: Owner and
-     * Super Admin). A Branch-scoped account never opens it; each tab's own data keeps its own check.
+     * tab: Owner, Super Admin, business-wide Custom Role) or manages website content (Reviews, Team and Shippy: Owner
+     * and Super Admin). A Branch-scoped account never opens it; each tab's own data keeps its own check.
      */
     public function authorize(): bool
     {

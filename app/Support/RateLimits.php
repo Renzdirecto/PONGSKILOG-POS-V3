@@ -53,7 +53,7 @@ class RateLimits
         'branch-copy' => 20,
         'copy-previews' => 60,
         'branch-settings' => 20,
-        /** Website → Team: card edits and portrait uploads. */
+        /** Website → Team and Shippy: team changes, portrait uploads and the chat switch. */
         'website-content' => 30,
         'operations-writes' => 60,
         'operations-setup-copy' => 20,
@@ -96,6 +96,16 @@ class RateLimits
         RateLimiter::for('landing-love', fn (Request $request) => [
             Limit::perMinute(40)->by('session|'.hash('sha256', $request->session()->getId())),
             Limit::perMinute(160)->by('ip|'.$request->ip()),
+        ]);
+        /**
+         * Shippy chat: a person asks a few questions a minute. The address ceiling covers clients that keep no session
+         * and the last limit caps the whole endpoint; Gemini has its own lower ceilings (App\Support\ShippyAssistant).
+         */
+        RateLimiter::for('shippy-chat', fn (Request $request) => [
+            Limit::perMinute(10)->by('session|'.hash('sha256', $request->session()->getId())),
+            Limit::perHour(60)->by('session-hour|'.hash('sha256', $request->session()->getId())),
+            Limit::perMinute(40)->by('ip|'.$request->ip()),
+            Limit::perMinute(300)->by('everyone'),
         ]);
         RateLimiter::for('landing-team-photos', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
         RateLimiter::for('customer-review-images', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));

@@ -1570,6 +1570,18 @@ export function ReviewLegalDialog({
                                 about who tapped.
                             </p>
                             <p>
+                                Shippy, the chat helper on this page, answers
+                                questions about the menu, prices, store hours
+                                and location. What you type there is sent to
+                                PONGSKILOG’s server and, to write a reply, to
+                                Google’s Gemini AI service, which handles it
+                                under Google’s own terms. PONGSKILOG does not
+                                save your conversation or link it to you: only
+                                daily totals of how much the chat is used are
+                                kept. Please do not type personal information in
+                                the chat.
+                            </p>
+                            <p>
                                 Pending, rejected and private feedback is
                                 retained for up to 90 days. Approved public
                                 reviews are retained for up to one year from

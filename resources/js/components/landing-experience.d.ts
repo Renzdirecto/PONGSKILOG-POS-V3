@@ -18,6 +18,8 @@ declare const LandingExperience: ComponentType<{
     reviewNoticeVersion: string;
     team: TeamCard[];
     loveTotal: number;
+    /** Shippy's preset questions, or null while the chat is switched off in Website → Shippy. */
+    shippy: { presets: string[] } | null;
 }>;
 
 export default LandingExperience;

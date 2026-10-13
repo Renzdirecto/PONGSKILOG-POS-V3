@@ -233,7 +233,7 @@ test('Website gives each account only the tabs it may use', function () {
     Branch::factory()->create(['name' => 'Adarna', 'code' => 'MAIN']);
 
     $this->actingAs(landingTeamUser('owner'))->get(route('workspaces.website-analytics'))->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->where('can', ['analytics' => true, 'reviews' => true, 'team' => true])
+        ->where('can', ['analytics' => true, 'reviews' => true, 'team' => true, 'shippy' => true])
         ->has('team', 6)->has('reviewBranches', 1)->where('reviewBranches.0.code', 'MAIN')
         ->where('report.totals.heart_taps', 0));
 
@@ -244,7 +244,7 @@ test('Website gives each account only the tabs it may use', function () {
         'effect' => PermissionOverrideEffect::Deny,
     ]);
     $this->actingAs($content)->get(route('workspaces.website-analytics'))->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->where('can', ['analytics' => false, 'reviews' => true, 'team' => true])
+        ->where('can', ['analytics' => false, 'reviews' => true, 'team' => true, 'shippy' => true])
         ->where('report', null)->has('team', 6));
 
     /** An Owner without Settings keeps Analytics and gets no website content. */
@@ -254,6 +254,180 @@ test('Website gives each account only the tabs it may use', function () {
         'effect' => PermissionOverrideEffect::Deny,
     ]);
     $this->actingAs($reader)->get(route('workspaces.website-analytics'))->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->where('can', ['analytics' => true, 'reviews' => false, 'team' => false])
+        ->where('can', ['analytics' => true, 'reviews' => false, 'team' => false, 'shippy' => false])
         ->where('team', [])->where('reviewBranches', []));
+});
+
+/** The team in landing page order, by corner label. */
+function landingTeamOrder(): array
+{
+    return LandingTeamMember::query()->orderBy('position')->orderBy('id')->pluck('role_label')->all();
+}
+
+test('a member added in Website joins the end of the team on the landing page and the addition is audited', function (string $role) {
+    $manager = landingTeamUser($role);
+
+    $this->actingAs($manager)->postJson(route('workspaces.website.team.store'), landingTeamCard(['role_label' => 'CREW', 'role_title' => 'Kitchen Crew', 'name' => 'Ana Reyes']))
+        ->assertOk()->assertExactJson(['saved' => true]);
+
+    $member = LandingTeamMember::query()->where('role_label', 'CREW')->sole();
+    expect($member->only(['position', 'role_title', 'name', 'bio', 'is_visible', 'image_path']))->toBe([
+        'position' => 7, 'role_title' => 'Kitchen Crew', 'name' => 'Ana Reyes', 'bio' => 'Nagluluto mula 2022.', 'is_visible' => true, 'image_path' => null,
+    ]);
+    $audit = AuditLog::query()->where('action', 'landing_team.created')->sole();
+    expect($audit->user_id)->toBe($manager->id)->and($audit->module)->toBe('settings')->and($audit->before)->toBeNull()
+        ->and($audit->after)->toMatchArray(['role_label' => 'CREW', 'name' => 'Ana Reyes', 'has_photo' => false]);
+    auth()->logout();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->has('team', 7)->where('team.6.code', 'CREW')->where('team.6.name', 'Ana Reyes')->where('team.6.img', null));
+})->with(['owner', 'super_admin']);
+
+test('a member can be added with a portrait and can be added hidden', function () {
+    $disk = Storage::fake('s3');
+    $owner = landingTeamUser('owner');
+
+    $this->actingAs($owner)->post(route('workspaces.website.team.store'), [...landingTeamCard(['role_label' => 'CREW', 'is_visible' => '0']), 'image' => UploadedFile::fake()->image('ana.jpg', 600, 800)], ['Accept' => 'application/json'])
+        ->assertOk()->assertExactJson(['saved' => true]);
+
+    $member = LandingTeamMember::query()->where('role_label', 'CREW')->sole();
+    expect($member->is_visible)->toBeFalse()->and($member->image_path)->toStartWith('landing-team/'.$member->id.'/')->toEndWith('.webp');
+    [, , $type] = getimagesizefromstring($disk->get($member->image_path));
+    expect($type)->toBe(IMAGETYPE_WEBP)
+        ->and(AuditLog::query()->where('action', 'landing_team.created')->sole()->after['has_photo'])->toBeTrue();
+    /** A hidden member is in Website but not on the landing page. */
+    $this->get(route('workspaces.website-analytics'))->assertInertia(fn (Assert $page) => $page->has('team', 7)->where('team.6.visible', false));
+    auth()->logout();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->has('team', 6));
+});
+
+test('an invalid new member returns 422 and adds nobody', function (array $overrides, string $field) {
+    $disk = Storage::fake('s3');
+
+    $this->actingAs(landingTeamUser('owner'))->post(route('workspaces.website.team.store'), landingTeamCard(['role_label' => 'CREW', ...$overrides]), ['Accept' => 'application/json'])
+        ->assertUnprocessable()->assertJsonValidationErrors($field);
+
+    expect(LandingTeamMember::query()->count())->toBe(6)->and($disk->allFiles())->toBe([]);
+})->with([
+    'no role label' => [['role_label' => ''], 'role_label'],
+    'no role' => [['role_title' => ''], 'role_title'],
+    'a bio over 120 characters' => [['bio' => str_repeat('x', 121)], 'bio'],
+    'no visibility' => [['is_visible' => null], 'is_visible'],
+    'a portrait that is not a real image' => [['image' => UploadedFile::fake()->create('fake.png', 10, 'image/png')], 'image'],
+]);
+
+test('the team stops at thirty members with a message that says what to do', function () {
+    LandingTeamMember::factory()->count(LandingTeamMember::MAX_MEMBERS - 6)->create();
+
+    $this->actingAs(landingTeamUser('owner'))->postJson(route('workspaces.website.team.store'), landingTeamCard(['role_label' => 'CREW']))
+        ->assertUnprocessable()->assertJsonPath('errors.name.0', 'The team already has 30 members. Delete one before adding another.');
+
+    expect(LandingTeamMember::query()->count())->toBe(LandingTeamMember::MAX_MEMBERS);
+});
+
+test('a deleted member leaves the landing page, the members after them move up and the deletion is audited', function () {
+    $disk = Storage::fake('s3');
+    $owner = landingTeamUser('owner');
+    $member = landingTeamMember('CTO');
+    $this->actingAs($owner)->post(route('workspaces.website.team.photo.store', $member), ['image' => UploadedFile::fake()->image('cto.jpg', 600, 800)], ['Accept' => 'application/json'])->assertOk();
+    $uploaded = $member->fresh()->image_path;
+    $url = route('landing-team.photo', $member, false).'?v='.md5($uploaded);
+
+    $this->deleteJson(route('workspaces.website.team.destroy', $member))->assertOk()->assertExactJson(['saved' => true]);
+
+    expect(LandingTeamMember::query()->find($member->id))->toBeNull()
+        ->and(landingTeamOrder())->toBe(['CEO', 'COO', 'CFO', 'CHEF', 'CMO'])
+        ->and(LandingTeamMember::query()->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3, 4, 5]);
+    $disk->assertMissing($uploaded);
+    /** The portrait that shipped with the release is a public file other installs still use. */
+    expect(file_exists(public_path('images/landing-v130-cdf1eb05.webp')))->toBeTrue();
+    $audit = AuditLog::query()->where('action', 'landing_team.deleted')->sole();
+    expect($audit->user_id)->toBe($owner->id)->and($audit->after)->toBeNull()
+        ->and($audit->before)->toMatchArray(['role_label' => 'CTO', 'name' => 'Samantha Faustino', 'has_photo' => true]);
+    auth()->logout();
+    $this->get($url)->assertNotFound();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->has('team', 5)->where('team', fn ($team) => ! collect($team)->pluck('code')->contains('CTO')));
+});
+
+test('deleting a member that is already gone returns 404', function () {
+    $member = landingTeamMember('CMO');
+    $member->delete();
+
+    $this->actingAs(landingTeamUser('owner'))->deleteJson(route('workspaces.website.team.destroy', $member->id))->assertNotFound();
+});
+
+test('the team is shown in the order saved in Website and the reorder is audited', function () {
+    $owner = landingTeamUser('owner');
+    $ids = LandingTeamMember::query()->orderBy('position')->pluck('id', 'role_label');
+    $order = [$ids['CHEF'], $ids['CEO'], $ids['CMO'], $ids['COO'], $ids['CTO'], $ids['CFO']];
+
+    $this->actingAs($owner)->putJson(route('workspaces.website.team.reorder'), ['ids' => $order])->assertOk()->assertExactJson(['saved' => true]);
+
+    expect(landingTeamOrder())->toBe(['CHEF', 'CEO', 'CMO', 'COO', 'CTO', 'CFO']);
+    $audit = AuditLog::query()->where('action', 'landing_team.reordered')->sole();
+    expect($audit->user_id)->toBe($owner->id)->and($audit->before)->toBe(['order' => $ids->values()->all()])->and($audit->after)->toBe(['order' => $order]);
+    $this->get(route('workspaces.website-analytics'))->assertInertia(fn (Assert $page) => $page
+        ->where('team', fn ($team) => collect($team)->pluck('code')->all() === ['CHEF', 'CEO', 'CMO', 'COO', 'CTO', 'CFO']));
+    auth()->logout();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page
+        ->where('team', fn ($team) => collect($team)->pluck('code')->all() === ['CHEF', 'CEO', 'CMO', 'COO', 'CTO', 'CFO']));
+
+    /** Saving the same order again changes nothing and is not audited twice. */
+    $this->actingAs($owner)->putJson(route('workspaces.website.team.reorder'), ['ids' => $order])->assertOk();
+    expect(AuditLog::query()->where('action', 'landing_team.reordered')->count())->toBe(1);
+});
+
+test('an order that does not name every member exactly once returns 422 and keeps the order', function (Closure $ids) {
+    $current = LandingTeamMember::query()->orderBy('position')->pluck('id')->all();
+
+    $this->actingAs(landingTeamUser('owner'))->putJson(route('workspaces.website.team.reorder'), ['ids' => $ids($current)])
+        ->assertUnprocessable();
+
+    expect(landingTeamOrder())->toBe(['CEO', 'COO', 'CTO', 'CFO', 'CHEF', 'CMO'])
+        ->and(AuditLog::query()->where('action', 'landing_team.reordered')->count())->toBe(0);
+})->with([
+    'a member left out' => [fn (array $ids) => array_slice($ids, 1)],
+    'a member that does not exist' => [fn (array $ids) => [...array_slice($ids, 1), 999_999]],
+    'a member named twice' => [fn (array $ids) => [...array_slice($ids, 1), $ids[1]]],
+    'an empty list' => [fn (array $ids) => []],
+    'ids that are not numbers' => [fn (array $ids) => array_map(fn (int $id) => 'member-'.$id, $ids)],
+]);
+
+test('a stale order tells the manager to refresh', function () {
+    $ids = LandingTeamMember::query()->orderBy('position')->pluck('id')->all();
+    LandingTeamMember::factory()->create();
+
+    $this->actingAs(landingTeamUser('owner'))->putJson(route('workspaces.website.team.reorder'), ['ids' => array_reverse($ids)])
+        ->assertUnprocessable()->assertJsonPath('errors.ids.0', 'The team changed since this page was loaded. Refresh and try again.');
+});
+
+test('guests are refused and staff without website access are forbidden from adding, deleting and reordering', function (string $role) {
+    $member = landingTeamMember('COO');
+    $ids = array_reverse(LandingTeamMember::query()->orderBy('position')->pluck('id')->all());
+
+    $this->postJson(route('workspaces.website.team.store'), landingTeamCard())->assertUnauthorized();
+    $this->deleteJson(route('workspaces.website.team.destroy', $member))->assertUnauthorized();
+    $this->putJson(route('workspaces.website.team.reorder'), ['ids' => $ids])->assertUnauthorized();
+
+    $this->actingAs(landingTeamUser($role));
+    $this->postJson(route('workspaces.website.team.store'), landingTeamCard())->assertForbidden();
+    $this->deleteJson(route('workspaces.website.team.destroy', $member))->assertForbidden();
+    $this->putJson(route('workspaces.website.team.reorder'), ['ids' => $ids])->assertForbidden();
+
+    expect(landingTeamOrder())->toBe(['CEO', 'COO', 'CTO', 'CFO', 'CHEF', 'CMO']);
+})->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
+
+test('an Owner whose Settings access was removed cannot add, delete or reorder', function () {
+    $owner = landingTeamUser('owner');
+    UserPermissionOverride::query()->create([
+        'user_id' => $owner->id, 'permission_id' => Permission::query()->where('name', 'settings.manage')->value('id'),
+        'effect' => PermissionOverrideEffect::Deny,
+    ]);
+    $this->actingAs($owner);
+
+    $this->postJson(route('workspaces.website.team.store'), landingTeamCard())->assertForbidden();
+    $this->deleteJson(route('workspaces.website.team.destroy', landingTeamMember('COO')))->assertForbidden();
+    $this->putJson(route('workspaces.website.team.reorder'), ['ids' => array_reverse(LandingTeamMember::query()->pluck('id')->all())])->assertForbidden();
+
+    expect(landingTeamOrder())->toBe(['CEO', 'COO', 'CTO', 'CFO', 'CHEF', 'CMO']);
 });

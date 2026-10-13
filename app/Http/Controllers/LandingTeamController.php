@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audit\AuditRecorder;
+use App\Http\Requests\ReorderLandingTeamRequest;
+use App\Http\Requests\StoreLandingTeamMemberRequest;
 use App\Http\Requests\UpdateLandingTeamMemberRequest;
 use App\Models\LandingTeamMember;
 use App\Models\User;
@@ -14,14 +16,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
- * Website → Team (v1.3.0): the Owner and Super Admin edit the six landing page team cards. A portrait goes through the
- * same checked image pipeline as Product and Branch images and is re-encoded to one WebP on object storage; the
- * original upload is never kept. The landing page reads the cards on every visit, so a change needs no deployment.
+ * Website → Team (v1.3.0): the Owner and Super Admin add, edit, hide, reorder and delete the landing page's team. A
+ * portrait goes through the same checked image pipeline as Product and Branch images and is re-encoded to one WebP on
+ * object storage; the original upload is never kept. The landing page reads the team on every visit, so a change needs
+ * no deployment. Every change is audited under `settings`.
  */
 class LandingTeamController extends Controller
 {
@@ -30,14 +34,84 @@ class LandingTeamController extends Controller
 
     public const MAX_KILOBYTES = 5120;
 
+    private const FIELDS = ['role_label', 'role_title', 'name', 'bio', 'is_visible'];
+
+    /** Adds a member after everyone already on the team, with the optional portrait in the same request. */
+    public function store(StoreLandingTeamMemberRequest $request, ProductImageProcessor $processor, AuditRecorder $audit): JsonResponse
+    {
+        $upload = $request->file('image');
+        /** A portrait that is not a usable image stops here, before anything is created. */
+        $contents = $upload instanceof UploadedFile ? $processor->rendition($upload, self::BOUND, self::MAX_KILOBYTES) : null;
+        $stored = null;
+
+        try {
+            DB::transaction(function () use ($request, $contents, $audit, &$stored): void {
+                $positions = LandingTeamMember::query()->lockForUpdate()->pluck('position');
+                if ($positions->count() >= LandingTeamMember::MAX_MEMBERS) {
+                    throw ValidationException::withMessages(['name' => 'The team already has '.LandingTeamMember::MAX_MEMBERS.' members. Delete one before adding another.']);
+                }
+                $member = new LandingTeamMember($request->safe()->only(self::FIELDS));
+                $member->position = (int) $positions->max() + 1;
+                $member->save();
+                if ($contents !== null) {
+                    $stored = $this->put($member, $contents);
+                    $member->forceFill(['image_path' => $stored])->save();
+                }
+                $audit->record(null, $request->user(), 'settings', 'landing_team.created', LandingTeamMember::class, (string) $member->id, null, $member->only(self::FIELDS) + ['has_photo' => $stored !== null]);
+            });
+        } catch (Throwable $exception) {
+            $this->discard($stored);
+            throw $exception;
+        }
+
+        return response()->json(['saved' => true]);
+    }
+
     public function update(UpdateLandingTeamMemberRequest $request, LandingTeamMember $member, AuditRecorder $audit): JsonResponse
     {
         DB::transaction(function () use ($request, $member, $audit): void {
             $locked = LandingTeamMember::query()->whereKey($member->id)->lockForUpdate()->firstOrFail();
-            $fields = ['role_label', 'role_title', 'name', 'bio', 'is_visible'];
-            $before = $locked->only($fields);
+            $before = $locked->only(self::FIELDS);
             $locked->update($request->validated());
-            $audit->record(null, $request->user(), 'settings', 'landing_team.updated', LandingTeamMember::class, (string) $locked->id, $before, $locked->only($fields));
+            $audit->record(null, $request->user(), 'settings', 'landing_team.updated', LandingTeamMember::class, (string) $locked->id, $before, $locked->only(self::FIELDS));
+        });
+
+        return response()->json(['saved' => true]);
+    }
+
+    /** Deletes a member and their uploaded portrait; the members after them move up one place. */
+    public function destroy(Request $request, LandingTeamMember $member, AuditRecorder $audit): JsonResponse
+    {
+        Gate::authorize('delete', LandingTeamMember::class);
+        $path = DB::transaction(function () use ($request, $member, $audit): ?string {
+            $team = LandingTeamMember::query()->lockForUpdate()->orderBy('position')->orderBy('id')->get()->keyBy('id');
+            $gone = $team->get($member->id);
+            abort_if($gone === null, 404);
+            $gone->delete();
+            $this->arrange($team->except([$gone->id])->modelKeys(), $team->all());
+            $audit->record(null, $request->user(), 'settings', 'landing_team.deleted', LandingTeamMember::class, (string) $gone->id, $gone->only(self::FIELDS) + ['has_photo' => $gone->image_path !== null], null);
+
+            return $gone->image_path;
+        });
+        $this->discard($path);
+
+        return response()->json(['saved' => true]);
+    }
+
+    /** Puts the whole team in the order given; the list must name every member exactly once. */
+    public function reorder(ReorderLandingTeamRequest $request, AuditRecorder $audit): JsonResponse
+    {
+        $order = array_map(intval(...), (array) $request->validated('ids'));
+        DB::transaction(function () use ($request, $order, $audit): void {
+            $team = LandingTeamMember::query()->lockForUpdate()->orderBy('position')->orderBy('id')->get()->keyBy('id');
+            $before = array_map(intval(...), $team->keys()->all());
+            if (count($order) !== count($before) || array_diff($before, $order) !== []) {
+                throw ValidationException::withMessages(['ids' => 'The team changed since this page was loaded. Refresh and try again.']);
+            }
+            if ($order !== $before) {
+                $this->arrange($order, $team->all());
+                $audit->record(null, $request->user(), 'settings', 'landing_team.reordered', LandingTeamMember::class, 'order', ['order' => $before], ['order' => $order]);
+            }
         });
 
         return response()->json(['saved' => true]);
@@ -49,11 +123,7 @@ class LandingTeamController extends Controller
         $request->validate(['image' => ['required', 'file']]);
         $upload = $request->file('image');
         abort_unless($upload instanceof UploadedFile, 422);
-        $contents = $processor->rendition($upload, self::BOUND, self::MAX_KILOBYTES);
-        $path = LandingTeamMember::UPLOADS.$member->id.'/'.Str::uuid().'.webp';
-        if (! Storage::disk('s3')->put($path, $contents, ['CacheControl' => 'public, max-age=31536000, immutable', 'ContentType' => 'image/webp'])) {
-            throw new RuntimeException('Could not store the team photo.');
-        }
+        $path = $this->put($member, $processor->rendition($upload, self::BOUND, self::MAX_KILOBYTES));
 
         try {
             $previous = $this->replace($request, $member, $path, $audit);
@@ -89,6 +159,32 @@ class LandingTeamController extends Controller
             'Content-Type' => 'image/webp',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /** Stores a re-encoded portrait on object storage and returns its path. */
+    private function put(LandingTeamMember $member, string $contents): string
+    {
+        $path = LandingTeamMember::UPLOADS.$member->id.'/'.Str::uuid().'.webp';
+        if (! Storage::disk('s3')->put($path, $contents, ['CacheControl' => 'public, max-age=31536000, immutable', 'ContentType' => 'image/webp'])) {
+            throw new RuntimeException('Could not store the team photo.');
+        }
+
+        return $path;
+    }
+
+    /**
+     * Numbers the given members 1, 2, 3 and so on, in the order given.
+     *
+     * @param  array<int, int|string>  $order
+     * @param  array<int|string, LandingTeamMember>  $team
+     */
+    private function arrange(array $order, array $team): void
+    {
+        foreach (array_values($order) as $index => $id) {
+            if ($team[$id]->position !== $index + 1) {
+                $team[$id]->forceFill(['position' => $index + 1])->save();
+            }
+        }
     }
 
     /** Points the card at a new portrait (or none) and returns the path it replaced. */

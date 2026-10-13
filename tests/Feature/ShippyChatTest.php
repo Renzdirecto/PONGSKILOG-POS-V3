@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 
-const SHIPPY_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+const SHIPPY_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
 const SHIPPY_TEST_KEY = 'test-gemini-key-0000';
 
 beforeEach(function () {
@@ -377,3 +377,96 @@ test('every card photo and every approved destination is one the landing page al
         ->and(ShippyKnowledge::ACTIONS['messenger']['href'])->toBe(LandingSeo::metadata()['schema']['sameAs'][0])
         ->and(ShippyKnowledge::ADDRESS)->toContain(LandingSeo::metadata()['schema']['address']['streetAddress']);
 });
+
+test('while Gemini keeps timing out each pause is longer and one failed attempt starts the next', function () {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY, 'services.gemini.requests_per_minute' => 100]);
+    Http::fake([SHIPPY_GEMINI => Http::failedConnection()]);
+    Log::shouldReceive('warning')->with('Shippy could not use Gemini.', ['reason' => 'unreachable', 'status' => 0]);
+    $ask = fn (int $number) => shippyAsk('Magkano ang tapsilog? '.$number)->assertOk()->assertJsonPath('reply.source', 'rules');
+
+    /** Three timeouts in a row start the first pause of five minutes. */
+    foreach ([1, 2, 3, 4] as $number) {
+        $ask($number);
+    }
+    Http::assertSentCount(3);
+
+    /** After it, one more timeout is enough: the next pause is ten minutes, not another three wasted requests. */
+    $this->travel(6)->minutes();
+    $ask(5);
+    $ask(6);
+    Http::assertSentCount(4);
+    $this->travel(6)->minutes();
+    $ask(7);
+    Http::assertSentCount(4);
+    $this->travel(5)->minutes();
+    $ask(8);
+    $ask(9);
+    Http::assertSentCount(5);
+    /** The third pause is twenty minutes. */
+    $this->travel(19)->minutes();
+    $ask(10);
+    Http::assertSentCount(5);
+});
+
+test('an answer that arrives again ends the longer pauses', function () {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY, 'services.gemini.requests_per_minute' => 100]);
+    Http::fake([SHIPPY_GEMINI => Http::sequence()
+        ->pushFailedConnection()->pushFailedConnection()->pushFailedConnection()
+        ->push(['candidates' => [['content' => ['parts' => [['text' => '{"reply": "Opo!"}']]]]]])
+        ->pushFailedConnection()->pushFailedConnection()]);
+    Log::shouldReceive('warning');
+
+    foreach ([1, 2, 3] as $number) {
+        shippyAsk('Magkano ang bulalo? '.$number)->assertJsonPath('reply.source', 'rules');
+    }
+    $this->travel(6)->minutes();
+    shippyAsk('Magkano ang bulalo? 4')->assertJsonPath('reply.source', 'ai');
+
+    /** Back to normal: a single failure no longer pauses Gemini, so the next question is asked too. */
+    shippyAsk('Magkano ang bulalo? 5')->assertJsonPath('reply.source', 'rules');
+    shippyAsk('Magkano ang bulalo? 6')->assertJsonPath('reply.source', 'rules');
+    Http::assertSentCount(6);
+});
+
+test('answers recorded from the real model pass the checks and are shown with server-resolved cards', function (string $question, string $recorded, string $text, array $items, array $actions) {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+    Http::fake([SHIPPY_GEMINI => Http::response([
+        'candidates' => [['content' => ['parts' => [['text' => $recorded]], 'role' => 'model'], 'finishReason' => 'STOP', 'index' => 0]],
+        'usageMetadata' => ['promptTokenCount' => 1127, 'candidatesTokenCount' => 63, 'totalTokenCount' => 1190, 'serviceTier' => 'standard'],
+        'modelVersion' => 'gemini-3.5-flash-lite',
+    ])]);
+
+    $reply = shippyAsk($question)->assertOk()->json('reply');
+
+    expect($reply['source'])->toBe('ai')
+        ->and($reply['text'])->toBe($text)
+        ->and(array_map(fn (array $item): string => $item['name'].' '.$item['price'], $reply['items']))->toBe($items)
+        ->and(array_column($reply['actions'], 'key'))->toBe($actions)
+        ->and(shippyUsageToday())->toMatchArray(['requests' => 1, 'errors' => 0, 'input_tokens' => 1127, 'output_tokens' => 63]);
+})->with([
+    /** Verbatim `candidates.0.content.parts.0.text` values returned by gemini-3.5-flash-lite on 2026-10-14. */
+    'a price question' => [
+        'Magkano po ang tapa at may kasama na bang kanin?',
+        "{\n \"reply\": \"Ang Tapa Silog ay 100 pesos at may kasama na itong garlic rice at egg.\",\n \"actions\": [\n \"menu\"\n ],\n \"items\": [\n \"Tapa Silog\"\n ]\n}",
+        'Ang Tapa Silog ay 100 pesos at may kasama na itong garlic rice at egg.',
+        ['Tapa Silog ₱100'], ['menu'],
+    ],
+    'a budget question' => [
+        'May 100 pesos ako, ano pwede kong kainin?',
+        "{\n \"reply\": \"Pasok sa budget mo ang Tapa Silog na 100 pesos at Pork Sisig na 100 pesos. Pwede kang mag-message sa Facebook para sa ibang detalye.\",\n \"actions\": [\n \"menu\",\n \"messenger\"\n ],\n \"items\": [\n \"Tapa Silog\",\n \"Pork Sisig\"\n ]\n}",
+        'Pasok sa budget mo ang Tapa Silog na 100 pesos at Pork Sisig na 100 pesos. Pwede kang mag-message sa Facebook para sa ibang detalye.',
+        ['Tapa Silog ₱100', 'Pork Sisig ₱100'], ['menu', 'messenger'],
+    ],
+    'a budget question, another wording' => [
+        'May 100 pesos ako, ano pwede kong kainin?',
+        "{\n \"reply\": \"May Tapa Silog 100 at Liempo Silog 100 kang pwedeng kainin sa budget mo na yan.\",\n \"actions\": [\n \"menu\"\n ],\n \"items\": [\n \"Tapa Silog\",\n \"Liempo Silog\"\n ]\n}",
+        'May Tapa Silog 100 at Liempo Silog 100 kang pwedeng kainin sa budget mo na yan.',
+        ['Tapa Silog ₱100', 'Liempo Silog ₱100'], ['menu'],
+    ],
+    'the location' => [
+        'Saan kayo located?',
+        "{\n \"reply\": \"Kami ay nasa 1511, Unit V, Purok 8 Adarna St., Quezon City. Bisitahin ang aming menu para sa iba pang detalye.\",\n \"items\": [],\n \"actions\": [\n \"maps\",\n \"menu\"\n ]\n}",
+        'Kami ay nasa 1511, Unit V, Purok 8 Adarna St., Quezon City. Bisitahin ang aming menu para sa iba pang detalye.',
+        [], ['maps', 'menu'],
+    ],
+]);

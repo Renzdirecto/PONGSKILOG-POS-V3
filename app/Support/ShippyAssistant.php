@@ -45,6 +45,8 @@ class ShippyAssistant
 
     private const FAILURES = 'shippy:failures';
 
+    private const PAUSES = 'shippy:pauses';
+
     private const PER_MINUTE = 'shippy:provider-minute';
 
     public function __construct(private ShippyKnowledge $knowledge, private ShippyUsage $usage) {}
@@ -157,23 +159,28 @@ class ShippyAssistant
             return null;
         }
         Cache::forget(self::FAILURES);
+        Cache::forget(self::PAUSES);
 
         return $answer;
     }
 
     /**
      * Counts a failed Gemini request and opens the circuit breaker when asking again would not help: at once for a
-     * refusal (bad key, missing model, exhausted quota), after three failures in five minutes otherwise.
+     * refusal (bad key, missing model, exhausted quota), after three failures in five minutes otherwise. While
+     * Gemini keeps failing or timing out, one failed attempt after a pause starts the next pause and each pause is
+     * twice as long (5, 10, 20, 40, then 60 minutes), so a provider that stays slow is asked only about once an hour.
      */
     private function failed(string $reason, int $status): null
     {
         rescue(fn () => $this->usage->error(), report: false);
         $failures = (int) Cache::get(self::FAILURES, 0) + 1;
+        $pauses = (int) Cache::get(self::PAUSES, 0);
         Cache::put(self::FAILURES, $failures, now()->addMinutes(5));
         if ($status >= 400 && $status < 500) {
             Cache::put(self::BREAKER, true, now()->addMinutes($status === 429 ? 15 : 30));
-        } elseif ($failures >= 3) {
-            Cache::put(self::BREAKER, true, now()->addMinutes(5));
+        } elseif ($failures >= 3 || $pauses > 0) {
+            Cache::put(self::BREAKER, true, now()->addMinutes(min(60, 5 * 2 ** min($pauses, 4))));
+            Cache::put(self::PAUSES, $pauses + 1, now()->addHours(6));
         }
         Log::warning('Shippy could not use Gemini.', ['reason' => $reason, 'status' => $status]);
 

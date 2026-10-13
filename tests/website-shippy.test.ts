@@ -17,7 +17,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 const shippy: WebsiteShippy = {
     enabled: true,
     configured: true,
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     usage: {
         today: {
             messages: 40,
@@ -230,7 +230,7 @@ test('usage shows real counts for today and thirty days with the cost marked as 
 test('the page says whether a key is configured and can never show the key itself', () => {
     const configured = words(settingsHarness(shippy).render());
     assert.ok(configured.includes('Configured on the server'));
-    assert.ok(configured.includes('gemini-2.5-flash-lite'));
+    assert.ok(configured.includes('gemini-3.5-flash-lite'));
 
     const missing = words(
         settingsHarness({

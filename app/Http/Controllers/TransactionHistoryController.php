@@ -120,7 +120,6 @@ class TransactionHistoryController extends Controller
             ->when($branch !== null, fn ($query) => $query->where('branch_id', $branch?->id))
             ->whereNotNull('committed_at')
             ->where('commercial_status', '!=', CommercialStatus::Voided)
-            ->with('branch:id,name,code', 'items.modifiers', 'payments.createdBy', 'payments.invoiceProof', 'adjustments.createdBy', 'branchTable')
             ->findOrFail($order->id);
     }
 
@@ -133,8 +132,8 @@ class TransactionHistoryController extends Controller
         $canMutate = $operational
             && $order->commercial_status === CommercialStatus::Active
             && $mutableBranch->storeSessions()->where('status', StoreSessionStatus::Open)->whereKey($order->store_session_id)->exists();
-        $detail = $projection->detail($order, $canMutate);
         $summary = $receipt->summary($order);
+        $detail = $projection->detail($order, $canMutate);
         if (! $operational) {
             /** Invoice proofs stream through the POS-only route, so a read-only viewer sees that one exists but no link. */
             $detail['payment_groups'] = array_map(fn (array $group): array => [

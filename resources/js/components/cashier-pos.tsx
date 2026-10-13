@@ -1,3 +1,4 @@
+import { usePendingTransaction } from '@/hooks/use-pending-transaction';
 import { cancelLoad } from '@/routes/pos/qr-orders';
 import { qrRequest, qrError } from '@/lib/qr-http';
 import { createClientUuid } from '@/lib/client-uuid';
@@ -100,7 +101,7 @@ export function CashierPos({
     kitchenStatus: KitchenStatusSummary;
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
-    const realtimeStatus = usePosCatalogRealtime(branch.id);
+    const { connectionStatus: realtimeStatus, refreshCatalog } = usePosCatalogRealtime(branch.id);
     usePosQrRealtime(branch.id, ['loadedQr']);
     const loadedQr = usePage().props.loadedQr as StaffQrOrder | null;
     const qrView =
@@ -155,6 +156,12 @@ export function CashierPos({
     const payLater = useHttp<PayLaterInput, { order: PayLaterOrder }>({
         idempotency_key: '',
     });
+    usePendingTransaction(
+        payment.processing ||
+            payLater.processing ||
+            attempt !== null ||
+            payLaterAttempt !== null,
+    );
     const reservationSubmitting = useRef(false);
     const [reservationError, setReservationError] = useState('');
     const [paymentError, setPaymentError] = useState('');
@@ -353,12 +360,7 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('paid');
-            router.reload({
-                only: ['catalog', 'loadedQr', 'storeContext'],
-                preserveUrl: true,
-                onHttpException: handleRevalidationException,
-                onNetworkError: () => false,
-            });
+            refreshCatalog(['loadedQr', 'storeContext']);
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error
@@ -468,12 +470,7 @@ export function CashierPos({
             form.setData(freshOrderDetails());
             form.clearErrors();
             setDialog('payLaterSuccess');
-            router.reload({
-                only: ['catalog', 'loadedQr', 'storeContext'],
-                preserveUrl: true,
-                onHttpException: handleRevalidationException,
-                onNetworkError: () => false,
-            });
+            refreshCatalog(['loadedQr', 'storeContext']);
         } catch (error: unknown) {
             const response =
                 error && typeof error === 'object' && 'response' in error

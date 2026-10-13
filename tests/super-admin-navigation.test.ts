@@ -246,7 +246,7 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
     assert.match(shell, /useUnreadNotifications\(userId, initialUnread\)/);
     assert.match(shell, /unreadBadgeLabel\(unread\)/);
     assert.doesNotMatch(shell, /coming later|Planned notifications/i);
-    assert.match(layout, /<SuperAdminShell>\{children\}<\/SuperAdminShell>/);
+    assert.match(layout, /<SuperAdminShell>\{content\}<\/SuperAdminShell>/);
     assert.match(layout, /Back to Super Admin Control Center/);
 });
 

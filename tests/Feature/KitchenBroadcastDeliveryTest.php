@@ -9,12 +9,12 @@ use App\Models\Branch;
 use App\Models\KitchenTicket;
 use App\Models\Order;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
-use Illuminate\Support\Facades\Queue;
 
-test('critical lifecycle signals broadcast synchronously only after the outer application transaction commits', function () {
+test('critical lifecycle signals broadcast after the response and only after the outer transaction commits', function () {
     $branch = Branch::factory()->create();
     $order = Order::factory()->for($branch)->create(['kitchen_status' => KitchenStatus::Kitchen, 'committed_at' => now()]);
     $ticket = KitchenTicket::factory()->for($order)->for($branch)->create();
@@ -27,7 +27,6 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
     });
     Broadcast::extend('kitchen-test', fn () => $broadcaster);
     config(['broadcasting.default' => 'kitchen-test', 'broadcasting.connections.kitchen-test' => ['driver' => 'kitchen-test']]);
-    Queue::fake();
 
     DB::transaction(function () use ($events, &$delivered): void {
         DB::transaction(function () use ($events): void {
@@ -38,14 +37,16 @@ test('critical lifecycle signals broadcast synchronously only after the outer ap
         expect($delivered)->toBe([]);
     });
 
+    expect($delivered)->toBe([]);
+    app(DeferredCallbackCollection::class)->invoke();
     expect($delivered)->toBe(['kitchen.ticket_created', 'kitchen.status_changed', 'reports.changed', 'kitchen.order_updated', 'display.orders_changed']);
-    Queue::assertNothingPushed();
 
     DB::beginTransaction();
     foreach ($events as $event) {
         event($event);
     }
     DB::rollBack();
+    app(DeferredCallbackCollection::class)->invoke();
     expect($delivered)->toHaveCount(5);
 });
 
@@ -63,5 +64,6 @@ test('a realtime transport failure is reported without undoing the committed wri
     });
 
     expect($branch->fresh()->name)->toBe('Committed despite transport failure');
+    app(DeferredCallbackCollection::class)->invoke();
     Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'Reverb unavailable');
 });

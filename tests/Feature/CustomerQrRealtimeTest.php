@@ -8,10 +8,10 @@ use App\Models\CustomerQrSession;
 use App\Models\Order;
 use App\Support\CustomerQrAccess;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
-use Illuminate\Support\Facades\Queue;
 
 test('customer cookie authorizes only its narrow tracking and branch catalog channels', function () {
     $branch = Branch::factory()->create();
@@ -31,7 +31,7 @@ test('customer cookie authorizes only its narrow tracking and branch catalog cha
     $this->postJson(route('qr.broadcasting.auth', $branch), ['channel_name' => 'private-order-tracking.not-valid', 'socket_id' => '1.2'])->assertNotFound();
 });
 
-test('QR signals are synchronous only after outer commit and reveal minimal audience specific data', function () {
+test('QR signals run after the response and outer commit and reveal minimal audience specific data', function () {
     $branch = Branch::factory()->create();
     $order = Order::factory()->for($branch)->create(['source' => 'customer_qr', 'public_tracking_id' => bin2hex(random_bytes(32)), 'submitted_at' => now()]);
     $signals = [new QrOrderChanged($order, 'qr.order_submitted'), new CustomerTrackingChanged($order), new CustomerCatalogChanged($branch->id)];
@@ -42,7 +42,6 @@ test('QR signals are synchronous only after outer commit and reveal minimal audi
     });
     Broadcast::extend('qr-test', fn () => $broadcaster);
     config(['broadcasting.default' => 'qr-test', 'broadcasting.connections.qr-test' => ['driver' => 'qr-test']]);
-    Queue::fake();
     DB::transaction(function () use ($signals, &$delivered): void {
         DB::transaction(function () use ($signals): void {
             foreach ($signals as $signal) {
@@ -51,17 +50,19 @@ test('QR signals are synchronous only after outer commit and reveal minimal audi
         });
         expect($delivered)->toBe([]);
     });
+    expect($delivered)->toBe([]);
+    app(DeferredCallbackCollection::class)->invoke();
     expect(array_column($delivered, 'name'))->toBe(['qr.order_submitted', 'order.tracking_changed', 'qr.catalog_changed']);
     expect((string) $delivered[0]['channels'][0])->toBe('private-branch.'.$branch->id.'.pos');
     expect((string) $delivered[1]['channels'][0])->toBe('private-order-tracking.'.$order->public_tracking_id);
     expect($delivered[1]['payload'])->not->toHaveKeys(['order_id', 'branch_id', 'customer_label', 'items', 'payments', 'on_hand', 'token_hash']);
     expect($delivered[2]['payload'])->not->toHaveKeys(['on_hand', 'effective_price', 'user_id', 'items']);
-    Queue::assertNothingPushed();
     DB::beginTransaction();
     foreach ($signals as $signal) {
         event($signal);
     }
     DB::rollBack();
+    app(DeferredCallbackCollection::class)->invoke();
     expect($delivered)->toHaveCount(3);
 });
 
@@ -79,5 +80,6 @@ test('QR transport failure reports the outage without undoing committed state', 
         CustomerTrackingChanged::dispatch($order);
     });
     expect($order->fresh()->archive_reason)->toBe('cashier_archived');
+    app(DeferredCallbackCollection::class)->invoke();
     Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'QR transport unavailable');
 });

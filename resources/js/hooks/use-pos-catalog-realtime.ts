@@ -1,6 +1,6 @@
 import { useConnectionStatus, useEcho } from '@laravel/echo-react';
 import { router } from '@inertiajs/react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { handleRevalidationException } from '@/hooks/use-user-context-realtime';
 import {
     POS_CATALOG_REALTIME_EVENTS,
@@ -20,26 +20,35 @@ export function usePosCatalogRealtime(branchId: string) {
     const connectionStatus = useConnectionStatus();
     const previousStatus = useRef(connectionStatus);
     const hasConnected = useRef(connectionStatus === 'connected');
+    const additionalProps = useRef(new Set<string>());
     const refresh = useMemo(
         () =>
             createRealtimeRefresh(
-                (finish) =>
+                (finish) => {
+                    const only = ['catalog', ...additionalProps.current];
+                    additionalProps.current.clear();
                     router.reload({
-                        only: ['catalog'],
+                        only,
                         preserveUrl: true,
                         onHttpException: handleRevalidationException,
                         onNetworkError: () => false,
                         onFinish: finish,
-                    }),
+                    });
+                },
                 REFRESH_DEBOUNCE_MS,
             ),
         [branchId],
     );
+    const refreshCatalog = useCallback((only: string[] = []) => {
+        only.forEach((prop) => additionalProps.current.add(prop));
+        router.flushByCacheTags('workspaces');
+        refresh.schedule();
+    }, [refresh]);
 
     useEcho<PosCatalogRealtimeEvent>(
         `branch.${branchId}.inventory`,
         [...POS_CATALOG_REALTIME_EVENTS],
-        () => refresh.schedule(),
+        () => refreshCatalog(),
         [branchId, refresh],
     );
 
@@ -67,5 +76,5 @@ export function usePosCatalogRealtime(branchId: string) {
         return () => refresh.dispose();
     }, [refresh]);
 
-    return connectionStatus;
+    return { connectionStatus, refreshCatalog };
 }

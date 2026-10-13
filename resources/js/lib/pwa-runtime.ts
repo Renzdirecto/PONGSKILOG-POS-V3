@@ -333,6 +333,7 @@ function createRuntime() {
                 }
                 try {
                     const response = await inner.request(config);
+                    if (write) router.flushByCacheTags('workspaces');
                     connectivity.reportServerResponse();
 
                     return response;

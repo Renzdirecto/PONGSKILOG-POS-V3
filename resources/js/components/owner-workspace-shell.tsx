@@ -1,3 +1,4 @@
+import { WorkspaceLink } from '@/components/workspace-link';
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
@@ -185,7 +186,7 @@ function NavigationControl({
     }[variant];
 
     return (
-        <Link
+        <WorkspaceLink
             href={href}
             aria-current={active ? 'page' : undefined}
             aria-label={variant === 'rail' ? destination.label : undefined}
@@ -205,7 +206,7 @@ function NavigationControl({
                     {destination.shortLabel}
                 </span>
             )}
-        </Link>
+        </WorkspaceLink>
     );
 }
 

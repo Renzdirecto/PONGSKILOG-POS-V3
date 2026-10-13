@@ -43,12 +43,18 @@ export function WorkspaceLink(props: ComponentProps<typeof Link>) {
         <Link
             {...props}
             component={sameComponent ? undefined : target?.component}
-            pageProps={(_current, shared) => instantWorkspaceProps(shared, target?.pageProps)}
+            pageProps={(_current, shared) =>
+                instantWorkspaceProps(shared, target?.pageProps)
+            }
             onBefore={(visit) => {
                 const result = props.onBefore?.(visit);
                 if (result === false) return false;
                 const cached = props.href ? router.getCached(props.href) : null;
-                if (cached && !cached.inFlight && cached.expiresAt > Date.now()) {
+                if (
+                    cached &&
+                    !cached.inFlight &&
+                    cached.expiresAt > Date.now()
+                ) {
                     visit.component = null;
                 }
                 return result;

@@ -142,17 +142,17 @@ function experienceHarness() {
                               },
                           }
                         : name === 'react/jsx-runtime'
-                    ? {
-                          jsx: (type: unknown, props: unknown) => ({
-                              type,
-                              props,
-                          }),
-                          jsxs: (type: unknown, props: unknown) => ({
-                              type,
-                              props,
-                          }),
-                      }
-                    : {},
+                          ? {
+                                jsx: (type: unknown, props: unknown) => ({
+                                    type,
+                                    props,
+                                }),
+                                jsxs: (type: unknown, props: unknown) => ({
+                                    type,
+                                    props,
+                                }),
+                            }
+                          : {},
         {},
         window,
         document,
@@ -464,7 +464,14 @@ function mapHarness(mobile: boolean) {
     const element = { contains: (target: unknown) => target === 'map' };
     ui.mapRef.current = element;
     ui.initMap();
-    return { ...harness, tiles, flights, handlers, counts, options: () => options };
+    return {
+        ...harness,
+        tiles,
+        flights,
+        handlers,
+        counts,
+        options: () => options,
+    };
 }
 
 test('the map uses keyless OpenStreetMap tiles and keeps its marker, zoom control and recenter', () => {
@@ -643,7 +650,9 @@ test('the landing page reports only its own page view and link taps as anonymous
     /** The hero uses a button; a Menu anchor also bubbles through trackLink and must still count only once. */
     clock.now += 2000;
     ui.nav('board')({ preventDefault() {} });
-    ui.trackLink({ target: { closest: () => ({ getAttribute: () => '#board' }) } });
+    ui.trackLink({
+        target: { closest: () => ({ getAttribute: () => '#board' }) },
+    });
     assert.deepEqual(tracked.slice(5), ['menu_click']);
 
     const source = readFileSync(
@@ -685,8 +694,14 @@ test('phone headings step down without shrinking body copy below a readable size
         'utf8',
     );
     const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
-    assert.match(phone, /\.landing-v3 \.v3-s155 \{\s*font-size: clamp\(46px, 13vw, 56px\);/);
-    assert.match(css, /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(64px, 14vw, 220px\);/);
+    assert.match(
+        phone,
+        /\.landing-v3 \.v3-s155 \{\s*font-size: clamp\(46px, 13vw, 56px\);/,
+    );
+    assert.match(
+        css,
+        /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(64px, 14vw, 220px\);/,
+    );
     const sizes = [...phone.matchAll(/font-size: ([\d.]+)px/g)].map((match) =>
         Number(match[1]),
     );

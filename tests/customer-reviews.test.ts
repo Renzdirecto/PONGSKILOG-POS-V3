@@ -162,9 +162,11 @@ test('a review card reads picture name and stars, then the review, then date and
         description: 'Solid ang tapa.',
         visit_type: 'takeout',
     });
-    const [head, body, foot] = ['review-head', 'review-body', 'review-foot'].map(
-        (name) => html.indexOf(`class="${name}"`),
-    );
+    const [head, body, foot] = [
+        'review-head',
+        'review-body',
+        'review-foot',
+    ].map((name) => html.indexOf(`class="${name}"`));
     assert.ok(head > -1 && head < body && body < foot);
     assert.match(
         html.slice(head, body),
@@ -694,7 +696,10 @@ test('the thank-you greets the guest by the preferred name the server saved', ()
         onClose() {},
     });
     const heading = elements(tree).find((element) => element.type === 'h3')!;
-    assert.equal([heading.props.children].flat().join(''), 'Salamat, Carlo M.!');
+    assert.equal(
+        [heading.props.children].flat().join(''),
+        'Salamat, Carlo M.!',
+    );
     assert.equal(
         elements(tree).some((element) => element.type === 'form'),
         false,
@@ -905,10 +910,7 @@ test('phone type is smaller but every form control stays at 16px so iOS does not
     );
     const phone = css.slice(css.indexOf('@media (max-width: 600px)'));
     const controls = phone.slice(phone.indexOf('.review-form select,'));
-    assert.match(
-        controls.slice(0, controls.indexOf('}')),
-        /font-size: 16px;/,
-    );
+    assert.match(controls.slice(0, controls.indexOf('}')), /font-size: 16px;/);
     const sizes = [...phone.matchAll(/font-size: ([\d.]+)px/g)].map((match) =>
         Number(match[1]),
     );

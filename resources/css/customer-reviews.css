@@ -897,8 +897,7 @@
     .review-photo-add {
         font-size: 13px;
     }
-    .review-form
-        input:not([type='checkbox'], [type='radio'], [type='file']),
+    .review-form input:not([type='checkbox'], [type='radio'], [type='file']),
     .review-form select,
     .review-form textarea {
         height: 48px;

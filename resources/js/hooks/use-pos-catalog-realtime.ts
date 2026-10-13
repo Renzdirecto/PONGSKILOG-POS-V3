@@ -23,27 +23,27 @@ export function usePosCatalogRealtime(branchId: string) {
     const additionalProps = useRef(new Set<string>());
     const refresh = useMemo(
         () =>
-            createRealtimeRefresh(
-                (finish) => {
-                    const only = ['catalog', ...additionalProps.current];
-                    additionalProps.current.clear();
-                    router.reload({
-                        only,
-                        preserveUrl: true,
-                        onHttpException: handleRevalidationException,
-                        onNetworkError: () => false,
-                        onFinish: finish,
-                    });
-                },
-                REFRESH_DEBOUNCE_MS,
-            ),
+            createRealtimeRefresh((finish) => {
+                const only = ['catalog', ...additionalProps.current];
+                additionalProps.current.clear();
+                router.reload({
+                    only,
+                    preserveUrl: true,
+                    onHttpException: handleRevalidationException,
+                    onNetworkError: () => false,
+                    onFinish: finish,
+                });
+            }, REFRESH_DEBOUNCE_MS),
         [branchId],
     );
-    const refreshCatalog = useCallback((only: string[] = []) => {
-        only.forEach((prop) => additionalProps.current.add(prop));
-        router.flushByCacheTags('workspaces');
-        refresh.schedule();
-    }, [refresh]);
+    const refreshCatalog = useCallback(
+        (only: string[] = []) => {
+            only.forEach((prop) => additionalProps.current.add(prop));
+            router.flushByCacheTags('workspaces');
+            refresh.schedule();
+        },
+        [refresh],
+    );
 
     useEcho<PosCatalogRealtimeEvent>(
         `branch.${branchId}.inventory`,

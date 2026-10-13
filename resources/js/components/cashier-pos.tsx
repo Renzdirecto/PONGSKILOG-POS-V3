@@ -101,7 +101,8 @@ export function CashierPos({
     kitchenStatus: KitchenStatusSummary;
 }) {
     const rememberKey = `pos:${usePage().props.auth.user?.id}:${branch.id}`;
-    const { connectionStatus: realtimeStatus, refreshCatalog } = usePosCatalogRealtime(branch.id);
+    const { connectionStatus: realtimeStatus, refreshCatalog } =
+        usePosCatalogRealtime(branch.id);
     usePosQrRealtime(branch.id, ['loadedQr']);
     const loadedQr = usePage().props.loadedQr as StaffQrOrder | null;
     const qrView =

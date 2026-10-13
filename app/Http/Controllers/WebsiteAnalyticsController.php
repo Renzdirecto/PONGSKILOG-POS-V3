@@ -6,9 +6,12 @@ use App\Http\Requests\WebsiteAnalyticsRequest;
 use App\Models\Branch;
 use App\Models\CustomerReview;
 use App\Models\LandingTeamMember;
+use App\Models\ShippyDocument;
+use App\Models\ShippyFaq;
 use App\Models\ShippySetting;
 use App\Models\User;
 use App\Support\ReportPeriod;
+use App\Support\ShippyAssistant;
 use App\Support\ShippyUsage;
 use App\Support\WebsiteAnalytics;
 use Inertia\Inertia;
@@ -18,7 +21,7 @@ class WebsiteAnalyticsController extends Controller
 {
     /**
      * The Owner's Website workspace (v1.3.0): Analytics (read-only counters of the public landing page), Reviews (the
-     * moderation moved here from Settings), Team (the landing page's team) and Shippy (the chat's switch and usage).
+     * moderation moved here from Settings), Team (the landing page's team) and Shippy (the chat's switch, knowledge and usage).
      * The website belongs to the whole business, never to one Branch, so only business-wide accounts are authorized
      * (see the request) and the selected Branch narrows nothing. A tab the account may not use gets no data.
      */
@@ -49,6 +52,14 @@ class WebsiteAnalyticsController extends Controller
                 'configured' => filled(config('services.gemini.key')),
                 'model' => (string) config('services.gemini.model'),
                 'usage' => $usage->summary(),
+                'faqs' => ShippyFaq::query()->orderBy('category')->orderBy('id')->get()->map->row()->all(),
+                /** A document's name, size and state: its text stays on the server. */
+                'documents' => ShippyDocument::query()->orderBy('filename')->get(['id', 'filename', 'bytes', 'sections', 'is_enabled', 'updated_at'])->map->row()->all(),
+                'limits' => [
+                    'faqs' => ShippyFaq::MAX_FAQS, 'alternatives' => ShippyFaq::MAX_ALTERNATIVES, 'category' => ShippyFaq::MAX_CATEGORY,
+                    'question' => ShippyAssistant::MAX_MESSAGE, 'answer' => ShippyAssistant::MAX_REPLY,
+                    'documents' => ShippyDocument::MAX_DOCUMENTS, 'document_kilobytes' => ShippyDocument::MAX_KILOBYTES,
+                ],
             ] : null,
         ]);
     }

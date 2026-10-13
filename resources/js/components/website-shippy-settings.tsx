@@ -6,6 +6,7 @@ import { actionClass } from '@/components/catalog-ui';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { SettingSwitch } from '@/components/receipt-settings';
 import { Button } from '@/components/ui/button';
+import { WebsiteShippyKnowledge } from '@/components/website-shippy-knowledge';
 import { qrError, qrRequest } from '@/lib/qr-http';
 import { shippyCostLabel } from '@/lib/website-shippy';
 import type { ShippyUsageTotals, WebsiteShippy } from '@/lib/website-shippy';
@@ -14,9 +15,10 @@ import { update } from '@/routes/workspaces/website/shippy';
 const count = (value: number): string => value.toLocaleString('en-PH');
 
 /**
- * Website → Shippy: the switch of the landing page chat and what it has used. The figures are read once with the
- * page (Refresh reads them again; nothing polls) and the cost is an estimate from the tokens Gemini reported. The
- * API key is environment configuration: this page only says whether one is set.
+ * Website → Shippy: the switch of the landing page chat, what the Owner taught it (Test Shippy, FAQs and Documents,
+ * see `website-shippy-knowledge.tsx`) and what it has used. The figures are read once with the page (Refresh reads
+ * them again; nothing polls) and the cost is an estimate from the tokens Gemini reported. The API key is environment
+ * configuration: this page only says whether one is set.
  */
 export function WebsiteShippySettings({ shippy }: { shippy: WebsiteShippy }) {
     const [busy, setBusy] = useState(false);
@@ -100,12 +102,14 @@ export function WebsiteShippySettings({ shippy }: { shippy: WebsiteShippy }) {
                 </dl>
                 {!shippy.configured && (
                     <p className="text-xs text-neutral-600">
-                        Without a key Shippy still answers, from its built-in
-                        rules and the published menu. The key is set in the
-                        server environment and is never shown here.
+                        Without a key Shippy still answers, from the published
+                        menu, your FAQs and your documents. The key is set in
+                        the server environment and is never shown here.
                     </p>
                 )}
             </div>
+
+            <WebsiteShippyKnowledge shippy={shippy} />
 
             <div
                 className={`${ownerPanelClass} flex flex-col gap-3 p-4 sm:p-5`}
@@ -197,10 +201,10 @@ export function WebsiteShippySettings({ shippy }: { shippy: WebsiteShippy }) {
                     </li>
                     <li>
                         Questions counts every question asked. Gemini requests
-                        counts only the ones sent to Gemini: a repeated preset
-                        question, a question past the daily limit and any
-                        question while Gemini is unavailable are answered
-                        without one.
+                        counts only the ones sent to Gemini: a question the
+                        menu, an FAQ or a document answers, a question past the
+                        daily limit and any question while Gemini is unavailable
+                        are answered without one.
                     </li>
                     <li>
                         Only these daily totals are kept. No message text and

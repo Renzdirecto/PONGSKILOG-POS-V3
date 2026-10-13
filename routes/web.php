@@ -57,6 +57,7 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SeoController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\ShippyController;
+use App\Http\Controllers\ShippyKnowledgeController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
@@ -259,6 +260,18 @@ Route::middleware(['auth'])->group(function () {
     });
     /** Website → Shippy: the Owner and Super Admin switch the landing page chat on or off (ShippySettingPolicy). */
     Route::put('workspaces/website/shippy', [ShippyController::class, 'update'])->middleware('throttle:website-content')->name('workspaces.website.shippy.update');
+    /** Test Shippy asks the real answer engine, so it has its own lower limit; Gemini keeps its own ceilings and quota. */
+    Route::post('workspaces/website/shippy/test', [ShippyController::class, 'test'])->middleware('throttle:shippy-test')->name('workspaces.website.shippy.test');
+    /** Website → Shippy → Knowledge and Documents: the FAQs and Markdown files Shippy answers from (ShippySettingPolicy). */
+    Route::prefix('workspaces/website/shippy')->name('workspaces.website.shippy.')->middleware('throttle:website-content')->group(function (): void {
+        Route::post('faqs', [ShippyKnowledgeController::class, 'storeFaq'])->name('faqs.store');
+        Route::put('faqs/{faq}', [ShippyKnowledgeController::class, 'updateFaq'])->whereNumber('faq')->name('faqs.update');
+        Route::delete('faqs/{faq}', [ShippyKnowledgeController::class, 'destroyFaq'])->whereNumber('faq')->name('faqs.destroy');
+        Route::post('documents', [ShippyKnowledgeController::class, 'storeDocuments'])->name('documents.store');
+        Route::put('documents/{document}', [ShippyKnowledgeController::class, 'updateDocument'])->whereNumber('document')->name('documents.update');
+        Route::post('documents/{document}/file', [ShippyKnowledgeController::class, 'replaceDocument'])->whereNumber('document')->name('documents.replace');
+        Route::delete('documents/{document}', [ShippyKnowledgeController::class, 'destroyDocument'])->whereNumber('document')->name('documents.destroy');
+    });
 
     Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
         ->middleware('permission:transactions.view')

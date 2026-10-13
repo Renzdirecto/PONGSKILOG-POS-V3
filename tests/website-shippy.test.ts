@@ -38,6 +38,17 @@ const shippy: WebsiteShippy = {
         days: 30,
         daily_limit: 300,
     },
+    faqs: [],
+    documents: [],
+    limits: {
+        faqs: 100,
+        alternatives: 8,
+        category: 40,
+        question: 200,
+        answer: 420,
+        documents: 10,
+        document_kilobytes: 100,
+    },
 };
 
 type Element = { type: unknown; props: Record<string, any> };

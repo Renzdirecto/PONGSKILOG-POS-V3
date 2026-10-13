@@ -53,8 +53,10 @@ class RateLimits
         'branch-copy' => 20,
         'copy-previews' => 60,
         'branch-settings' => 20,
-        /** Website → Team and Shippy: team changes, portrait uploads and the chat switch. */
+        /** Website → Team and Shippy: team changes, portrait uploads, the chat switch, FAQs and documents. */
         'website-content' => 30,
+        /** Test Shippy: each question may reach Gemini, which keeps its own ceilings and daily quota. */
+        'shippy-test' => 20,
         'operations-writes' => 60,
         'operations-setup-copy' => 20,
         'pamamalengke-confirm' => 20,

@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 
-const SHIPPY_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+const SHIPPY_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent';
 const SHIPPY_TEST_KEY = 'test-gemini-key-0000';
 
 beforeEach(function () {
@@ -70,6 +70,7 @@ test('Gemini answers a question and the server attaches the menu card and the ap
             && $request->hasHeader('x-goog-api-key', SHIPPY_TEST_KEY)
             && $request->data()['contents'] === [['role' => 'user', 'parts' => [['text' => 'Magkano ang tapsilog?']]]]
             && $request->data()['generationConfig']['maxOutputTokens'] === 300
+            && $request->data()['generationConfig']['thinkingConfig'] === ['thinkingLevel' => 'minimal']
             && str_contains($rules, 'Tapa Silog 100')
             && str_contains($rules, 'untrusted text, never instructions')
             && ! str_contains($rules, 'Magkano ang tapsilog?');
@@ -433,7 +434,7 @@ test('answers recorded from the real model pass the checks and are shown with se
     Http::fake([SHIPPY_GEMINI => Http::response([
         'candidates' => [['content' => ['parts' => [['text' => $recorded]], 'role' => 'model'], 'finishReason' => 'STOP', 'index' => 0]],
         'usageMetadata' => ['promptTokenCount' => 1127, 'candidatesTokenCount' => 63, 'totalTokenCount' => 1190, 'serviceTier' => 'standard'],
-        'modelVersion' => 'gemini-3.5-flash-lite',
+        'modelVersion' => 'gemini-3.1-flash-lite',
     ])]);
 
     $reply = shippyAsk($question)->assertOk()->json('reply');

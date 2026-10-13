@@ -99,7 +99,7 @@ test('Website shows real usage with an estimated cost and never the API key', fu
     /** $0.30 per million input tokens and $2.50 per million output tokens. */
     $response->assertInertia(fn (Assert $page) => $page
         ->where('can.shippy', true)
-        ->where('shippy.enabled', true)->where('shippy.configured', true)->where('shippy.model', 'gemini-3.5-flash-lite')
+        ->where('shippy.enabled', true)->where('shippy.configured', true)->where('shippy.model', 'gemini-3.1-flash-lite')
         ->where('shippy.usage.daily_limit', 300)->where('shippy.usage.days', 30)
         ->where('shippy.usage.today', ['messages' => 40, 'requests' => 25, 'errors' => 2, 'input_tokens' => 1_000_000, 'output_tokens' => 500_000, 'estimated_usd' => 1.55])
         ->where('shippy.usage.month', ['messages' => 50, 'requests' => 30, 'errors' => 3, 'input_tokens' => 3_000_000, 'output_tokens' => 500_000, 'estimated_usd' => 2.15]));

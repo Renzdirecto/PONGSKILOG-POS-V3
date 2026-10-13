@@ -56,12 +56,12 @@ return [
     */
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+        'model' => env('GEMINI_MODEL', 'gemini-3.1-flash-lite'),
         'timeout' => (int) env('GEMINI_TIMEOUT', 8),
         'requests_per_minute' => (int) env('SHIPPY_REQUESTS_PER_MINUTE', 10),
         'requests_per_day' => (int) env('SHIPPY_REQUESTS_PER_DAY', 300),
-        'input_usd_per_million' => (float) env('GEMINI_INPUT_USD_PER_MILLION', 0.30),
-        'output_usd_per_million' => (float) env('GEMINI_OUTPUT_USD_PER_MILLION', 2.50),
+        'input_usd_per_million' => (float) env('GEMINI_INPUT_USD_PER_MILLION', 0.25),
+        'output_usd_per_million' => (float) env('GEMINI_OUTPUT_USD_PER_MILLION', 1.50),
     ],
 
 ];

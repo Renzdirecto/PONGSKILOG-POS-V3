@@ -223,6 +223,8 @@ class ShippyAssistant
             'generationConfig' => [
                 'temperature' => 0.4,
                 'maxOutputTokens' => self::MAX_OUTPUT_TOKENS,
+                /** Thinking is counted against the output limit and can leave no room for the answer. */
+                'thinkingConfig' => ['thinkingLevel' => 'minimal'],
                 'responseMimeType' => 'application/json',
                 'responseSchema' => [
                     'type' => 'OBJECT',

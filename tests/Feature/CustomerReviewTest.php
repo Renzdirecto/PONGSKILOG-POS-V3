@@ -35,6 +35,17 @@ function customerReviewUser(string $role): User
     return $user;
 }
 
+/** A decodable PNG with a valid ancillary text chunk, sized using actual bytes rather than a fake size override. */
+function customerReviewPhotoWithBytes(int $bytes): UploadedFile
+{
+    $contents = UploadedFile::fake()->image('photo.png', 2400, 1200)->getContent();
+    $text = 'qa'.chr(0).str_repeat('x', $bytes - strlen($contents) - 15);
+    $chunk = 'tEXt'.$text;
+    $contents = substr($contents, 0, -12).pack('N', strlen($text)).$chunk.pack('N', crc32($chunk)).substr($contents, -12);
+
+    return UploadedFile::fake()->createWithContent('photo.png', $contents);
+}
+
 test('a guest submits a pending public review with versioned consent and cannot assign moderation fields', function () {
     $this->freezeTime();
     $branch = Branch::factory()->create();
@@ -127,6 +138,44 @@ test('photos are resized reencoded as private WebP and only image metadata is st
     expect($review->images[1]['bytes'])->toBeLessThan($photo->getSize());
     $this->get(route('reviews.images.show', [$review, 0]))->assertNotFound();
 });
+
+test('three review photos and an optional profile at the real five MiB boundary are compressed and saved privately', function () {
+    $disk = Storage::fake('s3');
+    $branch = Branch::factory()->create();
+    $photo = customerReviewPhotoWithBytes(5 * 1024 * 1024);
+    expect($photo->getSize())->toBe(5242880);
+
+    $this->post(route('reviews.store'), customerReviewPayload($branch, [
+        'profile_photo' => $photo,
+        'review_images' => [$photo, $photo, $photo],
+    ]), ['Accept' => 'application/json'])->assertExactJson(['saved' => true]);
+
+    $review = CustomerReview::query()->sole();
+    expect($review->images)->toHaveCount(4);
+    expect($disk->allFiles())->toHaveCount(4);
+    foreach ($review->images as $index => $image) {
+        $contents = $disk->get($image['path']);
+        $dimensions = getimagesizefromstring($contents);
+        expect($dimensions[2])->toBe(IMAGETYPE_WEBP);
+        expect($dimensions[0])->toBe($index === 0 ? 256 : 1200);
+        expect($image['bytes'])->toBe(strlen($contents))->toBeLessThan(5242880);
+        $this->get(route('reviews.images.show', [$review, $index]))->assertNotFound();
+    }
+});
+
+test('an original one byte above five MiB returns 422 without saving any attachments', function (string $field) {
+    $disk = Storage::fake('s3');
+    $branch = Branch::factory()->create();
+    $photo = customerReviewPhotoWithBytes(5 * 1024 * 1024 + 1);
+    expect($photo->getSize())->toBe(5242881);
+    $attachments = $field === 'profile_photo' ? ['profile_photo' => $photo] : ['review_images' => [$photo]];
+
+    $this->post(route('reviews.store'), customerReviewPayload($branch, $attachments), ['Accept' => 'application/json'])
+        ->assertUnprocessable()->assertJsonValidationErrors($field);
+
+    $this->assertDatabaseCount('customer_reviews', 0);
+    expect($disk->allFiles())->toBe([]);
+})->with(['profile_photo', 'review_images.0']);
 
 test('oversized excessive spoofed or invalid-dimension images return 422', function (string $scenario, string $error) {
     Storage::fake('s3');

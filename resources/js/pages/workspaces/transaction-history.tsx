@@ -42,6 +42,8 @@ import {
 } from '@/components/ui/dialog';
 import { useBranchRealtimeRefresh } from '@/hooks/use-branch-realtime-refresh';
 import { useReportsRealtimeRefresh } from '@/hooks/use-reports-realtime-refresh';
+import { usePendingTransaction } from '@/hooks/use-pending-transaction';
+import { isOfflineWriteBlock } from '@/lib/pwa-mutation-guard';
 import { createClientUuid } from '@/lib/client-uuid';
 import { canTransitionKitchenStatus } from '@/lib/kitchen';
 import { cents, lineCents, pesos } from '@/lib/pos-money';
@@ -66,6 +68,7 @@ import type {
     CartLine,
     OrderSummary,
     PaymentInput,
+    PaymentAttempt,
     ReceiptSummary,
 } from '@/types/pos';
 
@@ -310,6 +313,16 @@ export default function TransactionHistory({
 
     const refresh = () =>
         router.reload({ only: ['transactions', 'history_total', 'metrics'] });
+    async function openSettlement(id: string) {
+        setSelected(null);
+        setSettling(true);
+        const pendingDetail = loadDetail(id, false);
+        const request = detailRequest.current;
+        const detail = await pendingDetail;
+        if (request !== detailRequest.current) return;
+        if (detail) setSelected(detail);
+        else setSettling(false);
+    }
     async function openEdit(id: string) {
         setEditing(true);
         setEditLoading(true);
@@ -384,10 +397,11 @@ export default function TransactionHistory({
             if (select) setSelected(detail);
             return detail;
         } catch {
-            toast.error('Transaction details could not be loaded.');
+            if (request === detailRequest.current)
+                toast.error('Transaction details could not be loaded.');
             return null;
         } finally {
-            setLoading(false);
+            if (request === detailRequest.current) setLoading(false);
         }
     }
 
@@ -657,16 +671,14 @@ export default function TransactionHistory({
                         <TransactionCard
                             key={item.id}
                             item={item}
-                            branchCode={allBranches ? item.branch?.code : undefined}
+                            branchCode={
+                                allBranches ? item.branch?.code : undefined
+                            }
                             compact={view === 'list'}
                             readOnly={!operational}
                             onDetails={() => void loadDetail(item.id)}
                             onEdit={() => void openEdit(item.id)}
-                            onPayment={() =>
-                                void loadDetail(item.id).then((detail) =>
-                                    detail ? setSettling(true) : undefined,
-                                )
-                            }
+                            onPayment={() => void openSettlement(item.id)}
                             onVoid={() =>
                                 void loadDetail(item.id).then((detail) =>
                                     detail ? setVoiding(true) : undefined,
@@ -754,6 +766,22 @@ export default function TransactionHistory({
                     <div className="h-24 animate-pulse rounded-xl bg-neutral-100" />
                 </DialogContent>
             </Dialog>
+            <Dialog
+                open={settling && loading && selected === null}
+                onOpenChange={(open) => {
+                    if (open) return;
+                    detailRequest.current += 1;
+                    setSettling(false);
+                }}
+            >
+                <DialogContent className="pos-surface max-w-md p-5">
+                    <DialogTitle>Take payment</DialogTitle>
+                    <DialogDescription>
+                        Loading the current balance…
+                    </DialogDescription>
+                    <div className="h-24 rounded-xl bg-neutral-100 motion-safe:animate-pulse" />
+                </DialogContent>
+            </Dialog>
             {selected && editing && catalog && !editLoading && (
                 <EditDialog
                     detail={selected}
@@ -786,8 +814,9 @@ export default function TransactionHistory({
                         setSettling(false);
                         setSelected(null);
                     }}
-                    onPaid={(detail) => {
-                        setSelected(detail);
+                    onPaid={() => {
+                        detailRequest.current += 1;
+                        setSelected(null);
                         setSettling(false);
                         setResolution(null);
                         refresh();
@@ -1268,7 +1297,9 @@ function TransactionCard({
                     {pesos(item.outstanding)}
                 </button>
             )}
-            <div className={`grid gap-1.5 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            <div
+                className={`grid gap-1.5 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}
+            >
                 {!readOnly && (
                     <>
                         <button
@@ -1618,12 +1649,10 @@ function TransactionDetailDialog({
                                                 key={payment.id}
                                                 type="button"
                                                 disabled={
-                                                    detail.operational ===
-                                                    false
+                                                    detail.operational === false
                                                 }
                                                 title={
-                                                    detail.operational ===
-                                                    false
+                                                    detail.operational === false
                                                         ? 'Invoice proofs open from this Branch POS'
                                                         : undefined
                                                 }
@@ -2101,7 +2130,8 @@ function EditDialog({
     );
     const difference = Math.round((Number(total) - settled) * 100) / 100;
     /** A refund funded by both methods needs the Cashier's Cash/Cashless answer; it is never guessed. */
-    const settledCents = cents(detail.amount_paid) - cents(detail.adjustment_total);
+    const settledCents =
+        cents(detail.amount_paid) - cents(detail.adjustment_total);
     const refundCents =
         settledCents > totalCents ? settledCents - totalCents : 0n;
     const refundBounds =
@@ -2874,10 +2904,13 @@ function SettlementDialog({
     detail: Detail;
     tables: BranchTable[];
     onClose: () => void;
-    onPaid: (detail: Detail) => void;
+    onPaid: () => void;
 }) {
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState('');
+    const [attempt, setAttempt] = useState<PaymentAttempt | null>(null);
+    const submitting = useRef(false);
+    usePendingTransaction(processing || attempt !== null);
     const idempotencyKey = useMemo(() => createClientUuid(), [detail.id]);
     const saved: OrderSummary = {
         id: detail.id,
@@ -2908,33 +2941,60 @@ function SettlementDialog({
         })),
     };
     async function pay(payment: PaymentInput) {
+        if (submitting.current) return;
+        submitting.current = true;
+        const payload = attempt ?? {
+            ...payment,
+            idempotency_key: idempotencyKey,
+        };
+        setAttempt(payload);
         setProcessing(true);
         setError('');
         try {
-            await http.getClient().request({
-                ...settle(detail.id),
-                data: { ...payment, idempotency_key: idempotencyKey },
-                headers: { Accept: 'application/json' },
-            });
             const response = await http.getClient().request({
-                ...show(detail.id),
+                ...settle(detail.id),
+                data: payload,
                 headers: { Accept: 'application/json' },
             });
+            const result = JSON.parse(response.data) as {
+                receipt?: ReceiptSummary;
+            };
+            if (
+                result.receipt?.payment_status !== 'paid' ||
+                result.receipt.id !== detail.id
+            )
+                throw new Error('Unconfirmed payment');
+            setAttempt(null);
             toast.success('Balance paid.');
-            onPaid(
-                (JSON.parse(response.data) as { transaction: Detail })
-                    .transaction,
-            );
-        } catch {
-            setError(
-                'Payment could not be completed. Confirm the amount and try again.',
-            );
+            onPaid();
+        } catch (reason) {
+            const status = (reason as { response?: { status?: number } } | null)
+                ?.response?.status;
+            if (
+                isOfflineWriteBlock(reason) ||
+                (status && [401, 403, 404, 409, 419, 422].includes(status))
+            ) {
+                setAttempt(null);
+                setError(
+                    'Payment was rejected. Check the store, access and payment details before trying again.',
+                );
+            } else {
+                setError(
+                    'Payment result is unconfirmed. Retry the same payment to safely recover the result.',
+                );
+            }
         } finally {
+            submitting.current = false;
             setProcessing(false);
         }
     }
     return (
-        <Dialog open onOpenChange={(value) => !value && onClose()}>
+        <Dialog
+            open
+            onOpenChange={(value) =>
+                !value && !processing && !attempt && onClose()
+            }
+        >
             <DialogContent className={`${posDialogClass} pos-payment-dialog`}>
                 <div className="shrink-0 border-b border-neutral-200 px-4 py-3.5 pr-14">
                     <DialogTitle className="text-[15px] font-bold">
@@ -2961,7 +3021,7 @@ function SettlementDialog({
                     onConfirm={(payment) => void pay(payment)}
                     processing={processing}
                     error={error}
-                    attempt={null}
+                    attempt={attempt}
                 />
             </DialogContent>
         </Dialog>

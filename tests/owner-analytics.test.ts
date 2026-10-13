@@ -276,7 +276,10 @@ test('owner transactions reuse the cashier page inside the management shell', ()
     assert.match(history, /const showRoute = business \? showBusiness : show;/);
     assert.match(history, /selected && editing && catalog &&/);
     assert.match(history, /canShareQr=\{selected\.operational !== false\}/);
-    assert.match(history, /branchCode=\{allBranches \? item\.branch\?\.code : undefined\}/);
+    assert.match(
+        history,
+        /branchCode=\{\s*allBranches \? item\.branch\?\.code : undefined\s*\}/,
+    );
 });
 
 test('the staff page picks its routes from the server-provided surface', () => {

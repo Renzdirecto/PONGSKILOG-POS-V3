@@ -165,6 +165,23 @@ try {
     echo 'LOCAL TARGET '.json_encode($identity, JSON_THROW_ON_ERROR).' schema='.$schema.PHP_EOL;
     verifyPhase20(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Fresh isolated migration failed.');
 
+    /** v1.2.1 is additive: rolling its three migrations back must preserve existing Branch records. */
+    $existingBranch = Branch::factory()->create();
+    $existingAttributes = $existingBranch->fresh()->getAttributes();
+    $releaseSchema = fn (): array => [
+        DB::getSchemaBuilder()->hasTable('customer_reviews'),
+        DB::getSchemaBuilder()->hasColumn('customer_reviews', 'customer_email'),
+        DB::getSchemaBuilder()->hasTable('website_events'),
+    ];
+    verifyPhase20($releaseSchema() === [true, true, true], 'Fresh v1.2.1 schema is incomplete.');
+    verifyPhase20(Artisan::call('migrate:rollback', ['--step' => 3, '--force' => true, '--no-interaction' => true]) === 0, 'v1.2.1 rollback failed.');
+    verifyPhase20($releaseSchema() === [false, false, false], 'v1.2.1 schema survived rollback.');
+    verifyPhase20($existingBranch->fresh()->getAttributes() === $existingAttributes, 'Rollback changed existing Branch data.');
+    verifyPhase20(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'v1.2.1 reapply failed.');
+    verifyPhase20($releaseSchema() === [true, true, true], 'v1.2.1 reapply was incomplete.');
+    verifyPhase20($existingBranch->fresh()->getAttributes() === $existingAttributes, 'Reapply changed existing Branch data.');
+    echo 'MIGRATION PASS: v1.2.1 fresh, rollback, reapply and existing Branch preservation on PostgreSQL.'.PHP_EOL;
+
     /** Phase 20 migrations: fresh, rollback and reapply on PostgreSQL (constraint swap, composite FK, new columns). */
     $columns = fn (): array => [
         DB::getSchemaBuilder()->hasColumn('store_session_inventory_adjustments', 'direction'),
@@ -174,9 +191,10 @@ try {
     ];
     $fundingForeignKey = fn (): bool => DB::selectOne("SELECT count(*) AS count FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = ? AND c.conname = 'pamamalengke_purchases_branch_session_foreign'", [$schema])->count === 1;
     verifyPhase20($columns() === [true, true, true, true] && $fundingForeignKey(), 'Fresh Phase 20 schema is incomplete.');
-    $phase20Steps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_27_165552'));
+    $phase20Steps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_27_165552' && basename($file) < '2026_10_13'));
     verifyPhase20($phase20Steps === 4, 'Expected four Phase 20 migrations, found '.$phase20Steps.'.');
-    verifyPhase20(Artisan::call('migrate:rollback', ['--step' => $phase20Steps, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 20 rollback failed.');
+    $rollbackSteps = count(array_filter(glob(database_path('migrations/*.php')) ?: [], fn (string $file): bool => basename($file) >= '2026_09_27_165552'));
+    verifyPhase20(Artisan::call('migrate:rollback', ['--step' => $rollbackSteps, '--force' => true, '--no-interaction' => true]) === 0, 'Phase 20 rollback failed.');
     verifyPhase20($columns() === [false, false, false, false] && ! $fundingForeignKey(), 'Phase 20 schema survived rollback.');
     verifyPhase20(Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]) === 0, 'Phase 20 reapply failed.');
     verifyPhase20($columns() === [true, true, true, true] && $fundingForeignKey(), 'Phase 20 reapply was incomplete.');

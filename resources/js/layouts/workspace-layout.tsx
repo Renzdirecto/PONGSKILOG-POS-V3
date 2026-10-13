@@ -1,3 +1,6 @@
+import { WorkspaceLink } from '@/components/workspace-link';
+import { WorkspaceSkeleton } from '@/components/workspace-skeleton';
+import { workspaceIsLoading } from '@/lib/workspace-navigation';
 import { Link, router, useHttp, usePage } from '@inertiajs/react';
 import {
     BarChart3,
@@ -60,7 +63,14 @@ import type {
     StoreClosedRealtimeEvent,
     StoreContext,
 } from '@/types';
-import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import {
+    lazy,
+    Suspense,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 import { toast } from 'sonner';
 
 /**
@@ -126,6 +136,19 @@ export default function WorkspaceLayout({
 }) {
     const page = usePage<SharedProps>();
     const { auth, branchContext } = page.props;
+    const content = workspaceIsLoading(page.component, page.props) ? (
+        <WorkspaceSkeleton component={page.component} />
+    ) : (
+        children
+    );
+    useEffect(() => {
+        router.flushByCacheTags('workspaces');
+        return router.on('start', ({ detail: { visit } }) => {
+            if (visit.async || visit.method !== 'get') {
+                router.flushByCacheTags('workspaces');
+            }
+        });
+    }, [auth.user?.id, branchContext.current?.id]);
     const storeSessionRequest = useHttp<
         Record<string, never>,
         CurrentStoreSession
@@ -192,6 +215,7 @@ export default function WorkspaceLayout({
         page.component === 'branches/index' ||
         (page.component === 'workspaces/reports' && !isBranchReports) ||
         page.component === 'workspaces/owner-dashboard' ||
+        page.component === 'workspaces/website-analytics' ||
         isBusinessHistory;
 
     const refreshStoreSession = useCallback(async () => {
@@ -338,7 +362,7 @@ export default function WorkspaceLayout({
                     >
                         {navigation.map(
                             ({ label, icon: Icon, href, active }) => (
-                                <Link
+                                <WorkspaceLink
                                     key={label}
                                     href={href}
                                     preserveState
@@ -355,7 +379,7 @@ export default function WorkspaceLayout({
                                                 {page.props.qrWaitingCount}
                                             </span>
                                         )}
-                                </Link>
+                                </WorkspaceLink>
                             ),
                         )}
                     </nav>
@@ -501,7 +525,7 @@ export default function WorkspaceLayout({
                                     : null
                             }
                         >
-                            {children}
+                            {content}
                         </StoreSessionDetailsContext.Provider>
                     </main>
                     <nav
@@ -513,7 +537,7 @@ export default function WorkspaceLayout({
                     >
                         {navigation.map(
                             ({ label, short, icon: Icon, href, active }) => (
-                                <Link
+                                <WorkspaceLink
                                     key={label}
                                     href={href}
                                     preserveState
@@ -533,7 +557,7 @@ export default function WorkspaceLayout({
                                                 {page.props.qrWaitingCount}
                                             </span>
                                         )}
-                                </Link>
+                                </WorkspaceLink>
                             ),
                         )}
                     </nav>
@@ -547,9 +571,9 @@ export default function WorkspaceLayout({
             <>
                 {userContextRealtime}
                 {isSuperAdmin ? (
-                    <SuperAdminShell>{children}</SuperAdminShell>
+                    <SuperAdminShell>{content}</SuperAdminShell>
                 ) : (
-                    <OwnerWorkspaceShell>{children}</OwnerWorkspaceShell>
+                    <OwnerWorkspaceShell>{content}</OwnerWorkspaceShell>
                 )}
             </>
         );
@@ -603,7 +627,7 @@ export default function WorkspaceLayout({
             <main
                 className={`mx-auto w-full max-w-[96rem] ${isPos ? 'px-3 py-4 sm:px-4' : 'px-4 py-8 sm:px-6 lg:px-8 lg:py-12'}`}
             >
-                {children}
+                {content}
             </main>
         </div>
     );

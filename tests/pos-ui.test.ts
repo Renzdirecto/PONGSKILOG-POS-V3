@@ -48,7 +48,7 @@ test('POS image failures are scoped to their URL so a replacement or renewed URL
 
     assert.match(productMedia, /failedUrl !== product\.image_url/);
     assert.match(productMedia, /onError=\{\(\) => setFailedUrl\(product\.image_url\)\}/);
-    assert.match(productMedia, /loading="lazy"/);
+    assert.match(productMedia, /loading=\{detail \? 'eager' : 'lazy'\}/);
     assert.match(productMedia, /decoding="async"/);
 });
 

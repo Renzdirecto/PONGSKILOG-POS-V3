@@ -1,2 +1,5 @@
 User-agent: *
-Disallow:
+Allow: /
+# Internal routes return noindex and enforce authentication/authorization independently.
+# Allow crawling so search engines can read their noindex response headers.
+Sitemap: https://pongskilog.com/sitemap.xml

@@ -1,3 +1,4 @@
+import { WorkspaceLink } from '@/components/workspace-link';
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
@@ -7,6 +8,7 @@ import {
     ChevronDown,
     ClipboardList,
     Gauge,
+    Globe,
     Layers,
     LayoutDashboard,
     LayoutGrid,
@@ -86,6 +88,7 @@ import {
     transactionHistory,
     transactions,
     voidOrders,
+    websiteAnalytics,
 } from '@/routes/workspaces';
 import { useUnreadNotifications } from '@/hooks/use-notification-center';
 import {
@@ -126,6 +129,7 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
         'owner-dashboard': { icon: Store, href: owner() },
         'owner-transactions': { icon: ReceiptText, href: transactions() },
         reports: { icon: BarChart3, href: reports() },
+        'website-analytics': { icon: Globe, href: websiteAnalytics() },
         products: { icon: Boxes, href: productsIndex() },
         inventory: { icon: PackageSearch, href: inventoryIndex() },
         'ops-plans': { icon: ShoppingBasket, href: operationsRoutes.plans() },
@@ -247,7 +251,7 @@ function DestinationControl({
     }
 
     return (
-        <Link
+        <WorkspaceLink
             href={href}
             aria-current={active ? 'page' : undefined}
             aria-label={
@@ -262,7 +266,7 @@ function DestinationControl({
             onClick={onNavigate}
         >
             {content}
-        </Link>
+        </WorkspaceLink>
     );
 }
 

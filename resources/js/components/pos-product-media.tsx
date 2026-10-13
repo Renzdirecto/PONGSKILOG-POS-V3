@@ -19,7 +19,7 @@ export function PosProductMedia({
         <img
             src={product.image_url}
             alt={product.name}
-            loading="lazy"
+            loading={detail ? 'eager' : 'lazy'}
             decoding="async"
             onError={() => setFailedUrl(product.image_url)}
             className={`h-full w-full ${detail ? 'object-contain' : 'object-cover'}`}

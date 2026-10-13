@@ -4,6 +4,7 @@ use App\Enums\PermissionOverrideEffect;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Order;
 use App\Models\Permission;
 use App\Models\Product;
 use App\Models\Role;
@@ -79,13 +80,17 @@ function bulkSales(StoreCloseScenario $scenario, int $orders, int $offset = 0): 
 }
 
 /** @return array{0: int, 1: TestResponse} queries run by one request, and its response */
-function countedRequest(Closure $request): array
+function countedRequest(Closure $request, ?string $operation = null): array
 {
     DB::flushQueryLog();
     DB::enableQueryLog();
+    $started = hrtime(true);
     $response = $request();
     $count = count(DB::getQueryLog());
     DB::disableQueryLog();
+    if ($operation !== null && getenv('POS_PROFILE')) {
+        fwrite(STDERR, json_encode(['operation' => $operation, 'request_ms' => round((hrtime(true) - $started) / 1e6, 2), 'queries' => $count, 'database_ms' => round(array_sum(array_column(DB::getQueryLog(), 'time')), 2)]).PHP_EOL);
+    }
 
     return [$count, $response];
 }
@@ -330,4 +335,78 @@ test('a report board-only refresh skips financial analytics queries', function (
     expect(array_keys($response->json('props')))->not->toContain('report')->not->toContain('analytics')
         ->and(implode("\n", $queries))->not->toContain('from "payments"')->not->toContain('from "order_items"')
         ->not->toContain('from "order_adjustments"');
+});
+
+test('payment profiling preserves exact results and reports request and query cost', function (string $method, ?string $cash, ?string $cashless) {
+    $scenario = StoreCloseScenario::create();
+    $started = hrtime(true);
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $response = $this->actingAs($scenario->cashier)->postJson(route('pos.payments.store'), [
+        'order_type' => 'take_out', 'items' => $scenario->items(1),
+        'idempotency_key' => (string) Str::uuid(), 'payment_method' => $method,
+        'cash_received' => $cash, 'cashless_amount' => $cashless,
+    ]);
+
+    $elapsed = (hrtime(true) - $started) / 1e6;
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+    $response->assertOk()->assertJsonPath('receipt.total', '100.00')->assertJsonPath('receipt.payment_status', 'paid');
+    expect($scenario->stock->fresh()->on_hand)->toBe(199);
+    if (getenv('POS_PROFILE')) {
+        fwrite(STDERR, json_encode(['method' => $method, 'request_ms' => round($elapsed, 2), 'queries' => count($queries), 'database_ms' => round(array_sum(array_column($queries, 'time')), 2)]).PHP_EOL);
+    }
+})->with([
+    'cash' => ['cash', '100.00', null],
+    'cashless' => ['cashless', null, null],
+    'split' => ['split', '50.00', '50.00'],
+]);
+
+test('history detail profiling preserves the authoritative receipt and transaction', function () {
+    $scenario = StoreCloseScenario::create();
+    $order = $scenario->payNow(1, 'cash');
+    $started = hrtime(true);
+    [$count, $response] = countedRequest(fn () => $this->actingAs($scenario->cashier)->getJson(route('pos.transactions.show', $order)));
+    $response->assertOk()->assertJsonPath('transaction.total', '100.00')->assertJsonPath('transaction.receipt.total', '100.00');
+    foreach (['order_items', 'order_item_modifiers', 'payments', 'order_adjustments'] as $table) {
+        expect(collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains($query['query'], 'from "'.$table.'"')))->toHaveCount(1);
+    }
+    if (getenv('POS_PROFILE')) {
+        fwrite(STDERR, json_encode(['operation' => 'history_detail', 'request_ms' => round((hrtime(true) - $started) / 1e6, 2), 'queries' => $count, 'database_ms' => round(array_sum(array_column(DB::getQueryLog(), 'time')), 2)]).PHP_EOL);
+    }
+});
+
+test('operational endpoint profiling preserves edited totals and kitchen transitions', function () {
+    $scenario = StoreCloseScenario::create();
+    $this->actingAs($scenario->cashier)->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id]);
+    [, $reservation] = countedRequest(fn () => $this->postJson(route('pos.orders.reservations.store'), ['order_type' => 'take_out']), 'pos_reservation');
+    $reservation->assertOk();
+    $orderId = $reservation->json('order.id');
+    [, $committed] = countedRequest(fn () => $this->postJson(route('pos.orders.pay-later.store', $orderId), [
+        'idempotency_key' => (string) Str::uuid(), 'order_type' => 'take_out', 'items' => $scenario->items(1),
+    ]), 'pay_later');
+    $committed->assertOk()->assertJsonPath('order.payment_status', 'unpaid');
+    $order = Order::query()->findOrFail($orderId);
+    $itemId = $order->items()->sole()->id;
+    [, $edited] = countedRequest(fn () => $this->patchJson(route('pos.transactions.update', $order), [
+        'idempotency_key' => (string) Str::uuid(), 'expected_version' => $order->version,
+        'order_type' => 'take_out', 'reason' => 'Quantity changed',
+        'items' => [['existing_order_item_id' => $itemId, 'product_id' => $scenario->product->id, 'quantity' => 2, 'modifiers' => []]],
+    ]), 'history_edit');
+    $edited->assertOk()->assertJsonPath('transaction.total', '200.00')->assertJsonPath('transaction.outstanding', '200.00');
+    expect($scenario->stock->fresh()->on_hand)->toBe(198);
+
+    $this->actingAs($scenario->kitchen);
+    foreach (['ready', 'done'] as $status) {
+        [, $transition] = countedRequest(fn () => $this->patchJson(route('orders.kitchen-status.update', $order), ['status' => $status]), 'kitchen_'.$status);
+        $transition->assertOk()->assertJsonPath('kitchenTransition.to', $status)->assertJsonPath('kitchenTransition.changed', true);
+    }
+    expect($order->fresh()->kitchen_status->value)->toBe('done');
+
+    $this->actingAs(performanceUser('owner'));
+    foreach (['today', 'last_7_days'] as $period) {
+        [, $report] = countedRequest(fn () => $this->get(route('workspaces.reports', ['date' => $period])), 'reports_'.$period);
+        $report->assertOk()->assertInertia(fn (Assert $page) => $page->component('workspaces/reports')->has('report')->has('analytics'));
+    }
 });

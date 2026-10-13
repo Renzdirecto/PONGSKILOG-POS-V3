@@ -3,17 +3,19 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\Attributes\Connection;
 use Illuminate\Support\Str;
 
 /**
  * Invalidation-only signal on the recipient's own private user channel: their notifications changed. Clients refetch
  * the authorized unread count or list; the signal never carries a title, body, audit payload or credential.
  */
-class NotificationsChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
+#[Connection('deferred')]
+class NotificationsChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

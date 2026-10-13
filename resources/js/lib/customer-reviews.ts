@@ -18,8 +18,37 @@ export type CustomerReview = {
 };
 export type ReviewBranch = { id: string; name: string; code: string };
 
+/** Mirrors `CustomerReview::PREFERRED_NAME_MAX`: new names only, older longer names are kept as saved. */
+export const REVIEW_NAME_MAX = 10;
+
 export function reviewCharacterCount(value: string): number {
     return Array.from(value).length;
+}
+const MONTHS = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+];
+/** "Oct 13, 2026" from the server's Manila `YYYY-MM-DD`, without a Date so no time zone can shift the day. */
+export function reviewDateLabel(date: string): string {
+    const [year, month, day] = date.split('-').map(Number);
+    return MONTHS[month - 1] && day && year
+        ? `${MONTHS[month - 1]} ${day}, ${year}`
+        : date;
+}
+/** The photo to move to after a touch gesture: 1 next, -1 previous, 0 for a tap or a mostly vertical drag. */
+export function reviewSwipeStep(deltaX: number, deltaY: number): -1 | 0 | 1 {
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) <= Math.abs(deltaY)) return 0;
+    return deltaX < 0 ? 1 : -1;
 }
 export function reviewFileError(
     files: { size: number; type: string }[],
@@ -66,7 +95,8 @@ export function advanceReviewScroll(
     elapsed: number,
     direction: number,
 ) {
-    const next = position + Math.min(elapsed, 64) * 0.018 * direction;
+    /* 0.021 px/ms: about 17% faster than the first 0.018 (v1.2.1 Manual QA 2). */
+    const next = position + Math.min(elapsed, 64) * 0.021 * direction;
     return {
         position: Math.max(0, Math.min(maximum, next)),
         direction: next >= maximum ? -1 : next <= 0 ? 1 : direction,

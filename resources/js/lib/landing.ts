@@ -428,7 +428,8 @@ export const HOURS = [
     },
     {
         day: 'Wednesday',
-        time: 'Usually Closed (Sometimes Open - Contact to Confirm)',
+        time: 'Usually Closed',
+        note: 'Sometimes open — message to confirm.',
         fg: '#8A5E12',
         days: ['Wed'],
     },

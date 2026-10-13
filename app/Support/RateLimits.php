@@ -85,6 +85,11 @@ class RateLimits
             Limit::perHour(5)->by('session|'.hash('sha256', $request->session()->getId())),
             Limit::perMinute(20)->by('ip|'.$request->ip()),
         ]);
+        /** Landing-page counters: per browser session, with an address ceiling for clients that keep no session. */
+        RateLimiter::for('website-events', fn (Request $request) => [
+            Limit::perMinute(60)->by('session|'.hash('sha256', $request->session()->getId())),
+            Limit::perMinute(300)->by('ip|'.$request->ip()),
+        ]);
         RateLimiter::for('customer-review-images', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
 
         /** Account recovery: per e-mail and address, with an address ceiling, so nobody can spray reset mails. */

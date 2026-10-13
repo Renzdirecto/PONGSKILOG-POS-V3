@@ -18,7 +18,10 @@ class CustomerReview extends Model
     /** @use HasFactory<CustomerReviewFactory> */
     use HasFactory, HasUuids;
 
-    public const NOTICE_VERSION = '2026-10-13-v2';
+    public const NOTICE_VERSION = '2026-10-13-v3';
+
+    /** New submissions only: the column keeps 60 characters so names saved before v1.2.1 Manual QA are never cut. */
+    public const PREFERRED_NAME_MAX = 10;
 
     /** The optional customer email is private contact data: encrypted at rest and never serialized. */
     protected $hidden = ['submission_key', 'submission_digest', 'images', 'customer_email'];

@@ -1,6 +1,9 @@
-import { Link } from '@inertiajs/react';
+import { Link, http } from '@inertiajs/react';
 import React, { Fragment } from 'react';
-import { CustomerReviews } from '@/components/customer-reviews';
+import {
+    CustomerReviews,
+    ReviewLegalDialog,
+} from '@/components/customer-reviews';
 import { LandingMenuPrices } from '@/components/landing-menu-prices';
 import {
     ULAM,
@@ -12,6 +15,17 @@ import {
     BOARD_CATS,
     SHOP,
 } from '@/lib/landing';
+import { websiteEventDue, websiteLinkEvent } from '@/lib/website-analytics';
+import { store as storeWebsiteEvent } from '@/routes/website-events';
+
+/* Anonymous first-party counters for the Owner's Website Analytics: an event name only. A failed beacon never touches the page. */
+const sentEvents = {};
+const track = (event) => {
+    if (!websiteEventDue(sentEvents, event, Date.now())) return;
+    http.getClient()
+        .request({ ...storeWebsiteEvent(), data: { event } })
+        .catch(() => {});
+};
 
 let leafletPromise;
 const loadLeaflet = () => {
@@ -130,10 +144,12 @@ export default class LandingExperience extends React.Component {
         cat: 'silog',
         dwell: false,
         boardCat: 'all',
-        filterOpen: false,
         menuLens: 'pics',
         narrow: false,
         profOpen: false,
+        /* Touch map: true = locked (page scrolls over it), false = unlocked by a tap, null = mouse or not ready. */
+        mapLocked: null,
+        privacyOpen: false,
     };
     profRef = React.createRef();
     profPopRef = React.createRef();
@@ -149,6 +165,19 @@ export default class LandingExperience extends React.Component {
             !this.profRef.current.contains(e.target)
         )
             this.setState({ profOpen: false });
+        if (
+            this.state.mapLocked === false &&
+            this.mapRef.current &&
+            !this.mapRef.current.contains(e.target)
+        )
+            this.lockMap();
+    };
+    /* Counts taps on the Facebook, directions and Menu links anywhere on the page. */
+    trackLink = (e) => {
+        const event = websiteLinkEvent(
+            e.target.closest?.('a')?.getAttribute('href') ?? null,
+        );
+        if (event) track(event);
     };
     onEsc = (e) => {
         if (e.key === 'Escape' && this.state.profOpen)
@@ -156,15 +185,16 @@ export default class LandingExperience extends React.Component {
     };
     chipRowRef = React.createRef();
     _lastBoardCat = 'all';
-    _lastFilterOpen = false;
-    toggleFilter = () => this.setState((s) => ({ filterOpen: !s.filterOpen }));
     pickBoardCat = (k) => () => {
-        if (k !== this.state.boardCat)
-            this.setState({ boardCat: k, filterOpen: false });
-        else this.setState({ filterOpen: false });
+        track('menu_click');
+        if (k !== this.state.boardCat) this.setState({ boardCat: k });
     };
-    setMenuLens = (menuLens) =>
-        this.setState({ menuLens, boardCat: 'all', filterOpen: false });
+    setMenuLens = (menuLens) => {
+        track('menu_click');
+        /* Each view has its own categories: start its filter row from the first chip again. */
+        if (this.chipRowRef.current) this.chipRowRef.current.scrollLeft = 0;
+        this.setState({ menuLens, boardCat: 'all' });
+    };
     pauseMarquee = () => {
         this._marqueePaused = true;
     };
@@ -718,9 +748,17 @@ export default class LandingExperience extends React.Component {
             return;
         }
         const motion = this.motionOn();
+        /*
+         * A touch screen starts locked, so a finger scrolling the page over the map is never captured. One tap unlocks
+         * panning and pinch-zoom; touching anywhere outside locks it again. Zoom buttons and Recenter always work.
+         */
+        const touch =
+            L.Browser.mobile ||
+            Boolean(window.matchMedia?.('(pointer: coarse)').matches);
         const map = L.map(el, {
             scrollWheelZoom: false,
-            dragging: !L.Browser.mobile,
+            dragging: !touch,
+            touchZoom: !touch,
             tap: false,
             zoomControl: false,
             attributionControl: true,
@@ -743,6 +781,7 @@ export default class LandingExperience extends React.Component {
             alt: 'PONGSKILOG location',
         }).addTo(map);
         this._map = map;
+        if (touch) this.setState({ mapLocked: true });
         if (motion && 'IntersectionObserver' in window) {
             this._mio = new IntersectionObserver(
                 (en) => {
@@ -759,6 +798,18 @@ export default class LandingExperience extends React.Component {
     recenter = () => {
         if (this._map)
             this._map.flyTo(SHOP, 17, { duration: this.motionOn() ? 1 : 0 });
+    };
+    unlockMap = () => {
+        if (!this._map || this.state.mapLocked !== true) return;
+        this._map.dragging.enable();
+        this._map.touchZoom.enable();
+        this.setState({ mapLocked: false });
+    };
+    lockMap = () => {
+        if (!this._map || this.state.mapLocked !== false) return;
+        this._map.dragging.disable();
+        this._map.touchZoom.disable();
+        this.setState({ mapLocked: true });
     };
 
     infoMotion() {
@@ -896,6 +947,7 @@ export default class LandingExperience extends React.Component {
             });
         this.observeMap();
         this.infoMotion();
+        track('page_view');
     }
     changeUlam(prev, next) {
         const from = ULAM[prev].price,
@@ -999,21 +1051,6 @@ export default class LandingExperience extends React.Component {
                             );
                     });
         }
-        const opened = this.state.filterOpen && !this._lastFilterOpen;
-        this._lastFilterOpen = this.state.filterOpen;
-        if (
-            opened &&
-            this.chipRowRef.current &&
-            this.chipRowRef.current.animate &&
-            this.motionOn()
-        )
-            this.chipRowRef.current.animate(
-                [
-                    { opacity: 0, translate: '0 -8px' },
-                    { opacity: 1, translate: '0 0' },
-                ],
-                { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' },
-            );
     }
     componentWillUnmount() {
         document.removeEventListener('visibilitychange', this.onVisibility);
@@ -1127,20 +1164,12 @@ export default class LandingExperience extends React.Component {
                 onPick: this.pickCard(i),
             })),
             cups: CUPS.map((c) => Object.assign({}, c, { img: RES(c.img) })),
-            narrow: this.state.narrow,
             profRef: this.profRef,
             profPopRef: this.profPopRef,
             profOpen: this.state.profOpen,
             toggleProf: this.toggleProf,
             staffLogin: this.staffLogin,
-            filterOpen: this.state.filterOpen,
-            toggleFilter: this.toggleFilter,
             chipRowRef: this.chipRowRef,
-            filterActive: this.state.boardCat !== 'all',
-            filterBg: this.state.filterOpen ? '#121110' : '#FFFFFF',
-            filterFg: this.state.filterOpen ? '#FFFFFF' : '#121110',
-            filterBd: this.state.filterOpen ? '#121110' : 'rgba(18,17,16,.18)',
-            showBoardChips: !this.state.narrow || this.state.filterOpen,
             boardChips: (this.state.menuLens === 'prices'
                 ? [['all', 'All'], ...CAT_ORDER.map((k) => [k, MENU[k].label])]
                 : BOARD_CATS
@@ -1176,6 +1205,7 @@ export default class LandingExperience extends React.Component {
                     x.day +
                     (x.days.indexOf(this._today) >= 0 ? ' (today)' : ''),
                 time: x.time,
+                note: x.note,
                 fg: x.fg,
                 bg:
                     x.days.indexOf(this._today) >= 0
@@ -1269,20 +1299,12 @@ export default class LandingExperience extends React.Component {
             chips,
             cards,
             cups,
-            narrow,
             profRef,
             profPopRef,
             profOpen,
             toggleProf,
             staffLogin,
-            filterOpen,
-            toggleFilter,
             chipRowRef,
-            filterActive,
-            filterBg,
-            filterFg,
-            filterBd,
-            showBoardChips,
             boardChips,
             hours,
             infoRef,
@@ -1294,6 +1316,7 @@ export default class LandingExperience extends React.Component {
                 data-part="rootRef"
                 id="top"
                 className="landing-page landing-v3 v3-s1"
+                onClick={this.trackLink}
             >
                 <header className="v3-s2">
                     <div
@@ -1975,39 +1998,36 @@ export default class LandingExperience extends React.Component {
                                 </div>
                             </div>
                             <div className="board-controls">
-                                {showBoardChips && (
-                                    <>
-                                        <div
-                                            ref={chipRowRef}
-                                            data-part="chipRowRef"
-                                            role="tablist"
-                                            aria-label="Filter dishes"
-                                            className="v2-rail v3-s110"
-                                        >
-                                            {boardChips.map((bc, index) => (
-                                                <Fragment key={index}>
-                                                    <button
-                                                        type="button"
-                                                        role="tab"
-                                                        aria-selected={bc.on}
-                                                        onClick={bc.onPick}
-                                                        style={{
-                                                            ...cssStyle(
-                                                                bc.style,
-                                                            ),
-                                                        }}
-                                                    >
-                                                        {bc.label}{' '}
-                                                        <span className="v3-s111">
-                                                            {bc.n}
-                                                        </span>
-                                                    </button>
-                                                </Fragment>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                                <div className="v3-s102">
+                                <div
+                                    ref={chipRowRef}
+                                    data-part="chipRowRef"
+                                    role="tablist"
+                                    aria-label="Filter dishes"
+                                    className="v2-rail v3-s110"
+                                >
+                                    {boardChips.map((bc, index) => (
+                                        <Fragment key={index}>
+                                            <button
+                                                type="button"
+                                                role="tab"
+                                                aria-selected={bc.on}
+                                                onClick={bc.onPick}
+                                                style={{
+                                                    ...cssStyle(bc.style),
+                                                }}
+                                            >
+                                                {bc.label}{' '}
+                                                <span className="v3-s111">
+                                                    {bc.n}
+                                                </span>
+                                            </button>
+                                        </Fragment>
+                                    ))}
+                                </div>
+                                <div
+                                    className="v3-s102"
+                                    hidden={this.state.menuLens !== 'pics'}
+                                >
                                     <span
                                         ref={countRef}
                                         hidden={this.state.menuLens !== 'pics'}
@@ -2059,72 +2079,9 @@ export default class LandingExperience extends React.Component {
                                             <path d="M9 18l6-6-6-6"></path>
                                         </svg>
                                     </button>
-                                    {narrow && (
-                                        <>
-                                            {' '}
-                                            <button
-                                                type="button"
-                                                onClick={toggleFilter}
-                                                aria-label="Filter dishes"
-                                                aria-expanded={filterOpen}
-                                                className="v3-s108"
-                                                style={{
-                                                    background: `${filterBg}`,
-                                                    color: `${filterFg}`,
-                                                    border: `1px solid ${filterBd}`,
-                                                }}
-                                            >
-                                                <svg
-                                                    width="18"
-                                                    height="18"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path>
-                                                    <circle
-                                                        cx="16"
-                                                        cy="6"
-                                                        r="2"
-                                                    ></circle>
-                                                    <circle
-                                                        cx="10"
-                                                        cy="12"
-                                                        r="2"
-                                                    ></circle>
-                                                    <circle
-                                                        cx="18"
-                                                        cy="18"
-                                                        r="2"
-                                                    ></circle>
-                                                </svg>
-                                                {filterActive && (
-                                                    <>
-                                                        {' '}
-                                                        <span className="v3-s109"></span>{' '}
-                                                    </>
-                                                )}
-                                            </button>{' '}
-                                        </>
-                                    )}
                                 </div>
                             </div>
                         </div>
-                        {narrow && filterActive && !filterOpen && (
-                            <button
-                                type="button"
-                                className="active-menu-filter"
-                                onClick={this.pickBoardCat('all')}
-                                aria-label="Clear menu filter"
-                            >
-                                {boardChips.find((chip) => chip.on)?.label}{' '}
-                                <span aria-hidden="true">×</span>
-                            </button>
-                        )}
 
                         {this.state.menuLens === 'prices' && (
                             <LandingMenuPrices category={this.state.boardCat} />
@@ -2282,7 +2239,15 @@ export default class LandingExperience extends React.Component {
                                     role="region"
                                     aria-label="Map showing PONGSKILOG on Adarna Street, Quezon City"
                                     className="v3-s157"
+                                    onClick={this.unlockMap}
                                 ></div>
+                                {this.state.mapLocked !== null && (
+                                    <p className="map-hint" aria-live="polite">
+                                        {this.state.mapLocked
+                                            ? 'Tap the map to move it'
+                                            : 'Tap outside the map when done'}
+                                    </p>
+                                )}
                                 <div className="v3-s158">
                                     <div
                                         className="v3-s159"
@@ -2500,6 +2465,11 @@ export default class LandingExperience extends React.Component {
                                                         >
                                                             {h.time}
                                                         </span>
+                                                        {h.note && (
+                                                            <span className="hours-note">
+                                                                {h.note}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </Fragment>
                                             ))}
@@ -2630,11 +2600,27 @@ export default class LandingExperience extends React.Component {
                             </div>
                         </div>
                         <footer className="v3-s221">
-                            <span>© 2026 PONGSKILOG. Dine-in and takeout.</span>
+                            {/* Kept on the left: the fixed "powered by" badge covers the bottom-right corner. */}
+                            <span>
+                                © 2026 PONGSKILOG. Dine-in and takeout.{' '}
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        this.setState({ privacyOpen: true })
+                                    }
+                                >
+                                    Privacy Notice
+                                </button>
+                            </span>
                             <span>Est. 2022 · Quezon City</span>
                         </footer>
                     </section>
                 </main>
+                <ReviewLegalDialog
+                    legal={this.state.privacyOpen ? 'privacy' : null}
+                    noticeVersion={this.props.reviewNoticeVersion ?? ''}
+                    onClose={() => this.setState({ privacyOpen: false })}
+                />
                 <div aria-label="Powered by SEBBY" className="v3-s222">
                     powered by <span className="v3-s223">SEBBY</span>
                 </div>

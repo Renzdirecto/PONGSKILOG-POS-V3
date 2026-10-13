@@ -5,6 +5,7 @@ const requiredProps: Record<string, readonly string[]> = {
     'workspaces/reports': ['report', 'analytics', 'kitchenNow', 'filters'],
     'workspaces/cashier-dashboard': ['dashboard'],
     'workspaces/owner-dashboard': ['analytics', 'report'],
+    'workspaces/website-analytics': ['report'],
 };
 
 export function workspaceIsLoading(

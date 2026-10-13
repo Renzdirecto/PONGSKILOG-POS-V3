@@ -1,0 +1,76 @@
+/** Events the public landing page reports; a saved review is counted by the server. */
+export type WebsiteEventName =
+    | 'page_view'
+    | 'facebook_click'
+    | 'directions_click'
+    | 'menu_click';
+
+/** The landing link a visitor followed, when it is one the business counts. */
+export function websiteLinkEvent(href: string | null): WebsiteEventName | null {
+    if (!href) return null;
+    if (href.includes('facebook.com/')) return 'facebook_click';
+    if (href.includes('maps.app.goo.gl/')) return 'directions_click';
+    return href === '#board' ? 'menu_click' : null;
+}
+
+/** At most one event of a kind per second, so a double tap or a development double-mount is counted once. */
+export function websiteEventDue(
+    sent: Partial<Record<WebsiteEventName, number>>,
+    event: WebsiteEventName,
+    now: number,
+): boolean {
+    if (now - (sent[event] ?? -Infinity) < 1000) return false;
+    sent[event] = now;
+    return true;
+}
+
+export type WebsitePeriod = 'today' | 'last_7_days' | 'last_30_days' | 'custom';
+
+/** Mirrors `WebsiteAnalytics::PERIODS`. */
+export const WEBSITE_PERIODS: readonly [WebsitePeriod, string][] = [
+    ['today', 'Today'],
+    ['last_7_days', '7 Days'],
+    ['last_30_days', '30 Days'],
+    ['custom', 'Custom'],
+];
+
+export type WebsiteSeriesBucket = {
+    key: string;
+    label: string;
+    full: string;
+    page_views: number;
+    visitors: number;
+};
+
+export type WebsiteReport = {
+    period: {
+        preset: WebsitePeriod;
+        from: string;
+        to: string;
+        label: string;
+        days: number;
+        granularity: 'hour' | 'day';
+    };
+    totals: {
+        page_views: number;
+        visitors: number;
+        facebook_clicks: number;
+        directions_clicks: number;
+        menu_clicks: number;
+        review_submissions: number;
+    };
+    series: WebsiteSeriesBucket[];
+    tracking_since: string | null;
+};
+
+/** The shareable query of a period: Today is the default and only Custom carries a range. */
+export function websiteAnalyticsQuery(
+    period: WebsitePeriod,
+    from?: string,
+    to?: string,
+): Record<string, string> {
+    if (period === 'today') return {};
+    return period === 'custom' && from && to
+        ? { period, from, to }
+        : { period };
+}

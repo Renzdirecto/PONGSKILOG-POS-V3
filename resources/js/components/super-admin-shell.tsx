@@ -8,6 +8,7 @@ import {
     ChevronDown,
     ClipboardList,
     Gauge,
+    Globe,
     Layers,
     LayoutDashboard,
     LayoutGrid,
@@ -87,6 +88,7 @@ import {
     transactionHistory,
     transactions,
     voidOrders,
+    websiteAnalytics,
 } from '@/routes/workspaces';
 import { useUnreadNotifications } from '@/hooks/use-notification-center';
 import {
@@ -127,6 +129,7 @@ const destinationBindings: Record<SuperAdminDestinationId, DestinationBinding> =
         'owner-dashboard': { icon: Store, href: owner() },
         'owner-transactions': { icon: ReceiptText, href: transactions() },
         reports: { icon: BarChart3, href: reports() },
+        'website-analytics': { icon: Globe, href: websiteAnalytics() },
         products: { icon: Boxes, href: productsIndex() },
         inventory: { icon: PackageSearch, href: inventoryIndex() },
         'ops-plans': { icon: ShoppingBasket, href: operationsRoutes.plans() },

@@ -28,7 +28,7 @@ class StoreCustomerReviewRequest extends FormRequest
             'branch_id' => ['required', 'uuid', Rule::exists('branches', 'id')->where('status', 'active')],
             'submission_key' => ['required', 'uuid'],
             'rating' => ['required', 'integer', 'between:1,5'],
-            'preferred_name' => ['required', 'string', 'max:60'],
+            'preferred_name' => ['required', 'string', 'max:'.CustomerReview::PREFERRED_NAME_MAX],
             'customer_email' => ['nullable', 'string', 'email:rfc', 'max:254'],
             'description' => ['required', 'string', 'max:200'],
             'purchased_items' => ['nullable', 'string', 'max:200'],

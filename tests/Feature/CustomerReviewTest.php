@@ -50,7 +50,7 @@ test('a guest submits a pending public review with versioned consent and cannot 
     $this->freezeTime();
     $branch = Branch::factory()->create();
     $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['status' => 'approved', 'moderated_by' => 999, 'images' => [['path' => 'private/secret']]]))
-        ->assertExactJson(['saved' => true]);
+        ->assertExactJson(['saved' => true, 'preferred_name' => 'Suki']);
 
     $review = CustomerReview::query()->sole();
     expect($review->status)->toBe('pending')->and($review->public_consent)->toBeTrue()
@@ -62,7 +62,7 @@ test('a guest submits a pending public review with versioned consent and cannot 
 
 test('a guest submits private feedback without public display permission', function () {
     $branch = Branch::factory()->create();
-    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['visibility' => 'private', 'public_consent' => false]))->assertExactJson(['saved' => true]);
+    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['visibility' => 'private', 'public_consent' => false]))->assertExactJson(['saved' => true, 'preferred_name' => 'Suki']);
     expect(CustomerReview::query()->sole()->public_consent)->toBeFalse();
     $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->has('reviews', 0));
 });
@@ -79,7 +79,7 @@ test('invalid review values return 422 without saving', function (string $field,
 })->with([
     'too long' => ['description', str_repeat('x', 201)], 'empty text' => ['description', '  '],
     'rating zero' => ['rating', 0], 'rating six' => ['rating', 6], 'fractional rating' => ['rating', 3.5],
-    'long name' => ['preferred_name', str_repeat('x', 61)], 'no acknowledgment' => ['acknowledgment', false],
+    'long name' => ['preferred_name', str_repeat('x', 11)], 'no acknowledgment' => ['acknowledgment', false],
     'no public permission' => ['public_consent', false], 'outdated notice' => ['notice_version', 'old'],
     'spam honeypot' => ['website', 'https://spam.example'], 'invalid visibility' => ['visibility', 'approved'],
     'malformed email' => ['customer_email', 'not-an-email'], 'long email' => ['customer_email', str_repeat('x', 250).'@a.ph'],
@@ -89,7 +89,7 @@ test('invalid review values return 422 without saving', function (string $field,
 test('an optional customer email is stored encrypted and never leaves the server', function () {
     $this->seed(RbacSeeder::class);
     $branch = Branch::factory()->create();
-    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['customer_email' => 'suki@example.com']))->assertExactJson(['saved' => true]);
+    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['customer_email' => 'suki@example.com']))->assertExactJson(['saved' => true, 'preferred_name' => 'Suki']);
     $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['description' => 'No email this time.', 'customer_email' => '']))->assertOk();
 
     $review = CustomerReview::query()->whereNotNull('customer_email')->sole();
@@ -107,6 +107,20 @@ test('the 200 unicode character boundary is accepted', function () {
     $branch = Branch::factory()->create();
     $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['description' => str_repeat("\u{00e9}", 200)]))->assertOk();
     expect(mb_strlen(CustomerReview::query()->sole()->description))->toBe(200);
+});
+
+test('a preferred name of exactly 10 unicode characters is accepted and echoed back as saved', function () {
+    $branch = Branch::factory()->create();
+    $name = str_repeat("\u{00f1}", 10);
+    $this->postJson(route('reviews.store'), customerReviewPayload($branch, ['preferred_name' => '  '.$name.' ']))
+        ->assertExactJson(['saved' => true, 'preferred_name' => $name]);
+    expect(CustomerReview::query()->sole()->preferred_name)->toBe($name);
+});
+
+test('a longer name saved before the 10 character limit is still published in full', function () {
+    $review = CustomerReview::factory()->create(['status' => 'approved', 'preferred_name' => 'Maria Cristina Dela Cruz']);
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviews.0.preferred_name', 'Maria Cristina Dela Cruz'));
+    expect($review->refresh()->preferred_name)->toBe('Maria Cristina Dela Cruz');
 });
 
 test('inactive branches do not receive guest reviews', function () {
@@ -167,7 +181,7 @@ test('three review photos and an optional profile at the real five MiB boundary 
     $this->post(route('reviews.store'), customerReviewPayload($branch, [
         'profile_photo' => $photo,
         'review_images' => [$photo, $photo, $photo],
-    ]), ['Accept' => 'application/json'])->assertExactJson(['saved' => true]);
+    ]), ['Accept' => 'application/json'])->assertExactJson(['saved' => true, 'preferred_name' => 'Suki']);
 
     $review = CustomerReview::query()->sole();
     expect($review->images)->toHaveCount(4);
@@ -234,7 +248,7 @@ test('partial storage failure rolls back the record cleans the attempted directo
     $this->assertDatabaseCount('customer_reviews', 0);
     Storage::swap(new FilesystemManager($this->app));
     Storage::fake('s3');
-    $this->postJson(route('reviews.store'), $payload)->assertExactJson(['saved' => true]);
+    $this->postJson(route('reviews.store'), $payload)->assertExactJson(['saved' => true, 'preferred_name' => 'Suki']);
     $this->assertDatabaseCount('customer_reviews', 1);
 });
 

@@ -298,11 +298,18 @@ export function TrendChart({
     metric,
     compare,
     height,
+    text,
 }: {
     buckets: TrendBucket[];
     metric: 'sales' | 'transactions';
     compare: boolean;
     height: number;
+    /** Wording for a series that is not sales (Website Analytics plots page views as the count). */
+    text?: {
+        primary: (bucket: TrendBucket) => string;
+        secondary: (bucket: TrendBucket) => string;
+        empty: string;
+    };
 }) {
     const mobile = useIsMobile();
     const [hovered, setHovered] = useState<number | null>(null);
@@ -390,7 +397,7 @@ export function TrendChart({
                     </svg>
                     {empty && (
                         <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[12px] text-[#8a8a8a]">
-                            No sales in this period
+                            {text?.empty ?? 'No sales in this period'}
                         </p>
                     )}
                     {buckets.map((bucket, index) => {
@@ -413,14 +420,16 @@ export function TrendChart({
                                         left: `${inner}%`,
                                         transform: 'translateX(-50%)',
                                     };
-                        const primary =
-                            metric === 'sales'
-                                ? peso(bucket.sales)
-                                : countLabel(bucket.transactions, 'order');
-                        const secondary =
-                            metric === 'sales'
-                                ? countLabel(bucket.transactions, 'order')
-                                : `${peso(bucket.sales)} sales`;
+                        const primary = text
+                            ? text.primary(bucket)
+                            : metric === 'sales'
+                              ? peso(bucket.sales)
+                              : countLabel(bucket.transactions, 'order');
+                        const secondary = text
+                            ? text.secondary(bucket)
+                            : metric === 'sales'
+                              ? countLabel(bucket.transactions, 'order')
+                              : `${peso(bucket.sales)} sales`;
                         const previous =
                             showPrevious && bucket.previous
                                 ? `Previous: ${metric === 'sales' ? peso(bucket.previous.sales) : countLabel(bucket.previous.transactions, 'order')}`

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import ts from 'typescript';
 import * as landingData from '../resources/js/lib/landing.ts';
 import { CARDS, CUPS, HOURS, MENU, ULAM } from '../resources/js/lib/landing.ts';
+import * as websiteAnalytics from '../resources/js/lib/website-analytics.ts';
 
 test('public prices and hours agree with the independently verified published business menu', () => {
     assert.deepEqual(
@@ -19,10 +20,10 @@ test('public prices and hours agree with the independently verified published bu
         ['Oreo Graham Bar', '₱30'],
         ['Classic Graham Bar', '₱25'],
     ]);
-    assert.equal(
-        HOURS.find(({ day }) => day === 'Wednesday')?.time,
-        'Usually Closed (Sometimes Open - Contact to Confirm)',
-    );
+    const wednesday = HOURS.find(({ day }) => day === 'Wednesday');
+    assert.equal(wednesday?.time, 'Usually Closed');
+    assert.equal(wednesday?.note, 'Sometimes open — message to confirm.');
+    assert.deepEqual(wednesday?.days, ['Wed']);
     assert.equal(HOURS.find(({ day }) => day === 'Sunday')?.time, 'Closed');
     assert.equal(HOURS[0].time, '6:00 PM - 12:00 AM');
     assert.deepEqual(landingData.SHOP, [14.6936607, 121.079139]);
@@ -62,6 +63,9 @@ function experienceHarness() {
     }).outputText;
     const listeners: string[] = [];
     const cancelled: number[] = [];
+    /** Website counters the page sent, with a clock the test advances past the one-second de-duplication. */
+    const tracked: string[] = [];
+    const clock = { now: 10_000 };
     let observerCallback: (
         entries: { isIntersecting: boolean }[],
     ) => void = () => {};
@@ -101,6 +105,7 @@ function experienceHarness() {
         'document',
         'cancelAnimationFrame',
         'IntersectionObserver',
+        'Date',
         `${code}; return exports.default;`,
     )(
         (name: string) =>
@@ -108,7 +113,34 @@ function experienceHarness() {
                 ? react
                 : name === '@/lib/landing'
                   ? landingData
-                  : name === 'react/jsx-runtime'
+                  : name === '@/lib/website-analytics'
+                    ? websiteAnalytics
+                    : name === '@/routes/website-events'
+                      ? {
+                            store: () => ({
+                                url: '/website-events',
+                                method: 'post',
+                            }),
+                        }
+                      : name === '@inertiajs/react'
+                        ? {
+                              http: {
+                                  getClient: () => ({
+                                      request: (request: {
+                                          url: string;
+                                          data: { event: string };
+                                      }) => {
+                                          assert.equal(
+                                              request.url,
+                                              '/website-events',
+                                          );
+                                          tracked.push(request.data.event);
+                                          return Promise.resolve();
+                                      },
+                                  }),
+                              },
+                          }
+                        : name === 'react/jsx-runtime'
                     ? {
                           jsx: (type: unknown, props: unknown) => ({
                               type,
@@ -133,6 +165,7 @@ function experienceHarness() {
                 disconnected += 1;
             }
         },
+        { now: () => clock.now },
     );
     const ui = new Experience();
     ui.rootRef.current = { querySelectorAll: () => [] };
@@ -160,6 +193,8 @@ function experienceHarness() {
         document,
         listeners,
         cancelled,
+        tracked,
+        clock,
         intersect: () => observerCallback([{ isIntersecting: true }]),
         disconnected: () => disconnected,
     };
@@ -235,10 +270,8 @@ test('dish and price-list filters use real category data and reset the carousel'
     const { ui } = experienceHarness();
     ui._sx = 800;
     ui._stx = 800;
-    ui.state.filterOpen = true;
     ui.pickBoardCat('pares')();
     ui.componentDidUpdate();
-    assert.equal(ui.state.filterOpen, false);
     assert.equal(ui._stx, 0);
     assert.equal(ui._sx, 0);
     assert.equal(
@@ -364,16 +397,15 @@ test('V2 menu lenses share category filters and reset when changing view', () =>
     ui.pickBoardCat('drinks')();
     assert.equal(ui.state.boardCat, 'drinks');
     ui.state.narrow = true;
-    assert.equal(ui.renderVals().filterActive, true);
-    assert.equal(ui.renderVals().filterOpen, false);
     assert.equal(
         ui.renderVals().boardChips.find((chip: { on: boolean }) => chip.on)
             .label,
         'Drinks',
     );
+    ui.chipRowRef.current = { scrollLeft: 240 };
     ui.setMenuLens('pics');
     assert.equal(ui.state.boardCat, 'all');
-    assert.equal(ui.state.filterOpen, false);
+    assert.equal(ui.chipRowRef.current.scrollLeft, 0);
     assert.ok(
         !ui
             .renderVals()
@@ -394,29 +426,48 @@ test('hero marquee pause and resume retain its current animation offset', () => 
     assert.equal(ui._mOff, 321);
 });
 
-test('the map uses keyless OpenStreetMap tiles and keeps its marker, zoom control and recenter', () => {
-    const { ui } = experienceHarness();
+function mapHarness(mobile: boolean) {
+    const harness = experienceHarness();
+    const { ui } = harness;
     const tiles: { url: string; options: { attribution: string } }[] = [];
     const flights: unknown[][] = [];
-    let markers = 0,
-        zoomControls = 0;
+    const handlers: string[] = [];
+    const counts = { markers: 0, zoomControls: 0 };
+    let options: Record<string, unknown> = {};
+    const handler = (name: string) => ({
+        enable: () => handlers.push(`${name}:on`),
+        disable: () => handlers.push(`${name}:off`),
+    });
     const map = {
         setView: () => map,
         flyTo: (...call: unknown[]) => flights.push(call),
+        dragging: handler('dragging'),
+        touchZoom: handler('touchZoom'),
     };
     ui._leaflet = {
-        Browser: { mobile: true },
-        map: () => map,
-        control: { zoom: () => ({ addTo: () => (zoomControls += 1) }) },
-        tileLayer: (url: string, options: { attribution: string }) => {
-            tiles.push({ url, options });
+        Browser: { mobile },
+        map: (_element: unknown, mapOptions: Record<string, unknown>) => {
+            options = mapOptions;
+            return map;
+        },
+        control: {
+            zoom: () => ({ addTo: () => (counts.zoomControls += 1) }),
+        },
+        tileLayer: (url: string, layer: { attribution: string }) => {
+            tiles.push({ url, options: layer });
             return { addTo() {} };
         },
         divIcon: () => ({}),
-        marker: () => ({ addTo: () => (markers += 1) }),
+        marker: () => ({ addTo: () => (counts.markers += 1) }),
     };
-    ui.mapRef.current = {};
+    const element = { contains: (target: unknown) => target === 'map' };
+    ui.mapRef.current = element;
     ui.initMap();
+    return { ...harness, tiles, flights, handlers, counts, options: () => options };
+}
+
+test('the map uses keyless OpenStreetMap tiles and keeps its marker, zoom control and recenter', () => {
+    const { ui, tiles, flights, counts } = mapHarness(true);
     assert.equal(tiles.length, 1);
     assert.equal(
         tiles[0].url,
@@ -424,10 +475,215 @@ test('the map uses keyless OpenStreetMap tiles and keeps its marker, zoom contro
     );
     assert.doesNotMatch(tiles[0].url, /key|token|carto/i);
     assert.match(tiles[0].options.attribution, /OpenStreetMap/);
-    assert.equal(markers, 1);
-    assert.equal(zoomControls, 1);
+    assert.equal(counts.markers, 1);
+    assert.equal(counts.zoomControls, 1);
     ui.recenter();
     assert.equal(flights.length, 1);
+});
+
+test('a touch map never traps page scrolling until it is tapped and locks again outside it', () => {
+    const { ui, handlers, options, flights } = mapHarness(true);
+    /** Locked: no drag or pinch handler, so a finger over the map scrolls the page; wheel zoom stays off. */
+    assert.equal(options().dragging, false);
+    assert.equal(options().touchZoom, false);
+    assert.equal(options().scrollWheelZoom, false);
+    assert.equal(ui.state.mapLocked, true);
+    const hint = () => {
+        const nodes: any[] = [];
+        const visit = (node: any) => {
+            if (Array.isArray(node)) return node.forEach(visit);
+            if (!node?.props) return;
+            nodes.push(node);
+            visit(node.props.children);
+        };
+        visit(ui.render());
+        return {
+            text: nodes.find((node) => node.props.className === 'map-hint')
+                ?.props.children,
+            map: nodes.find((node) => node.props.className === 'v3-s157'),
+        };
+    };
+    assert.equal(hint().text, 'Tap the map to move it');
+
+    hint().map.props.onClick();
+    assert.deepEqual(handlers, ['dragging:on', 'touchZoom:on']);
+    assert.equal(ui.state.mapLocked, false);
+    assert.equal(hint().text, 'Tap outside the map when done');
+    /** A touch that starts on the map keeps it active; Recenter still flies while unlocked. */
+    ui.onDocDown({ target: 'map' });
+    assert.equal(ui.state.mapLocked, false);
+    ui.recenter();
+    assert.equal(flights.length, 1);
+
+    ui.onDocDown({ target: 'page' });
+    assert.deepEqual(handlers.slice(2), ['dragging:off', 'touchZoom:off']);
+    assert.equal(ui.state.mapLocked, true);
+    ui.onDocDown({ target: 'page' });
+    assert.equal(handlers.length, 4);
+});
+
+test('a mouse map drags immediately and shows no touch hint', () => {
+    const { ui, options, handlers } = mapHarness(false);
+    assert.equal(options().dragging, true);
+    assert.equal(options().touchZoom, true);
+    assert.equal(options().scrollWheelZoom, false);
+    assert.equal(ui.state.mapLocked, null);
+    ui.unlockMap();
+    ui.onDocDown({ target: 'page' });
+    assert.deepEqual(handlers, []);
+});
+
+function renderedNodes(ui: { render: () => unknown }) {
+    const nodes: any[] = [];
+    const visit = (node: any) => {
+        if (Array.isArray(node)) return node.forEach(visit);
+        if (!node?.props) return;
+        nodes.push(node);
+        visit(node.props.children);
+    };
+    visit(ui.render());
+    return nodes;
+}
+
+test('phones show the Pics and Prices toggle and every category filter directly', () => {
+    const { ui } = experienceHarness();
+    ui.state.narrow = true;
+    const nodes = renderedNodes(ui);
+    assert.ok(nodes.find((node) => node.props['aria-label'] === 'Menu view'));
+    const filters = nodes.filter(
+        (node) => node.props['aria-label'] === 'Filter dishes',
+    );
+    /** One always-rendered row of chips; no icon button that hides them behind a tap. */
+    assert.equal(filters.length, 1);
+    assert.equal(filters[0].props.role, 'tablist');
+    assert.equal('aria-expanded' in filters[0].props, false);
+    const chips = filters[0].props.children.map(
+        (fragment: any) => fragment.props.children,
+    );
+    assert.deepEqual(
+        chips.map((chip: any) => chip.props['aria-selected']),
+        landingData.BOARD_CATS.map(([key]) => key === 'all'),
+    );
+    chips[2].props.onClick();
+    const active = ui
+        .renderVals()
+        .boardChips.filter((chip: { on: boolean }) => chip.on);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].label, landingData.BOARD_CATS[2][1]);
+    assert.match(active[0].style, /background:#121110;color:#FFFFFF/);
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
+    assert.match(css, /\.landing-v3 \.v3-s110 \{[^}]*overflow-x: auto;/);
+    assert.match(phone, /\.board-controls \.v3-s110 \{[^}]*margin: 0 -16px;/);
+    assert.doesNotMatch(css, /active-menu-filter|v3-s108/);
+});
+
+test('Wednesday reads Usually Closed with a wrapping secondary line inside the Hours card', () => {
+    const { ui } = experienceHarness();
+    const nodes = renderedNodes(ui);
+    const notes = nodes.filter((node) => node.props.className === 'hours-note');
+    assert.deepEqual(
+        notes.map((node) => node.props.children),
+        ['Sometimes open — message to confirm.'],
+    );
+    const times = nodes
+        .filter((node) => node.props.className === 'v3-s194')
+        .map((node) => node.props.children);
+    assert.deepEqual(times, ['6:00 PM - 12:00 AM', 'Usually Closed', 'Closed']);
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    const rule = (selector: string) => {
+        const start = css.indexOf(`.landing-v3 ${selector} {`);
+        return css.slice(start, css.indexOf('}', start));
+    };
+    assert.match(rule('.v3-s192'), /flex-wrap: wrap;/);
+    assert.doesNotMatch(rule('.v3-s194'), /white-space: nowrap/);
+    assert.match(rule('.v3-s194'), /overflow-wrap: anywhere;/);
+    assert.match(rule('.hours-note'), /flex: 0 0 100%;/);
+});
+
+test('the landing page reports only its own page view and link taps as anonymous events', () => {
+    const { ui, tracked, clock } = experienceHarness();
+    const follow = (href: string | null) => {
+        clock.now += 2000;
+        ui.trackLink({
+            target: {
+                closest: () =>
+                    href === null ? null : { getAttribute: () => href },
+            },
+        });
+    };
+    follow(landingData.FB);
+    follow('https://maps.app.goo.gl/nivpx3cxuP56wAXo8');
+    follow('#board');
+    follow('#reviews');
+    follow('/login');
+    follow(null);
+    assert.deepEqual(tracked, [
+        'facebook_click',
+        'directions_click',
+        'menu_click',
+    ]);
+    clock.now += 2000;
+    ui.setMenuLens('prices');
+    clock.now += 2000;
+    ui.pickBoardCat('drinks')();
+    /** A double tap inside one second is one event. */
+    ui.pickBoardCat('silog')();
+    assert.deepEqual(tracked.slice(3), ['menu_click', 'menu_click']);
+
+    const source = readFileSync(
+        new URL(
+            '../resources/js/components/landing-experience.jsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(source, /this\.infoMotion\(\);\s*track\('page_view'\);/);
+    assert.match(source, /onClick=\{this\.trackLink\}/);
+    /** The beacon carries an event name only. */
+    assert.match(source, /data: \{ event \}/);
+});
+
+test('the footer opens the Privacy Notice without the review form', () => {
+    const { ui } = experienceHarness();
+    const find = () => {
+        const nodes = renderedNodes(ui);
+        return {
+            button: nodes.find(
+                (node) =>
+                    node.type === 'button' &&
+                    node.props.children === 'Privacy Notice',
+            ),
+            dialog: nodes.find((node) => 'legal' in node.props),
+        };
+    };
+    assert.equal(find().dialog.props.legal, null);
+    find().button.props.onClick();
+    assert.equal(find().dialog.props.legal, 'privacy');
+    find().dialog.props.onClose();
+    assert.equal(find().dialog.props.legal, null);
+});
+
+test('phone headings step down without shrinking body copy below a readable size', () => {
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
+    assert.match(phone, /\.landing-v3 \.v3-s155 \{\s*font-size: clamp\(46px, 13vw, 56px\);/);
+    assert.match(css, /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(64px, 14vw, 220px\);/);
+    const sizes = [...phone.matchAll(/font-size: ([\d.]+)px/g)].map((match) =>
+        Number(match[1]),
+    );
+    assert.ok(Math.min(...sizes) >= 13, String(Math.min(...sizes)));
 });
 
 test('the mobile About statement is sized by its content instead of a viewport-height block', () => {

@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Http\Requests\StoreCustomerReviewRequest;
 use App\Models\CustomerReview;
 use App\Support\CustomerReviewImages;
+use App\Support\WebsiteAnalytics;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ use Throwable;
 
 class SubmitCustomerReview
 {
-    public function __construct(private CustomerReviewImages $images) {}
+    public function __construct(private CustomerReviewImages $images, private WebsiteAnalytics $analytics) {}
 
     public function execute(StoreCustomerReviewRequest $request): void
     {
@@ -49,6 +50,8 @@ class SubmitCustomerReview
                 }
                 $review->update(['images' => $attachments]);
             });
+            /** Counted only for a review that was really saved; a counter failure is reported, never shown to the guest. */
+            rescue(fn () => $this->analytics->record($request, WebsiteAnalytics::REVIEW_SUBMISSION));
         } catch (UniqueConstraintViolationException) {
             $this->images->deleteDirectory($id);
             $existing = CustomerReview::query()->where('submission_key', $key)->orWhere('submission_digest', $digest)->firstOrFail();

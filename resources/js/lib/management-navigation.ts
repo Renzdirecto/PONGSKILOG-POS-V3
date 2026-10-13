@@ -8,6 +8,7 @@ export type ManagementSectionId =
 
 export type ManagementDestinationId =
     | 'dashboard'
+    | 'website-analytics'
     | 'pos'
     | 'qr-orders'
     | 'kitchen'
@@ -68,6 +69,15 @@ export const managementDestinations: readonly ManagementDestination[] = [
         shortLabel: 'Home',
         section: 'overview',
         permission: 'reports.view',
+    },
+    /** The public landing page belongs to the whole business, so only a business-wide account reads its figures. */
+    {
+        id: 'website-analytics',
+        label: 'Website Analytics',
+        shortLabel: 'Website',
+        section: 'overview',
+        permission: 'reports.view',
+        requiresBusinessWide: true,
     },
     {
         id: 'pos',
@@ -244,6 +254,9 @@ export function activeManagementDestination(
 
     if (component === 'workspaces/owner-dashboard') {
         return 'dashboard';
+    }
+    if (component === 'workspaces/website-analytics') {
+        return 'website-analytics';
     }
     if (
         component === 'workspaces/transaction-history' &&

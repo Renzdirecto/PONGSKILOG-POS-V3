@@ -33,4 +33,5 @@ Before planning or editing, find the row whose globs match the file's path and r
 | database/seeders/Local*Seeder.php | .ai/rules/seeders.md |
 | resources/js/{components,layouts}/**/*.{ts,tsx},app/Actions/StoreSessions/**/*.php | .ai/rules/store-sessions.md |
 | {app/Actions/Staff/**,app/Http/Controllers/StaffController.php,app/Http/Requests/StoreStaffRequest.php,resources/js/pages/super-admin/staff.tsx}, app/Support/StaffRoles.php, {app/Actions/Staff/**,app/Http/Requests/{UpdateStaffRequest,ResetStaffPasswordRequest}.php,resources/js/components/staff-account-dialogs.tsx} | .ai/rules/super-admin.md |
+| {app/Support/WebsiteAnalytics.php,app/Models/WebsiteEvent.php,app/Http/Controllers/{WebsiteEventController,WebsiteAnalyticsController}.php,app/Http/Requests/{StoreWebsiteEventRequest,WebsiteAnalyticsRequest}.php,resources/js/pages/workspaces/website-analytics.tsx,resources/js/lib/website-analytics.ts,resources/js/components/landing-experience.*} | .ai/rules/website-analytics.md |
 | resources/js/pages/workspaces/kitchen.tsx | .ai/rules/workspaces.md |

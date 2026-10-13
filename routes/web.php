@@ -65,12 +65,16 @@ use App\Http\Controllers\SuperAdminDashboardController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\VoidOrderController;
 use App\Http\Controllers\VoidOrdersController;
+use App\Http\Controllers\WebsiteAnalyticsController;
+use App\Http\Controllers\WebsiteEventController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', LandingPageController::class)->name('home');
 Route::get('sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
 Route::post('reviews', [CustomerReviewController::class, 'store'])->middleware('throttle:customer-review-submit')->name('reviews.store');
+/** Anonymous landing-page counters (App\Support\WebsiteAnalytics): no IP address or account is stored. */
+Route::post('website-events', WebsiteEventController::class)->middleware('throttle:website-events')->name('website-events.store');
 Route::get('reviews/{review}/images/{image}', [CustomerReviewController::class, 'image'])->whereUuid('review')->whereNumber('image')->middleware('throttle:customer-review-images')->name('reviews.images.show');
 /** Every throttle is a named limiter with its own counter (App\Support\RateLimits); never an un-named throttle:X,Y. */
 Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:public-receipt')->name('receipt.show');
@@ -227,6 +231,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('workspaces/reports/export', [ReportsController::class, 'export'])
         ->middleware(['permission:reports.view', 'throttle:reports-export'])
         ->name('workspaces.reports.export');
+
+    /** Business-wide landing-page counters: Reports access plus a business-wide scope (WebsiteAnalyticsRequest). */
+    Route::get('workspaces/website-analytics', WebsiteAnalyticsController::class)
+        ->middleware('permission:reports.view')
+        ->name('workspaces.website-analytics');
 
     Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
         ->middleware('permission:transactions.view')

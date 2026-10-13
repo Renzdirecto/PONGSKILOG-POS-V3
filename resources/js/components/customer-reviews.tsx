@@ -12,15 +12,160 @@ import { Input } from '@/components/ui/input';
 import { FormErrors } from '@/components/catalog-ui';
 import { createClientUuid } from '@/lib/client-uuid';
 import {
+    REVIEW_NAME_MAX,
     advanceReviewScroll,
     reviewCharacterCount,
+    reviewDateLabel,
     reviewFileError,
     reviewSubmitFailure,
+    reviewSwipeStep,
 } from '@/lib/customer-reviews';
-import type { CustomerReview, ReviewBranch } from '@/lib/customer-reviews';
+import type {
+    CustomerReview,
+    ReviewBranch,
+    ReviewImage,
+} from '@/lib/customer-reviews';
 import { qrError } from '@/lib/qr-http';
 import { FB } from '@/lib/landing';
 import { store } from '@/routes/reviews';
+
+/**
+ * Full-size review photos in a modal. Every image still comes from the authorized review-image route the card uses,
+ * so a photo that stops being public stops loading here too; no object path or download link is exposed.
+ */
+function ReviewPhotoViewer({
+    photos,
+    name,
+    index,
+    onIndex,
+    onClose,
+}: {
+    photos: ReviewImage[];
+    name: string;
+    index: number;
+    onIndex: (index: number) => void;
+    onClose: () => void;
+}) {
+    const swipe = useRef<{ x: number; y: number } | null>(null);
+    const many = photos.length > 1;
+    const photo = photos[index];
+    const step = (direction: number) =>
+        onIndex((index + direction + photos.length) % photos.length);
+    return (
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) onClose();
+            }}
+        >
+            <DialogContent
+                className="review-dialog review-viewer"
+                overlayClassName="review-overlay review-viewer-overlay"
+                showCloseButton={false}
+                aria-describedby={undefined}
+                onKeyDown={(event) => {
+                    if (
+                        many &&
+                        (event.key === 'ArrowRight' ||
+                            event.key === 'ArrowLeft')
+                    ) {
+                        event.preventDefault();
+                        step(event.key === 'ArrowRight' ? 1 : -1);
+                    }
+                }}
+                onTouchStart={(event) => {
+                    const touch = event.touches[0];
+                    swipe.current = { x: touch.clientX, y: touch.clientY };
+                }}
+                onTouchEnd={(event) => {
+                    const start = swipe.current;
+                    const touch = event.changedTouches[0];
+                    swipe.current = null;
+                    if (!start || !many) return;
+                    const direction = reviewSwipeStep(
+                        touch.clientX - start.x,
+                        touch.clientY - start.y,
+                    );
+                    if (direction) step(direction);
+                }}
+            >
+                <DialogTitle className="sr-only">
+                    {`Photo ${index + 1} of ${photos.length} shared by ${name}`}
+                </DialogTitle>
+                <button
+                    type="button"
+                    className="review-viewer-close"
+                    aria-label="Close photo"
+                    onClick={onClose}
+                >
+                    <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+                <img
+                    key={photo.url}
+                    src={photo.url}
+                    alt={`Customer photo ${index + 1} shared by ${name}`}
+                    width={photo.width}
+                    height={photo.height}
+                    decoding="async"
+                    draggable={false}
+                />
+                {many && (
+                    <>
+                        {(
+                            [
+                                [-1, 'Previous photo', 'M15 18l-6-6 6-6'],
+                                [1, 'Next photo', 'M9 18l6-6-6-6'],
+                            ] as const
+                        ).map(([direction, label, path]) => (
+                            <button
+                                key={label}
+                                type="button"
+                                className={
+                                    direction < 0
+                                        ? 'review-viewer-prev'
+                                        : 'review-viewer-next'
+                                }
+                                aria-label={label}
+                                onClick={() => step(direction)}
+                            >
+                                <svg
+                                    width="22"
+                                    height="22"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <path d={path} />
+                                </svg>
+                            </button>
+                        ))}
+                        <span
+                            className="review-viewer-count"
+                            aria-hidden="true"
+                        >
+                            {index + 1} / {photos.length}
+                        </span>
+                    </>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 export function ReviewCard({
     review,
@@ -30,81 +175,13 @@ export function ReviewCard({
     management?: boolean;
 }) {
     const [expanded, setExpanded] = useState(management);
+    const [viewing, setViewing] = useState<number | null>(null);
     const avatar = review.images.find((image) => image.kind === 'profile');
     const photos = review.images.filter((image) => image.kind === 'review');
     const long = reviewCharacterCount(review.description) > 120;
     return (
         <article className="review-card">
-            <div className="review-ticket">
-                <span>Customer review</span>
-                <time dateTime={review.date}>{review.date}</time>
-            </div>
-            <div className="review-body">
-                <div
-                    className="review-stars"
-                    role="img"
-                    aria-label={`${review.rating} out of 5 stars`}
-                >
-                    {'\u2605'.repeat(review.rating)}
-                    <span aria-hidden="true">
-                        {'\u2606'.repeat(5 - review.rating)}
-                    </span>
-                </div>
-                <p className="review-quote">
-                    “
-                    {long && !expanded
-                        ? `${Array.from(review.description).slice(0, 120).join('')}\u2026`
-                        : review.description}
-                    ”
-                </p>
-                {long && (
-                    <button
-                        type="button"
-                        className="review-more"
-                        aria-expanded={expanded}
-                        onClick={() => setExpanded(!expanded)}
-                    >
-                        {expanded ? 'See Less' : 'See More'}
-                    </button>
-                )}
-                {photos.length > 0 && (
-                    <div className="review-photos">
-                        {photos.map((image, index) => (
-                            <a
-                                key={image.url}
-                                href={image.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={`Open review photo ${index + 1}`}
-                            >
-                                <img
-                                    src={image.url}
-                                    alt={`Customer photo ${index + 1} shared by ${review.preferred_name}`}
-                                    width={image.width}
-                                    height={image.height}
-                                    loading="lazy"
-                                    decoding="async"
-                                    draggable={false}
-                                />
-                            </a>
-                        ))}
-                    </div>
-                )}
-                {review.purchased_items && (
-                    <div className="review-purchases">
-                        <span>Ordered - self-reported</span>
-                        <p>{review.purchased_items}</p>
-                    </div>
-                )}
-                {review.visit_type && (
-                    <small>
-                        {review.visit_type === 'dine_in'
-                            ? 'Dine-in'
-                            : 'Takeout'}
-                    </small>
-                )}
-            </div>
-            <div className="review-author">
+            <header className="review-head">
                 {avatar ? (
                     <img
                         src={avatar.url}
@@ -119,8 +196,87 @@ export function ReviewCard({
                         {Array.from(review.preferred_name)[0]}
                     </span>
                 )}
-                <strong>{review.preferred_name}</strong>
+                {/* Names saved before the 10-character limit stay whole in the data; the card only clips them visually. */}
+                <strong title={review.preferred_name}>
+                    {review.preferred_name}
+                </strong>
+                <div
+                    className="review-stars"
+                    role="img"
+                    aria-label={`${review.rating} out of 5 stars`}
+                >
+                    {'★'.repeat(review.rating)}
+                    <span aria-hidden="true">
+                        {'☆'.repeat(5 - review.rating)}
+                    </span>
+                </div>
+            </header>
+            <div className="review-body">
+                <p className="review-quote">
+                    {long && !expanded
+                        ? `${Array.from(review.description).slice(0, 120).join('')}…`
+                        : review.description}
+                </p>
+                {long && (
+                    <button
+                        type="button"
+                        className="review-more"
+                        aria-expanded={expanded}
+                        onClick={() => setExpanded(!expanded)}
+                    >
+                        {expanded ? 'See Less' : 'See More'}
+                    </button>
+                )}
+                {photos.length > 0 && (
+                    <div className="review-photos">
+                        {photos.map((image, index) => (
+                            <button
+                                key={image.url}
+                                type="button"
+                                aria-label={`View photo ${index + 1} of ${photos.length}`}
+                                onClick={() => setViewing(index)}
+                            >
+                                <img
+                                    src={image.url}
+                                    alt={`Customer photo ${index + 1} shared by ${review.preferred_name}`}
+                                    width={image.width}
+                                    height={image.height}
+                                    loading="lazy"
+                                    decoding="async"
+                                    draggable={false}
+                                />
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {review.purchased_items && (
+                    <div className="review-purchases">
+                        <span>Ordered - self-reported</span>
+                        <p>{review.purchased_items}</p>
+                    </div>
+                )}
             </div>
+            <footer className="review-foot">
+                <time dateTime={review.date}>
+                    {reviewDateLabel(review.date)}
+                </time>
+                {review.visit_type && (
+                    <span>
+                        {review.visit_type === 'dine_in'
+                            ? 'Dine-in'
+                            : 'Takeout'}
+                    </span>
+                )}
+            </footer>
+            {viewing !== null && (
+                <ReviewPhotoViewer
+                    photos={photos}
+                    name={review.preferred_name}
+                    index={viewing}
+                    onIndex={setViewing}
+                    onClose={() => setViewing(null)}
+                />
+            )}
         </article>
     );
 }
@@ -291,9 +447,13 @@ export function CustomerReviews({
                     }}
                     onPointerDown={(event) => {
                         interaction.current.touched = true;
+                        /* The photo viewer is a portal: its pointer events bubble here but must never drag the rail. */
                         if (
                             event.pointerType === 'mouse' &&
                             event.button === 0 &&
+                            event.currentTarget.contains(
+                                event.target as Node,
+                            ) &&
                             !(event.target as HTMLElement).closest('button,a')
                         )
                             drag.current = {
@@ -414,7 +574,8 @@ function WriteReview({
     });
     const [legal, setLegal] = useState<'terms' | 'privacy' | null>(null);
     const [feedback, setFeedback] = useState('');
-    const [saved, setSaved] = useState(false);
+    /** The name the server confirmed it saved; null until then, so the thank-you can never appear early. */
+    const [savedName, setSavedName] = useState<string | null>(null);
     const [profileError, setProfileError] = useState('');
     const [imagesError, setImagesError] = useState('');
     const [photos, setPhotos] = useState<SelectedImage[]>([]);
@@ -484,7 +645,7 @@ function WriteReview({
                             </button>
                         </div>
                     </div>
-                    {saved ? (
+                    {savedName !== null ? (
                         <div className="review-sent">
                             <span aria-hidden="true">
                                 <svg
@@ -500,7 +661,7 @@ function WriteReview({
                                     <path d="M5 12.5l4.5 4.5L19 7.5" />
                                 </svg>
                             </span>
-                            <h3>Salamat, suki!</h3>
+                            <h3>Salamat, {savedName}!</h3>
                             <DialogDescription>
                                 {form.data.visibility === 'public'
                                     ? 'Your review was received and is waiting for approval.'
@@ -527,8 +688,17 @@ function WriteReview({
                                     /* useHttp resolves without a body on a 422: only a confirmed save shows the thank-you. */
                                     const result = (await form.post(
                                         store.url(),
-                                    )) as { saved?: boolean } | undefined;
-                                    if (result?.saved) setSaved(true);
+                                    )) as
+                                        | {
+                                              saved?: boolean;
+                                              preferred_name?: string;
+                                          }
+                                        | undefined;
+                                    if (result?.saved)
+                                        setSavedName(
+                                            result.preferred_name ??
+                                                form.data.preferred_name.trim(),
+                                        );
                                     else {
                                         setFeedback(
                                             'Please fix the errors marked in red above.',
@@ -884,18 +1054,20 @@ function WriteReview({
                                     <Input
                                         required
                                         autoComplete="nickname"
-                                        maxLength={60}
                                         placeholder="e.g. Carlo M."
                                         value={form.data.preferred_name}
                                         aria-invalid={invalid('preferred_name')}
                                         onChange={(event) =>
                                             form.setData(
                                                 'preferred_name',
-                                                event.target.value,
+                                                Array.from(event.target.value)
+                                                    .slice(0, REVIEW_NAME_MAX)
+                                                    .join(''),
                                             )
                                         }
                                     />
                                     <span className="review-hint">
+                                        Up to {REVIEW_NAME_MAX} characters.
                                         Shown with your review if you post it on
                                         the page.
                                     </span>
@@ -1260,107 +1432,132 @@ function WriteReview({
                     )}
                 </DialogContent>
             </Dialog>
-            <Dialog
-                open={legal !== null}
-                onOpenChange={(value) => {
-                    if (!value) setLegal(null);
-                }}
-            >
-                <DialogContent
-                    className="review-dialog max-h-[85svh] overflow-y-auto"
-                    overlayClassName="review-overlay"
-                >
-                    <DialogHeader>
-                        <DialogTitle>
-                            {legal === 'terms'
-                                ? 'Terms & Conditions'
-                                : 'Privacy Notice'}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Review notice {noticeVersion}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="review-legal">
-                        {legal === 'terms' ? (
-                            <>
-                                <p>
-                                    Share an honest experience of your own
-                                    visit. Use a preferred name; do not include
-                                    phone numbers, addresses, payment details,
-                                    harassment, advertising or other people’s
-                                    personal information.
-                                </p>
-                                <p>
-                                    Upload only photos you own and have
-                                    permission to share. Purchased items are
-                                    self-reported and are never marked as
-                                    verified purchases.
-                                </p>
-                                <p>
-                                    Public reviews require your separate consent
-                                    and approval by PONGSKILOG. PONGSKILOG may
-                                    reject inappropriate content. Private
-                                    feedback cannot be published; public sharing
-                                    would require a new submission with new
-                                    permission.
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <p>
-                                    PONGSKILOG collects your preferred name,
-                                    rating, review, optional visit details and
-                                    photos to receive feedback and, when you
-                                    consent, display approved reviews publicly.
-                                    No account is required. An email address is
-                                    optional: it is stored encrypted, never
-                                    displayed publicly and used only to contact
-                                    you about this review.
-                                </p>
-                                <p>
-                                    Only the authorized Owner and system
-                                    administrator can read private feedback and
-                                    moderate submissions. Photos are re-encoded,
-                                    resized and stored privately in object
-                                    storage; originals and embedded photo
-                                    metadata are discarded. Publicly displayed
-                                    content can be copied by visitors.
-                                </p>
-                                <p>
-                                    We record acknowledgment time and notice
-                                    version. Session identifiers are hashed for
-                                    duplicate and spam prevention; request
-                                    addresses are used for short-lived rate
-                                    limits, not saved in review records.
-                                </p>
-                                <p>
-                                    Pending, rejected and private feedback is
-                                    retained for up to 90 days. Approved public
-                                    reviews are retained for up to one year from
-                                    submission. Daily cleanup removes expired
-                                    records and photos.
-                                </p>
-                                <p>
-                                    To request access, correction, removal or
-                                    withdrawal of public consent, message{' '}
-                                    <a
-                                        href={FB}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        PONGSKILOG on Facebook
-                                    </a>{' '}
-                                    with the preferred name, submission date and
-                                    review details. PONGSKILOG can remove the
-                                    review and its images. We handle personal
-                                    information in line with the Philippine Data
-                                    Privacy Act.
-                                </p>
-                            </>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
+            <ReviewLegalDialog
+                legal={legal}
+                noticeVersion={noticeVersion}
+                onClose={() => setLegal(null)}
+            />
         </>
+    );
+}
+
+/** The review Terms and the site Privacy Notice; the landing footer opens the notice without the review form. */
+export function ReviewLegalDialog({
+    legal,
+    noticeVersion,
+    onClose,
+}: {
+    legal: 'terms' | 'privacy' | null;
+    noticeVersion: string;
+    onClose: () => void;
+}) {
+    return (
+        <Dialog
+            open={legal !== null}
+            onOpenChange={(value) => {
+                if (!value) onClose();
+            }}
+        >
+            <DialogContent
+                className="review-dialog max-h-[85svh] overflow-y-auto"
+                overlayClassName="review-overlay"
+            >
+                <DialogHeader>
+                    <DialogTitle>
+                        {legal === 'terms'
+                            ? 'Terms & Conditions'
+                            : 'Privacy Notice'}
+                    </DialogTitle>
+                    <DialogDescription>
+                        Notice {noticeVersion}
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="review-legal">
+                    {legal === 'terms' ? (
+                        <>
+                            <p>
+                                Share an honest experience of your own visit.
+                                Use a preferred name; do not include phone
+                                numbers, addresses, payment details, harassment,
+                                advertising or other people’s personal
+                                information.
+                            </p>
+                            <p>
+                                Upload only photos you own and have permission
+                                to share. Purchased items are self-reported and
+                                are never marked as verified purchases.
+                            </p>
+                            <p>
+                                Public reviews require your separate consent and
+                                approval by PONGSKILOG. PONGSKILOG may reject
+                                inappropriate content. Private feedback cannot
+                                be published; public sharing would require a new
+                                submission with new permission.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p>
+                                PONGSKILOG collects your preferred name, rating,
+                                review, optional visit details and photos to
+                                receive feedback and, when you consent, display
+                                approved reviews publicly. No account is
+                                required. An email address is optional: it is
+                                stored encrypted, never displayed publicly and
+                                used only to contact you about this review.
+                            </p>
+                            <p>
+                                Only the authorized Owner and system
+                                administrator can read private feedback and
+                                moderate submissions. Photos are re-encoded,
+                                resized and stored privately in object storage;
+                                originals and embedded photo metadata are
+                                discarded. Publicly displayed content can be
+                                copied by visitors.
+                            </p>
+                            <p>
+                                We record acknowledgment time and notice
+                                version. Session identifiers are hashed for
+                                duplicate and spam prevention; request addresses
+                                are used for short-lived rate limits, not saved
+                                in review records.
+                            </p>
+                            <p>
+                                This website counts page visits and taps on its
+                                menu, directions and Facebook links to
+                                understand how the page is used. The counts are
+                                anonymous and stay with PONGSKILOG: no IP
+                                address, name or advertising tracker is stored
+                                or shared, and the daily session hash used to
+                                estimate visitors cannot identify you. Counts
+                                are kept for up to 12 months.
+                            </p>
+                            <p>
+                                Pending, rejected and private feedback is
+                                retained for up to 90 days. Approved public
+                                reviews are retained for up to one year from
+                                submission. Daily cleanup removes expired
+                                records and photos.
+                            </p>
+                            <p>
+                                To request access, correction, removal or
+                                withdrawal of public consent, message{' '}
+                                <a
+                                    href={FB}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    PONGSKILOG on Facebook
+                                </a>{' '}
+                                with the preferred name, submission date and
+                                review details. PONGSKILOG can remove the review
+                                and its images. We handle personal information
+                                in line with the Philippine Data Privacy Act.
+                            </p>
+                        </>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }

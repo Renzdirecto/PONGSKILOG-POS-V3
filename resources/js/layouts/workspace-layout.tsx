@@ -215,6 +215,7 @@ export default function WorkspaceLayout({
         page.component === 'branches/index' ||
         (page.component === 'workspaces/reports' && !isBranchReports) ||
         page.component === 'workspaces/owner-dashboard' ||
+        page.component === 'workspaces/website-analytics' ||
         isBusinessHistory;
 
     const refreshStoreSession = useCallback(async () => {

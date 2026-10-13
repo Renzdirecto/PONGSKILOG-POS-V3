@@ -17,6 +17,7 @@ export type SuperAdminDestinationId =
     | 'owner-dashboard'
     | 'owner-transactions'
     | 'reports'
+    | 'website-analytics'
     | 'products'
     | 'inventory'
     | 'ops-plans'
@@ -180,6 +181,16 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
         requiresBranch: false,
     },
     {
+        id: 'website-analytics',
+        label: 'Website Analytics',
+        shortLabel: 'Website',
+        section: 'owner',
+        routeName: 'workspaces.website-analytics',
+        permission: 'reports.view',
+        availability: 'live',
+        requiresBranch: false,
+    },
+    {
         id: 'products',
         label: 'Products',
         shortLabel: 'Products',
@@ -317,6 +328,9 @@ export function activeSuperAdminDestination(
     }
     if (component === 'workspaces/reports') {
         return 'reports';
+    }
+    if (component === 'workspaces/website-analytics') {
+        return 'website-analytics';
     }
     if (component === 'super-admin/staff') {
         return 'staff';

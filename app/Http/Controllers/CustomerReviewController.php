@@ -23,7 +23,8 @@ class CustomerReviewController extends Controller
     {
         $submit->execute($request);
 
-        return response()->json(['saved' => true])->header('Cache-Control', 'private, no-store');
+        /** The saved name is echoed so the thank-you greets the guest only after, and exactly as, the server stored it. */
+        return response()->json(['saved' => true, 'preferred_name' => $request->validated('preferred_name')])->header('Cache-Control', 'private, no-store');
     }
 
     public function index(Request $request, Branch $branch): JsonResponse

@@ -1,4 +1,3 @@
-import { CustomerReviewSettings } from '@/components/customer-review-settings';
 import { update as saveQrSettings } from '@/routes/branches/qr-settings';
 import {
     destroy as removeBranchImage,
@@ -75,13 +74,15 @@ const statusLabels: Record<BranchStatus, string> = {
     temporarily_closed: 'Temporarily closed',
     inactive: 'Inactive',
 };
-/** The Owner standalone Settings tabs that have a real backend: no business-profile fields are invented. */
+/**
+ * The Owner standalone Settings tabs that have a real backend: no business-profile fields are invented. Customer
+ * Reviews moved to Website → Reviews (v1.3.0), where the landing page's other content is managed.
+ */
 const SETTINGS_TABS = [
     ['branches', 'Branch Management'],
     ['receipt', 'Receipt'],
     ['qr', 'Customer QR'],
     ['screen', 'Customer Screen'],
-    ['reviews', 'Reviews'],
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number][0];
@@ -94,7 +95,6 @@ type SettingsTab = (typeof SETTINGS_TABS)[number][0];
 type SettingsScope = {
     mode: 'branch' | 'business';
     can_create: boolean;
-    can_manage_reviews: boolean;
     can_edit_identity: boolean;
     branch: { id: string; name: string; code: string } | null;
 };
@@ -107,18 +107,15 @@ export default function Branches({
     scope: SettingsScope;
 }) {
     const branchMode = scope.mode === 'branch';
-    const allowedTabs = SETTINGS_TABS.filter(
-        ([value]) => value !== 'reviews' || scope.can_manage_reviews,
-    );
     const tabs = branchMode
-        ? allowedTabs.map(
+        ? SETTINGS_TABS.map(
               ([value, label]) =>
                   [
                       value,
                       value === 'branches' ? 'Branch details' : label,
                   ] as const,
           )
-        : allowedTabs;
+        : SETTINGS_TABS;
     const [section, setSection] = useState<SettingsTab>('branches');
     const [receiptBranchId, setReceiptBranchId] = useState(
         branches[0]?.id ?? '',
@@ -172,9 +169,7 @@ export default function Branches({
                         size="lg"
                     />
                 </div>
-                {section === 'reviews' && scope.can_manage_reviews ? (
-                    <CustomerReviewSettings branches={branches} />
-                ) : section === 'screen' ? (
+                {section === 'screen' ? (
                     screenBranch ? (
                         <section
                             aria-label="Customer Screen"

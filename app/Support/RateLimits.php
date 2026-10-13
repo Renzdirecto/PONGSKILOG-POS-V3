@@ -53,6 +53,8 @@ class RateLimits
         'branch-copy' => 20,
         'copy-previews' => 60,
         'branch-settings' => 20,
+        /** Website → Team: card edits and portrait uploads. */
+        'website-content' => 30,
         'operations-writes' => 60,
         'operations-setup-copy' => 20,
         'pamamalengke-confirm' => 20,
@@ -90,6 +92,12 @@ class RateLimits
             Limit::perMinute(60)->by('session|'.hash('sha256', $request->session()->getId())),
             Limit::perMinute(300)->by('ip|'.$request->ip()),
         ]);
+        /** Tap-to-love: the page sends one batch of taps about every two seconds, so this only stops a script. */
+        RateLimiter::for('landing-love', fn (Request $request) => [
+            Limit::perMinute(40)->by('session|'.hash('sha256', $request->session()->getId())),
+            Limit::perMinute(160)->by('ip|'.$request->ip()),
+        ]);
+        RateLimiter::for('landing-team-photos', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
         RateLimiter::for('customer-review-images', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
 
         /** Account recovery: per e-mail and address, with an address ceiling, so nobody can spray reset mails. */

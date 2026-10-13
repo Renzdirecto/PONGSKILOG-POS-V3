@@ -34,6 +34,35 @@
     font-size: 14px;
     color: #625d56;
 }
+/* Landing V6: the average and count of every published review, from the server (never a sample number). */
+.reviews-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+}
+.reviews-summary strong {
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 44px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+.reviews-summary > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.reviews-summary-stars {
+    display: flex;
+    gap: 2px;
+}
+.reviews-summary span {
+    font-size: 13.5px;
+    color: rgb(18 17 16 / 0.62);
+}
 .reviews-actions {
     display: flex;
     gap: 8px;

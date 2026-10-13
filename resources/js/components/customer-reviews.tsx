@@ -18,12 +18,14 @@ import {
     reviewDateLabel,
     reviewFileError,
     reviewSubmitFailure,
+    reviewSummaryDisplay,
     reviewSwipeStep,
 } from '@/lib/customer-reviews';
 import type {
     CustomerReview,
     ReviewBranch,
     ReviewImage,
+    ReviewSummary,
 } from '@/lib/customer-reviews';
 import { qrError } from '@/lib/qr-http';
 import { FB } from '@/lib/landing';
@@ -283,13 +285,16 @@ export function ReviewCard({
 
 export function CustomerReviews({
     reviews,
+    summary,
     branches,
     noticeVersion,
 }: {
     reviews: CustomerReview[];
+    summary: ReviewSummary;
     branches: ReviewBranch[];
     noticeVersion: string;
 }) {
+    const rating = reviewSummaryDisplay(summary);
     const [open, setOpen] = useState(false);
     const [automatic, setAutomatic] = useState(true);
     const rail = useRef<HTMLDivElement>(null);
@@ -380,11 +385,40 @@ export function CustomerReviews({
                         <br />
                         mga suki.
                     </h2>
-                    <p>
-                        {reviews.length
-                            ? 'Stories shared by our customers.'
-                            : 'Your experience could be the first.'}
-                    </p>
+                    {rating ? (
+                        <div className="reviews-summary">
+                            <strong>{rating.average}</strong>
+                            <div>
+                                <div
+                                    role="img"
+                                    aria-label={`Average rating ${rating.average} out of 5`}
+                                    className="reviews-summary-stars"
+                                >
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                        <svg
+                                            key={star}
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M12 2.6l2.85 5.95 6.55.85-4.8 4.55 1.2 6.5L12 17.3l-5.8 3.15 1.2-6.5-4.8-4.55 6.55-.85z"
+                                                fill={
+                                                    star <= rating.stars
+                                                        ? '#8A5E12'
+                                                        : 'rgba(18,17,16,.14)'
+                                                }
+                                            />
+                                        </svg>
+                                    ))}
+                                </div>
+                                <span>{rating.count}</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <p>Your experience could be the first.</p>
+                    )}
                 </div>
                 <div className="reviews-actions">
                     <button
@@ -1530,7 +1564,10 @@ export function ReviewLegalDialog({
                                 address, name or advertising tracker is stored
                                 or shared, and the daily session hash used to
                                 estimate visitors cannot identify you. Counts
-                                are kept for up to 12 months.
+                                are kept for up to 12 months. Taps on the chef
+                                at the bottom of the page add to a shared heart
+                                count, kept only as hourly totals with nothing
+                                about who tapped.
                             </p>
                             <p>
                                 Pending, rejected and private feedback is

@@ -263,6 +263,46 @@ test('landing exposes only approved consenting public reviews of active branches
     $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->has('reviews', 1)->where('reviews.0.id', $published->id)->missing('reviews.0.submission_digest')->missing('reviews.0.consented_at')->missing('reviews.0.branch_id'));
 });
 
+test('the landing rating summary averages only approved consenting public reviews of active branches', function () {
+    $branch = Branch::factory()->create();
+    foreach ([5, 4, 4] as $rating) {
+        CustomerReview::factory()->for($branch)->create(['status' => 'approved', 'rating' => $rating]);
+    }
+    CustomerReview::factory()->for($branch)->create(['rating' => 1]);
+    CustomerReview::factory()->for($branch)->create(['status' => 'rejected', 'rating' => 1]);
+    CustomerReview::factory()->for($branch)->create(['visibility' => 'private', 'status' => 'approved', 'rating' => 1]);
+    CustomerReview::factory()->for($branch)->create(['status' => 'approved', 'public_consent' => false, 'rating' => 1]);
+    CustomerReview::factory()->for(Branch::factory()->create(['status' => BranchStatus::Inactive]))->create(['status' => 'approved', 'rating' => 1]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviewSummary', ['count' => 3, 'average' => 4.3]));
+});
+
+test('the landing rating summary shows no average before a review is published', function () {
+    CustomerReview::factory()->create(['rating' => 5]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviewSummary', ['count' => 0, 'average' => null]));
+});
+
+test('the landing rating summary counts every published review beyond the sixty the page lists', function () {
+    CustomerReview::factory()->count(61)->for(Branch::factory()->create())->create(['status' => 'approved', 'rating' => 4]);
+
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->has('reviews', 60)->where('reviewSummary', ['count' => 61, 'average' => 4]));
+});
+
+test('the landing rating summary follows approval and rejection on the next visit', function () {
+    $this->seed(RbacSeeder::class);
+    $branch = Branch::factory()->create();
+    CustomerReview::factory()->for($branch)->create(['status' => 'approved', 'rating' => 5]);
+    $review = CustomerReview::factory()->for($branch)->create(['rating' => 2]);
+    $this->actingAs(customerReviewUser('owner'));
+
+    $this->putJson(route('branches.reviews.update', [$branch, $review]), ['status' => 'approved'])->assertOk();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviewSummary', ['count' => 2, 'average' => 3.5]));
+
+    $this->putJson(route('branches.reviews.update', [$branch, $review]), ['status' => 'rejected'])->assertOk();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('reviewSummary', ['count' => 1, 'average' => 5]));
+});
+
 test('the owner filters by branch approves rejects and audits without customer text', function () {
     $this->seed(RbacSeeder::class);
     $owner = customerReviewUser('owner');
@@ -291,12 +331,15 @@ test('accounts other than the Owner and Super Admin cannot manage reviews', func
     expect($review->fresh()->status)->toBe('pending');
 })->with(['cashier', 'kitchen_staff', 'cashier_kitchen']);
 
-test('a Super Admin opens Reviews in Settings and approves and rejects but cannot publish private feedback', function () {
+test('a Super Admin opens Reviews in Website and approves and rejects but cannot publish private feedback', function () {
     $this->seed(RbacSeeder::class);
     $admin = customerReviewUser('super_admin');
     $review = CustomerReview::factory()->create();
     $private = CustomerReview::factory()->for($review->branch)->create(['visibility' => 'private', 'public_consent' => false]);
-    $this->actingAs($admin)->get(route('branches.index'))->assertInertia(fn (Assert $page) => $page->where('scope.can_manage_reviews', true));
+    $this->actingAs($admin)->get(route('workspaces.website-analytics'))->assertInertia(fn (Assert $page) => $page
+        ->where('can.reviews', true)->where('reviewBranches.0.id', $review->branch_id));
+    /** Moved out of Settings, not copied. */
+    $this->get(route('branches.index'))->assertInertia(fn (Assert $page) => $page->missing('scope.can_manage_reviews'));
     $this->getJson(route('branches.reviews.index', $review->branch))->assertJsonCount(1, 'reviews')->assertJsonPath('reviews.0.id', $review->id);
     $this->putJson(route('branches.reviews.update', [$review->branch, $review]), ['status' => 'approved'])->assertExactJson(['saved' => true]);
     expect($review->fresh()->status)->toBe('approved')->and($review->fresh()->moderated_by)->toBe($admin->id);

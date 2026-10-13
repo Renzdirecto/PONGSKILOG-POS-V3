@@ -1981,14 +1981,31 @@ svg.leaflet-image-layer.leaflet-interactive path {
     box-shadow: 0 18px 44px rgba(18, 17, 16, 0.16);
     transform-origin: 50% 60%;
     will-change: transform;
+    position: relative;
+    background: #e9e1d4;
 }
 .landing-v3 .v3-s116 {
     width: 100%;
     height: auto;
     aspect-ratio: 16/9;
     object-fit: cover;
+    position: relative;
     pointer-events: none;
     will-change: transform;
+}
+/* Landing V6 Drinks: a tall cup photo is shown whole over a blurred copy of itself instead of being cropped. */
+.landing-v3 .board-drink {
+    object-fit: contain;
+}
+.landing-v3 .board-drink-blur {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(24px) saturate(1.1);
+    transform: scale(1.2);
+    pointer-events: none;
 }
 .landing-v3 .v3-s117 {
     max-width: 1320px;
@@ -2055,6 +2072,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     line-height: 0.9;
     letter-spacing: -0.03em;
     text-transform: uppercase;
+    /* Three's Lemonade brand yellow (Landing V6). */
+    color: #f2b419;
 }
 .landing-v3 .v3-s128 {
     margin: 0;
@@ -2825,6 +2844,348 @@ svg.leaflet-image-layer.leaflet-interactive path {
 .landing-v3 [hidden] {
     display: none !important;
 }
+/* Landing V6: Meet the Team, a rail of portrait cards with the role in the top-left corner. */
+.landing-v3 .team-section {
+    padding: clamp(72px, 9vw, 140px) 0 clamp(56px, 7vw, 110px);
+    background: #fff;
+    color: #121110;
+    border-top: 1px solid rgba(18, 17, 16, 0.08);
+    overflow: hidden;
+}
+.landing-v3 .team-head {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 48px);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 20px 40px;
+}
+.landing-v3 .team-intro {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.landing-v3 .team-eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8a5e12;
+}
+.landing-v3 .team-intro h2 {
+    margin: 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 78%;
+    font-weight: 850;
+    font-size: clamp(38px, 5.6vw, 80px);
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+.landing-v3 .team-intro p {
+    margin: 0;
+    max-width: 40ch;
+    font-size: 15.5px;
+    line-height: 1.55;
+    color: rgba(18, 17, 16, 0.66);
+}
+.landing-v3 .team-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.landing-v3 .team-nav button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #fff;
+    color: #121110;
+    border: 1px solid rgba(18, 17, 16, 0.18);
+    cursor: pointer;
+    transition:
+        background 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+        color 0.2s,
+        border-color 0.2s,
+        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .team-nav button:hover {
+    background: #121110;
+    color: #fff;
+    border-color: #121110;
+    transform: translateY(-1px);
+}
+.landing-v3 .team-rail {
+    --team-gutter: max(
+        clamp(16px, 4vw, 48px),
+        calc((100% - 1320px) / 2 + clamp(16px, 4vw, 48px))
+    );
+    margin-top: clamp(28px, 4vw, 52px);
+    /* Room below the cards so their shadow fades out instead of being cut by the scroller. */
+    padding: 8px var(--team-gutter) 44px;
+    scroll-padding-inline: var(--team-gutter);
+    display: flex;
+    align-items: stretch;
+    gap: clamp(12px, 1.6vw, 20px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.landing-v3 .team-card {
+    position: relative;
+    flex: 0 0 auto;
+    width: min(76vw, 300px);
+    aspect-ratio: 3/4;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #f4f0e8;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.05),
+        0 22px 44px rgba(18, 17, 16, 0.12);
+    transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .team-card:hover {
+    transform: translateY(-6px);
+}
+.landing-v3 .team-photo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+/* No supplied portrait yet: a labelled placeholder, never a stock or invented face. */
+.landing-v3 .team-photo-missing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding-bottom: 34%;
+    color: rgba(18, 17, 16, 0.5);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.landing-v3 .team-shade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+        180deg,
+        rgba(18, 17, 16, 0) 58%,
+        rgba(18, 17, 16, 0.7) 80%,
+        rgba(18, 17, 16, 0.92) 100%
+    );
+}
+.landing-v3 .team-code {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 14px 0 16px;
+    background: #fff;
+    color: #121110;
+    border-radius: 0 0 14px 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 850;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow: 0 4px 14px rgba(18, 17, 16, 0.16);
+}
+.landing-v3 .team-meta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.landing-v3 .team-meta h3 {
+    margin: 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 19px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: #fff;
+    overflow-wrap: anywhere;
+}
+.landing-v3 .team-meta p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.8);
+    text-wrap: pretty;
+}
+.landing-v3 .team-title {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #e2b860;
+}
+.landing-v3 .team-progress {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 48px);
+}
+.landing-v3 .team-progress > div {
+    height: 2px;
+    background: rgba(18, 17, 16, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.landing-v3 .team-progress > div > div {
+    height: 100%;
+    background: #8a5e12;
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+}
+/* Landing V6: tap-to-love, the chef fixed at the bottom-left; only its controls take pointer events. */
+.landing-v3 .love {
+    position: fixed;
+    left: calc(16px + env(safe-area-inset-left));
+    bottom: calc(42px + env(safe-area-inset-bottom));
+    z-index: 74;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    pointer-events: none;
+}
+@keyframes love-invite {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.96);
+    }
+}
+.landing-v3 .love-invite {
+    position: relative;
+    pointer-events: auto;
+    max-width: min(236px, calc(100vw - 112px));
+    background: #fff;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    border-radius: 18px 18px 18px 6px;
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.06),
+        0 18px 40px rgba(18, 17, 16, 0.16);
+    animation: love-invite 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .love-invite button {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.landing-v3 .love-invite button:first-child {
+    display: block;
+    width: 100%;
+    padding: 12px 44px 12px 14px;
+    text-align: left;
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: #121110;
+}
+.landing-v3 .love-invite b {
+    font-weight: 700;
+}
+.landing-v3 .love-invite button:last-child {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: rgba(18, 17, 16, 0.5);
+}
+.landing-v3 .love-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.landing-v3 .love-chef {
+    position: relative;
+    pointer-events: auto;
+    width: 60px;
+    height: 60px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #121110;
+    box-shadow: 0 14px 32px rgba(18, 17, 16, 0.3);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.landing-v3 .love-chef img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    pointer-events: none;
+}
+.landing-v3 .love-chef > span {
+    position: absolute;
+    right: -4px;
+    bottom: -2px;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #b0281f;
+    border: 2.5px solid #fff;
+}
+.landing-v3 .love-count {
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    box-shadow: 0 6px 18px rgba(18, 17, 16, 0.12);
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 800;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    color: #121110;
+}
 .landing-price-grid {
     display: flex;
     flex-direction: column;
@@ -2921,8 +3282,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     /* Phone type scale: section headings step down so they no longer outweigh the hero. */
     .landing-v3 .v3-s100,
-    .landing-v3 .v3-s127 {
+    .landing-v3 .v3-s127,
+    .landing-v3 .team-intro h2 {
         font-size: 34px;
+    }
+    .landing-v3 .team-section {
+        padding: 48px 0 40px;
+    }
+    .landing-v3 .team-nav {
+        display: none;
     }
     .landing-v3 .v3-s155 {
         font-size: clamp(46px, 13vw, 56px);
@@ -2938,7 +3306,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     .landing-v3 .v3-s101,
     .landing-v3 .v3-s128,
-    .landing-v3 .v3-s172 {
+    .landing-v3 .v3-s172,
+    .landing-v3 .team-intro p {
         font-size: 15px;
     }
     .landing-price-category dl {

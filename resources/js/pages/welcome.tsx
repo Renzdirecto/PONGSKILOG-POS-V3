@@ -1,6 +1,11 @@
 import { Head, usePage } from '@inertiajs/react';
 import LandingExperience from '@/components/landing-experience';
-import type { CustomerReview, ReviewBranch } from '@/lib/customer-reviews';
+import type {
+    CustomerReview,
+    ReviewBranch,
+    ReviewSummary,
+} from '@/lib/customer-reviews';
+import type { TeamCard } from '@/lib/landing';
 import { dashboard, login } from '@/routes';
 import '../../css/landing.css';
 
@@ -14,13 +19,19 @@ type Seo = {
 };
 export default function Welcome({
     reviews,
+    reviewSummary,
     reviewBranches,
     reviewNoticeVersion,
+    team,
+    loveTotal,
     seo,
 }: {
     reviews: CustomerReview[];
+    reviewSummary: ReviewSummary;
     reviewBranches: ReviewBranch[];
     reviewNoticeVersion: string;
+    team: TeamCard[];
+    loveTotal: number;
     seo: Seo;
 }) {
     const { auth } = usePage().props;
@@ -118,8 +129,11 @@ export default function Welcome({
                 loginHref={auth.user ? dashboard() : login()}
                 loginLabel={auth.user ? 'Open workspace' : 'Login'}
                 reviews={reviews}
+                reviewSummary={reviewSummary}
                 reviewBranches={reviewBranches}
                 reviewNoticeVersion={reviewNoticeVersion}
+                team={team}
+                loveTotal={loveTotal}
             />
         </>
     );

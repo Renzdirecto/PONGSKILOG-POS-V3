@@ -41,6 +41,8 @@ export type ManagementDestination = {
     permission: string;
     requiresBranch?: boolean;
     requiresBusinessWide?: boolean;
+    /** A second permission that also opens the page, for a destination with tabs authorized separately. */
+    orPermission?: string;
 };
 
 export type ManagementSection = {
@@ -70,13 +72,17 @@ export const managementDestinations: readonly ManagementDestination[] = [
         section: 'overview',
         permission: 'reports.view',
     },
-    /** The public landing page belongs to the whole business, so only a business-wide account reads its figures. */
+    /**
+     * The public landing page belongs to the whole business, so only a business-wide account opens Website. Reports
+     * reads its Analytics tab; Settings manages its Reviews and Team tabs (the server authorizes each tab).
+     */
     {
         id: 'website-analytics',
-        label: 'Website Analytics',
+        label: 'Website',
         shortLabel: 'Website',
         section: 'overview',
         permission: 'reports.view',
+        orPermission: 'settings.manage',
         requiresBusinessWide: true,
     },
     {
@@ -224,7 +230,9 @@ export function managementNavigation(
             destinations: managementDestinations.filter(
                 (destination) =>
                     destination.section === section.id &&
-                    permissions.includes(destination.permission) &&
+                    (permissions.includes(destination.permission) ||
+                        (destination.orPermission !== undefined &&
+                            permissions.includes(destination.orPermission))) &&
                     (!destination.requiresBusinessWide || businessWide),
             ),
         }))

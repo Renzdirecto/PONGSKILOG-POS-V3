@@ -273,6 +273,31 @@ export const CARDS = [
         alt: 'Crystal add-on',
         cat: 'ala',
     },
+    /* Landing V6: the four Three's Lemonade cups from CUPS; a `drink` photo is shown whole over its own blur. */
+    {
+        img: '/images/landing-v121-3dafa3d6.webp',
+        alt: 'Pure lemonade',
+        cat: 'drinks',
+        drink: true,
+    },
+    {
+        img: '/images/landing-v121-4774659c.webp',
+        alt: 'Lemon Yakult',
+        cat: 'drinks',
+        drink: true,
+    },
+    {
+        img: '/images/landing-v121-a8ea1cff.webp',
+        alt: 'Lemon calamansi',
+        cat: 'drinks',
+        drink: true,
+    },
+    {
+        img: '/images/landing-v121-d5ef5ce2.webp',
+        alt: 'Lemon cola',
+        cat: 'drinks',
+        drink: true,
+    },
 ];
 
 export const BOARD_CATS = [
@@ -281,6 +306,7 @@ export const BOARD_CATS = [
     ['pares', 'Pares & bowls'],
     ['short', 'Short orders'],
     ['ala', 'Ala carte'],
+    ['drinks', 'Drinks'],
 ];
 
 export const CUPS = [
@@ -418,6 +444,36 @@ export const CAT_ORDER: (keyof typeof MENU)[] = [
     'drinks',
     'dessert',
 ];
+
+/**
+ * One card of Meet the Team (Landing V6), from `LandingTeamMember::card()`. The Owner edits the six cards in
+ * Website → Team; a `null` photo, name or bio renders a clearly marked placeholder, so nothing is ever made up.
+ */
+export type TeamCard = {
+    id: number;
+    code: string;
+    title: string;
+    name: string | null;
+    bio: string | null;
+    img: string | null;
+    visible: boolean;
+};
+
+/**
+ * Meet the Team auto-slide: 0.024 px per ms, which is V6's 0.4 px per frame at 60 Hz on any screen refresh rate.
+ * Reaching the last card asks for a return to the first one.
+ */
+export function advanceTeamScroll(
+    position: number,
+    maximum: number,
+    elapsed: number,
+) {
+    if (position >= maximum - 1) return { position: 0, restart: true };
+    return {
+        position: Math.min(maximum, position + Math.min(elapsed, 64) * 0.024),
+        restart: false,
+    };
+}
 
 export const HOURS = [
     {

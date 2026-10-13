@@ -9,7 +9,6 @@ use App\Events\CustomerCatalogChanged;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Models\Branch;
-use App\Models\CustomerReview;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
 use App\Support\ReceiptDocument;
@@ -66,7 +65,6 @@ class BranchController extends Controller
         }), 'scope' => [
             'mode' => $scopeBranch === null ? 'business' : 'branch',
             'can_create' => $user->can('create', Branch::class),
-            'can_manage_reviews' => $user->can('viewAny', CustomerReview::class),
             'can_edit_identity' => $scopeBranch === null && $user->can('create', Branch::class),
             'branch' => $scopeBranch?->only(['id', 'name', 'code']),
         ]]);

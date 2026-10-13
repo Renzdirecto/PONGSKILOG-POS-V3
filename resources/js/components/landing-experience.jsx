@@ -4,7 +4,9 @@ import {
     CustomerReviews,
     ReviewLegalDialog,
 } from '@/components/customer-reviews';
+import { LandingLove } from '@/components/landing-love';
 import { LandingMenuPrices } from '@/components/landing-menu-prices';
+import { LandingTeam } from '@/components/landing-team';
 import {
     ULAM,
     CARDS,
@@ -193,6 +195,8 @@ export default class LandingExperience extends React.Component {
         track('menu_click');
         /* Each view has its own categories: start its filter row from the first chip again. */
         if (this.chipRowRef.current) this.chipRowRef.current.scrollLeft = 0;
+        this._si = 0;
+        this._snap = true;
         this.setState({ menuLens, boardCat: 'all' });
     };
     pauseMarquee = () => {
@@ -206,21 +210,29 @@ export default class LandingExperience extends React.Component {
     _sx = 0;
     _stx = 0;
     _sActive = -1;
+    /* The card the carousel is resting on, and whether to reach it without easing (first paint, new filter, resize). */
+    _si = 0;
+    _snap = true;
 
     slideBounds() {
         const v = this.viewRef.current,
             t = this.trackRef.current;
         if (!v || !t) return null;
+        /* Hidden behind the Prices view: there is nothing to measure, so the carousel keeps its place. */
+        if (!v.clientWidth) return null;
         const cards = Array.from(t.querySelectorAll('[data-card]'));
         if (!cards.length) return null;
-        const max = Math.max(0, t.scrollWidth - v.clientWidth);
-        const base = cards[0].offsetLeft;
+        /* Each stop puts that card in the middle of the carousel, so the highlighted dish is always centred. */
+        const stops = cards.map(
+            (c) => c.offsetLeft + c.offsetWidth / 2 - v.clientWidth / 2,
+        );
         return {
             v,
             t,
             cards,
-            max,
-            stops: cards.map((c) => Math.min(max, c.offsetLeft - base)),
+            stops,
+            min: stops[0],
+            max: stops[stops.length - 1],
         };
     }
     nearest(x, bias) {
@@ -246,11 +258,9 @@ export default class LandingExperience extends React.Component {
     slideTo = (i) => {
         const b = this.slideBounds();
         if (!b) return;
-        i = Math.max(0, Math.min(b.stops.length - 1, i));
-        let x = b.stops[i];
-        if (i === b.stops.length - 1) x = b.max;
-        this._stx = x;
-        if (!this.motionOn()) this._sx = x;
+        this._si = Math.max(0, Math.min(b.stops.length - 1, i));
+        this._stx = b.stops[this._si];
+        if (!this.motionOn()) this._sx = this._stx;
     };
     activeIdx() {
         return this.nearest(this._stx);
@@ -310,7 +320,7 @@ export default class LandingExperience extends React.Component {
         const b = this.slideBounds();
         if (!b) return;
         let x = d.start - dx;
-        if (x < 0) x = x * 0.35;
+        if (x < b.min) x = b.min + (x - b.min) * 0.35;
         if (x > b.max) x = b.max + (x - b.max) * 0.35;
         this._stx = x;
         if (!this.motionOn()) this._sx = x;
@@ -334,7 +344,7 @@ export default class LandingExperience extends React.Component {
         if (!b) return;
         if (performance.now() - d.lastT > 80) d.vel = 0;
         d.vel = Math.max(-2.5, Math.min(2.5, d.vel));
-        const proj = Math.max(0, Math.min(b.max, this._stx + d.vel * 260));
+        const proj = Math.max(b.min, Math.min(b.max, this._stx + d.vel * 260));
         this.slideTo(this.nearest(proj, d.vel));
     };
     pickCard = (i) => () => {
@@ -346,9 +356,13 @@ export default class LandingExperience extends React.Component {
         e.preventDefault();
         const b = this.slideBounds();
         if (!b) return;
-        this._stx = Math.max(0, Math.min(b.max, this._stx + e.deltaX));
+        this._wheel = true;
+        this._stx = Math.max(b.min, Math.min(b.max, this._stx + e.deltaX));
         clearTimeout(this._wt);
-        this._wt = setTimeout(() => this.slideTo(this.nearest(this._stx)), 140);
+        this._wt = setTimeout(() => {
+            this._wheel = false;
+            this.slideTo(this.nearest(this._stx));
+        }, 140);
     };
 
     slideFrame(motion) {
@@ -356,7 +370,13 @@ export default class LandingExperience extends React.Component {
         if (!b) return;
         const r = b.v.getBoundingClientRect();
         if (r.bottom < -200 || r.top > window.innerHeight + 200) return;
-        if (!this._drag && this._stx > b.max) this._stx = b.max;
+        /* At rest the target is always the middle of its card, which also re-centres it after a resize. */
+        if (!this._drag && !this._wheel)
+            this._stx = b.stops[Math.min(this._si, b.stops.length - 1)];
+        if (this._snap) {
+            this._sx = this._stx;
+            this._snap = false;
+        }
         const k = this._drag ? 0.32 : 0.11;
         this._sx += (this._stx - this._sx) * (motion ? k : 1);
         if (Math.abs(this._stx - this._sx) < 0.05) this._sx = this._stx;
@@ -366,8 +386,7 @@ export default class LandingExperience extends React.Component {
             'translate3d(' + (-this._sx).toFixed(2) + 'px,0,0)';
         const cw = b.cards[0].offsetWidth || 1;
         b.cards.forEach((c, i) => {
-            const off =
-                (b.cards[i].offsetLeft - b.cards[0].offsetLeft - this._sx) / cw;
+            const off = (b.stops[i] - this._sx) / cw;
             const dist = Math.min(1.6, Math.abs(off));
             if (motion) {
                 const sc = 1 - Math.min(1, dist) * 0.1;
@@ -401,7 +420,7 @@ export default class LandingExperience extends React.Component {
             }
         });
         const N = b.cards.length;
-        const act = this._sx >= b.max - 2 ? N - 1 : this.nearest(this._sx);
+        const act = this.nearest(this._sx);
         if (act !== this._sActive) {
             this._sActive = act;
             if (this.countRef.current) {
@@ -422,8 +441,13 @@ export default class LandingExperience extends React.Component {
         if (this.slideBarRef.current)
             this.slideBarRef.current.style.transform =
                 'scaleX(' +
-                (b.max
-                    ? Math.max(0.1, Math.min(1, this._sx / b.max) * 0.9 + 0.1)
+                (b.max > b.min
+                    ? Math.max(
+                          0.1,
+                          Math.min(1, (this._sx - b.min) / (b.max - b.min)) *
+                              0.9 +
+                              0.1,
+                      )
                     : 1
                 ).toFixed(4) +
                 ')';
@@ -486,6 +510,7 @@ export default class LandingExperience extends React.Component {
         });
     }
     responsive = () => {
+        this._snap = true;
         this.applyMobile(window.innerWidth < 700);
         if (window.innerWidth < 700 !== this.state.narrow)
             this.setState({ narrow: window.innerWidth < 700 });
@@ -1028,8 +1053,11 @@ export default class LandingExperience extends React.Component {
         if (this.state.narrow) this.applyMobile(true);
         if (this._lastBoardCat !== this.state.boardCat) {
             this._lastBoardCat = this.state.boardCat;
-            this._stx = 0;
-            this._sx = 0;
+            /* A new filter starts from its first dish, already centred. */
+            this._si = 0;
+            this._snap = true;
+            const first = this.slideBounds();
+            if (first) this._sx = this._stx = first.stops[0];
             this._sActive = -1;
             this.applyMobile(window.innerWidth < 700);
             const t = this.trackRef.current;
@@ -1162,6 +1190,7 @@ export default class LandingExperience extends React.Component {
             ).map((c, i) => ({
                 img: RES(c.img),
                 alt: c.alt,
+                drink: Boolean(c.drink),
                 onPick: this.pickCard(i),
             })),
             cups: CUPS.map((c) => Object.assign({}, c, { img: RES(c.img) })),
@@ -2118,6 +2147,17 @@ export default class LandingExperience extends React.Component {
                                                     onClick={cd.onPick}
                                                     className="v3-s114 v3-s115"
                                                 >
+                                                    {cd.drink && (
+                                                        <img
+                                                            src={cd.img}
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            loading="lazy"
+                                                            draggable="false"
+                                                            className="board-drink-blur"
+                                                            decoding="async"
+                                                        />
+                                                    )}
                                                     <img
                                                         src={cd.img}
                                                         alt={cd.alt}
@@ -2125,7 +2165,11 @@ export default class LandingExperience extends React.Component {
                                                         height="540"
                                                         loading="lazy"
                                                         draggable="false"
-                                                        className="v3-s116"
+                                                        className={
+                                                            cd.drink
+                                                                ? 'v3-s116 board-drink'
+                                                                : 'v3-s116'
+                                                        }
                                                         decoding="async"
                                                     />
                                                 </figure>
@@ -2164,9 +2208,11 @@ export default class LandingExperience extends React.Component {
                             <div data-reveal="" className="v3-s124">
                                 <div className="v3-s125">
                                     <div className="v3-s126">
-                                        Three’S Lemonade
+                                        Freshen it up.
                                     </div>
-                                    <h2 className="v3-s127">Freshen it up.</h2>
+                                    <h2 className="v3-s127">
+                                        Three’s Lemonade
+                                    </h2>
                                 </div>
                                 <p className="v3-s128">
                                     Fresh lemonade only. Small 12oz, Medium
@@ -2217,6 +2263,12 @@ export default class LandingExperience extends React.Component {
 
                     <CustomerReviews
                         reviews={this.props.reviews ?? []}
+                        summary={
+                            this.props.reviewSummary ?? {
+                                count: 0,
+                                average: null,
+                            }
+                        }
                         branches={this.props.reviewBranches ?? []}
                         noticeVersion={this.props.reviewNoticeVersion ?? ''}
                     />
@@ -2616,12 +2668,15 @@ export default class LandingExperience extends React.Component {
                             <span>Est. 2022 · Quezon City</span>
                         </footer>
                     </section>
+
+                    <LandingTeam members={this.props.team ?? []} />
                 </main>
                 <ReviewLegalDialog
                     legal={this.state.privacyOpen ? 'privacy' : null}
                     noticeVersion={this.props.reviewNoticeVersion ?? ''}
                     onClose={() => this.setState({ privacyOpen: false })}
                 />
+                <LandingLove total={this.props.loveTotal ?? 0} />
                 <div aria-label="Powered by SEBBY" className="v3-s222">
                     powered by <span className="v3-s223">SEBBY</span>
                 </div>

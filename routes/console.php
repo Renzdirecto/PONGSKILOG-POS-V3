@@ -19,3 +19,5 @@ Schedule::command('model:prune', ['--model' => [CustomerScreen::class, OrderPick
 
 /** Phase 20: a worker handling this proves the scheduler and the queue are alive (read by GET /health). */
 Schedule::job(new RecordQueueHeartbeat)->everyMinute()->name('queue-heartbeat')->onOneServer();
+
+Schedule::command('reviews:prune')->daily()->withoutOverlapping(60)->onOneServer();

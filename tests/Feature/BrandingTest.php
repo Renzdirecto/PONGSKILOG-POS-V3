@@ -1,19 +1,21 @@
 <?php
 
+use App\Support\LandingSeo;
+
 test('every page head carries the Pongskilog icons and link preview instead of Laravel defaults', function () {
     $html = (string) $this->get(route('home'))->assertOk()->getContent();
 
     expect($html)
         ->toContain('<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">')
         ->toContain('<link rel="icon" href="/images/branding/icons/favicon-192.png" type="image/png" sizes="192x192">')
-        ->toContain('<meta property="og:title" content="'.e(config('app.name')).'">')
-        ->toContain('<meta property="og:description" content="Pongskilog · Est. 2022">')
+        ->toContain('<meta data-inertia="og:title" property="og:title" content="'.e(LandingSeo::metadata()['title']).'">')
+        ->toContain('<meta data-inertia="og:description" property="og:description" content="'.e(LandingSeo::metadata()['description']).'">')
         ->toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">')
         ->toContain('<meta name="theme-color" content="#111111">')
-        ->toContain('<meta property="og:image" content="'.asset('images/branding/og-image.jpg').'">')
-        ->toContain('<meta property="og:image:width" content="1200">')
-        ->toContain('<meta name="twitter:card" content="summary_large_image">')
-        ->toContain('<meta property="og:site_name" content="'.e(config('app.name')).'">')
+        ->toContain('<meta data-inertia="og:image" property="og:image" content="https://pongskilog.com/images/branding/og-image.jpg">')
+        ->toContain('<meta data-inertia="og:image:width" property="og:image:width" content="1200">')
+        ->toContain('<meta data-inertia="twitter:card" name="twitter:card" content="summary_large_image">')
+        ->toContain('<meta data-inertia="og:site_name" property="og:site_name" content="PONGSKILOG">')
         ->not->toContain('favicon.svg')
         /** PWA Phase 1: installable; the service worker is registered by the app bundle, never inline. */
         ->toContain('<link rel="manifest" href="/manifest.webmanifest">')

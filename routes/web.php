@@ -17,6 +17,7 @@ use App\Http\Controllers\CurrentStoreSessionController;
 use App\Http\Controllers\CustomerDisplayController;
 use App\Http\Controllers\CustomerQrController;
 use App\Http\Controllers\CustomerQrOrderController;
+use App\Http\Controllers\CustomerReviewController;
 use App\Http\Controllers\CustomerScreenController;
 use App\Http\Controllers\CustomerScreenMediaController;
 use App\Http\Controllers\CustomerScreenSettingsController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
+use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\NotificationController;
@@ -50,6 +52,7 @@ use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ReceiptShareController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\SeoController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
@@ -65,7 +68,10 @@ use App\Http\Controllers\VoidOrdersController;
 use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'welcome')->name('home');
+Route::get('/', LandingPageController::class)->name('home');
+Route::get('sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
+Route::post('reviews', [CustomerReviewController::class, 'store'])->middleware('throttle:customer-review-submit')->name('reviews.store');
+Route::get('reviews/{review}/images/{image}', [CustomerReviewController::class, 'image'])->whereUuid('review')->whereNumber('image')->middleware('throttle:customer-review-images')->name('reviews.images.show');
 /** Every throttle is a named limiter with its own counter (App\Support\RateLimits); never an un-named throttle:X,Y. */
 Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:public-receipt')->name('receipt.show');
 Route::get('branches/{branch}/receipt-logo', [BranchQrSettingsController::class, 'logo'])->whereUuid('branch')->name('branches.receipt-logo');
@@ -133,6 +139,9 @@ Route::middleware(['auth'])->group(function () {
     });
     Route::get('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'show'])->whereUuid('branch')->name('branches.customer-screen-settings.show');
     Route::put('branches/{branch}/customer-screen-settings', [CustomerScreenSettingsController::class, 'update'])->whereUuid('branch')->middleware('throttle:customer-screen-media')->name('branches.customer-screen-settings.update');
+    Route::get('branches/{branch}/reviews', [CustomerReviewController::class, 'index'])->whereUuid('branch')->name('branches.reviews.index');
+    Route::put('branches/{branch}/reviews/{review}', [CustomerReviewController::class, 'update'])->whereUuid(['branch', 'review'])->middleware('throttle:branch-settings')->name('branches.reviews.update');
+    Route::delete('branches/{branch}/reviews/{review}', [CustomerReviewController::class, 'destroy'])->whereUuid(['branch', 'review'])->middleware('throttle:branch-settings')->name('branches.reviews.destroy');
     Route::resource('branches', BranchController::class)->only(['index']);
     Route::resource('branches', BranchController::class)->only(['store', 'update'])->middleware('throttle:branch-settings');
     Route::middleware('can:inventory.manage')->group(function () {

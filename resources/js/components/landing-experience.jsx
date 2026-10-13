@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import React, { Fragment } from 'react';
+import { CustomerReviews } from '@/components/customer-reviews';
+import { LandingMenuPrices } from '@/components/landing-menu-prices';
 import {
     ULAM,
     CARDS,
@@ -67,10 +69,14 @@ function openStatus() {
     if (phtDay() === 'Sun') {
         return { label: 'Closed today', short: 'Closed today', fg: '#B0281F' };
     }
-    // Published website and Google hours conflict; do not infer live opening.
+    // Scheduled hours are customer-approved; live opening and menu availability still need confirmation.
     return {
-        label: 'Message us for today’s hours',
-        short: 'Confirm today’s hours',
+        label:
+            phtDay() === 'Wed'
+                ? 'Wednesday: contact to confirm'
+                : '6:00 PM - 12:00 AM · confirm availability',
+        short:
+            phtDay() === 'Wed' ? 'Usually closed · ask us' : '6 PM - midnight',
         fg: '#8A5E12',
     };
 }
@@ -125,6 +131,7 @@ export default class LandingExperience extends React.Component {
         dwell: false,
         boardCat: 'all',
         filterOpen: false,
+        menuLens: 'pics',
         narrow: false,
         profOpen: false,
     };
@@ -155,6 +162,14 @@ export default class LandingExperience extends React.Component {
         if (k !== this.state.boardCat)
             this.setState({ boardCat: k, filterOpen: false });
         else this.setState({ filterOpen: false });
+    };
+    setMenuLens = (menuLens) =>
+        this.setState({ menuLens, boardCat: 'all', filterOpen: false });
+    pauseMarquee = () => {
+        this._marqueePaused = true;
+    };
+    resumeMarquee = () => {
+        this._marqueePaused = false;
     };
     viewRef = React.createRef();
     slideBarRef = React.createRef();
@@ -459,7 +474,7 @@ export default class LandingExperience extends React.Component {
         if (ht) ht.style.flex = side ? '1 1 0' : '1 1 420px';
         if (hm) hm.style.flex = side ? '0 1 47%' : '1 1 400px';
         if (this.wmRef.current)
-            this.wmRef.current.style.marginTop = side ? '-.66em' : '-.22em';
+            this.wmRef.current.style.marginTop = side ? '-.28em' : '-.02em';
         if (hi)
             hi.style.maxHeight = side
                 ? 'max(240px, calc(100svh - 360px))'
@@ -554,7 +569,9 @@ export default class LandingExperience extends React.Component {
             if (r.bottom > 0 && r.top < vh) {
                 this._mOff =
                     (this._mOff || 0) +
-                    (motion ? 0.7 + Math.abs(vel) * 0.35 : 0);
+                    (motion && !this._marqueePaused
+                        ? 0.7 + Math.abs(vel) * 0.35
+                        : 0);
                 const rows = mq.querySelectorAll('[data-row]');
                 rows.forEach((row, i) => {
                     const half = row.scrollWidth / 2 || 1,
@@ -1127,17 +1144,28 @@ export default class LandingExperience extends React.Component {
             filterFg: this.state.filterOpen ? '#FFFFFF' : '#121110',
             filterBd: this.state.filterOpen ? '#121110' : 'rgba(18,17,16,.18)',
             showBoardChips: !this.state.narrow || this.state.filterOpen,
-            boardChips: BOARD_CATS.map(([k, l]) => ({
+            boardChips: (this.state.menuLens === 'prices'
+                ? [['all', 'All'], ...CAT_ORDER.map((k) => [k, MENU[k].label])]
+                : BOARD_CATS
+            ).map(([k, l]) => ({
                 label: l,
                 n:
-                    k === 'all'
-                        ? CARDS.length
-                        : CARDS.filter((c) => c.cat === k).length,
+                    this.state.menuLens === 'prices'
+                        ? k === 'all'
+                            ? CAT_ORDER.reduce(
+                                  (total, key) =>
+                                      total + MENU[key].items.length,
+                                  0,
+                              )
+                            : MENU[k].items.length
+                        : k === 'all'
+                          ? CARDS.length
+                          : CARDS.filter((c) => c.cat === k).length,
                 on: k === this.state.boardCat,
                 onPick: this.pickBoardCat(k),
                 style: PILL + (k === this.state.boardCat ? ON : OFF),
             })),
-            showList: this.props.showPriceList !== false,
+
             tabs: CAT_ORDER.map((k) => ({
                 label: MENU[k].label,
                 on: k === cat,
@@ -1259,10 +1287,6 @@ export default class LandingExperience extends React.Component {
             filterBd,
             showBoardChips,
             boardChips,
-            showList,
-            tabs,
-            catNote,
-            items,
             hours,
             infoRef,
         } = this.renderVals();
@@ -1396,6 +1420,26 @@ export default class LandingExperience extends React.Component {
                                     <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path>
                                     <path d="M7 2v20"></path>
                                     <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"></path>
+                                </svg>
+                            </a>
+                            <a
+                                href="#reviews"
+                                onClick={this.nav('reviews')}
+                                aria-label="Reviews"
+                                title="Reviews"
+                                className="v3-s22 v3-s23"
+                            >
+                                <svg
+                                    width="19"
+                                    height="19"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.9"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                                    <path d="M8 8h8M8 12h6" />
                                 </svg>
                             </a>
                             <div
@@ -1631,6 +1675,11 @@ export default class LandingExperience extends React.Component {
                                 <div
                                     ref={marqRef}
                                     data-part="marqRef"
+                                    onPointerEnter={this.pauseMarquee}
+                                    onPointerLeave={this.resumeMarquee}
+                                    onPointerDown={this.pauseMarquee}
+                                    onPointerUp={this.resumeMarquee}
+                                    onPointerCancel={this.resumeMarquee}
                                     aria-hidden="true"
                                     className="v3-s60"
                                 >
@@ -1857,145 +1906,200 @@ export default class LandingExperience extends React.Component {
                                     <br />
                                     of the menu.
                                 </h2>
+                                <div
+                                    className="menu-lens"
+                                    role="group"
+                                    aria-label="Menu view"
+                                >
+                                    {['pics', 'prices'].map((lens) => (
+                                        <button
+                                            key={lens}
+                                            type="button"
+                                            aria-pressed={
+                                                this.state.menuLens === lens
+                                            }
+                                            onClick={() =>
+                                                this.setMenuLens(lens)
+                                            }
+                                        >
+                                            {lens === 'pics'
+                                                ? 'Pics'
+                                                : 'Prices'}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 <p className="v3-s101">
                                     Silog, pares, bulalo and short orders. Every
                                     silog comes with garlic rice and egg.
                                 </p>
                             </div>
-                            <div className="v3-s102">
-                                <span
-                                    ref={countRef}
-                                    data-part="countRef"
-                                    aria-live="polite"
-                                    className="v3-s103"
-                                >
-                                    {`01 / ${String(cards.length).padStart(2, '0')}`}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={slidePrev}
-                                    aria-label="Previous dish"
-                                    className="v3-s104 v3-s105"
-                                >
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        aria-hidden="true"
-                                    >
-                                        <path d="M15 18l-6-6 6-6"></path>
-                                    </svg>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={slideNext}
-                                    aria-label="Next dish"
-                                    className="v3-s106 v3-s107"
-                                >
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        aria-hidden="true"
-                                    >
-                                        <path d="M9 18l6-6-6-6"></path>
-                                    </svg>
-                                </button>
-                                {narrow && (
+                            <div className="board-controls">
+                                {showBoardChips && (
                                     <>
-                                        {' '}
-                                        <button
-                                            type="button"
-                                            onClick={toggleFilter}
+                                        <div
+                                            ref={chipRowRef}
+                                            data-part="chipRowRef"
+                                            role="tablist"
                                             aria-label="Filter dishes"
-                                            aria-expanded={filterOpen}
-                                            className="v3-s108"
-                                            style={{
-                                                background: `${filterBg}`,
-                                                color: `${filterFg}`,
-                                                border: `1px solid ${filterBd}`,
-                                            }}
+                                            className="v2-rail v3-s110"
                                         >
-                                            <svg
-                                                width="18"
-                                                height="18"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                aria-hidden="true"
-                                            >
-                                                <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path>
-                                                <circle
-                                                    cx="16"
-                                                    cy="6"
-                                                    r="2"
-                                                ></circle>
-                                                <circle
-                                                    cx="10"
-                                                    cy="12"
-                                                    r="2"
-                                                ></circle>
-                                                <circle
-                                                    cx="18"
-                                                    cy="18"
-                                                    r="2"
-                                                ></circle>
-                                            </svg>
-                                            {filterActive && (
-                                                <>
-                                                    {' '}
-                                                    <span className="v3-s109"></span>{' '}
-                                                </>
-                                            )}
-                                        </button>{' '}
+                                            {boardChips.map((bc, index) => (
+                                                <Fragment key={index}>
+                                                    <button
+                                                        type="button"
+                                                        role="tab"
+                                                        aria-selected={bc.on}
+                                                        onClick={bc.onPick}
+                                                        style={{
+                                                            ...cssStyle(
+                                                                bc.style,
+                                                            ),
+                                                        }}
+                                                    >
+                                                        {bc.label}{' '}
+                                                        <span className="v3-s111">
+                                                            {bc.n}
+                                                        </span>
+                                                    </button>
+                                                </Fragment>
+                                            ))}
+                                        </div>
                                     </>
                                 )}
-                            </div>
-                        </div>
-                        {showBoardChips && (
-                            <>
-                                <div
-                                    ref={chipRowRef}
-                                    data-part="chipRowRef"
-                                    role="tablist"
-                                    aria-label="Filter dishes"
-                                    className="v2-rail v3-s110"
-                                >
-                                    {boardChips.map((bc, index) => (
-                                        <Fragment key={index}>
+                                <div className="v3-s102">
+                                    <span
+                                        ref={countRef}
+                                        hidden={this.state.menuLens !== 'pics'}
+                                        data-part="countRef"
+                                        aria-live="polite"
+                                        className="v3-s103"
+                                    >
+                                        {`01 / ${String(cards.length).padStart(2, '0')}`}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={slidePrev}
+                                        hidden={this.state.menuLens !== 'pics'}
+                                        aria-label="Previous dish"
+                                        className="v3-s104 v3-s105"
+                                    >
+                                        <svg
+                                            width="18"
+                                            height="18"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M15 18l-6-6 6-6"></path>
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={slideNext}
+                                        hidden={this.state.menuLens !== 'pics'}
+                                        aria-label="Next dish"
+                                        className="v3-s106 v3-s107"
+                                    >
+                                        <svg
+                                            width="18"
+                                            height="18"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M9 18l6-6-6-6"></path>
+                                        </svg>
+                                    </button>
+                                    {narrow && (
+                                        <>
+                                            {' '}
                                             <button
                                                 type="button"
-                                                role="tab"
-                                                aria-selected={bc.on}
-                                                onClick={bc.onPick}
+                                                onClick={toggleFilter}
+                                                aria-label="Filter dishes"
+                                                aria-expanded={filterOpen}
+                                                className="v3-s108"
                                                 style={{
-                                                    ...cssStyle(bc.style),
+                                                    background: `${filterBg}`,
+                                                    color: `${filterFg}`,
+                                                    border: `1px solid ${filterBd}`,
                                                 }}
                                             >
-                                                {bc.label}{' '}
-                                                <span className="v3-s111">
-                                                    {bc.n}
-                                                </span>
-                                            </button>
-                                        </Fragment>
-                                    ))}
+                                                <svg
+                                                    width="18"
+                                                    height="18"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path>
+                                                    <circle
+                                                        cx="16"
+                                                        cy="6"
+                                                        r="2"
+                                                    ></circle>
+                                                    <circle
+                                                        cx="10"
+                                                        cy="12"
+                                                        r="2"
+                                                    ></circle>
+                                                    <circle
+                                                        cx="18"
+                                                        cy="18"
+                                                        r="2"
+                                                    ></circle>
+                                                </svg>
+                                                {filterActive && (
+                                                    <>
+                                                        {' '}
+                                                        <span className="v3-s109"></span>{' '}
+                                                    </>
+                                                )}
+                                            </button>{' '}
+                                        </>
+                                    )}
                                 </div>
-                            </>
+                            </div>
+                        </div>
+                        {narrow && filterActive && !filterOpen && (
+                            <button
+                                type="button"
+                                className="active-menu-filter"
+                                onClick={this.pickBoardCat('all')}
+                                aria-label="Clear menu filter"
+                            >
+                                {boardChips.find((chip) => chip.on)?.label}{' '}
+                                <span aria-hidden="true">×</span>
+                            </button>
+                        )}
+                        <p className="menu-availability">
+                            Menu availability is unverified.{' '}
+                            <a
+                                href="https://www.facebook.com/profile.php?id=100094575655003"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Contact us to confirm items and prices.
+                            </a>
+                        </p>
+                        {this.state.menuLens === 'prices' && (
+                            <LandingMenuPrices category={this.state.boardCat} />
                         )}
                         <div
+                            hidden={this.state.menuLens !== 'pics'}
                             ref={viewRef}
                             data-part="viewRef"
                             tabIndex="0"
@@ -2042,7 +2146,10 @@ export default class LandingExperience extends React.Component {
                                 )}
                             </div>
                         </div>
-                        <div className="v3-s117">
+                        <div
+                            className="v3-s117"
+                            hidden={this.state.menuLens !== 'pics'}
+                        >
                             <div aria-hidden="true" className="v3-s118">
                                 <div
                                     ref={slideBarRef}
@@ -2119,75 +2226,11 @@ export default class LandingExperience extends React.Component {
                         </div>
                     </section>
 
-                    {showList && (
-                        <>
-                            <section
-                                id="menu"
-                                aria-label="Full menu"
-                                className="v3-s137"
-                            >
-                                <div
-                                    data-mobile="padding:44px 16px 48px"
-                                    className="v3-s138 v3-s139"
-                                >
-                                    <div className="v3-s140">
-                                        <h2 className="v3-s141">
-                                            The whole menu.
-                                        </h2>
-                                        <p className="v3-s142">{catNote}</p>
-                                        <div
-                                            role="tablist"
-                                            aria-label="Menu categories"
-                                            className="v3-s143"
-                                        >
-                                            {tabs.map((t, index) => (
-                                                <Fragment key={index}>
-                                                    <button
-                                                        type="button"
-                                                        role="tab"
-                                                        aria-selected={t.on}
-                                                        onClick={t.onSelect}
-                                                        style={{
-                                                            ...cssStyle(
-                                                                t.style,
-                                                            ),
-                                                        }}
-                                                    >
-                                                        {t.label}
-                                                    </button>
-                                                </Fragment>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div
-                                        data-mobile="grid-template-columns:1fr 1fr;column-gap:14px"
-                                        className="v3-s144 v3-s145"
-                                    >
-                                        {items.map((it, index) => (
-                                            <Fragment key={index}>
-                                                <div
-                                                    data-mobile="flex-direction:column;align-items:flex-start;gap:2px;padding:10px 0"
-                                                    className="v3-s146 v3-s147"
-                                                >
-                                                    <span className="v3-s148">
-                                                        {it.n}
-                                                    </span>
-                                                    <span
-                                                        aria-hidden="true"
-                                                        data-mobile="display:none"
-                                                        className="v3-s149 v3-s150"
-                                                    ></span>
-                                                    <span className="v3-s151">
-                                                        {it.p}
-                                                    </span>
-                                                </div>
-                                            </Fragment>
-                                        ))}
-                                    </div>
-                                </div>
-                            </section>
-                        </>
-                    )}
+                    <CustomerReviews
+                        reviews={this.props.reviews ?? []}
+                        branches={this.props.reviewBranches ?? []}
+                        noticeVersion={this.props.reviewNoticeVersion ?? ''}
+                    />
 
                     <section id="visit" aria-label="Visit" className="v3-s152">
                         <div

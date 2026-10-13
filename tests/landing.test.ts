@@ -21,10 +21,10 @@ test('public prices and hours agree with the independently verified published bu
     ]);
     assert.equal(
         HOURS.find(({ day }) => day === 'Wednesday')?.time,
-        'Ask about Wednesday',
+        'Usually Closed (Sometimes Open - Contact to Confirm)',
     );
     assert.equal(HOURS.find(({ day }) => day === 'Sunday')?.time, 'Closed');
-    assert.equal(HOURS[0].time, 'Confirm today’s hours');
+    assert.equal(HOURS[0].time, '6:00 PM - 12:00 AM');
     assert.deepEqual(landingData.SHOP, [14.6936607, 121.079139]);
     assert.equal(
         CARDS.some(({ alt }) =>
@@ -280,4 +280,47 @@ test('leaving the landing page cleans up animation, map, observers, and event li
         'pointermove',
         'wheel',
     ]);
+});
+
+test('V2 menu lenses share category filters and reset when changing view', () => {
+    const { ui } = experienceHarness();
+    ui.setMenuLens('prices');
+    const prices = ui.renderVals();
+    assert.equal(
+        prices.boardChips.find(
+            (chip: { label: string }) => chip.label === 'Drinks',
+        ).n,
+        10,
+    );
+    ui.pickBoardCat('drinks')();
+    assert.equal(ui.state.boardCat, 'drinks');
+    ui.state.narrow = true;
+    assert.equal(ui.renderVals().filterActive, true);
+    assert.equal(ui.renderVals().filterOpen, false);
+    assert.equal(
+        ui.renderVals().boardChips.find((chip: { on: boolean }) => chip.on)
+            .label,
+        'Drinks',
+    );
+    ui.setMenuLens('pics');
+    assert.equal(ui.state.boardCat, 'all');
+    assert.equal(ui.state.filterOpen, false);
+    assert.ok(
+        !ui
+            .renderVals()
+            .boardChips.some(
+                (chip: { label: string }) => chip.label === 'Drinks',
+            ),
+    );
+});
+
+test('hero marquee pause and resume retain its current animation offset', () => {
+    const { ui } = experienceHarness();
+    ui._mOff = 321;
+    ui.pauseMarquee();
+    assert.equal(ui._marqueePaused, true);
+    assert.equal(ui._mOff, 321);
+    ui.resumeMarquee();
+    assert.equal(ui._marqueePaused, false);
+    assert.equal(ui._mOff, 321);
 });

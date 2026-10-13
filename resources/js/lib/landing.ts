@@ -1,4 +1,4 @@
-// Published menu, hours and address cross-checked on 2026-10-13 against
+// Published menu and address cross-checked on 2026-10-13 against
 // https://pongskilog.kesug.com/LANDINGPAGE/PONGSKILOG-LANDING-PAGE.html
 export const FB = 'https://www.facebook.com/profile.php?id=100094575655003';
 // Independently verified Google Maps pin; the reference marker was offset.
@@ -422,13 +422,13 @@ export const CAT_ORDER: (keyof typeof MENU)[] = [
 export const HOURS = [
     {
         day: 'Mon, Tue, Thu to Sat',
-        time: 'Confirm today’s hours',
+        time: '6:00 PM - 12:00 AM',
         fg: '#121110',
         days: ['Mon', 'Tue', 'Thu', 'Fri', 'Sat'],
     },
     {
         day: 'Wednesday',
-        time: 'Ask about Wednesday',
+        time: 'Usually Closed (Sometimes Open - Contact to Confirm)',
         fg: '#8A5E12',
         days: ['Wed'],
     },

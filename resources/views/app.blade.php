@@ -94,27 +94,55 @@
             <meta name="apple-mobile-web-app-capable" content="yes">
             <meta name="apple-mobile-web-app-status-bar-style" content="black">
         @endunless
-        <meta name="description" content="Pongskilog · Est. 2022">
+        @php($landingSeo = request()->routeIs('home') ? \App\Support\LandingSeo::metadata() : null)
+        @unless ($landingSeo)
+            <meta name="robots" content="noindex, nofollow, noarchive">
+            <meta name="description" content="Pongskilog · Est. 2022">
 
-        {{-- Link previews (Messenger, Facebook, Viber, X) --}}
-        <meta property="og:type" content="website">
-        <meta property="og:site_name" content="{{ config('app.name', 'Pongskilog') }}">
-        <meta property="og:title" content="{{ config('app.name', 'Pongskilog') }}">
-        <meta property="og:description" content="Pongskilog · Est. 2022">
-        <meta property="og:image" content="{{ asset('images/branding/og-image.jpg') }}">
-        <meta property="og:image:type" content="image/jpeg">
-        <meta property="og:image:width" content="1200">
-        <meta property="og:image:height" content="630">
-        <meta property="og:image:alt" content="Pongskilog logo: a chef tossing fried rice in a wok, est. 2022">
-        <meta name="twitter:card" content="summary_large_image">
-        <meta name="twitter:image" content="{{ asset('images/branding/og-image.jpg') }}">
+            {{-- Link previews (Messenger, Facebook, Viber, X) --}}
+            <meta property="og:type" content="website">
+            <meta property="og:site_name" content="{{ config('app.name', 'Pongskilog') }}">
+            <meta property="og:title" content="{{ config('app.name', 'Pongskilog') }}">
+            <meta property="og:description" content="Pongskilog · Est. 2022">
+            <meta property="og:image" content="{{ asset('images/branding/og-image.jpg') }}">
+            <meta property="og:image:type" content="image/jpeg">
+            <meta property="og:image:width" content="1200">
+            <meta property="og:image:height" content="630">
+            <meta property="og:image:alt" content="Pongskilog logo: a chef tossing fried rice in a wok, est. 2022">
+            <meta name="twitter:card" content="summary_large_image">
+            <meta name="twitter:image" content="{{ asset('images/branding/og-image.jpg') }}">
+        @endunless
 
         @fonts
 
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
         <x-inertia::head>
-            <title>{{ config('app.name', 'Pongskilog') }}</title>
+            @if ($landingSeo)
+                <title data-inertia>{{ $landingSeo['title'] }} - {{ config('app.name', 'Pongskilog') }}</title>
+                <meta data-inertia="description" name="description" content="{{ $landingSeo['description'] }}">
+                <meta data-inertia="robots" name="robots" content="index, follow, max-image-preview:large">
+                <link data-inertia="canonical" rel="canonical" href="{{ $landingSeo['canonical'] }}">
+                <meta data-inertia="og:type" property="og:type" content="website">
+                <meta data-inertia="og:site_name" property="og:site_name" content="PONGSKILOG">
+                <meta data-inertia="og:title" property="og:title" content="{{ $landingSeo['title'] }}">
+                <meta data-inertia="og:description" property="og:description" content="{{ $landingSeo['description'] }}">
+                <meta data-inertia="og:url" property="og:url" content="{{ $landingSeo['canonical'] }}">
+                <meta data-inertia="og:image" property="og:image" content="{{ $landingSeo['image'] }}">
+                <meta data-inertia="og:image:width" property="og:image:width" content="1200">
+                <meta data-inertia="og:image:height" property="og:image:height" content="630">
+                <meta data-inertia="og:image:alt" property="og:image:alt" content="PONGSKILOG chef logo, established 2022">
+                <meta data-inertia="twitter:card" name="twitter:card" content="summary_large_image">
+                <meta data-inertia="twitter:title" name="twitter:title" content="{{ $landingSeo['title'] }}">
+                <meta data-inertia="twitter:description" name="twitter:description" content="{{ $landingSeo['description'] }}">
+                <meta data-inertia="twitter:image" name="twitter:image" content="{{ $landingSeo['image'] }}">
+                @if ($landingSeo['verification'])
+                    <meta data-inertia="google-site-verification" name="google-site-verification" content="{{ $landingSeo['verification'] }}">
+                @endif
+                <script data-inertia="restaurant" type="application/ld+json">{!! json_encode($landingSeo['schema'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) !!}</script>
+            @else
+                <title>{{ config('app.name', 'Pongskilog') }}</title>
+            @endif
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">

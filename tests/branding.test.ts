@@ -63,9 +63,12 @@ test('the account settings shell carries no Laravel starter kit links', () => {
 });
 
 test('public landing keeps the supplied sections and a route-aware staff entry', () => {
-    for (const id of ['name', 'board', 'lemonade', 'menu', 'visit']) {
+    for (const id of ['name', 'board', 'lemonade', 'visit']) {
         assert.ok(landing.includes(`id="${id}"`));
     }
+    assert.match(source('components/customer-reviews.tsx'), /id="reviews"/);
+    assert.match(landing, /<CustomerReviews/);
+    assert.doesNotMatch(landing, /id="menu"|The whole menu/);
     assert.match(welcome, /auth\.user\s*\? dashboard\(\)\s*: login\(\)/);
     assert.match(welcome, /Open workspace/);
     assert.match(welcome, /Login/);

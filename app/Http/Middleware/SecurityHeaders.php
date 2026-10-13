@@ -21,6 +21,9 @@ class SecurityHeaders
     {
         $response = $next($request);
         $headers = $response->headers;
+        if (! $request->routeIs('home', 'sitemap')) {
+            $headers->set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+        }
 
         foreach ([
             'X-Frame-Options' => 'SAMEORIGIN',

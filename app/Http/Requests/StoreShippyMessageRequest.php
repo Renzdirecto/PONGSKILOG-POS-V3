@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Support\ShippyAssistant;
+use App\Support\ShippyLanguage;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -18,7 +19,8 @@ class StoreShippyMessageRequest extends FormRequest
     }
 
     /**
-     * A guest's question and the few earlier turns of the same chat. Both are untrusted text with hard length limits.
+     * A guest's question, the few earlier turns of the same chat and the language the guest asked for in it. All are
+     * untrusted, with hard limits.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -29,6 +31,7 @@ class StoreShippyMessageRequest extends FormRequest
             'history' => ['sometimes', 'array', 'max:'.ShippyAssistant::MAX_HISTORY],
             'history.*.role' => ['required', Rule::in(['user', 'bot'])],
             'history.*.text' => ['required', 'string', 'max:'.ShippyAssistant::MAX_REPLY],
+            'preference' => ['nullable', Rule::in([ShippyLanguage::ENGLISH, ShippyLanguage::TAGLISH])],
         ];
     }
 
@@ -38,6 +41,14 @@ class StoreShippyMessageRequest extends FormRequest
     public function question(): string
     {
         return self::clean($this->validated('message'));
+    }
+
+    /** The language the guest asked for earlier in this chat, if any. */
+    public function preference(): ?string
+    {
+        $preference = $this->validated('preference');
+
+        return is_string($preference) ? $preference : null;
     }
 
     /**

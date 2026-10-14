@@ -28,7 +28,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class ShippyKnowledgeBase
 {
-    public const CACHE = 'shippy:knowledge';
+    /** Versioned with the way words are compared, so knowledge prepared by an older version is never read. */
+    public const CACHE = 'shippy:knowledge:2';
 
     /** How alike two sets of words must be to answer at once, and how far ahead of the next entry. */
     public const INSTANT = 0.7;
@@ -66,9 +67,28 @@ class ShippyKnowledgeBase
         'bulk' => ['maramihan', 'catering', 'cater', 'handaan', 'party'],
         'holiday' => ['pista', 'pasko', 'christmas'],
         'wifi' => ['internet'],
-        'where' => ['saan', 'nasaan'],
+        'staff' => ['crew', 'empleyado', 'employee', 'tauhan', 'worker', 'server', 'waiter', 'waitress', 'cashier', 'cook', 'kusinero'],
+        'owner' => ['mayari', 'ari', 'founder', 'nagtayo'],
+        'contact' => ['number', 'phone', 'cellphone', 'cp', 'telepono', 'tawagan', 'call', 'email'],
+        'senior' => ['sc', 'lolo', 'lola'],
+        'card' => ['credit', 'debit', 'visa', 'mastercard'],
+        'student' => ['estudyante'],
+        'where' => ['saan', 'nasaan', 'san'],
         'when' => ['kailan', 'kelan'],
+        'who' => ['sino', 'sinong', 'whos', 'kanino'],
+        'how' => ['paano', 'pano', 'papaano'],
+        'why' => ['bakit'],
+        'which' => ['alin'],
     ];
+
+    /**
+     * Question words: they say what kind of answer is wanted, never what it is about, so on their own they never
+     * pick an FAQ or a note. "Sino si" shares "sino" with "Sino si Shamarra?" and is still not that question.
+     */
+    private const QUESTION = ['who', 'what', 'where', 'when', 'how', 'why', 'which', 'price', 'ilan', 'gaano'];
+
+    /** Tagalog verb prefixes, longest first: "nagdedeliver", "magpadeliver" and "deliver" are one word. */
+    private const PREFIXES = ['nagpapa', 'magpapa', 'nakapag', 'makapag', 'nagpa', 'magpa', 'naka', 'maka', 'paki', 'nag', 'mag', 'pag'];
 
     /** @var array<string, string>|null */
     private static ?array $same = null;
@@ -116,15 +136,16 @@ class ShippyKnowledgeBase
      */
     public function notes(string $message): array
     {
-        $asked = self::terms($message);
+        $asked = self::identifying(self::terms($message));
         if ($asked === []) {
             return [];
         }
         $active = $this->active();
+        $needed = max(1, (int) ceil(count($asked) * self::RELEVANT));
         $ranked = [];
         foreach ($active['faqs'] as $faq) {
             $shared = max(array_map(fn (array $phrasing): int => $this->shared($asked, $phrasing), $faq['phrasings']) ?: [0]);
-            $ranked[] = [$shared, 'Q: '.$faq['question'].' A: '.$faq['answer']];
+            $ranked[] = [$shared, $shared, 'Q: '.$faq['question'].' A: '.$faq['answer']];
         }
         $tally = [];
         foreach ($asked as $term) {
@@ -135,17 +156,32 @@ class ShippyKnowledgeBase
         foreach ($tally as $section => $shared) {
             $text = $this->withoutMenuPrices($active['sections'][$section]['text']);
             if ($text !== '') {
-                $ranked[] = [$shared, $active['sections'][$section]['title'].', '.$active['sections'][$section]['heading'].': '.$text];
+                /** A section whose heading names the subject comes before one that only mentions it. */
+                $rank = $shared + $this->shared($asked, $active['sections'][$section]['terms']) / 2;
+                $ranked[] = [$shared, $rank, $active['sections'][$section]['title'].', '.$active['sections'][$section]['heading'].': '.$text];
             }
         }
-        $ranked = array_values(array_filter($ranked, fn (array $entry): bool => $entry[0] >= max(1, (int) ceil(count($asked) * self::RELEVANT))));
-        usort($ranked, fn (array $a, array $b): int => $b[0] <=> $a[0]);
+        $ranked = array_values(array_filter($ranked, fn (array $entry): bool => $entry[0] >= $needed));
+        usort($ranked, fn (array $a, array $b): int => $b[1] <=> $a[1]);
 
-        return array_map(fn (array $entry): string => $this->clip($entry[1], self::MAX_NOTE), array_slice($ranked, 0, self::MAX_NOTES));
+        return array_map(fn (array $entry): string => $this->clip($entry[2], self::MAX_NOTE), array_slice($ranked, 0, self::MAX_NOTES));
     }
 
     /**
-     * The words a text is compared by: its meaningful words, with plurals and common Taglish synonyms counted as one.
+     * The words of a question that say what it is about: its terms without question words. None means the question
+     * is incomplete ("sino si", "what is", "ano yung") and nothing should be guessed for it.
+     *
+     * @param  list<string>  $terms  from `terms()`
+     * @return list<string>
+     */
+    public static function identifying(array $terms): array
+    {
+        return array_values(array_diff($terms, self::QUESTION));
+    }
+
+    /**
+     * The words a text is compared by: its meaningful words, with plurals, Tagalog verb forms and common Taglish
+     * synonyms counted as one.
      *
      * @return list<string>
      */
@@ -160,11 +196,35 @@ class ShippyKnowledgeBase
         $terms = [];
         foreach (ShippyKnowledge::terms($text) as $term) {
             $term = self::$same[$term] ?? $term;
+            if (! isset(self::SAME[$term])) {
+                $term = self::root($term);
+            }
             $single = strlen($term) > 3 && str_ends_with($term, 's') && ! str_ends_with($term, 'ss') ? substr($term, 0, -1) : $term;
             $terms[] = self::$same[$single] ?? $single;
         }
 
         return array_values(array_unique($terms));
+    }
+
+    /**
+     * A Tagalog verb form reduced to its root: a prefix and a repeated first syllable are dropped while four letters
+     * or more remain ("nagdedeliver" and "magpadeliver" become "deliver", "kakain" and "pagkain" become "kain").
+     * Both sides of a comparison go through it, so an odd root for a word that is not a verb only meets itself.
+     */
+    private static function root(string $word): string
+    {
+        foreach (self::PREFIXES as $prefix) {
+            if (str_starts_with($word, $prefix) && strlen($word) - strlen($prefix) >= 4) {
+                $word = substr($word, strlen($prefix));
+
+                break;
+            }
+        }
+        if (preg_match('/^([^aeiou]?[aeiou])\1/', $word, $repeated) === 1 && strlen($word) - strlen($repeated[1]) >= 4) {
+            $word = substr($word, strlen($repeated[1]));
+        }
+
+        return $word;
     }
 
     /**
@@ -201,14 +261,16 @@ class ShippyKnowledgeBase
     }
 
     /**
-     * The one entry that is clearly what was asked: alike enough, and no other entry nearly as alike.
+     * The one entry that is clearly what was asked: alike enough, sharing at least one word that is not a question
+     * word, and no other entry nearly as alike.
      *
      * @param  list<string>  $asked
      * @param  array<int, list<list<string>>>  $entries  every wording of each entry, as words
      */
     private function closest(array $asked, array $entries): ?int
     {
-        if ($asked === []) {
+        $subject = self::identifying($asked);
+        if ($subject === []) {
             return null;
         }
         $best = null;
@@ -217,7 +279,7 @@ class ShippyKnowledgeBase
         foreach ($entries as $entry => $phrasings) {
             $score = 0.0;
             foreach ($phrasings as $known) {
-                $shared = $this->shared($asked, $known);
+                $shared = $this->shared($subject, $known) === 0 ? 0 : $this->shared($asked, $known);
                 $score = max($score, $shared === 0 ? 0.0 : $shared / (count($asked) + count($known) - $shared));
             }
             if ($score > $top) {

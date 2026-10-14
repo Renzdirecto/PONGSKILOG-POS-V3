@@ -142,6 +142,32 @@ export function shippyDocumentProblem(
     return file.size === 0 ? `${file.name} is empty.` : '';
 }
 
+/** A file's name as the server stores it (`ShippyKnowledgeController::read()`), so it can be found in the list. */
+export function shippyStoredName(name: string): string {
+    const base = name.replace(/\\/g, '/').split('/').pop() ?? '';
+    return Array.from(base.replace(/[^\p{L}\p{N} ._()-]+/gu, ' ').trim())
+        .slice(-120)
+        .join('');
+}
+
+/**
+ * Whether every chosen file is in the documents the server lists, by its stored name and exact size: how an upload
+ * whose answer never arrived is confirmed, instead of guessing that it failed.
+ */
+export function shippyUploadSaved(
+    documents: ShippyDocumentRow[],
+    files: { name: string; size: number }[],
+): boolean {
+    return files.every((file) =>
+        documents.some(
+            (document) =>
+                document.filename.toLowerCase() ===
+                    shippyStoredName(file.name).toLowerCase() &&
+                document.bytes === file.size,
+        ),
+    );
+}
+
 export function shippyDocumentSize(bytes: number): string {
     return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
@@ -177,15 +203,26 @@ const SHIPPY_SOURCES: Record<string, ShippySource> = {
         label: 'Gemini',
         ai: true,
         tone: 'blue',
-        detail: 'Written by Gemini from the facts and your matching notes.',
+        detail: 'Written by Gemini from the facts and your matching notes, or your approved Tagalog answer put into English.',
     },
     fallback: {
         label: 'Fallback',
         ai: false,
         tone: 'amber',
-        detail: 'Nothing local matched with confidence, and Gemini was unavailable or gave no usable answer.',
+        detail: "Shippy's own rules: a question back when the question is unfinished, a language switch, no info about a person, or the safe answer when nothing local was sure and Gemini could not answer.",
     },
 };
+
+/** The language a reply was written in, and whether the guest asked for it, as Test Shippy says it. */
+export function shippyLanguageLabel(
+    language: unknown,
+    preference: unknown,
+): string {
+    const name = language === 'english' ? 'English' : 'Taglish';
+    return preference === language
+        ? `${name} reply (asked for ${name})`
+        : `${name} reply`;
+}
 
 export function shippySource(source: unknown): ShippySource {
     return (

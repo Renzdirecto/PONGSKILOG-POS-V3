@@ -73,22 +73,35 @@ export function shippyReply(value: unknown): ShippyReply | null {
     };
 }
 
+/** The language a guest asked Shippy for ("Talk in English", "Taglish ulit"), as the server sends it back. */
+export type ShippyPreference = 'english' | 'taglish' | null;
+
+export function shippyPreference(value: unknown): ShippyPreference {
+    return value === 'english' || value === 'taglish' ? value : null;
+}
+
 /**
  * What Shippy says when the answer never arrived: a pause when asked too fast, otherwise the way to a person
- * (`facebook` is the page's own Facebook link).
+ * (`facebook` is the page's own Facebook link), in English when the guest asked for English.
  */
 export function shippyUnavailable(
     status: number,
     facebook: string,
+    preference: ShippyPreference = null,
 ): ShippyReply {
+    const english = preference === 'english';
     if (status === 429)
         return {
-            text: 'Sandali lang, ang bilis ng mga tanong. Subukan ulit pagkalipas ng isang minuto.',
+            text: english
+                ? 'Hold on, that was fast. Try again in a minute.'
+                : 'Teka lang, ang bilis ng questions. Try ulit after one minute.',
             items: [],
             actions: [],
         };
     return {
-        text: 'Hindi ako makasagot ngayon. I-message mo ang PONGSKILOG sa Facebook para sigurado.',
+        text: english
+            ? "I can't answer right now. Message PONGSKILOG on Facebook to be sure."
+            : 'Hindi ako makasagot ngayon. Message mo ang PONGSKILOG sa Facebook para sure.',
         items: [],
         actions: [
             {

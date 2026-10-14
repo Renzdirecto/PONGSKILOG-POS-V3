@@ -11,7 +11,10 @@ import {
     shippyFaqForm,
     shippyFaqPayload,
     shippyFaqProblem,
+    shippyLanguageLabel,
     shippySource,
+    shippyStoredName,
+    shippyUploadSaved,
 } from '../resources/js/lib/website-shippy.ts';
 import type {
     ShippyDocumentRow,
@@ -84,7 +87,11 @@ function panelHarness(
     }).outputText;
     const states: any[] = [];
     const requests: { route: string; data: any }[] = [];
-    const reloads: { only: string[]; onFinish: () => void }[] = [];
+    const reloads: {
+        only: string[];
+        onSuccess?: (page: { props: { shippy: unknown } }) => void;
+        onFinish: () => void;
+    }[] = [];
     const toasts: string[] = [];
     let state = 0;
     const slot = (initial: unknown) => {
@@ -142,7 +149,10 @@ function panelHarness(
                     requests.push({ route: target, data });
                     return reply();
                 },
-                qrError: (failure: Error) => ({ message: failure.message }),
+                qrError: (failure: Error & { status?: number }) => ({
+                    status: failure.status ?? 422,
+                    message: failure.message,
+                }),
             };
         if (module === '@/routes/workspaces/website/shippy')
             return route('shippy');
@@ -464,4 +474,177 @@ test('a document is switched off, and deleted only after a confirmation', async 
     await settle();
     assert.equal(h.requests[1].route, 'destroy documents/3');
     assert.deepEqual(h.toasts, ['Document turned off', 'Document deleted']);
+});
+
+/** A request that ended without any answer from the server: it may or may not have been saved. */
+const unanswered = () =>
+    Object.assign(new Error('The result is unconfirmed.'), { status: 0 });
+
+test('an upload is found again in the list by its stored name and exact size', () => {
+    assert.equal(
+        shippyStoredName('C:\\notes\\Store <Notes>.md'),
+        'Store  Notes .md',
+    );
+    assert.equal(shippyStoredName('a/b/../hours.md'), 'hours.md');
+    assert.equal(
+        shippyUploadSaved([notes], [{ name: 'STORE-NOTES.md', size: 2048 }]),
+        true,
+    );
+    assert.equal(
+        shippyUploadSaved([notes], [{ name: 'store-notes.md', size: 2047 }]),
+        false,
+    );
+    assert.equal(
+        shippyUploadSaved(
+            [notes],
+            [
+                { name: 'store-notes.md', size: 2048 },
+                { name: 'rules.md', size: 10 },
+            ],
+        ),
+        false,
+    );
+});
+
+test('an upload whose answer never arrived is confirmed from the list the server sends back', async () => {
+    const h = panelHarness(
+        'ShippyDocuments',
+        { documents: [], limits },
+        async () => {
+            throw unanswered();
+        },
+    );
+    const chooser = h
+        .render()
+        .find(
+            (node) =>
+                node.props['aria-label'] ===
+                'Choose Markdown documents to upload',
+        )!;
+    const file = new File(['# Parking\n\nMeron.'], 'parking.md');
+    chooser.props.onChange({ target: { files: [file], value: 'x' } });
+    await settle();
+
+    /** No error is shown before the server's list is read again. */
+    assert.equal(
+        h.render().find((node) => node.props.role === 'alert'),
+        undefined,
+    );
+    assert.deepEqual(h.reloads[0].only, ['shippy']);
+    h.reloads[0].onSuccess!({
+        props: {
+            shippy: {
+                documents: [
+                    {
+                        ...notes,
+                        id: 9,
+                        filename: 'parking.md',
+                        bytes: file.size,
+                    },
+                ],
+            },
+        },
+    });
+    h.reloads[0].onFinish();
+
+    assert.deepEqual(h.toasts, ['Document uploaded']);
+    assert.equal(
+        h.render().find((node) => node.props.role === 'alert'),
+        undefined,
+    );
+});
+
+test('an upload whose answer never arrived and that is not in the list is reported as not saved', async () => {
+    const h = panelHarness(
+        'ShippyDocuments',
+        { documents: [], limits },
+        async () => {
+            throw unanswered();
+        },
+    );
+    const chooser = h
+        .render()
+        .find(
+            (node) =>
+                node.props['aria-label'] ===
+                'Choose Markdown documents to upload',
+        )!;
+    chooser.props.onChange({
+        target: { files: [new File(['# Hours'], 'hours.md')], value: 'x' },
+    });
+    await settle();
+    h.reloads[0].onSuccess!({ props: { shippy: { documents: [] } } });
+    h.reloads[0].onFinish();
+
+    assert.deepEqual(h.toasts, []);
+    assert.match(
+        words(h.render().find((node) => node.props.role === 'alert')),
+        /^This change was not saved/,
+    );
+});
+
+test('when the list cannot be read either, the result stays unconfirmed and a server refusal is shown as it is', async () => {
+    let failure: Error = unanswered();
+    const h = panelHarness(
+        'ShippyDocuments',
+        { documents: [notes], limits },
+        async () => {
+            throw failure;
+        },
+    );
+    h.button('Turn off store-notes.md').props.onClick();
+    await settle();
+    h.reloads[0].onFinish();
+    assert.equal(
+        words(h.render().find((node) => node.props.role === 'alert')),
+        'The result is unconfirmed.',
+    );
+
+    failure = new Error('Too Many Attempts.');
+    h.button('Turn off store-notes.md').props.onClick();
+    await settle();
+    assert.equal(h.reloads.length, 1);
+    assert.equal(
+        words(h.render().find((node) => node.props.role === 'alert')),
+        'Too Many Attempts.',
+    );
+});
+
+test('Test Shippy shows the reply language and sends a language the guest asked for with the next question', async () => {
+    let preference: string | null = 'english';
+    const h = panelHarness('ShippyTest', {}, async () => ({
+        reply: {
+            text: 'Sure!',
+            items: [],
+            actions: [],
+            source: 'fallback',
+            language: preference ?? 'taglish',
+            preference,
+        },
+        milliseconds: 3,
+    }));
+    const ask = async (question: string) => {
+        h.render()
+            .find((node) => node.type === 'Input')!
+            .props.onChange({ target: { value: question } });
+        h.render()
+            .find((node) => node.type === 'form')!
+            .props.onSubmit({ preventDefault: () => undefined });
+        await settle();
+    };
+
+    await ask('Talk in English');
+    assert.match(text(h.render()), /English reply \(asked for English\)/);
+    preference = null;
+    await ask('Magkano?');
+
+    assert.deepEqual(
+        h.requests.map((request) => request.data),
+        [
+            { message: 'Talk in English' },
+            { message: 'Magkano?', preference: 'english' },
+        ],
+    );
+    assert.match(text(h.render()), /Taglish reply/);
+    assert.equal(shippyLanguageLabel('english', null), 'English reply');
 });

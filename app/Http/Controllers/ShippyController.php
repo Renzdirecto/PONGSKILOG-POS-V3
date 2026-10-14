@@ -31,6 +31,7 @@ class ShippyController extends Controller
             $question,
             $request->turns(),
             hash('sha256', $request->session()->getId()),
+            $request->preference(),
         )])->header('Cache-Control', 'private, no-store');
     }
 
@@ -46,7 +47,7 @@ class ShippyController extends Controller
             throw ValidationException::withMessages(['message' => 'Type a question first.']);
         }
         $started = hrtime(true);
-        $reply = $assistant->reply($question, [], hash('sha256', 'test|'.$request->user()?->getAuthIdentifier()));
+        $reply = $assistant->reply($question, [], hash('sha256', 'test|'.$request->user()?->getAuthIdentifier()), $request->preference());
 
         return response()->json(['reply' => $reply, 'milliseconds' => (int) round((hrtime(true) - $started) / 1_000_000)])
             ->header('Cache-Control', 'private, no-store');

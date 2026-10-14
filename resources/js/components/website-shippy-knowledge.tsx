@@ -20,8 +20,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { shippyReply } from '@/lib/landing-shippy';
-import type { ShippyReply } from '@/lib/landing-shippy';
+import { shippyPreference, shippyReply } from '@/lib/landing-shippy';
+import type { ShippyPreference, ShippyReply } from '@/lib/landing-shippy';
 import { qrError, qrRequest } from '@/lib/qr-http';
 import {
     NEW_SHIPPY_FAQ,
@@ -30,7 +30,9 @@ import {
     shippyFaqForm,
     shippyFaqPayload,
     shippyFaqProblem,
+    shippyLanguageLabel,
     shippySource,
+    shippyUploadSaved,
 } from '@/lib/website-shippy';
 import type {
     ShippyDocumentRow,
@@ -62,9 +64,17 @@ const updated = (value: string | null): string =>
               timeStyle: 'short',
           });
 
+/** Said when a change without a server answer is not in the list the server sends back. */
+const NOT_SAVED =
+    'This change was not saved: the server never confirmed it and the list below does not have it. Try again.';
+
 /**
  * Saves one change to Shippy's knowledge and reads the Shippy figures again. The server drops Shippy's prepared
  * knowledge with every saved change, so the next question, here or on the landing page, already uses it.
+ *
+ * A request that ends without any answer from the server (a timeout, a dropped connection) may still have been
+ * saved, so it is never reported as failed on its own: the list is read again and `saved` decides from it. Only when
+ * that read fails too is the result shown as unconfirmed, and a retry of the same upload is safe on the server.
  */
 function useKnowledgeChange() {
     const [busy, setBusy] = useState(false);
@@ -72,25 +82,46 @@ function useKnowledgeChange() {
     const run = async (
         request: () => Promise<unknown>,
         message: string,
+        saved: (shippy: WebsiteShippy) => boolean,
         done?: () => void,
     ) => {
         if (busy) return;
         setBusy(true);
         setError('');
+        let confirmed: boolean | null = true;
+        let failure = '';
         try {
             await request();
             toast.success(message);
-            router.reload({
-                only: ['shippy'],
-                onFinish: () => {
-                    setBusy(false);
-                    done?.();
-                },
-            });
         } catch (reason) {
-            setError(qrError(reason).message);
-            setBusy(false);
+            const problem = qrError(reason);
+            if (problem.status !== 0) {
+                setError(problem.message);
+                setBusy(false);
+                return;
+            }
+            [confirmed, failure] = [null, problem.message];
         }
+        router.reload({
+            only: ['shippy'],
+            onSuccess: (page) => {
+                if (confirmed === null)
+                    confirmed = saved(page.props.shippy as WebsiteShippy);
+            },
+            onFinish: () => {
+                setBusy(false);
+                if (confirmed === null) {
+                    setError(failure);
+                    return;
+                }
+                if (!confirmed) {
+                    setError(NOT_SAVED);
+                    return;
+                }
+                if (failure) toast.success(message);
+                done?.();
+            },
+        });
     };
     return { busy, error, setError, run };
 }
@@ -103,10 +134,13 @@ export function ShippyTest() {
     const [question, setQuestion] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    /** The language asked for here ("Talk in English"), kept for the next test question as the chat keeps it. */
+    const [preference, setPreference] = useState<ShippyPreference>(null);
     const [result, setResult] = useState<{
         asked: string;
         reply: ShippyReply;
         source: string;
+        language: string;
         milliseconds: number;
     } | null>(null);
     const ask = async () => {
@@ -116,11 +150,20 @@ export function ShippyTest() {
         setError('');
         try {
             const answer = await qrRequest<{
-                reply?: { source?: unknown };
+                reply?: {
+                    source?: unknown;
+                    language?: unknown;
+                    preference?: unknown;
+                };
                 milliseconds?: unknown;
-            }>(test(), { message: asked });
+            }>(test(), {
+                message: asked,
+                ...(preference ? { preference } : {}),
+            });
             const reply = shippyReply(answer.reply);
             if (!reply) throw new Error('unreadable');
+            const asks = shippyPreference(answer.reply?.preference);
+            setPreference(asks);
             setResult({
                 asked,
                 reply,
@@ -128,6 +171,7 @@ export function ShippyTest() {
                     typeof answer.reply?.source === 'string'
                         ? answer.reply.source
                         : '',
+                language: shippyLanguageLabel(answer.reply?.language, asks),
                 milliseconds:
                     typeof answer.milliseconds === 'number'
                         ? answer.milliseconds
@@ -202,6 +246,9 @@ export function ShippyTest() {
                         <span className="text-xs font-semibold text-neutral-700 tabular-nums">
                             {result.milliseconds.toLocaleString('en-PH')} ms
                         </span>
+                        <span className="text-xs text-neutral-600">
+                            {result.language}
+                        </span>
                     </div>
                     <p className="text-xs text-neutral-600">
                         “{result.asked}” · {source.detail}
@@ -237,7 +284,8 @@ export function ShippyTest() {
             <p className="text-xs text-neutral-600">
                 Nothing typed here is saved. A Gemini answer counts against the
                 same daily limit as guests&apos; questions; the other sources
-                call no AI.
+                call no AI. Type &ldquo;Talk in English&rdquo; or &ldquo;Taglish
+                ulit&rdquo; to try a language switch.
             </p>
         </div>
     );
@@ -352,6 +400,13 @@ export function ShippyFaqs({
                                             faq.enabled
                                                 ? 'FAQ turned off'
                                                 : 'FAQ turned on',
+                                            (shippy) =>
+                                                shippy.faqs.some(
+                                                    (row) =>
+                                                        row.id === faq.id &&
+                                                        row.enabled !==
+                                                            faq.enabled,
+                                                ),
                                         )
                                     }
                                 >
@@ -407,6 +462,8 @@ export function ShippyFaqs({
                             void run(
                                 () => qrRequest(destroyFaq(id)),
                                 'FAQ deleted',
+                                (shippy) =>
+                                    !shippy.faqs.some((row) => row.id === id),
                                 () => setRemoving(null),
                             );
                         }}
@@ -465,6 +522,14 @@ function ShippyFaqDialog({
                                     payload,
                                 ),
                             faq ? 'FAQ saved' : 'FAQ added',
+                            (shippy) =>
+                                shippy.faqs.some(
+                                    (row) =>
+                                        (faq === null || row.id === faq.id) &&
+                                        row.question === payload.question &&
+                                        row.answer === payload.answer &&
+                                        row.enabled === payload.is_enabled,
+                                ),
                             onClose,
                         );
                     }}
@@ -644,6 +709,8 @@ export function ShippyDocuments({
                             files.length === 1
                                 ? 'Document uploaded'
                                 : `${files.length} documents uploaded`,
+                            (shippy) =>
+                                shippyUploadSaved(shippy.documents, files),
                         );
                     }}
                 />
@@ -657,15 +724,20 @@ export function ShippyDocuments({
                         const files = Array.from(event.target.files ?? []);
                         event.target.value = '';
                         if (!replacing || !usable(files)) return;
+                        const target = replacing;
                         const payload = new FormData();
                         payload.set('file', files[0]);
                         void run(
                             () =>
-                                qrRequest(
-                                    replaceDocument(replacing.id),
-                                    payload,
-                                ),
+                                qrRequest(replaceDocument(target.id), payload),
                             'Document replaced',
+                            (shippy) =>
+                                shippy.documents.some(
+                                    (row) =>
+                                        row.id === target.id &&
+                                        row.bytes === files[0].size &&
+                                        row.updated_at !== target.updated_at,
+                                ),
                         );
                     }}
                 />
@@ -745,6 +817,14 @@ export function ShippyDocuments({
                                             document.enabled
                                                 ? 'Document turned off'
                                                 : 'Document turned on',
+                                            (shippy) =>
+                                                shippy.documents.some(
+                                                    (row) =>
+                                                        row.id ===
+                                                            document.id &&
+                                                        row.enabled !==
+                                                            document.enabled,
+                                                ),
                                         )
                                     }
                                 >
@@ -793,6 +873,10 @@ export function ShippyDocuments({
                             void run(
                                 () => qrRequest(destroyDocument(id)),
                                 'Document deleted',
+                                (shippy) =>
+                                    !shippy.documents.some(
+                                        (row) => row.id === id,
+                                    ),
                                 () => setRemoving(null),
                             );
                         }}

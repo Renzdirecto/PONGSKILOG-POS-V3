@@ -52,6 +52,11 @@ class ShippyKnowledge
 
     public const BEST_SELLER_MINIMUM = 10;
 
+    /** Said after a silog is named, in each language. */
+    private const SILOG_NOTE = ' Kasama na sa silog ang garlic rice at itlog.';
+
+    private const SILOG_NOTE_ENGLISH = ' Every silog comes with garlic rice and egg.';
+
     /** The categories that are a meal on their own: what a budget question is answered from. */
     private const MEALS = ['silog', 'pares', 'short'];
 
@@ -144,7 +149,7 @@ class ShippyKnowledge
         'ano', 'anong', 'anu', 'what', 'whats', 'the', 'a', 'an', 'is', 'are', 'be', 'will', 'do', 'does', 'you', 'your', 'u', 'ur', 'i', 'me', 'my', 'we',
         'of', 'for', 'to', 'in', 'on', 'from', 'and', 'para', 'mag', 'sir', 'maam', 'mam', 'boss', 'please', 'pls', 'paki', 'may', 'meron', 'mayroon', 'have', 'has', 'there', 'kaya',
         'ngayon', 'today', 'now', 'tonight', 'mamaya', 'hello', 'hi', 'hey', 'pwede', 'puwede', 'pede', 'can', 'could',
-        'tell', 'know', 'alam', 'tanong', 'ask', 'question', 'lahat', 'all', 'any', 'kung', 'if', 'eh', 'e', 'ha', 'oh', 'ok', 'okay',
+        'tell', 'know', 'alam', 'tanong', 'ask', 'question', 'lahat', 'all', 'any', 'kung', 'if', 'eh', 'e', 'ha', 'oh', 'ok', 'okay', 'pongskilog',
     ];
 
     /** @var list<string>|null */
@@ -247,16 +252,17 @@ class ShippyKnowledge
      *
      * @return array{key: string, text: string, fact: string}
      */
-    public function status(CarbonImmutable $now): array
+    public function status(CarbonImmutable $now, bool $english = false): array
     {
         $now = $now->setTimezone(ReportPeriod::TIMEZONE);
-
-        return match (true) {
-            $now->isSunday() => ['key' => 'closed', 'text' => 'Sarado kami tuwing Linggo', 'fact' => 'closed today (Sunday)'],
-            $now->isWednesday() => ['key' => 'wednesday', 'text' => 'Miyerkules ngayon: kadalasang sarado kami, pero minsan bukas', 'fact' => 'Wednesday, usually closed and sometimes open'],
-            $now->hour >= 18 => ['key' => 'open', 'text' => 'Ayon sa schedule, bukas kami ngayon hanggang 12:00 AM', 'fact' => 'scheduled open now until 12:00 AM'],
-            default => ['key' => 'later', 'text' => 'Ayon sa schedule, magbubukas kami mamayang 6:00 PM hanggang 12:00 AM', 'fact' => 'scheduled to open today at 6:00 PM until 12:00 AM'],
+        [$key, $taglish, $inEnglish, $fact] = match (true) {
+            $now->isSunday() => ['closed', 'Sarado kami tuwing Sunday', "We're closed on Sundays", 'closed today (Sunday)'],
+            $now->isWednesday() => ['wednesday', 'Wednesday ngayon, usually sarado kami pero minsan open', "It's Wednesday: we're usually closed, but sometimes open", 'Wednesday, usually closed and sometimes open'],
+            $now->hour >= 18 => ['open', 'Based sa schedule, open kami ngayon hanggang 12:00 AM', "By our schedule, we're open now until 12:00 AM", 'scheduled open now until 12:00 AM'],
+            default => ['later', 'Based sa schedule, open kami mamayang 6:00 PM hanggang 12:00 AM', 'By our schedule, we open today at 6:00 PM until 12:00 AM', 'scheduled to open today at 6:00 PM until 12:00 AM'],
         };
+
+        return ['key' => $key, 'text' => $english ? $inEnglish : $taglish, 'fact' => $fact];
     }
 
     /** The amount of pesos a guest says they have, when the message is a budget question. */
@@ -331,13 +337,14 @@ class ShippyKnowledge
 
     /**
      * Shippy's own answer from the facts alone: what a guest gets whenever nothing better is available. It always
-     * answers, and a question it cannot place is sent to Facebook.
+     * answers, and a question it cannot place is sent to Facebook. Every answer here exists in casual Taglish and in
+     * English (`ShippyLanguage`).
      *
      * @return Answer
      */
-    public function answer(string $message, CarbonImmutable $now): array
+    public function answer(string $message, CarbonImmutable $now, bool $english = false): array
     {
-        return $this->resolve($message, $now)[1];
+        return $this->resolve($message, $now, $english)[1];
     }
 
     /**
@@ -348,9 +355,9 @@ class ShippyKnowledge
      *
      * @return Answer|null
      */
-    public function verified(string $message, CarbonImmutable $now, bool $opening = true): ?array
+    public function verified(string $message, CarbonImmutable $now, bool $opening = true, bool $english = false): ?array
     {
-        [$topic, $answer] = $this->resolve($message, $now);
+        [$topic, $answer] = $this->resolve($message, $now, $english);
         $said = match (true) {
             in_array($topic, ['thanks', 'who', 'hours', 'location', 'reviews', 'greeting'], true) => [self::TOPICS[$topic]],
             $topic === 'items', $topic === 'menu' && $opening => [self::TOPICS['menu']],
@@ -398,37 +405,44 @@ class ShippyKnowledge
      *
      * @return array{0: string, 1: Answer}
      */
-    private function resolve(string $message, CarbonImmutable $now): array
+    private function resolve(string $message, CarbonImmutable $now, bool $english = false): array
     {
         $question = self::lower($message);
         $words = self::words($message);
         $has = fn (string $pattern): bool => preg_match('/\b('.$pattern.')\b/u', $question) === 1;
-        $status = $this->status($now)['text'];
+        $say = fn (string $taglish, string $inEnglish): string => $english ? $inEnglish : $taglish;
+        $status = $this->status($now, $english)['text'];
 
         if (count($words) <= 4 && $has(self::TOPICS['thanks'])) {
-            return ['thanks', $this->reply('Walang anuman. Kita-kits sa PONGSKILOG.')];
+            return ['thanks', $this->reply($say('Walang anuman! Kita-kits sa PONGSKILOG.', "You're welcome! See you at PONGSKILOG."))];
         }
         if ($has(self::TOPICS['who'])) {
-            return ['who', $this->reply('Ako si Shippy, ang helper ng PONGSKILOG. Sinasagot ko ang tanong tungkol sa menu, presyo, oras at lokasyon.')];
+            return ['who', $this->reply($say(
+                'Ako si Shippy, ang helper ng PONGSKILOG! Tanong ka lang about sa menu, prices, hours o location.',
+                "I'm Shippy, PONGSKILOG's helper! Ask me about the menu, prices, hours or location.",
+            ))];
         }
         if ($has(self::TOPICS['hours'])) {
-            return ['hours', $this->reply($status.'. Para sigurado, i-message mo kami sa Facebook.', [
+            return ['hours', $this->reply($status.$say('. Para sure, message mo kami sa Facebook.', '. To be sure, message us on Facebook.'), [
                 ['name' => 'Mon, Tue, Thu to Sat', 'price' => '6:00 PM - 12:00 AM', 'img' => null],
                 ['name' => 'Wednesday', 'price' => 'Usually closed', 'img' => null],
                 ['name' => 'Sunday', 'price' => 'Closed', 'img' => null],
             ], ['messenger'])];
         }
         if ($has(self::TOPICS['location'])) {
-            return ['location', $this->reply('Nasa '.self::ADDRESS.' kami. Dine-in at takeout.', [], ['maps'])];
+            return ['location', $this->reply($say('Nasa '.self::ADDRESS.' kami. Dine-in at takeout.', "We're at ".self::ADDRESS.'. Dine-in and takeout.'), [], ['maps'])];
         }
         if ($has(self::TOPICS['order'])) {
-            return ['order', $this->reply('Dine-in at takeout kami. Para sa orders at tanong, i-message mo kami sa Facebook.', [], ['messenger'])];
+            return ['order', $this->reply($say(
+                'Dine-in at takeout kami. Para sa orders at questions, message mo kami sa Facebook.',
+                'We do dine-in and takeout. For orders and questions, message us on Facebook.',
+            ), [], ['messenger'])];
         }
         if ($has(self::TOPICS['payment'])) {
-            return ['payment', $this->reply('Para sigurado sa payment options, i-message mo kami sa Facebook.', [], ['messenger'])];
+            return ['payment', $this->reply($say('Para sure sa payment options, message mo kami sa Facebook.', 'To be sure about payment options, message us on Facebook.'), [], ['messenger'])];
         }
         if ($has(self::TOPICS['reviews'])) {
-            return ['reviews', $this->reply('Salamat. Mababasa at maiiwan ang reviews dito mismo sa page.', [], ['reviews'])];
+            return ['reviews', $this->reply($say('Salamat! Pwede kang magbasa at mag-iwan ng review dito mismo sa page.', 'Thanks! You can read and leave reviews right here on the page.'), [], ['reviews'])];
         }
 
         $budget = $this->budget($message);
@@ -440,11 +454,14 @@ class ShippyKnowledge
                 $cheapest = end($meals) ?: null;
 
                 return ['budget', $cheapest === null
-                    ? $this->reply('Tingnan mo ang buong menu para sa mga presyo.', [], ['menu'])
-                    : $this->reply('Ang pinakamurang meal namin ay '.$cheapest['name'].' sa '.$cheapest['price'].'.', [$this->row($cheapest)], ['menu'])];
+                    ? $this->reply($say('Check mo yung full menu para sa prices.', 'Check the full menu for prices.'), [], ['menu'])
+                    : $this->reply($say(
+                        'Ang pinakamurang meal namin ay '.$cheapest['name'].' sa '.$cheapest['price'].'.',
+                        'Our cheapest meal is '.$cheapest['name'].' at '.$cheapest['price'].'.',
+                    ), [$this->row($cheapest)], ['menu'])];
             }
 
-            return ['budget', $this->reply('Pasok sa ₱'.$budget.' ang mga ito. Kasama na sa silog ang garlic rice at itlog.', array_map($this->row(...), $fits), ['menu'])];
+            return ['budget', $this->reply($say('Pasok sa ₱'.$budget.' ang mga ito.', 'These fit ₱'.$budget.'.').$say(self::SILOG_NOTE, self::SILOG_NOTE_ENGLISH), array_map($this->row(...), $fits), ['menu'])];
         }
 
         $weak = false;
@@ -452,13 +469,13 @@ class ShippyKnowledge
         if ($found !== []) {
             $shown = array_slice($found, 0, self::MAX_ITEMS);
             $text = count($shown) === 1
-                ? $shown[0]['name'].' ay '.$shown[0]['price'].'.'
-                : 'Ito ang nahanap ko'.(count($found) > self::MAX_ITEMS ? ', may iba pa sa menu.' : ':');
+                ? $shown[0]['name'].$say(' ay ', ' is ').$shown[0]['price'].'.'
+                : $say('Ito ang nahanap ko', "Here's what I found").(count($found) > self::MAX_ITEMS ? $say(', may iba pa sa menu.', ", and there's more on the menu.") : ':');
             if (array_filter($found, fn (array $item): bool => $item['category'] === 'silog') !== []) {
-                $text .= ' Kasama na sa silog ang garlic rice at itlog.';
+                $text .= $say(self::SILOG_NOTE, self::SILOG_NOTE_ENGLISH);
             }
             if (array_filter($found, fn (array $item): bool => count($item['prices']) > 1) !== []) {
-                $text .= ' Small / Medium / Large ang presyo ng lemonade.';
+                $text .= $say(' Small / Medium / Large ang presyo ng lemonade.', ' Lemonade prices are Small / Medium / Large.');
             }
 
             /** "Rice" or "itlog" alone is a guess at what the guest means, so it is never a verified answer. */
@@ -469,8 +486,11 @@ class ShippyKnowledge
             $best = array_values(array_filter(array_map($this->find(...), rescue(fn (): array => $this->bestSellers(), [], false))));
 
             return ['best', $best === []
-                ? $this->reply('Wala pa akong verified na best seller sa ngayon. Tingnan mo muna ang buong menu.', [], ['menu'])
-                : $this->reply('Ito ang pinakamabenta namin nitong nakaraang '.self::BEST_SELLER_DAYS.' araw:', array_map($this->row(...), $best), ['menu'])];
+                ? $this->reply($say('Wala pa akong verified na best seller sa ngayon. Check mo muna yung full menu.', "I don't have a verified best seller yet. Check out the full menu for now."), [], ['menu'])
+                : $this->reply($say(
+                    'Ito ang best sellers namin nitong last '.self::BEST_SELLER_DAYS.' days:',
+                    'Our best sellers in the last '.self::BEST_SELLER_DAYS.' days:',
+                ), array_map($this->row(...), $best), ['menu'])];
         }
 
         foreach (self::CATEGORIES as $category => $pattern) {
@@ -481,7 +501,7 @@ class ShippyKnowledge
                     : $section['items'];
 
                 return [$category, $this->reply(
-                    $section['note'].(count($items) > self::MAX_ITEMS ? ' Ilan sa mga ito:' : ''),
+                    $section['note'].(count($items) > self::MAX_ITEMS ? $say(' Ilan dito:', ' Some of them:') : ''),
                     array_map($this->row(...), array_slice($items, 0, self::MAX_ITEMS)),
                     ['menu'],
                 )];
@@ -496,13 +516,16 @@ class ShippyKnowledge
                 }
             }
 
-            return ['menu', $this->reply('Ito ang mga category ng menu namin at ang price range ng bawat isa:', $ranges, ['menu'])];
+            return ['menu', $this->reply($say('Ito ang menu categories namin at ang price range ng bawat isa:', 'Here are our menu categories and the price range of each:'), $ranges, ['menu'])];
         }
         if (preg_match('/^('.self::TOPICS['greeting'].')\b/u', $question) === 1) {
-            return ['greeting', $this->reply('Hello. '.$status.'. Tanong ka lang tungkol sa menu, presyo o lokasyon.')];
+            return ['greeting', $this->reply('Hello! '.$status.$say('. Tanong ka lang about sa menu, prices o location.', '. Ask me about the menu, prices or location.'))];
         }
 
-        return ['unknown', $this->reply('Hindi ko pa alam ang sagot diyan. I-message mo ang PONGSKILOG sa Facebook para sigurado.', [], ['messenger'])];
+        return ['unknown', $this->reply($say(
+            'Hindi ko pa alam ang sagot diyan. Message mo ang PONGSKILOG sa Facebook para sure.',
+            "I don't know that one yet. Message PONGSKILOG on Facebook to be sure.",
+        ), [], ['messenger'])];
     }
 
     /**

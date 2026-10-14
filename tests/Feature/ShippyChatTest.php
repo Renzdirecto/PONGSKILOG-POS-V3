@@ -62,6 +62,8 @@ test('Gemini answers a question and the server attaches the menu card and the ap
         'items' => [['name' => 'Tapa Silog', 'price' => '₱100', 'img' => '/images/landing-v121-822fd717.webp']],
         'actions' => [['key' => 'menu', 'label' => 'See the menu', 'href' => '#board', 'external' => false]],
         'source' => 'ai',
+        'language' => 'taglish',
+        'preference' => null,
     ]]);
     expect($response->getContent())->not->toContain(SHIPPY_TEST_KEY);
     Http::assertSent(function (Request $request) {
@@ -122,28 +124,28 @@ test('store hours follow the schedule at the current Manila time', function (str
     $this->travelTo(CarbonImmutable::parse($manila, 'Asia/Manila'));
 
     shippyAsk('Open ba kayo ngayon?')->assertOk()
-        ->assertJsonPath('reply.text', $answer.'. Para sigurado, i-message mo kami sa Facebook.')
+        ->assertJsonPath('reply.text', $answer.'. Para sure, message mo kami sa Facebook.')
         ->assertJsonPath('reply.items.0', ['name' => 'Mon, Tue, Thu to Sat', 'price' => '6:00 PM - 12:00 AM', 'img' => null])
         ->assertJsonPath('reply.actions.0.key', 'messenger');
 })->with([
-    'an open evening' => ['2026-10-15 19:30', 'Ayon sa schedule, bukas kami ngayon hanggang 12:00 AM'],
-    'an open day before 6 PM' => ['2026-10-15 09:00', 'Ayon sa schedule, magbubukas kami mamayang 6:00 PM hanggang 12:00 AM'],
+    'an open evening' => ['2026-10-15 19:30', 'Based sa schedule, open kami ngayon hanggang 12:00 AM'],
+    'an open day before 6 PM' => ['2026-10-15 09:00', 'Based sa schedule, open kami mamayang 6:00 PM hanggang 12:00 AM'],
     /** Half past midnight on Tuesday in Manila is still Monday in UTC: Monday night has ended. */
-    'just after the midnight close' => ['2026-10-13 00:30', 'Ayon sa schedule, magbubukas kami mamayang 6:00 PM hanggang 12:00 AM'],
-    'Wednesday' => ['2026-10-14 20:00', 'Miyerkules ngayon: kadalasang sarado kami, pero minsan bukas'],
-    'Sunday' => ['2026-10-18 20:00', 'Sarado kami tuwing Linggo'],
+    'just after the midnight close' => ['2026-10-13 00:30', 'Based sa schedule, open kami mamayang 6:00 PM hanggang 12:00 AM'],
+    'Wednesday' => ['2026-10-14 20:00', 'Wednesday ngayon, usually sarado kami pero minsan open'],
+    'Sunday' => ['2026-10-18 20:00', 'Sarado kami tuwing Sunday'],
 ]);
 
 test('a question Shippy cannot place is sent to Facebook instead of being guessed', function () {
     shippyAsk('Tumatanggap ba kayo ng aso sa loob?')->assertOk()
-        ->assertJsonPath('reply.text', 'Hindi ko pa alam ang sagot diyan. I-message mo ang PONGSKILOG sa Facebook para sigurado.')
+        ->assertJsonPath('reply.text', 'Hindi ko pa alam ang sagot diyan. Message mo ang PONGSKILOG sa Facebook para sure.')
         ->assertJsonPath('reply.items', [])
         ->assertJsonPath('reply.actions.0.key', 'messenger');
 });
 
 test('best sellers come from real sales of published items and none is named without them', function () {
     shippyAsk('Ano ang best seller?')->assertOk()
-        ->assertJsonPath('reply.text', 'Wala pa akong verified na best seller sa ngayon. Tingnan mo muna ang buong menu.')
+        ->assertJsonPath('reply.text', 'Wala pa akong verified na best seller sa ngayon. Check mo muna yung full menu.')
         ->assertJsonPath('reply.items', []);
 
     $sold = fn (string $name, int $quantity, array $order = []) => OrderItem::factory()
@@ -160,7 +162,7 @@ test('best sellers come from real sales of published items and none is named wit
 
     $reply = shippyAsk('Ano ang best seller ninyo?')->assertOk()->json('reply');
 
-    expect($reply['text'])->toBe('Ito ang pinakamabenta namin nitong nakaraang 30 araw:')
+    expect($reply['text'])->toBe('Ito ang best sellers namin nitong last 30 days:')
         ->and(array_column($reply['items'], 'name'))->toBe(['Chicken Silog', 'Tapa Silog'])
         ->and(app(ShippyKnowledge::class)->facts(CarbonImmutable::now()))->toContain('best first: Chicken Silog, Tapa Silog.')->not->toContain('Lomi');
 });
@@ -203,7 +205,7 @@ test('an injected instruction cannot add markup, unknown products or unapproved 
             ['key' => 'maps', 'label' => 'Open in Google Maps', 'href' => 'https://maps.app.goo.gl/nivpx3cxuP56wAXo8', 'external' => true],
             ['key' => 'reviews', 'label' => 'See the reviews', 'href' => '#reviews', 'external' => false],
         ])
-        ->and(array_keys($reply))->toBe(['text', 'items', 'actions', 'source']);
+        ->and(array_keys($reply))->toBe(['text', 'items', 'actions', 'source', 'language', 'preference']);
 });
 
 test('for a budget question a card dearer than the budget is removed from a Gemini answer', function () {
@@ -293,8 +295,8 @@ test('every preset question is answered at once from the published facts, with a
     Http::assertNothingSent();
     expect(shippyUsageToday())->toMatchArray(['messages' => 1, 'requests' => 0]);
 })->with([
-    ['Open ba kayo ngayon?', 'Ayon sa schedule, bukas kami ngayon hanggang 12:00 AM. Para sigurado, i-message mo kami sa Facebook.'],
-    ['Ano ang best seller?', 'Wala pa akong verified na best seller sa ngayon. Tingnan mo muna ang buong menu.'],
+    ['Open ba kayo ngayon?', 'Based sa schedule, open kami ngayon hanggang 12:00 AM. Para sure, message mo kami sa Facebook.'],
+    ['Ano ang best seller?', 'Wala pa akong verified na best seller sa ngayon. Check mo muna yung full menu.'],
     ['Magkano ang tapsilog?', 'Tapa Silog ay ₱100. Kasama na sa silog ang garlic rice at itlog.'],
     ['Saan kayo located?', 'Nasa 1511, Unit V, Purok 8 Adarna St., Quezon City kami. Dine-in at takeout.'],
     ['Lemonade flavors', "Three'S Lemonade. Prices shown Small / Medium / Large."],
@@ -504,3 +506,56 @@ test('answers recorded from the real model pass the checks and are shown with se
         [], ['maps', 'menu'],
     ],
 ]);
+
+test('a question fully in English is answered fully in English, and Tagalog or a dish name alone in casual Taglish', function (string $question, string $language, string $text) {
+    shippyAsk($question)->assertOk()
+        ->assertJsonPath('reply.source', 'menu')
+        ->assertJsonPath('reply.language', $language)
+        ->assertJsonPath('reply.preference', null)
+        ->assertJsonPath('reply.text', $text);
+})->with([
+    'English' => ['How much is the tapsilog?', 'english', 'Tapa Silog is ₱100. Every silog comes with garlic rice and egg.'],
+    'English location' => ['Where are you located?', 'english', "We're at 1511, Unit V, Purok 8 Adarna St., Quezon City. Dine-in and takeout."],
+    'Tagalog' => ['Magkano ang tapsilog?', 'taglish', 'Tapa Silog ay ₱100. Kasama na sa silog ang garlic rice at itlog.'],
+    'mixed' => ['How much ba ang tapsilog?', 'taglish', 'Tapa Silog ay ₱100. Kasama na sa silog ang garlic rice at itlog.'],
+    'a dish name alone' => ['Tapsilog?', 'taglish', 'Tapa Silog ay ₱100. Kasama na sa silog ang garlic rice at itlog.'],
+]);
+
+test('"Talk in English" keeps every answer in English until the guest asks for Taglish again', function () {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+    $ask = fn (string $message, ?string $preference = null) => $this->postJson(route('shippy.messages.store'), ['message' => $message, 'preference' => $preference])->assertOk();
+
+    $ask('Talk in English')->assertJsonPath('reply.source', 'fallback')
+        ->assertJsonPath('reply.text', "Sure! I'll reply in English from now on. What would you like to know?")
+        ->assertJsonPath('reply.preference', 'english');
+    $ask('Magkano ang tapsilog?', 'english')->assertJsonPath('reply.language', 'english')
+        ->assertJsonPath('reply.text', 'Tapa Silog is ₱100. Every silog comes with garlic rice and egg.')
+        ->assertJsonPath('reply.preference', 'english');
+    $ask('Taglish ka na ulit.', 'english')->assertJsonPath('reply.text', "Sige! Taglish na ulit tayo. Ano'ng hanap mo?")
+        ->assertJsonPath('reply.preference', 'taglish');
+    $ask('How much is the tapsilog?', 'taglish')->assertJsonPath('reply.language', 'taglish')
+        ->assertJsonPath('reply.text', 'Tapa Silog ay ₱100. Kasama na sa silog ang garlic rice at itlog.');
+    /** A request with a question in it switches and answers at once. */
+    $ask('Please speak English. Magkano ang tapsilog?')->assertJsonPath('reply.preference', 'english')
+        ->assertJsonPath('reply.text', 'Tapa Silog is ₱100. Every silog comes with garlic rice and egg.');
+
+    Http::assertNothingSent();
+});
+
+test('Gemini is told the language the engine chose', function (string $question, ?string $preference, string $rule) {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+    Http::fake([SHIPPY_GEMINI => shippyGemini(['reply' => 'Yes!'])]);
+
+    $this->postJson(route('shippy.messages.store'), ['message' => $question, 'preference' => $preference])->assertOk()->assertJsonPath('reply.source', 'ai');
+
+    Http::assertSent(fn (Request $request) => str_contains($request->data()['systemInstruction']['parts'][0]['text'], $rule));
+})->with([
+    'an English question' => ['Is the tapsilog good?', null, 'Reply only in English'],
+    'Taglish asked for' => ['Is the tapsilog good?', 'taglish', 'Reply in casual, friendly Taglish'],
+    'a Taglish question' => [SHIPPY_OPEN_QUESTION, null, 'Reply in casual, friendly Taglish'],
+]);
+
+test('a language that is neither English nor Taglish is refused', function () {
+    $this->postJson(route('shippy.messages.store'), ['message' => 'Hi', 'preference' => 'french'])
+        ->assertUnprocessable()->assertJsonValidationErrors('preference');
+});

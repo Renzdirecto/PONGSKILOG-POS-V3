@@ -6,6 +6,7 @@ import {
     SHIPPY_MAX_MESSAGE,
     shippyAppend,
     shippyHistory,
+    shippyPreference,
     shippyQuestion,
     shippyReply,
     shippyUnavailable,
@@ -13,6 +14,7 @@ import {
 import type {
     ShippyAction,
     ShippyMessage,
+    ShippyPreference,
     ShippyReply,
 } from '@/lib/landing-shippy';
 import { qrError, qrRequest } from '@/lib/qr-http';
@@ -62,6 +64,8 @@ export function LandingShippy({
     const [messages, setMessages] = useState<ShippyMessage[]>([]);
     const [input, setInput] = useState('');
     const [typing, setTyping] = useState(false);
+    /** The language the guest asked for ("Talk in English"): sent with every question until they ask for the other. */
+    const [preference, setPreference] = useState<ShippyPreference>(null);
     const panel = useRef<HTMLDivElement>(null);
     const log = useRef<HTMLDivElement>(null);
     const field = useRef<HTMLInputElement>(null);
@@ -168,14 +172,21 @@ export function LandingShippy({
         setInput('');
         setTyping(true);
         let reply: ShippyReply;
+        let language = preference;
         try {
-            const answer = await qrRequest<{ reply: unknown }>(askShippy(), {
+            const answer = await qrRequest<{
+                reply: { preference?: unknown } | null;
+            }>(askShippy(), {
                 message: question,
                 history,
+                ...(preference ? { preference } : {}),
             });
-            reply = shippyReply(answer.reply) ?? shippyUnavailable(0, FB);
+            reply =
+                shippyReply(answer.reply) ??
+                shippyUnavailable(0, FB, preference);
+            language = shippyPreference(answer.reply?.preference);
         } catch (failure) {
-            reply = shippyUnavailable(qrError(failure).status, FB);
+            reply = shippyUnavailable(qrError(failure).status, FB, preference);
         }
         await new Promise((resolve) =>
             setTimeout(resolve, Math.max(0, TYPING_MS - (Date.now() - asked))),
@@ -184,6 +195,7 @@ export function LandingShippy({
         setMessages((current) =>
             shippyAppend(current, { from: 'bot', ...reply }),
         );
+        setPreference(language);
         setTyping(false);
     };
     const submit = (event: FormEvent) => {
@@ -279,6 +291,7 @@ export function LandingShippy({
                     title="Start over"
                     onClick={() => {
                         setMessages([]);
+                        setPreference(null);
                         setInput('');
                     }}
                     disabled={typing}

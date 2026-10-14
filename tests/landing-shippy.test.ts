@@ -115,11 +115,16 @@ test('a server reply keeps only text, this site’s own photos and safe links', 
 
 test('a failed request is answered on the page: a pause when too fast, otherwise the way to Facebook', () => {
     const slow = shippyUnavailable(429, FACEBOOK);
-    assert.match(slow.text, /^Sandali lang/);
+    assert.match(slow.text, /^Teka lang/);
+    assert.match(shippyUnavailable(429, FACEBOOK, 'english').text, /^Hold on/);
+    assert.match(
+        shippyUnavailable(500, FACEBOOK, 'english').text,
+        /^I can't answer right now\. Message PONGSKILOG on Facebook/,
+    );
     assert.deepEqual(slow.actions, []);
     for (const status of [0, 404, 419, 500]) {
         const reply = shippyUnavailable(status, FACEBOOK);
-        assert.match(reply.text, /I-message mo ang PONGSKILOG sa Facebook/);
+        assert.match(reply.text, /Message mo ang PONGSKILOG sa Facebook/);
         assert.deepEqual(reply.actions, [
             {
                 key: 'messenger',
@@ -557,6 +562,45 @@ test('a preset travels without the conversation and a typed follow-up carries th
     }
 });
 
+test('a language the guest asked for travels with every later question until Start over', async (t) => {
+    const h = shippyHarness(t, {
+        reply: async (data) => ({
+            reply: {
+                text: `Sagot sa: ${data.message}`,
+                items: [],
+                actions: [],
+                preference: /english/i.test(data.message)
+                    ? 'english'
+                    : (data.preference ?? null),
+            },
+        }),
+    });
+    try {
+        h.open();
+        const send = async (question: string) => {
+            h.render()
+                .find((node) => node.type === 'input')!
+                .props.onChange({ target: { value: question } });
+            h.render()
+                .find((node) => node.type === 'form')!
+                .props.onSubmit({ preventDefault() {} });
+            await h.wait(500);
+            await h.wait(0);
+        };
+        await send('Talk in English');
+        await send('Magkano ang tapsilog?');
+        h.find('Start over')!.props.onClick();
+        await send('Magkano ang bulalo?');
+
+        assert.deepEqual(
+            h.requests.map((request) => request.data.preference),
+            [undefined, 'english', undefined],
+        );
+    } finally {
+        h.dispose();
+    }
+});
+
 test('a reply is rendered as plain text with its product cards and approved buttons', async (t) => {
     const h = shippyHarness(t, {
         reply: async () => ({
@@ -666,7 +710,7 @@ test('a request that fails still answers: a pause when too fast, otherwise the F
         ask();
         await h.wait(500);
         await h.wait(0);
-        assert.match(words(h.byClass('shippy-theirs').at(-1)), /^Sandali lang/);
+        assert.match(words(h.byClass('shippy-theirs').at(-1)), /^Teka lang/);
 
         status = 500;
         ask();

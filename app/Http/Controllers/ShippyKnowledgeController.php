@@ -29,13 +29,18 @@ class ShippyKnowledgeController extends Controller
 
     private const DOCUMENT_FIELDS = ['filename', 'bytes', 'sections', 'is_enabled'];
 
+    /** Adds an FAQ. The very same question and answer sent again is a retry of one already saved, not a second FAQ. */
     public function storeFaq(SaveShippyFaqRequest $request, AuditRecorder $audit): JsonResponse
     {
         DB::transaction(function () use ($request, $audit): void {
+            $values = $request->faq();
+            if (ShippyFaq::query()->lockForUpdate()->where('question', $values['question'])->where('answer', $values['answer'])->exists()) {
+                return;
+            }
             if (ShippyFaq::query()->count() >= ShippyFaq::MAX_FAQS) {
                 throw ValidationException::withMessages(['question' => 'Shippy already has '.ShippyFaq::MAX_FAQS.' FAQs. Delete one before adding another.']);
             }
-            $faq = ShippyFaq::query()->create($request->faq());
+            $faq = ShippyFaq::query()->create($values);
             $audit->record(null, $request->user(), 'settings', 'shippy.faq_created', ShippyFaq::class, (string) $faq->id, null, $faq->only(self::FAQ_FIELDS));
         });
 
@@ -67,7 +72,11 @@ class ShippyKnowledgeController extends Controller
         return response()->json(['saved' => true]);
     }
 
-    /** Adds one or more documents. Nothing is stored unless every file of the request can be used. */
+    /**
+     * Adds one or more documents. Nothing is stored unless every file of the request can be used. Sending the same
+     * file again (same name, same text) is a retry of an upload whose answer never arrived: it is already saved, so
+     * it succeeds without a second copy.
+     */
     public function storeDocuments(StoreShippyDocumentsRequest $request, AuditRecorder $audit): JsonResponse
     {
         $uploads = [];
@@ -75,15 +84,22 @@ class ShippyKnowledgeController extends Controller
             $uploads[] = $this->read($file, 'files.'.$index);
         }
         DB::transaction(function () use ($request, $uploads, $audit): void {
-            $taken = ShippyDocument::query()->lockForUpdate()->pluck('filename')->map(fn (string $name): string => mb_strtolower($name));
-            if ($taken->count() + count($uploads) > ShippyDocument::MAX_DOCUMENTS) {
-                throw ValidationException::withMessages(['files' => 'Shippy keeps at most '.ShippyDocument::MAX_DOCUMENTS.' documents. Delete one before adding another.']);
-            }
+            $saved = ShippyDocument::query()->lockForUpdate()->pluck('content', 'filename')
+                ->mapWithKeys(fn (string $content, string $name): array => [mb_strtolower($name) => hash('sha256', $content)]);
+            $fresh = [];
             foreach ($uploads as $index => $upload) {
-                if ($taken->contains(mb_strtolower($upload['filename']))) {
+                $name = mb_strtolower($upload['filename']);
+                if (isset($fresh[$name]) || ($saved->has($name) && $saved[$name] !== hash('sha256', $upload['content']))) {
                     throw ValidationException::withMessages(['files.'.$index => $upload['filename'].' is already uploaded. Use Replace on that document instead.']);
                 }
-                $taken->push(mb_strtolower($upload['filename']));
+                if (! $saved->has($name)) {
+                    $fresh[$name] = $upload;
+                }
+            }
+            if ($saved->count() + count($fresh) > ShippyDocument::MAX_DOCUMENTS) {
+                throw ValidationException::withMessages(['files' => 'Shippy keeps at most '.ShippyDocument::MAX_DOCUMENTS.' documents. Delete one before adding another.']);
+            }
+            foreach ($fresh as $upload) {
                 $document = ShippyDocument::query()->create([...$upload, 'is_enabled' => true]);
                 $audit->record(null, $request->user(), 'settings', 'shippy.document_uploaded', ShippyDocument::class, (string) $document->id, null, $document->only(self::DOCUMENT_FIELDS));
             }

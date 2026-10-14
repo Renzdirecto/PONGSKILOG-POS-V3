@@ -10,6 +10,7 @@ const superAdminShell = source('components/super-admin-shell.tsx');
 const layout = source('layouts/workspace-layout.tsx');
 const app = source('app.tsx');
 const welcome = source('pages/welcome.tsx');
+const landing = source('components/landing-experience.jsx');
 
 test('one brand mark component renders the official round emblem', () => {
     assert.match(logoIcon, /'\/images\/branding\/pongskilog-emblem\.png'/);
@@ -49,7 +50,7 @@ test('owner and super admin sidebars keep only the wordmark; the emblem stays in
 test('titles and the public landing page say Pongskilog, not Laravel', () => {
     assert.match(app, /VITE_APP_NAME \|\| 'Pongskilog'/);
     assert.doesNotMatch(welcome, /Laravel/);
-    assert.match(welcome, /\/images\/landing-logo\.png/);
+    assert.match(landing, /alt="PONGSKILOG"/);
 });
 
 test('the account settings shell carries no Laravel starter kit links', () => {
@@ -62,14 +63,17 @@ test('the account settings shell carries no Laravel starter kit links', () => {
 });
 
 test('public landing keeps the supplied sections and a route-aware staff entry', () => {
-    for (const id of ['menu', 'about', 'location']) {
-        assert.ok(welcome.includes(`id="${id}"`));
+    for (const id of ['name', 'board', 'lemonade', 'visit']) {
+        assert.ok(landing.includes(`id="${id}"`));
     }
-    assert.match(welcome, /auth\.user \? dashboard\(\) : login\(\)/);
+    assert.match(source('components/customer-reviews.tsx'), /id="reviews"/);
+    assert.match(landing, /<CustomerReviews/);
+    assert.doesNotMatch(landing, /id="menu"|The whole menu/);
+    assert.match(welcome, /auth\.user\s*\? dashboard\(\)\s*: login\(\)/);
     assert.match(welcome, /Open workspace/);
     assert.match(welcome, /Login/);
     assert.doesNotMatch(
-        welcome,
+        welcome + landing,
         /__bundler|text\/x-dc|<sc-if|<sc-for|pongskilog\.example/,
     );
 });

@@ -135,6 +135,30 @@ If optimization is delayed:
 
 ---
 
+### Customer review upload limits (v1.2.1)
+
+The application accepts three review photos and one optional profile photo, each up to **5 MiB (5,242,880 bytes)** before compression. Laravel retains its `max:5120` validation; raising PHP transport limits does not raise the application's per-image limit. JPEG, PNG and WebP originals are decoded and re-encoded as private WebP files; review photos are bounded to 1200 pixels and profiles to 256 pixels. Originals are not retained.
+
+Required settings in the PHP configuration used by the **web service**:
+
+```ini
+upload_max_filesize = 6M
+post_max_size = 32M
+max_file_uploads = 20
+```
+
+`max_file_uploads` must be at least 4; the existing local default of 20 is retained. Four maximum-size originals total 20 MiB plus multipart overhead. Any upstream web server/proxy body limit must also accommodate the request (use at least 32 MiB). Keep GD with JPEG, PNG and WebP support enabled and retain the application's dimension and memory safety checks.
+
+Local Windows PHP was checked with `php --ini`: the loaded file is `C:\php\php.ini`, with no additional scanned INI files. On 2026-10-13, only `upload_max_filesize` (2M to 6M) and `post_max_size` (8M to 32M) were changed; a timestamped backup was retained beside the INI file. The project's port-8000 development server was restarted. `memory_limit=128M` and `max_file_uploads=20` were unchanged. This machine-level configuration is outside Git.
+
+**Railway readiness:** repository inspection found no Dockerfile, Railway/Railpack/Nixpacks configuration, `.user.ini`, or committed PHP INI override. The live Railway builder, web PHP SAPI, effective limits and proxy configuration have not been inspected or changed. Before release, the operator must identify the web service's PHP configuration and apply the settings above through that runtime's supported INI configuration mechanism. A Laravel `.env` entry or application-level `ini_set()` does not configure these upload limits. Do not assume CLI and web PHP load the same INI file. See the [PHP configuration manual](https://www.php.net/manual/en/configuration.file.php) and [upload directives](https://www.php.net/manual/en/ini.core.php#ini.upload-max-filesize).
+
+After an authorized runtime restart, verify effective web values in a private operator context, and remove any temporary diagnostic endpoint. Repeat a real multipart upload containing four 5 MiB originals, plus the 5 MiB + 1 byte rejection and storage-failure/retry checks. Do not expose `phpinfo()` publicly. No production infrastructure was changed by this fix.
+
+**Local upload QA, 2026-10-13:** a disposable loopback PHP HTTP server read the machine INI without `-d` overrides and confirmed 6M / 32M / 20 / 128M. It used a temporary SQLite database, sessions/cache and local storage in place of the `s3` disk; no production storage or normal development data was written. A 20,973,143-byte multipart request containing four actual 5,242,880-byte PNG files returned 200 and saved one pending review with four WebP renditions. The 2400 × 1200 synthetic PNG fixtures use a valid ancillary text chunk to reach the exact byte boundary; their 4,194-byte combined output is a boundary/compression check, not a typical photograph compression ratio. Profile output was 256 × 128; review outputs were 1200 × 600. Guest access to all four pending images returned 404.
+
+Both profile and review originals at 5,242,881 bytes returned 422 with field-specific size errors; a 7 MiB original returned 422 after PHP rejected the upload. A fourth review photo returned 422. A real filesystem write failure returned the safe submission error with 422, left record/file counts unchanged, and retrying the same form after restoring storage returned 200. Missing CSRF returned 419 and the session submission limit returned 429. The temporary server, database and files were removed. Permanent focused regression tests cover four actual-byte boundary images, both one-byte-over boundaries, partial-storage cleanup, retry, moderation, authorization and privacy.
+
 ## 7. Redis
 
 Use for:

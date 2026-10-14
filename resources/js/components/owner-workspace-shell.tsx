@@ -1,8 +1,10 @@
+import { WorkspaceLink } from '@/components/workspace-link';
 import { Link, usePage } from '@inertiajs/react';
 import {
     BarChart3,
     Boxes,
     ChefHat,
+    Globe,
     Layers,
     LayoutDashboard,
     LayoutGrid,
@@ -72,6 +74,7 @@ import {
     owner,
     reports,
     transactions,
+    websiteAnalytics,
 } from '@/routes/workspaces';
 import type { Auth, BranchContext } from '@/types';
 
@@ -91,6 +94,7 @@ type RouteTarget = ReturnType<typeof owner>;
 /** Every registry destination binds to an icon; hrefs are resolved per render (Branch and active Plan aware). */
 const destinationIcons: Record<ManagementDestinationId, LucideIcon> = {
     dashboard: LayoutDashboard,
+    'website-analytics': Globe,
     pos: UtensilsCrossed,
     'qr-orders': QrCode,
     kitchen: ChefHat,
@@ -128,6 +132,8 @@ export function managementDestinationHref(
     switch (id) {
         case 'dashboard':
             return owner();
+        case 'website-analytics':
+            return websiteAnalytics();
         case 'pos':
             return branchOperation(cashier());
         case 'qr-orders':
@@ -185,7 +191,7 @@ function NavigationControl({
     }[variant];
 
     return (
-        <Link
+        <WorkspaceLink
             href={href}
             aria-current={active ? 'page' : undefined}
             aria-label={variant === 'rail' ? destination.label : undefined}
@@ -205,7 +211,7 @@ function NavigationControl({
                     {destination.shortLabel}
                 </span>
             )}
-        </Link>
+        </WorkspaceLink>
     );
 }
 

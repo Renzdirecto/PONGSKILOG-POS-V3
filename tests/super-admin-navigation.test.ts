@@ -65,6 +65,7 @@ test('super admin navigation exposes the required sections in order', () => {
                     'Owner Dashboard',
                     'Transactions',
                     'Reports',
+                    'Website',
                     'Products',
                     'Inventory',
                 ],
@@ -115,6 +116,7 @@ test('every destination points at a real live route', () => {
         'owner-dashboard': ['workspaces.owner', 'live'],
         'owner-transactions': ['workspaces.transactions', 'live'],
         reports: ['workspaces.reports', 'live'],
+        'website-analytics': ['workspaces.website-analytics', 'live'],
         products: ['products.index', 'live'],
         inventory: ['inventory.index', 'live'],
         'ops-plans': ['operations.plans', 'live'],
@@ -246,7 +248,7 @@ test('the shell renders accessible collapsible groups bound to real routes', () 
     assert.match(shell, /useUnreadNotifications\(userId, initialUnread\)/);
     assert.match(shell, /unreadBadgeLabel\(unread\)/);
     assert.doesNotMatch(shell, /coming later|Planned notifications/i);
-    assert.match(layout, /<SuperAdminShell>\{children\}<\/SuperAdminShell>/);
+    assert.match(layout, /<SuperAdminShell>\{content\}<\/SuperAdminShell>/);
     assert.match(layout, /Back to Super Admin Control Center/);
 });
 

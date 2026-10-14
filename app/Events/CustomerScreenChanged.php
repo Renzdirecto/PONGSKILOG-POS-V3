@@ -3,10 +3,11 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\Attributes\Connection;
 use Illuminate\Support\Str;
 
 /**
@@ -15,7 +16,8 @@ use Illuminate\Support\Str;
  * cart lines, prices, order numbers and pickup tokens never travel in a broadcast. Each screen has its own private
  * channel (`customer-screen.{channel_key}`), so another station's cart can never reach it.
  */
-class CustomerScreenChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
+#[Connection('deferred')]
+class CustomerScreenChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

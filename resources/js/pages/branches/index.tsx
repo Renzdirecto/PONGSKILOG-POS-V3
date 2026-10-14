@@ -30,10 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { CustomerScreenMediaPanel } from '@/components/customer-screen-media-panel';
 import { CustomerScreenSettingsPanel } from '@/components/customer-screen-settings-panel';
-import {
-    ReceiptSettings,
-    SettingSwitch,
-} from '@/components/receipt-settings';
+import { ReceiptSettings, SettingSwitch } from '@/components/receipt-settings';
 import { SegmentedTabs } from '@/components/owner-analytics';
 import {
     OwnerPage,
@@ -77,7 +74,10 @@ const statusLabels: Record<BranchStatus, string> = {
     temporarily_closed: 'Temporarily closed',
     inactive: 'Inactive',
 };
-/** The Owner standalone Settings tabs that have a real backend: no business-profile fields are invented. */
+/**
+ * The Owner standalone Settings tabs that have a real backend: no business-profile fields are invented. Customer
+ * Reviews moved to Website → Reviews (v1.3.0), where the landing page's other content is managed.
+ */
 const SETTINGS_TABS = [
     ['branches', 'Branch Management'],
     ['receipt', 'Receipt'],
@@ -159,8 +159,9 @@ export default function Branches({
                 }
                 maxWidth="max-w-[1180px]"
             >
-                <div className="self-start">
+                <div className="max-w-full min-w-0 self-start">
                     <SegmentedTabs
+                        wrap
                         label="Settings section"
                         value={section}
                         options={tabs}
@@ -940,7 +941,10 @@ function BranchImageField({ branch }: { branch: Branch }) {
         try {
             await request();
             toast.success(message);
-            router.reload({ only: ['branches'], onFinish: () => setBusy(false) });
+            router.reload({
+                only: ['branches'],
+                onFinish: () => setBusy(false),
+            });
         } catch (reason) {
             setError(qrError(reason).message);
             setBusy(false);

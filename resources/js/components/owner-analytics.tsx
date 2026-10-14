@@ -86,12 +86,15 @@ export function SegmentedTabs<T extends string>({
     options,
     onChange,
     size = 'md',
+    wrap = false,
 }: {
     label: string;
     value: T;
     options: readonly (readonly [T, string])[];
     onChange: (value: T) => void;
     size?: 'sm' | 'md' | 'lg';
+    /** Wrap onto more rows on a narrow screen instead of scrolling sideways, so no option is hidden. */
+    wrap?: boolean;
 }) {
     const height =
         size === 'lg'
@@ -104,7 +107,7 @@ export function SegmentedTabs<T extends string>({
         <div
             role="group"
             aria-label={label}
-            className="owner-hide-scrollbar flex max-w-full shrink-0 items-center gap-[3px] overflow-x-auto rounded-[11px] bg-[#f2f2f2] p-[3px]"
+            className={`owner-hide-scrollbar flex max-w-full shrink-0 items-center gap-[3px] rounded-[11px] bg-[#f2f2f2] p-[3px] ${wrap ? 'flex-wrap' : 'overflow-x-auto'}`}
         >
             {options.map(([key, text]) => (
                 <button
@@ -256,7 +259,7 @@ export function KpiGrid({
     return (
         <section
             aria-label="Key figures"
-            className="grid grid-cols-2 gap-3 min-[1250px]:grid-cols-3 min-[1500px]:grid-cols-6 min-[900px]:grid-cols-3"
+            className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-3 min-[1250px]:grid-cols-3 min-[1500px]:grid-cols-6"
         >
             {cards.map(([wide, short, value, delta], index) => (
                 <KpiCard
@@ -295,11 +298,18 @@ export function TrendChart({
     metric,
     compare,
     height,
+    text,
 }: {
     buckets: TrendBucket[];
     metric: 'sales' | 'transactions';
     compare: boolean;
     height: number;
+    /** Wording for a series that is not sales (Website Analytics plots page views as the count). */
+    text?: {
+        primary: (bucket: TrendBucket) => string;
+        secondary: (bucket: TrendBucket) => string;
+        empty: string;
+    };
 }) {
     const mobile = useIsMobile();
     const [hovered, setHovered] = useState<number | null>(null);
@@ -387,7 +397,7 @@ export function TrendChart({
                     </svg>
                     {empty && (
                         <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[12px] text-[#8a8a8a]">
-                            No sales in this period
+                            {text?.empty ?? 'No sales in this period'}
                         </p>
                     )}
                     {buckets.map((bucket, index) => {
@@ -400,8 +410,7 @@ export function TrendChart({
                                 ? ((x - left) / (right - left)) * 100
                                 : 50;
                         const y = 100 - geometry.points[index].y;
-                        const hot =
-                            hovered === index || buckets.length === 1;
+                        const hot = hovered === index || buckets.length === 1;
                         const tipPosition =
                             x < 14
                                 ? { left: 0 }
@@ -411,14 +420,16 @@ export function TrendChart({
                                         left: `${inner}%`,
                                         transform: 'translateX(-50%)',
                                     };
-                        const primary =
-                            metric === 'sales'
-                                ? peso(bucket.sales)
-                                : countLabel(bucket.transactions, 'order');
-                        const secondary =
-                            metric === 'sales'
-                                ? countLabel(bucket.transactions, 'order')
-                                : `${peso(bucket.sales)} sales`;
+                        const primary = text
+                            ? text.primary(bucket)
+                            : metric === 'sales'
+                              ? peso(bucket.sales)
+                              : countLabel(bucket.transactions, 'order');
+                        const secondary = text
+                            ? text.secondary(bucket)
+                            : metric === 'sales'
+                              ? countLabel(bucket.transactions, 'order')
+                              : `${peso(bucket.sales)} sales`;
                         const previous =
                             showPrevious && bucket.previous
                                 ? `Previous: ${metric === 'sales' ? peso(bucket.previous.sales) : countLabel(bucket.previous.transactions, 'order')}`
@@ -493,10 +504,7 @@ export function TrendChart({
                         );
                     })}
                 </div>
-                <div
-                    aria-hidden="true"
-                    className="relative mt-1 h-4 min-w-0"
-                >
+                <div aria-hidden="true" className="relative mt-1 h-4 min-w-0">
                     {buckets.map((bucket, index) => {
                         if (!labels.has(index)) {
                             return null;
@@ -664,7 +672,10 @@ export function PaymentMix({
                 </div>
                 <div className="flex min-w-0 flex-[1_1_150px] flex-col gap-3">
                     {channels.map((channel) => (
-                        <div key={channel.key} className="flex flex-col gap-1.5">
+                        <div
+                            key={channel.key}
+                            className="flex flex-col gap-1.5"
+                        >
                             <div className="flex items-center gap-2.5">
                                 <span
                                     aria-hidden="true"
@@ -789,7 +800,9 @@ export function PaymentMethodDonut({
                                     key={segment.method}
                                     role="button"
                                     tabIndex={0}
-                                    aria-pressed={active?.method === segment.method}
+                                    aria-pressed={
+                                        active?.method === segment.method
+                                    }
                                     aria-describedby={detailId}
                                     aria-label={`${segment.label}: ${shareLabel(segment.share)}, ${peso(segment.amount)}, ${ordersText(segment)}`}
                                     onClick={() => toggle(segment.method)}
@@ -851,7 +864,9 @@ export function PaymentMethodDonut({
                                         <span
                                             aria-hidden="true"
                                             className="size-2.5 shrink-0 rounded-[3px]"
-                                            style={{ background: segment.color }}
+                                            style={{
+                                                background: segment.color,
+                                            }}
                                         />
                                         <span className="flex min-w-0 flex-1 flex-col">
                                             <span className="text-[13px] font-semibold">
@@ -922,7 +937,10 @@ export function PaymentMethodDonut({
             )}
             {mix.unpaid.transactions > 0 && (
                 <p className="text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
-                    {countLabel(mix.unpaid.transactions, 'unpaid Pay Later order')}{' '}
+                    {countLabel(
+                        mix.unpaid.transactions,
+                        'unpaid Pay Later order',
+                    )}{' '}
                     ({peso(mix.unpaid.sales)}) not in this chart until settled.
                 </p>
             )}
@@ -1107,8 +1125,7 @@ export function TopProductBars({
     if (rows.length === 0) {
         return <EmptyNote>No products sold in this period.</EmptyNote>;
     }
-    const top =
-        metric === 'quantity' ? rows[0].quantity : rows[0].sales_cents;
+    const top = metric === 'quantity' ? rows[0].quantity : rows[0].sales_cents;
 
     return (
         <ol className="flex flex-col gap-[11px]">
@@ -1119,7 +1136,10 @@ export function TopProductBars({
                         : product.sales_cents;
 
                 return (
-                    <li key={product.key} className="flex items-center gap-[11px]">
+                    <li
+                        key={product.key}
+                        className="flex items-center gap-[11px]"
+                    >
                         <span
                             aria-hidden="true"
                             className="inline-flex size-6 shrink-0 items-center justify-center rounded-[7px] bg-[#f2f2f2] text-[11px] font-bold tabular-nums"
@@ -1219,25 +1239,46 @@ export function BranchComparison({
                     </caption>
                     <thead className="bg-[#fafafa]">
                         <tr className={ownerLabelClass}>
-                            <th scope="col" className="px-3.5 py-2.5 font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 font-semibold"
+                            >
                                 Branch
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Sessions
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Orders
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Sales
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Cash
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Cashless
                             </th>
-                            <th scope="col" className="px-3.5 py-2.5 text-right font-semibold">
+                            <th
+                                scope="col"
+                                className="px-3.5 py-2.5 text-right font-semibold"
+                            >
                                 Expenses
                             </th>
                         </tr>
@@ -1245,7 +1286,10 @@ export function BranchComparison({
                     <tbody className="divide-y divide-[#f3f3f3]">
                         {branches.map((row) => (
                             <tr key={row.branch.id}>
-                                <th scope="row" className="px-3.5 py-2.5 text-left font-normal">
+                                <th
+                                    scope="row"
+                                    className="px-3.5 py-2.5 text-left font-normal"
+                                >
                                     <span className="block max-w-[240px] truncate font-semibold">
                                         {row.branch.name}
                                     </span>
@@ -1255,20 +1299,34 @@ export function BranchComparison({
                                             ` · ${row.branch.status.replace('_', ' ')}`}
                                     </span>
                                 </th>
-                                <td className="px-3.5 py-2.5 text-right">{row.sessions}</td>
-                                <td className="px-3.5 py-2.5 text-right">{row.orders}</td>
                                 <td className="px-3.5 py-2.5 text-right">
-                                    <span className="block font-bold">{peso(row.sales)}</span>
+                                    {row.sessions}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right">
+                                    {row.orders}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right">
+                                    <span className="block font-bold">
+                                        {peso(row.sales)}
+                                    </span>
                                     <span
                                         aria-hidden="true"
                                         className="mt-1 ml-auto block h-1 rounded-full bg-[#111]"
-                                        style={{ width: `${barWidth(row.sales_cents, max, 2)}%` }}
+                                        style={{
+                                            width: `${barWidth(row.sales_cents, max, 2)}%`,
+                                        }}
                                     />
                                 </td>
-                                <td className="px-3.5 py-2.5 text-right">{peso(row.cash)}</td>
-                                <td className="px-3.5 py-2.5 text-right">{peso(row.cashless)}</td>
                                 <td className="px-3.5 py-2.5 text-right">
-                                    {row.expenses === null ? '—' : peso(row.expenses)}
+                                    {peso(row.cash)}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right">
+                                    {peso(row.cashless)}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right">
+                                    {row.expenses === null
+                                        ? '—'
+                                        : peso(row.expenses)}
                                 </td>
                             </tr>
                         ))}
@@ -1296,14 +1354,21 @@ export function BranchComparison({
                                     ['Orders', String(row.orders)],
                                     ['Cash', peso(row.cash)],
                                     ['Cashless', peso(row.cashless)],
-                                    ['Expenses', row.expenses === null ? '—' : peso(row.expenses)],
+                                    [
+                                        'Expenses',
+                                        row.expenses === null
+                                            ? '—'
+                                            : peso(row.expenses),
+                                    ],
                                 ] as const
                             ).map(([label, value]) => (
                                 <div key={label} className="min-w-0">
                                     <dt className="text-[10px] tracking-[0.06em] text-[#8a8a8a] uppercase">
                                         {label}
                                     </dt>
-                                    <dd className="font-semibold [overflow-wrap:anywhere]">{value}</dd>
+                                    <dd className="font-semibold [overflow-wrap:anywhere]">
+                                        {value}
+                                    </dd>
                                 </div>
                             ))}
                         </dl>

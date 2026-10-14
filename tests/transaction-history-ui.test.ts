@@ -32,7 +32,13 @@ test('transaction history keeps filters, metrics, and pagination server-driven',
 });
 
 test('kpi cards map directly to the shared status and payment filters', () => {
-    for (const label of ['In kitchen', 'Preparing', 'Done', 'Paid', 'Pending']) {
+    for (const label of [
+        'In kitchen',
+        'Preparing',
+        'Done',
+        'Paid',
+        'Pending',
+    ]) {
         assert.match(page, new RegExp(`label: '${label}'`));
     }
     assert.match(page, /kitchen_status: 'kitchen', payment_status: undefined/);
@@ -70,15 +76,15 @@ test('cards provide direct payment, balance, receipt, and Phase 13 void actions'
     assert.doesNotMatch(page, /authorizationPin\s*=\s*['"]\d{4}['"]/);
     assert.match(page, /bg-green-700[^"]*hover:bg-green-800/);
     assert.match(page, /text-xs leading-\[1\.4\] font-semibold/);
-    assert.match(page, /h-5 items-center rounded-full border px-2 text-\[9\.5px\]/);
+    assert.match(
+        page,
+        /h-5 items-center rounded-full border px-2 text-\[9\.5px\]/,
+    );
 });
 
 test('edit preserves take-out tables and resolves paid-order price changes explicitly', () => {
     assert.match(page, /sm:max-w-\[760px\]/);
-    assert.match(
-        page,
-        /sm:grid-cols-\[minmax\(0,1fr\)_128px_72px_44px\]/,
-    );
+    assert.match(page, /sm:grid-cols-\[minmax\(0,1fr\)_128px_72px_44px\]/);
     assert.match(page, /aria-label=\{`Edit \$\{line\.product\.name\}`\}/);
     assert.match(page, /branch_table_id: tableId \|\| null/);
     assert.match(page, /setConfirmLower\(true\)/);
@@ -101,11 +107,12 @@ test('edit stages kitchen status until Save changes is clicked', () => {
 });
 
 test('null customers never receive a fabricated display label', () => {
-    const helper = page.match(
-        /function truthfulCustomer[\s\S]*?\n}/,
-    )?.[0];
+    const helper = page.match(/function truthfulCustomer[\s\S]*?\n}/)?.[0];
     assert.ok(helper);
-    assert.match(helper, /return item\.customer_label \|\| item\.table_name \|\| null/);
+    assert.match(
+        helper,
+        /return item\.customer_label \|\| item\.table_name \|\| null/,
+    );
     assert.doesNotMatch(helper, /Walk-in|No customer label/);
 });
 
@@ -118,7 +125,10 @@ test('invoice selection and capture create a local preview before confirm upload
     assert.match(invoice, /url: URL\.createObjectURL\(preparedFile\)/);
     assert.match(invoice, /onClick=\{retry\}/);
     assert.match(invoice, /onClick=\{\(\) => void confirm\(\)\}/);
-    assert.match(invoice, /async function confirm\(\)[\s\S]*\.\.\.store\(paymentId\)/);
+    assert.match(
+        invoice,
+        /async function confirm\(\)[\s\S]*\.\.\.store\(paymentId\)/,
+    );
     assert.match(invoice, /toast\.error\(invoiceUploadError\(error\)\)/);
     assert.match(invoice, /const \[viewingInvoice, setViewingInvoice\]/);
     assert.match(invoice, /onClick=\{\(\) => setViewingInvoice\(true\)\}/);
@@ -133,11 +143,20 @@ test('invoice selection and capture create a local preview before confirm upload
             ['photoInput', true],
         ],
     );
-    assert.match(invoice, /onClick=\{\(\) => input\.current\?\.click\(\)\}[\s\S]*Replace/);
-    assert.match(invoice, /getUserMedia\) \{\s*photoInput\.current\?\.click\(\);/);
+    assert.match(
+        invoice,
+        /onClick=\{\(\) => input\.current\?\.click\(\)\}[\s\S]*Replace/,
+    );
+    assert.match(
+        invoice,
+        /getUserMedia\) \{\s*photoInput\.current\?\.click\(\);/,
+    );
     assert.match(invoice, /const problem = invoiceFileProblem\(file\);/);
     assert.match(invoice, /Choose a JPG, PNG or WebP photo of the invoice\./);
-    assert.doesNotMatch(invoice, /function retry\(\)[\s\S]{0,180}store\(paymentId\)/);
+    assert.doesNotMatch(
+        invoice,
+        /function retry\(\)[\s\S]{0,180}store\(paymentId\)/,
+    );
 });
 
 test('history view preference is local while transaction state stays authoritative', () => {
@@ -167,34 +186,44 @@ test('action dialogs close without revealing another transaction modal', () => {
 });
 
 test('history payment reuses the wide POS payment dialog', () => {
-    assert.match(page, /className=\{`\$\{posDialogClass\} pos-payment-dialog`\}/);
-    assert.match(page, /const idempotencyKey = useMemo\(\(\) => createClientUuid\(\)/);
+    assert.match(
+        page,
+        /className=\{`\$\{posDialogClass\} pos-payment-dialog`\}/,
+    );
+    assert.match(
+        page,
+        /const idempotencyKey = useMemo\(\(\) => createClientUuid\(\)/,
+    );
     assert.match(page, /idempotency_key: idempotencyKey/);
-    assert.match(page, /attempt=\{null\}/);
+    assert.match(page, /attempt=\{attempt\}/);
 });
 
 test('a view-only business viewer gets no cashier pay, void or edit controls', () => {
     assert.match(page, /readOnly=\{!operational\}/);
-    assert.match(page, /\{!readOnly && !isVoided && Number\(item\.outstanding\) > 0 && \(/);
-    assert.match(page, /\{!readOnly && \(\s+<>\s+<button[\s\S]+?Void[\s\S]+?Edit/);
+    assert.match(
+        page,
+        /\{!readOnly && !isVoided && Number\(item\.outstanding\) > 0 && \(/,
+    );
+    assert.match(
+        page,
+        /\{!readOnly && \(\s+<>\s+<button[\s\S]+?Void[\s\S]+?Edit/,
+    );
     assert.match(page, /\{detail\.operational !== false && \(\s+<>/);
-    assert.match(page, /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/);
+    assert.match(
+        page,
+        /try \{\s+return localStorage\.getItem\('transaction-history-view'\)/,
+    );
 });
 
-test('a successful edit returns to the list while settlement still returns to refreshed details', () => {
+test('successful edits and settlements return to the refreshed list', () => {
     /** Edit clears selection and invalidates a detail refresh already in flight. */
     assert.match(
         page,
         /onSaved=\{\(detail\) => \{\s*detailRequest\.current \+= 1;\s*setSelected\(null\);\s*setEditing\(false\);\s*refresh\(\);/,
     );
-    /** Settlement re-reads the transaction before showing it again. */
     assert.match(
         page,
-        /await http\.getClient\(\)\.request\(\{\s*\.\.\.show\(detail\.id\),[\s\S]{0,300}onPaid\(/,
-    );
-    assert.match(
-        page,
-        /onPaid=\{\(detail\) => \{\s*setSelected\(detail\);\s*setSettling\(false\);\s*setResolution\(null\);\s*refresh\(\);/,
+        /onPaid=\{\(\) => \{\s*detailRequest\.current \+= 1;\s*setSelected\(null\);\s*setSettling\(false\);\s*setResolution\(null\);\s*refresh\(\);/,
     );
     /** Deferring an edited balance also returns to the list. */
     assert.match(
@@ -388,3 +417,111 @@ for (const stage of ['detail', 'catalog']) {
         assert.equal(ui.state.editing, false);
     });
 }
+
+function settlementHarness() {
+    const state = {
+        processing: false,
+        attempt: null as unknown,
+        paid: 0,
+        error: '',
+    };
+    const requests: {
+        data: unknown;
+        resolve: (value: { data: string }) => void;
+        reject: (reason: unknown) => void;
+    }[] = [];
+    const start = page.indexOf('    async function pay(payment: PaymentInput)');
+    const handler = ts.transpileModule(
+        page.slice(start, page.indexOf('\n    return (', start)),
+        {
+            compilerOptions: {
+                target: ts.ScriptTarget.ESNext,
+                module: ts.ModuleKind.None,
+            },
+        },
+    ).outputText;
+    const pay = new Function(
+        'dependencies',
+        `
+        const { state, requests } = dependencies;
+        const submitting = { current: false };
+        const detail = { id: 'order-1' };
+        const idempotencyKey = 'stable-key';
+        let attempt = null;
+        const setAttempt = (value) => { attempt = value; state.attempt = value; };
+        const setProcessing = (value) => { state.processing = value; };
+        const setError = (value) => { state.error = value; };
+        const onPaid = () => { state.paid += 1; };
+        const toast = { success: () => {} };
+        const isOfflineWriteBlock = () => false;
+        const settle = () => ({ url: '/settle', method: 'post' });
+        const http = { getClient: () => ({ request: (config) => new Promise((resolve, reject) => requests.push({ ...config, resolve, reject })) }) };
+        ${handler}
+        return pay;
+    `,
+    )({ state, requests }) as (input: Record<string, unknown>) => Promise<void>;
+    return { state, requests, pay };
+}
+
+test('settlement ignores a second click and completes from the confirmed receipt without a detail GET', async () => {
+    const ui = settlementHarness();
+    const pending = ui.pay({ payment_method: 'cash', cash_received: '100.00' });
+    await ui.pay({ payment_method: 'cash', cash_received: '100.00' });
+    assert.equal(ui.requests.length, 1);
+    assert.equal(ui.state.paid, 0);
+    assert.equal(ui.state.processing, true);
+    ui.requests[0].resolve({
+        data: JSON.stringify({
+            receipt: { id: 'order-1', payment_status: 'paid' },
+        }),
+    });
+    await pending;
+    assert.equal(ui.state.paid, 1);
+    assert.equal(ui.state.attempt, null);
+    assert.equal(ui.requests.length, 1);
+});
+
+test('ambiguous settlement retries preserve the complete original tender and idempotency key', async () => {
+    const ui = settlementHarness();
+    const first = ui.pay({
+        payment_method: 'split',
+        cash_received: '50.00',
+        cashless_amount: '50.00',
+    });
+    ui.requests[0].reject(new Error('Connection lost'));
+    await first;
+    assert.equal(ui.state.paid, 0);
+    assert.match(ui.state.error, /unconfirmed/);
+    const second = ui.pay({ payment_method: 'cashless' });
+    assert.deepEqual(ui.requests[1].data, ui.requests[0].data);
+    ui.requests[1].resolve({
+        data: JSON.stringify({
+            receipt: { id: 'order-1', payment_status: 'paid' },
+        }),
+    });
+    await second;
+    assert.equal(ui.state.paid, 1);
+});
+
+test('a rejected or malformed settlement never reports success', async () => {
+    for (const result of ['rejected', 'wrong-order', 'unpaid']) {
+        const ui = settlementHarness();
+        const pending = ui.pay({ payment_method: 'cashless' });
+        if (result === 'rejected')
+            ui.requests[0].reject({ response: { status: 422 } });
+        else
+            ui.requests[0].resolve({
+                data: JSON.stringify({
+                    receipt: {
+                        id: result === 'wrong-order' ? 'order-2' : 'order-1',
+                        payment_status: result === 'unpaid' ? 'unpaid' : 'paid',
+                    },
+                }),
+            });
+        await pending;
+        assert.equal(ui.state.paid, 0);
+        assert.equal(ui.state.processing, false);
+        assert.ok(ui.state.error);
+        assert.equal(ui.state.attempt === null, result === 'rejected');
+    }
+});

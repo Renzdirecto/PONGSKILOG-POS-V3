@@ -3,10 +3,11 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\Attributes\Connection;
 use Illuminate\Support\Str;
 
 /**
@@ -14,7 +15,8 @@ use Illuminate\Support\Str;
  * pickup page listens only on its own high-entropy channel (`pickup.{channel_key}`); one event reaches every affected
  * page in one broadcast (the broadcaster sends channels in batches). The payload carries no order, Branch or token.
  */
-class PickupStatusChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
+#[Connection('deferred')]
+class PickupStatusChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

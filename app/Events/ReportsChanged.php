@@ -3,17 +3,19 @@
 namespace App\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\Attributes\Connection;
 use Illuminate\Support\Str;
 
 /**
  * Invalidation-only signal for the Owner/Super Admin Dashboard and Reports: something that changes business figures
  * happened in a Branch. It never carries order, customer, item or money data — clients refetch the authorized report.
  */
-class ReportsChanged implements ShouldBroadcastNow, ShouldDispatchAfterCommit, ShouldRescue
+#[Connection('deferred')]
+class ReportsChanged implements ShouldBroadcast, ShouldDispatchAfterCommit, ShouldRescue
 {
     use Dispatchable;
 

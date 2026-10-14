@@ -680,12 +680,17 @@ export default class LandingExperience extends React.Component {
             const r = lm.getBoundingClientRect();
             if (r.top < vh * 1.2 && r.bottom > -vh * 0.2) {
                 const p = motion ? clamp((vh - r.top) / (vh * 0.9)) : 1;
+                /* The stagger shrinks with the poster count so the last poster is also whole once the section is in place. */
+                const step = 0.7 / this._cups.length;
                 this._cups.forEach((c, i) => {
-                    const l = clamp(p * 1.7 - i * 0.18);
+                    const l = clamp(p * 1.7 - i * step);
+                    /* A whole poster drops the clip, whose rounded corners would cut the caption's first and last letters. */
                     c.style.clipPath =
-                        'inset(' +
-                        ((1 - l) * 100).toFixed(1) +
-                        '% 0 0 0 round 18px)';
+                        l < 1
+                            ? 'inset(' +
+                              ((1 - l) * 100).toFixed(1) +
+                              '% 0 0 0 round 18px)'
+                            : 'none';
                     c.style.transform =
                         'translateY(' + ((1 - l) * 30).toFixed(1) + 'px)';
                 });

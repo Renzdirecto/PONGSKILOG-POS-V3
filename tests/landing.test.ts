@@ -884,6 +884,47 @@ test("the Three's Lemonade section carries the V6 yellow heading over its lazily
     assert.match(css, /\.landing-v3 \.v3-s127 \{[^}]*color: #f2b419;/);
 });
 
+test("every Three's Lemonade poster rises in turn and is whole once the section is in place", () => {
+    const { ui } = experienceHarness();
+    ui.props = { ...ui.props, motion: true };
+    ui._words = [];
+    const cups = CUPS.map(() => ({ style: {} as Record<string, string> }));
+    const section = { top: 0 };
+    ui.lemonRef.current = {
+        querySelectorAll: () => cups,
+        getBoundingClientRect: () => ({
+            top: section.top,
+            bottom: section.top + 1400,
+        }),
+    };
+    const clipped = () =>
+        cups.map((cup) =>
+            Number(/inset\(([\d.]+)%/.exec(cup.style.clipPath)![1]),
+        );
+
+    /** Half-way in, each poster is less revealed than the one before it. */
+    section.top = 440;
+    ui.frame();
+    const halfway = clipped();
+    assert.ok(
+        halfway.every(
+            (inset, index) => index === 0 || inset > halfway[index - 1],
+        ),
+    );
+
+    /**
+     * V7 grew the section to seven posters: the last two stayed cut off at the top. A whole poster has no clip at
+     * all, since its rounded corners also cut the first and last letters of the caption.
+     */
+    section.top = 80;
+    ui.frame();
+    assert.equal(cups.length, 7);
+    for (const cup of cups) {
+        assert.equal(cup.style.clipPath, 'none');
+        assert.equal(cup.style.transform, 'translateY(0.0px)');
+    }
+});
+
 test('Landing V7: the online kiosk sits before the reviews, "Visit us" heads the map and the big Message us link is gone', () => {
     const { ui } = experienceHarness();
     const kiosk = [

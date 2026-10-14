@@ -48,7 +48,7 @@ test('an area manager sees only the pages its permissions open, grouped in the a
             'settings.manage',
         ]),
         [
-            ['Overview', ['Dashboard', 'Website Analytics']],
+            ['Overview', ['Dashboard', 'Website']],
             ['Store Operations', ['POS', 'QR Orders']],
             ['Sales', ['Transactions', 'Reports']],
             ['Catalog', ['Products']],
@@ -100,7 +100,7 @@ test('branch and business-wide roles get the same page structure; an account wit
     const withoutWebsite = (groups: ReturnType<typeof sections>) =>
         groups.map(([label, pages]) => [
             label,
-            (pages as string[]).filter((page) => page !== 'Website Analytics'),
+            (pages as string[]).filter((page) => page !== 'Website'),
         ]);
     assert.deepEqual(
         sections(branchManager, false),
@@ -111,10 +111,15 @@ test('branch and business-wide roles get the same page structure; an account wit
         ['Sales', ['Reports']],
     ]);
     assert.deepEqual(sections(['reports.view'], true), [
-        ['Overview', ['Dashboard', 'Website Analytics']],
+        ['Overview', ['Dashboard', 'Website']],
         ['Sales', ['Reports']],
     ]);
     assert.deepEqual(sections(['settings.manage'], false), [
+        ['Administration', ['Settings']],
+    ]);
+    /** Settings also opens Website (its Reviews and Team tabs), again only for a business-wide account. */
+    assert.deepEqual(sections(['settings.manage'], true), [
+        ['Overview', ['Website']],
         ['Administration', ['Settings']],
     ]);
     assert.deepEqual(sections([]), []);

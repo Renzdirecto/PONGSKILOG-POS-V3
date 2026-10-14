@@ -242,6 +242,7 @@ test('the page shows every required figure, labels visitors as an estimate and n
         'Directions clicks',
         'Menu clicks',
         'Review submissions',
+        'Heart taps',
         'Visits over time',
     ]) {
         assert.ok(page.includes(figure), figure);

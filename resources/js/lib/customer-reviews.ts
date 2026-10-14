@@ -17,6 +17,20 @@ export type CustomerReview = {
     visibility?: string;
 };
 export type ReviewBranch = { id: string; name: string; code: string };
+/** Every published review, from the server: `average` is rounded to one decimal and null until one is published. */
+export type ReviewSummary = { count: number; average: number | null };
+
+/** What the landing summary shows, or null while nothing is published so a rating is never implied. */
+export function reviewSummaryDisplay(
+    summary: ReviewSummary,
+): { average: string; stars: number; count: string } | null {
+    if (summary.count < 1 || summary.average === null) return null;
+    return {
+        average: summary.average.toFixed(1),
+        stars: Math.round(summary.average),
+        count: `${summary.count.toLocaleString('en-US')} review${summary.count === 1 ? '' : 's'}`,
+    };
+}
 
 /** Mirrors `CustomerReview::PREFERRED_NAME_MAX`: new names only, older longer names are kept as saved. */
 export const REVIEW_NAME_MAX = 10;

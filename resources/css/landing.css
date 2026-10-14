@@ -1981,14 +1981,31 @@ svg.leaflet-image-layer.leaflet-interactive path {
     box-shadow: 0 18px 44px rgba(18, 17, 16, 0.16);
     transform-origin: 50% 60%;
     will-change: transform;
+    position: relative;
+    background: #e9e1d4;
 }
 .landing-v3 .v3-s116 {
     width: 100%;
     height: auto;
     aspect-ratio: 16/9;
     object-fit: cover;
+    position: relative;
     pointer-events: none;
     will-change: transform;
+}
+/* Landing V6 Drinks: a tall cup photo is shown whole over a blurred copy of itself instead of being cropped. */
+.landing-v3 .board-drink {
+    object-fit: contain;
+}
+.landing-v3 .board-drink-blur {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(24px) saturate(1.1);
+    transform: scale(1.2);
+    pointer-events: none;
 }
 .landing-v3 .v3-s117 {
     max-width: 1320px;
@@ -2055,6 +2072,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     line-height: 0.9;
     letter-spacing: -0.03em;
     text-transform: uppercase;
+    /* Three's Lemonade brand yellow (Landing V6). */
+    color: #f2b419;
 }
 .landing-v3 .v3-s128 {
     margin: 0;
@@ -2065,7 +2084,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 }
 .landing-v3 .v3-s129 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(220px, 46%), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 46%), 1fr));
     gap: clamp(10px, 1.4vw, 18px);
     margin-top: clamp(28px, 4vw, 56px);
 }
@@ -2078,14 +2097,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
     overflow: hidden;
     background: #f4f0e8;
 }
+/* Landing V7: each poster carries its name and prices, so it is shown whole, never cropped or zoomed. */
 .landing-v3 .v3-s132 {
+    display: block;
     width: 100%;
     height: auto;
     aspect-ratio: 4/5;
-    object-fit: cover;
-    object-position: 64% 50%;
-    transform: scale(1.12);
-    transform-origin: 64% 78%;
+    object-fit: contain;
 }
 .landing-v3 .v3-s134 {
     display: flex;
@@ -2185,13 +2203,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
     padding: clamp(64px, 9vw, 140px) clamp(16px, 4vw, 48px)
         clamp(40px, 5vw, 72px);
 }
+/* Landing V7: "Visit us", a smaller heading than V6's "Come hungry." on every screen. */
 .landing-v3 .v3-s155 {
     margin: 0;
     font-family: Archivo, sans-serif;
     font-stretch: 70%;
     font-weight: 900;
-    font-size: clamp(64px, 14vw, 220px);
-    line-height: 0.82;
+    font-size: clamp(44px, 8vw, 120px);
+    line-height: 0.86;
     letter-spacing: -0.035em;
     text-transform: uppercase;
 }
@@ -2614,39 +2633,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
     font-size: 12.5px;
     font-weight: 600;
 }
-.landing-v3 .v3-s217 {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 20px;
-    margin-top: clamp(40px, 6vw, 80px);
-    padding: clamp(20px, 3vw, 36px) 0;
-    border-top: 2px solid #121110;
-    border-bottom: 2px solid #121110;
-    font-family: Archivo, sans-serif;
-    font-stretch: 72%;
-    font-weight: 900;
-    font-size: clamp(32px, 6.2vw, 100px);
-    line-height: 0.9;
-    letter-spacing: -0.03em;
-    text-transform: uppercase;
-    color: #121110;
-    transition:
-        color 0.2s,
-        padding 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.landing-v3 .v3-s218:hover {
-    color: #8a5e12;
-    padding-left: clamp(8px, 1.6vw, 24px);
-}
-.landing-v3 .v3-s219 {
-    min-width: 0;
-}
-.landing-v3 .v3-s220 {
-    flex: 0 0 auto;
-    width: 0.8em;
-    height: 0.8em;
-}
 .landing-v3 .v3-s221 {
     max-width: 1320px;
     margin: 0 auto;
@@ -2681,6 +2667,372 @@ svg.leaflet-image-layer.leaflet-interactive path {
     font-weight: 800;
     letter-spacing: 0.12em;
     color: rgba(18, 17, 16, 0.62);
+}
+/* Landing V7 online kiosk: how ordering online works, a sample ticket and "Start your order". */
+.landing-v3 .kiosk-section {
+    background: #fff;
+    border-top: 1px solid rgba(18, 17, 16, 0.08);
+}
+.landing-v3 .kiosk-inner {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: clamp(64px, 9vw, 130px) clamp(16px, 4vw, 48px);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+}
+.landing-v3 .kiosk-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(20px, 2.4vw, 28px);
+}
+.landing-v3 .kiosk-head {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.landing-v3 .kiosk-eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8a5e12;
+}
+.landing-v3 .kiosk-head h2 {
+    margin: 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 78%;
+    font-weight: 850;
+    font-size: clamp(32px, 4.4vw, 60px);
+    line-height: 0.92;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    text-wrap: balance;
+}
+.landing-v3 .kiosk-head p {
+    margin: 0;
+    max-width: 44ch;
+    font-size: 15.5px;
+    line-height: 1.55;
+    color: rgba(18, 17, 16, 0.66);
+}
+.landing-v3 .kiosk-steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid rgba(18, 17, 16, 0.12);
+}
+.landing-v3 .kiosk-steps li {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(18, 17, 16, 0.12);
+}
+.landing-v3 .kiosk-steps li > span {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #121110;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Archivo, sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+}
+.landing-v3 .kiosk-steps li:last-child > span {
+    background: #f5c518;
+    color: #121110;
+}
+.landing-v3 .kiosk-steps li > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.landing-v3 .kiosk-steps strong {
+    font-size: 17px;
+    font-weight: 700;
+}
+.landing-v3 .kiosk-steps p {
+    margin: 0;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: rgba(18, 17, 16, 0.66);
+}
+.landing-v3 .kiosk-start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 18px;
+}
+.landing-v3 .kiosk-start button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 56px;
+    padding: 0 26px;
+    background: #121110;
+    color: #fff;
+    border: 0;
+    border-radius: 999px;
+    font-size: 16.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        background 0.18s,
+        transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .kiosk-start button:hover {
+    background: #2a2724;
+    transform: translateY(-1px);
+}
+.landing-v3 .kiosk-start button:active {
+    transform: scale(0.985);
+}
+.landing-v3 .kiosk-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+.landing-v3 .kiosk-status > span,
+.kiosk-branch-status > span {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+.landing-v3 .kiosk-ticket-wrap {
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+}
+.landing-v3 .kiosk-ticket {
+    width: 100%;
+    max-width: 380px;
+    background: #121110;
+    color: #fff;
+    border-radius: 22px;
+    padding: clamp(22px, 3vw, 32px);
+    box-shadow: 0 30px 70px rgba(18, 17, 16, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transform: rotate(-2deg);
+}
+.landing-v3 .kiosk-ticket-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.landing-v3 .kiosk-ticket-top span:first-child {
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+}
+.landing-v3 .kiosk-ticket-top span:last-child {
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.landing-v3 .kiosk-ticket-number {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.landing-v3 .kiosk-ticket-number span {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+.landing-v3 .kiosk-ticket-number b {
+    font-family: Archivo, sans-serif;
+    font-stretch: 72%;
+    font-weight: 900;
+    font-size: clamp(84px, 10vw, 128px);
+    line-height: 0.85;
+    letter-spacing: -0.03em;
+    color: #f5c518;
+    font-variant-numeric: tabular-nums;
+}
+.landing-v3 .kiosk-ticket-cut {
+    border-top: 2px dashed rgba(255, 255, 255, 0.22);
+}
+.landing-v3 .kiosk-ticket-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 14.5px;
+    line-height: 1.45;
+}
+.landing-v3 .kiosk-ticket-notes div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.landing-v3 .kiosk-ticket-notes div + div {
+    color: rgba(255, 255, 255, 0.75);
+}
+.landing-v3 .kiosk-ticket-notes svg {
+    flex: 0 0 auto;
+}
+/* "Choose your branch" is rendered outside `.landing-v3`, above the landing navigation, Shippy and the badge. */
+.kiosk-overlay,
+.kiosk-sheet {
+    z-index: 100;
+}
+.kiosk-overlay {
+    background: rgba(18, 17, 16, 0.4);
+}
+.kiosk-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 460px;
+    padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+    background: #fff;
+    color: #121110;
+    border: 0;
+    border-radius: 22px;
+    box-shadow: 0 30px 80px rgba(18, 17, 16, 0.3);
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+}
+.kiosk-sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding-left: 4px;
+}
+.kiosk-sheet-head > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 6px;
+}
+.kiosk-sheet-head h2 {
+    margin: 0;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+.kiosk-sheet-head p {
+    margin: 0;
+    font-size: 14px;
+    color: rgba(18, 17, 16, 0.66);
+}
+.kiosk-sheet-head button {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 0;
+    background: #f4f0e8;
+    color: #121110;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.kiosk-branches {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: min(60dvh, 520px);
+    overflow-y: auto;
+}
+.kiosk-branches a {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid rgba(18, 17, 16, 0.12);
+    border-radius: 16px;
+    color: #121110;
+    text-decoration: none;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+.kiosk-branches a:hover {
+    border-color: #121110;
+    background: #faf8f4;
+}
+.kiosk-branches img {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #f4f0e8;
+}
+.kiosk-branch-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.kiosk-branch-text strong {
+    font-size: 16.5px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+.kiosk-branch-text > span:not(.kiosk-branch-status) {
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: rgba(18, 17, 16, 0.66);
+}
+.kiosk-branch-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.kiosk-branch-status > span {
+    width: 7px;
+    height: 7px;
+}
+.kiosk-branch-go {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #121110;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.kiosk-none {
+    margin: 0;
+    padding: 4px;
+    font-size: 15px;
+    line-height: 1.5;
+}
+.kiosk-none a {
+    font-weight: 600;
+    text-decoration: underline;
 }
 @media (max-width: 699px) {
     .landing-v3 .v3-s68 {
@@ -2825,6 +3177,893 @@ svg.leaflet-image-layer.leaflet-interactive path {
 .landing-v3 [hidden] {
     display: none !important;
 }
+/* Landing V6: Meet the Team, a rail of portrait cards with the role in the top-left corner. */
+.landing-v3 .team-section {
+    padding: clamp(72px, 9vw, 140px) 0 clamp(56px, 7vw, 110px);
+    background: #fff;
+    color: #121110;
+    border-top: 1px solid rgba(18, 17, 16, 0.08);
+    overflow: hidden;
+}
+.landing-v3 .team-head {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 48px);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 20px 40px;
+}
+.landing-v3 .team-intro {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.landing-v3 .team-eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8a5e12;
+}
+.landing-v3 .team-intro h2 {
+    margin: 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 78%;
+    font-weight: 850;
+    font-size: clamp(38px, 5.6vw, 80px);
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+.landing-v3 .team-intro p {
+    margin: 0;
+    max-width: 40ch;
+    font-size: 15.5px;
+    line-height: 1.55;
+    color: rgba(18, 17, 16, 0.66);
+}
+.landing-v3 .team-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.landing-v3 .team-nav button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #fff;
+    color: #121110;
+    border: 1px solid rgba(18, 17, 16, 0.18);
+    cursor: pointer;
+    transition:
+        background 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+        color 0.2s,
+        border-color 0.2s,
+        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .team-nav button:hover {
+    background: #121110;
+    color: #fff;
+    border-color: #121110;
+    transform: translateY(-1px);
+}
+.landing-v3 .team-rail {
+    --team-gutter: max(
+        clamp(16px, 4vw, 48px),
+        calc((100% - 1320px) / 2 + clamp(16px, 4vw, 48px))
+    );
+    margin-top: clamp(28px, 4vw, 52px);
+    /* Room below the cards so their shadow fades out instead of being cut by the scroller. */
+    padding: 8px var(--team-gutter) 44px;
+    scroll-padding-inline: var(--team-gutter);
+    display: flex;
+    align-items: stretch;
+    gap: clamp(12px, 1.6vw, 20px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.landing-v3 .team-card {
+    position: relative;
+    flex: 0 0 auto;
+    width: min(76vw, 300px);
+    aspect-ratio: 3/4;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #f4f0e8;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.05),
+        0 22px 44px rgba(18, 17, 16, 0.12);
+    transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .team-card:hover {
+    transform: translateY(-6px);
+}
+.landing-v3 .team-photo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+/* No supplied portrait yet: a labelled placeholder, never a stock or invented face. */
+.landing-v3 .team-photo-missing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding-bottom: 34%;
+    color: rgba(18, 17, 16, 0.5);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+.landing-v3 .team-shade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+        180deg,
+        rgba(18, 17, 16, 0) 58%,
+        rgba(18, 17, 16, 0.7) 80%,
+        rgba(18, 17, 16, 0.92) 100%
+    );
+}
+.landing-v3 .team-code {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 14px 0 16px;
+    background: #fff;
+    color: #121110;
+    border-radius: 0 0 14px 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 850;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    box-shadow: 0 4px 14px rgba(18, 17, 16, 0.16);
+}
+.landing-v3 .team-meta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.landing-v3 .team-meta h3 {
+    margin: 0;
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 19px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    color: #fff;
+    overflow-wrap: anywhere;
+}
+.landing-v3 .team-meta p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.8);
+    text-wrap: pretty;
+}
+.landing-v3 .team-title {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #e2b860;
+}
+.landing-v3 .team-progress {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 48px);
+}
+.landing-v3 .team-progress > div {
+    height: 2px;
+    background: rgba(18, 17, 16, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.landing-v3 .team-progress > div > div {
+    height: 100%;
+    background: #8a5e12;
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+}
+/* Landing V6: tap-to-love, the chef fixed at the bottom-left; only its controls take pointer events. */
+.landing-v3 .love {
+    position: fixed;
+    left: calc(16px + env(safe-area-inset-left));
+    bottom: calc(42px + env(safe-area-inset-bottom));
+    z-index: 74;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    pointer-events: none;
+}
+@keyframes love-invite {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.96);
+    }
+}
+.landing-v3 .love-invite {
+    position: relative;
+    pointer-events: auto;
+    max-width: min(236px, calc(100vw - 112px));
+    background: #fff;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    border-radius: 18px 18px 18px 6px;
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.06),
+        0 18px 40px rgba(18, 17, 16, 0.16);
+    animation: love-invite 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .love-invite button {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.landing-v3 .love-invite button:first-child {
+    display: block;
+    width: 100%;
+    padding: 12px 44px 12px 14px;
+    text-align: left;
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: #121110;
+}
+.landing-v3 .love-invite b {
+    font-weight: 700;
+}
+.landing-v3 .love-invite button:last-child {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: rgba(18, 17, 16, 0.5);
+}
+.landing-v3 .love-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.landing-v3 .love-chef {
+    position: relative;
+    pointer-events: auto;
+    width: 60px;
+    height: 60px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #121110;
+    box-shadow: 0 14px 32px rgba(18, 17, 16, 0.3);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.landing-v3 .love-chef img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    pointer-events: none;
+}
+.landing-v3 .love-chef > span {
+    position: absolute;
+    right: -4px;
+    bottom: -2px;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #b0281f;
+    border: 2.5px solid #fff;
+}
+.landing-v3 .love-count {
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    box-shadow: 0 6px 18px rgba(18, 17, 16, 0.12);
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 800;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    color: #121110;
+}
+/* Landing V6: Shippy, the chat at the bottom-right. Only the launcher and its invitation take pointer events. */
+.landing-v3 .shippy {
+    position: fixed;
+    right: calc(16px + env(safe-area-inset-right));
+    bottom: calc(42px + env(safe-area-inset-bottom));
+    z-index: 75;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    pointer-events: none;
+}
+.landing-v3 .shippy-teaser {
+    position: relative;
+    pointer-events: auto;
+    max-width: min(236px, calc(100vw - 112px));
+    background: #fff;
+    border: 1px solid rgba(18, 17, 16, 0.08);
+    border-radius: 18px 18px 6px 18px;
+    box-shadow:
+        0 2px 4px rgba(18, 17, 16, 0.06),
+        0 18px 40px rgba(18, 17, 16, 0.16);
+    animation: love-invite 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-teaser button {
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+}
+.landing-v3 .shippy-teaser button:first-child {
+    display: block;
+    width: 100%;
+    padding: 12px 44px 12px 14px;
+    text-align: left;
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: #121110;
+}
+.landing-v3 .shippy-teaser b {
+    font-weight: 700;
+}
+.landing-v3 .shippy-teaser button:last-child {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: rgba(18, 17, 16, 0.5);
+}
+@keyframes shippy-in {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+.landing-v3 .shippy-launcher {
+    position: relative;
+    pointer-events: auto;
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #f4f0e8;
+    box-shadow:
+        0 0 0 2px #c89332,
+        0 14px 32px rgba(18, 17, 16, 0.28);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+        box-shadow 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: shippy-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-launcher:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow:
+        0 0 0 2px #c89332,
+        0 20px 40px rgba(18, 17, 16, 0.32);
+}
+.landing-v3 .shippy-launcher img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.landing-v3 .shippy-launcher > span {
+    position: absolute;
+    right: -1px;
+    bottom: 1px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #2e9a5b;
+    border: 2.5px solid #fff;
+}
+.landing-v3 .shippy :focus-visible,
+.landing-v3 .shippy-panel :focus-visible {
+    outline: 2px solid #c89332;
+    outline-offset: 2px;
+}
+@keyframes shippy-open {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.94);
+    }
+}
+@keyframes shippy-rise {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+}
+/* Below the review and Privacy Notice dialogs (z-index 90), so an open dialog always covers the chat. */
+.landing-v3 .shippy-panel {
+    position: fixed;
+    right: calc(20px + env(safe-area-inset-right));
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    z-index: 85;
+    width: 392px;
+    height: min(660px, calc(100vh - 40px));
+    height: min(660px, calc(100dvh - 40px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f4f0e8;
+    color: #121110;
+    border: 1px solid rgba(18, 17, 16, 0.1);
+    border-radius: 24px;
+    box-shadow:
+        0 2px 6px rgba(18, 17, 16, 0.08),
+        0 30px 80px rgba(18, 17, 16, 0.28);
+    transform-origin: calc(100% - 32px) 100%;
+    animation: shippy-open 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 8px 12px 16px;
+    background: #121110;
+    color: #fff;
+}
+.landing-v3 .shippy-face {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+.landing-v3 .shippy-face img {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f4f0e8;
+    box-shadow: 0 0 0 2px #c89332;
+}
+.landing-v3 .shippy-face span {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #2e9a5b;
+    border: 2px solid #121110;
+}
+.landing-v3 .shippy-head > div {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.landing-v3 .shippy-head strong {
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+}
+.landing-v3 .shippy-head > div span {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.landing-v3 .shippy-head button {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.landing-v3 .shippy-head button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.landing-v3 .shippy-head .shippy-close {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.landing-v3 .shippy-head .shippy-close:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+.landing-v3 .shippy-head button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.landing-v3 .shippy-log {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 22px 14px 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.landing-v3 .shippy-intro {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0 16px;
+    text-align: center;
+}
+.landing-v3 .shippy-intro img {
+    width: 92px;
+    height: 92px;
+    border: 4px solid #fff;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 12px 28px rgba(18, 17, 16, 0.16);
+}
+.landing-v3 .shippy-intro strong {
+    margin-top: 4px;
+    font-family: Archivo, sans-serif;
+    font-stretch: 80%;
+    font-weight: 850;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    text-transform: uppercase;
+}
+.landing-v3 .shippy-intro p {
+    max-width: 30ch;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(18, 17, 16, 0.62);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-intro small {
+    max-width: 36ch;
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(18, 17, 16, 0.55);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-theirs {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding-right: 28px;
+}
+.landing-v3 .shippy-theirs > img {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f4f0e8;
+}
+.landing-v3 .shippy-theirs > div {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.landing-v3 .shippy-theirs p,
+.landing-v3 .shippy-mine p {
+    margin: 0;
+    padding: 10px 14px;
+    font-size: 15.5px;
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+.landing-v3 .shippy-theirs p {
+    background: #fff;
+    color: #121110;
+    border-radius: 18px 18px 18px 6px;
+    box-shadow: 0 1px 2px rgba(18, 17, 16, 0.06);
+    text-wrap: pretty;
+}
+.landing-v3 .shippy-mine {
+    display: flex;
+    justify-content: flex-end;
+    padding-left: 56px;
+}
+.landing-v3 .shippy-mine p {
+    background: #121110;
+    color: #fff;
+    border-radius: 18px 18px 6px 18px;
+}
+.landing-v3 .shippy-items {
+    align-self: stretch;
+    min-width: 232px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    list-style: none;
+    background: rgba(18, 17, 16, 0.07);
+    border: 1px solid rgba(18, 17, 16, 0.07);
+    border-radius: 16px;
+}
+.landing-v3 .shippy-items li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 8px 14px 8px 8px;
+    background: #fff;
+}
+.landing-v3 .shippy-items img {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #f4f0e8;
+}
+.landing-v3 .shippy-items i {
+    flex: 0 0 auto;
+    width: 6px;
+}
+.landing-v3 .shippy-items span {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14.5px;
+    line-height: 1.3;
+}
+.landing-v3 .shippy-items b {
+    flex: 0 0 auto;
+    font-family: Archivo, sans-serif;
+    font-stretch: 85%;
+    font-weight: 800;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+/* A lemonade poster carries its own name and prices: shown whole. A team member shows their 3:4 portrait. */
+.landing-v3 .shippy-items .shippy-poster img {
+    object-fit: contain;
+}
+.landing-v3 .shippy-items .shippy-person img {
+    width: 54px;
+    height: 72px;
+    border-radius: 12px;
+    object-position: 50% 20%;
+}
+.landing-v3 .shippy-items .shippy-person small {
+    display: block;
+    margin-top: 2px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #8a5e12;
+}
+.landing-v3 .shippy-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.landing-v3 .shippy-actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: #121110;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+        background 0.15s,
+        transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.landing-v3 .shippy-actions a:hover {
+    background: #2a2724;
+    color: #fff;
+    transform: translateY(-1px);
+}
+@keyframes shippy-dot {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.35;
+    }
+    40% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+.landing-v3 .shippy-theirs .shippy-typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 41px;
+    padding: 10px 16px;
+}
+.landing-v3 .shippy-typing i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(18, 17, 16, 0.55);
+    animation: shippy-dot 1.1s infinite ease-in-out;
+}
+.landing-v3 .shippy-typing i:nth-child(2) {
+    animation-delay: 0.16s;
+}
+.landing-v3 .shippy-typing i:nth-child(3) {
+    animation-delay: 0.32s;
+}
+/* The six preset questions: one row that scrolls sideways and is reachable by keyboard. */
+.landing-v3 .shippy-chips {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+.landing-v3 .shippy-chips button {
+    flex: 0 0 auto;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid rgba(18, 17, 16, 0.14);
+    border-radius: 12px;
+    background: #fff;
+    color: #121110;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+@media (hover: hover) {
+    .landing-v3 .shippy-chips button:hover {
+        border-color: #121110;
+    }
+}
+.landing-v3 .shippy-chips button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.landing-v3 .shippy-form {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid rgba(18, 17, 16, 0.08);
+}
+.landing-v3 .shippy-form input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 48px;
+    padding: 0 16px;
+    border: 1px solid rgba(18, 17, 16, 0.14);
+    border-radius: 14px;
+    background: #f7f4ee;
+    color: #121110;
+    font-family: inherit;
+    font-size: 16px;
+    outline: none;
+    transition:
+        border-color 0.15s,
+        background 0.15s;
+}
+.landing-v3 .shippy-form input:focus {
+    border-color: #121110;
+    background: #fff;
+}
+.landing-v3 .shippy-form button {
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 14px;
+    background: #121110;
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.landing-v3 .shippy-form button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+    .landing-v3 .shippy-teaser,
+    .landing-v3 .shippy-launcher,
+    .landing-v3 .shippy-panel,
+    .landing-v3 .shippy-typing i {
+        animation: none;
+    }
+    .landing-v3 .shippy-launcher,
+    .landing-v3 .shippy-actions a {
+        transition: none;
+    }
+}
 .landing-price-grid {
     display: flex;
     flex-direction: column;
@@ -2921,11 +4160,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     /* Phone type scale: section headings step down so they no longer outweigh the hero. */
     .landing-v3 .v3-s100,
-    .landing-v3 .v3-s127 {
+    .landing-v3 .v3-s127,
+    .landing-v3 .team-intro h2 {
         font-size: 34px;
     }
-    .landing-v3 .v3-s155 {
-        font-size: clamp(46px, 13vw, 56px);
+    .landing-v3 .team-section {
+        padding: 48px 0 40px;
+    }
+    .landing-v3 .team-nav {
+        display: none;
     }
     .landing-v3 .v3-s171 {
         font-size: 28px;
@@ -2938,7 +4181,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     .landing-v3 .v3-s101,
     .landing-v3 .v3-s128,
-    .landing-v3 .v3-s172 {
+    .landing-v3 .v3-s172,
+    .landing-v3 .team-intro p {
         font-size: 15px;
     }
     .landing-price-category dl {
@@ -2956,5 +4200,43 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     .landing-v3 .v3-s17 {
         gap: 6px;
+    }
+    /* Shippy fills the phone screen; its height follows the visible area so the keyboard never hides the input. */
+    .landing-v3 .shippy-panel {
+        top: 0;
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        border: 0;
+        border-radius: 0;
+        animation-name: shippy-rise;
+    }
+    .landing-v3 .shippy-head {
+        padding: calc(10px + env(safe-area-inset-top)) 8px 10px 14px;
+    }
+    .landing-v3 .shippy-chips {
+        scrollbar-width: none;
+    }
+    .landing-v3 .shippy-chips::-webkit-scrollbar {
+        display: none;
+    }
+    .landing-v3 .kiosk-inner {
+        padding: 44px 16px 48px;
+    }
+    /* "Choose your branch" rises from the bottom of a phone screen as a sheet (Landing V7). */
+    .kiosk-sheet {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        translate: none;
+        max-width: none;
+        border-radius: 22px 22px 0 0;
+        --tw-enter-scale: 1;
+        --tw-exit-scale: 1;
+        --tw-enter-translate-y: 48px;
+        --tw-exit-translate-y: 48px;
     }
 }

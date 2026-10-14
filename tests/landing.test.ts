@@ -3,7 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import ts from 'typescript';
 import * as landingData from '../resources/js/lib/landing.ts';
-import { CARDS, CUPS, HOURS, MENU, ULAM } from '../resources/js/lib/landing.ts';
+import {
+    CARDS,
+    CUPS,
+    HOURS,
+    MENU,
+    ULAM,
+    advanceTeamScroll,
+} from '../resources/js/lib/landing.ts';
 import * as websiteAnalytics from '../resources/js/lib/website-analytics.ts';
 
 test('public prices and hours agree with the independently verified published business menu', () => {
@@ -11,9 +18,23 @@ test('public prices and hours agree with the independently verified published bu
         ULAM.map(({ price }) => price),
         [100, 100, 110, 110, 95],
     );
+    /** Landing V7: the seven Three's Lemonade posters, at the prices printed on them and in the published menu. */
     assert.deepEqual(
-        CUPS.map(({ price }) => price),
-        ['₱45 / 55 / 65', '₱55 / 65 / 75', '₱55 / 65 / 75', '₱55 / 65 / 75'],
+        CUPS.map(({ name, price }) => [name, price]),
+        [
+            ['Pure Lemonade', '₱45 / 55 / 65'],
+            ['Lemon + Yakult', '₱55 / 65 / 75'],
+            ['Lemon + Dutch Mill', '₱55 / 65 / 75'],
+            ['Lemon + Cucumber', '₱55 / 65 / 75'],
+            ['Lemon + Calamansi', '₱55 / 65 / 75'],
+            ['Lemon + Lychee', '₱55 / 65 / 75'],
+            ['Lemon + Cola', '₱55 / 65 / 75'],
+        ],
+    );
+    /** One path per poster: the cups come from the published menu itself, beside each name and price. */
+    assert.deepEqual(
+        CUPS.map(({ name, price, img }) => [name, price, img]),
+        MENU.drinks.items.filter((item) => item.length > 2),
     );
     assert.deepEqual(MENU.dessert.items, [
         ['Mango Graham Bar', '₱35'],
@@ -37,7 +58,7 @@ test('public prices and hours agree with the independently verified published bu
 
 test('every referenced landing photograph is a local WebP asset', () => {
     for (const { img } of [...ULAM, ...CARDS, ...CUPS]) {
-        assert.match(img, /^\/images\/landing-v121-[a-f\d]+\.webp$/);
+        assert.match(img, /^\/images\/landing-v1(?:21|30)-[a-f\d]+\.webp$/);
         assert.ok(existsSync(new URL(`../public${img}`, import.meta.url)), img);
         const bytes = readFileSync(new URL(`../public${img}`, import.meta.url));
         assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
@@ -152,7 +173,9 @@ function experienceHarness() {
                                     props,
                                 }),
                             }
-                          : {},
+                          : name.startsWith('@/components/')
+                            ? new Proxy({}, { get: (_module, key) => key })
+                            : {},
         {},
         window,
         document,
@@ -237,14 +260,59 @@ test('standalone carousel buttons and arrow keys snap to bounded cards with the 
     });
     ui.slideFrame(false);
     assert.equal(prevented, 1);
-    assert.equal(ui._stx, 400);
+    /** 400 px cards in a 500 px carousel: each stop is the card's middle minus half the carousel (v1.3.0). */
+    assert.equal(ui._stx, 350);
     assert.equal(ui.countRef.current.textContent, '02 / 04');
     ui.slideTo(99);
     ui.slideFrame(false);
-    assert.equal(ui._stx, 1000);
+    assert.equal(ui._stx, 1150);
     assert.equal(ui.countRef.current.textContent, '04 / 04');
     ui.slideTo(-1);
-    assert.equal(ui._stx, 0);
+    assert.equal(ui._stx, -50);
+});
+
+test('the highlighted menu card rests in the middle of the carousel, first and last included', () => {
+    const { ui } = experienceHarness();
+    const view = ui.viewRef.current;
+    const cards = ui.trackRef.current.querySelectorAll();
+    /** How far the middle of a card is from the middle of the carousel. */
+    const offCentre = (index: number) =>
+        cards[index].offsetLeft +
+        cards[index].offsetWidth / 2 -
+        ui._sx -
+        view.clientWidth / 2;
+    /** The first paint already has the first dish centred: no glide in from the left edge. */
+    ui.slideFrame(false);
+    assert.equal(offCentre(0), 0);
+    assert.equal(ui.countRef.current.textContent, '01 / 04');
+    ui.slideTo(2);
+    ui.slideFrame(false);
+    assert.equal(offCentre(2), 0);
+    ui.slideTo(99);
+    ui.slideFrame(false);
+    assert.equal(offCentre(3), 0);
+    /** A resize or a rotated phone keeps the same dish centred. */
+    view.clientWidth = 900;
+    ui.slideFrame(false);
+    assert.equal(offCentre(3), 0);
+
+    /** With motion the centred card is the full-size, unrotated one and its neighbours step back. */
+    ui.props = { ...ui.props, motion: true };
+    ui.slideTo(1);
+    for (let frame = 0; frame < 200; frame++) ui.slideFrame(true);
+    assert.equal(offCentre(1), 0);
+    assert.match(
+        cards[1].style.transform,
+        /rotateY\(0\.00deg\).*scale\(1\.0000\)/,
+    );
+    assert.match(cards[0].style.transform, /scale\(0\.9000\)/);
+    assert.match(cards[2].style.transform, /scale\(0\.9000\)/);
+
+    /** Hidden behind the Prices view there is nothing to measure, so the carousel keeps its place. */
+    view.clientWidth = 0;
+    ui.slideFrame(true);
+    assert.equal(ui._si, 1);
+    assert.equal(ui.slideBounds(), null);
 });
 
 test('touch dragging respects vertical scrolling and snaps horizontal gestures', () => {
@@ -264,7 +332,8 @@ test('touch dragging respects vertical scrolling and snaps horizontal gestures',
     assert.equal(ui._drag.locked, true);
     ui.dragEnd();
     assert.equal(ui._drag, null);
-    assert.ok(ui._stx >= 400 && ui._stx <= 1000);
+    /** The swipe lands on a later card, centred. */
+    assert.ok([350, 750, 1150].includes(ui._stx), String(ui._stx));
 });
 
 test('dish and price-list filters use real category data and reset the carousel', () => {
@@ -273,8 +342,9 @@ test('dish and price-list filters use real category data and reset the carousel'
     ui._stx = 800;
     ui.pickBoardCat('pares')();
     ui.componentDidUpdate();
-    assert.equal(ui._stx, 0);
-    assert.equal(ui._sx, 0);
+    /** Back to the first dish of the new filter, already centred. */
+    assert.equal(ui._stx, -50);
+    assert.equal(ui._sx, -50);
     assert.equal(
         ui.renderVals().cards.length,
         CARDS.filter((card) => card.cat === 'pares').length,
@@ -407,11 +477,20 @@ test('V2 menu lenses share category filters and reset when changing view', () =>
     ui.setMenuLens('pics');
     assert.equal(ui.state.boardCat, 'all');
     assert.equal(ui.chipRowRef.current.scrollLeft, 0);
+    /** Pics has Drinks too, counting its seven posters while Prices counts the ten listed drinks. */
+    assert.equal(
+        ui
+            .renderVals()
+            .boardChips.find(
+                (chip: { label: string }) => chip.label === 'Drinks',
+            ).n,
+        7,
+    );
     assert.ok(
         !ui
             .renderVals()
             .boardChips.some(
-                (chip: { label: string }) => chip.label === 'Drinks',
+                (chip: { label: string }) => chip.label === 'Dessert',
             ),
     );
 });
@@ -694,13 +773,11 @@ test('phone headings step down without shrinking body copy below a readable size
         'utf8',
     );
     const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
-    assert.match(
-        phone,
-        /\.landing-v3 \.v3-s155 \{\s*font-size: clamp\(46px, 13vw, 56px\);/,
-    );
+    /** Landing V7: "Visit us" is already section-sized on every screen, so the phone keeps the base size. */
+    assert.doesNotMatch(phone, /\.v3-s155 \{/);
     assert.match(
         css,
-        /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(64px, 14vw, 220px\);/,
+        /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(44px, 8vw, 120px\);/,
     );
     const sizes = [...phone.matchAll(/font-size: ([\d.]+)px/g)].map((match) =>
         Number(match[1]),
@@ -720,4 +797,206 @@ test('the mobile About statement is sized by its content instead of a viewport-h
     );
     assert.match(about, /padding: 56px 16px;/);
     assert.doesNotMatch(about, /min-height/);
+});
+
+test('the Drinks filter shows the seven lemonade posters whole over their own blur', () => {
+    const { ui } = experienceHarness();
+    assert.deepEqual(landingData.BOARD_CATS.at(-1), ['drinks', 'Drinks']);
+    const drinks = CARDS.filter((card) => card.cat === 'drinks');
+    /** The same seven products, posters and names as the Three's Lemonade section: nothing new is claimed. */
+    assert.deepEqual(
+        drinks.map(({ img, alt }) => ({ img, alt })),
+        CUPS.map(({ img, alt }) => ({ img, alt })),
+    );
+    assert.ok(drinks.every((card) => card.drink === true));
+    assert.equal(
+        ui
+            .renderVals()
+            .boardChips.find((chip: { label: string }) => chip.label === 'All')
+            .n,
+        CARDS.length,
+    );
+
+    ui._sx = 800;
+    ui._stx = 800;
+    ui.pickBoardCat('drinks')();
+    ui.componentDidUpdate();
+    assert.equal(ui._stx, -50);
+    const figures = renderedNodes(ui).filter(
+        (node) => node.props.className === 'v3-s114 v3-s115',
+    );
+    assert.equal(figures.length, 7);
+    for (const [index, figure] of figures.entries()) {
+        const [blur, photo] = figure.props.children;
+        assert.equal(blur.props.className, 'board-drink-blur');
+        assert.equal(blur.props.alt, '');
+        assert.equal(blur.props['aria-hidden'], 'true');
+        assert.equal(photo.props.className, 'v3-s116 board-drink');
+        assert.equal(photo.props.alt, CUPS[index].alt);
+        /** One file per card: the blur reuses the photo, and both wait until the card is near the screen. */
+        assert.equal(blur.props.src, photo.props.src);
+        assert.equal(blur.props.loading, 'lazy');
+        assert.equal(photo.props.loading, 'lazy');
+    }
+
+    ui.pickBoardCat('silog')();
+    const food = renderedNodes(ui).find(
+        (node) => node.props.className === 'v3-s114 v3-s115',
+    );
+    const [noBlur, plate] = food.props.children;
+    assert.equal(noBlur, false);
+    assert.equal(plate.props.className, 'v3-s116');
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    assert.match(css, /\.landing-v3 \.board-drink \{\s*object-fit: contain;/);
+    assert.match(
+        css,
+        /\.landing-v3 \.board-drink-blur \{[^}]*position: absolute;[^}]*filter: blur\(24px\)/,
+    );
+    assert.match(css, /\.landing-v3 \.v3-s115 \{[^}]*position: relative;/);
+});
+
+test("the Three's Lemonade section carries the V6 yellow heading over its lazily loaded cups", () => {
+    const { ui } = experienceHarness();
+    const nodes = renderedNodes(ui);
+    const section = nodes.find((node) => node.props.id === 'lemonade');
+    assert.equal(section.props['aria-label'], "Three'S Lemonade");
+    assert.equal(
+        nodes.find((node) => node.props.className === 'v3-s126').props.children,
+        'Freshen it up.',
+    );
+    const heading = nodes.find((node) => node.props.className === 'v3-s127');
+    assert.equal(heading.type, 'h2');
+    assert.equal(heading.props.children, 'Three’s Lemonade');
+    const cups = nodes.filter((node) => node.props.className === 'v3-s132');
+    assert.deepEqual(
+        cups.map((cup) => [cup.props.src, cup.props.alt, cup.props.loading]),
+        CUPS.map(({ img, alt }) => [img, alt, 'lazy']),
+    );
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    assert.match(css, /\.landing-v3 \.v3-s127 \{[^}]*color: #f2b419;/);
+});
+
+test('Landing V7: the online kiosk sits before the reviews, "Visit us" heads the map and the big Message us link is gone', () => {
+    const { ui } = experienceHarness();
+    const kiosk = [
+        { name: 'Adarna St.', address: null, url: '/kiosk/ADARNA', open: true },
+    ];
+    ui.props = { ...ui.props, kiosk };
+    const nodes = renderedNodes(ui);
+    const main = nodes.find((node) => node.type === 'main');
+    const order = main.props.children
+        .filter(Boolean)
+        .map((child: any) => child.props?.id ?? child.type);
+    const lemonade = order.indexOf('lemonade');
+    /** The Owner asked for the kiosk right before "Sabi ng mga suki." (the reviews). */
+    assert.deepEqual(order.slice(lemonade, lemonade + 4), [
+        'lemonade',
+        'LandingKiosk',
+        'CustomerReviews',
+        'visit',
+    ]);
+    assert.equal(
+        nodes.find((node) => node.type === 'LandingKiosk').props.branches,
+        kiosk,
+    );
+    const visitHeading = nodes.find(
+        (node) => node.props['data-part'] === 'comeRef',
+    );
+    assert.equal(visitHeading.props.children, 'Visit us');
+    const texts = nodes.flatMap((node) =>
+        typeof node.props.children === 'string' ? [node.props.children] : [],
+    );
+    assert.ok(!texts.includes('Come hungry.'));
+    assert.ok(!texts.includes('Message us'));
+    /** The Info and contact cards keep their own Facebook button. */
+    assert.ok(texts.includes('Message on Facebook'));
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    /** Each poster carries its name and prices, so it is shown whole in Three's Lemonade. */
+    assert.match(
+        css,
+        /\.landing-v3 \.v3-s132 \{\s*display: block;\s*width: 100%;\s*height: auto;\s*aspect-ratio: 4\/5;\s*object-fit: contain;\s*\}/,
+    );
+    assert.doesNotMatch(css, /\.v3-s217|\.v3-s218|\.v3-s219|\.v3-s220/);
+});
+
+test('the team rail advances at the V6 pace on any refresh rate and restarts at the end', () => {
+    const moved = (elapsed: number) =>
+        advanceTeamScroll(100, 1500, elapsed).position - 100;
+    /** V6 moved 0.4 px per 60 Hz frame. */
+    assert.ok(Math.abs(moved(1000 / 60) - 0.4) < 1e-9);
+    assert.equal(advanceTeamScroll(100, 1500, 1000 / 60).restart, false);
+    /** A 120 Hz screen moves half as far per frame, so the speed on screen is the same. */
+    assert.ok(Math.abs(moved(1000 / 120) - 0.2) < 1e-9);
+    /** A long gap between frames (a tab that was in the background) cannot make the rail jump. */
+    assert.ok(Math.abs(moved(5000) - 64 * 0.024) < 1e-9);
+    /** It never passes the last card; within a pixel of the end it asks to return to the first one. */
+    assert.equal(advanceTeamScroll(1498.9, 1500, 1000).position, 1500);
+    assert.equal(advanceTeamScroll(1499.9, 1500.5, 16).restart, true);
+    assert.deepEqual(advanceTeamScroll(1500, 1500, 16), {
+        position: 0,
+        restart: true,
+    });
+});
+
+test('the team follows Info and Contact, and the page hands the server totals to reviews and tap-to-love', () => {
+    const { ui } = experienceHarness();
+    const team = [{ id: 2, code: 'COO' }];
+    ui.props = {
+        ...ui.props,
+        reviewSummary: { count: 12, average: 4.8 },
+        team,
+        loveTotal: 345,
+    };
+    const nodes = renderedNodes(ui);
+    const main = nodes.find((node) => node.type === 'main');
+    const sections = main.props.children.filter(Boolean);
+    assert.equal(sections.at(-2).props.id, 'visit');
+    assert.equal(sections.at(-1).type, 'LandingTeam');
+    /** The cards are whatever Website → Team currently shows, straight from the server. */
+    assert.equal(sections.at(-1).props.members, team);
+    assert.deepEqual(
+        nodes.find((node) => node.type === 'CustomerReviews').props.summary,
+        { count: 12, average: 4.8 },
+    );
+    assert.equal(
+        nodes.find((node) => node.type === 'LandingLove').props.total,
+        345,
+    );
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    const rule = (selector: string) => {
+        const start = css.indexOf(`.landing-v3 ${selector} {`);
+        return css.slice(start, css.indexOf('}', start));
+    };
+    /** White section, 3:4 portrait cards and the role in a white tab at the top-left corner. */
+    assert.match(rule('.team-section'), /background: #fff;/);
+    assert.match(rule('.team-card'), /aspect-ratio: 3\/4;/);
+    assert.match(rule('.team-card'), /width: min\(76vw, 300px\);/);
+    assert.match(rule('.team-code'), /top: 0;\s*left: 0;/);
+    assert.match(rule('.team-code'), /border-radius: 0 0 14px 0;/);
+    /** A finger swipes the rail natively; the tap-to-love chef sits at the bottom-left above the page. */
+    assert.match(rule('.team-rail'), /overflow-x: auto;/);
+    assert.match(rule('.love'), /position: fixed;/);
+    assert.match(
+        rule('.love'),
+        /left: calc\(16px \+ env\(safe-area-inset-left\)\);/,
+    );
+    assert.match(rule('.love'), /pointer-events: none;/);
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
+    assert.match(phone, /\.landing-v3 \.team-nav \{\s*display: none;/);
 });

@@ -53,6 +53,10 @@ class RateLimits
         'branch-copy' => 20,
         'copy-previews' => 60,
         'branch-settings' => 20,
+        /** Website → Team and Shippy: team changes, portrait uploads, the chat switch, FAQs and documents. */
+        'website-content' => 30,
+        /** Test Shippy: each question may reach Gemini, which keeps its own ceilings and daily quota. */
+        'shippy-test' => 20,
         'operations-writes' => 60,
         'operations-setup-copy' => 20,
         'pamamalengke-confirm' => 20,
@@ -90,6 +94,22 @@ class RateLimits
             Limit::perMinute(60)->by('session|'.hash('sha256', $request->session()->getId())),
             Limit::perMinute(300)->by('ip|'.$request->ip()),
         ]);
+        /** Tap-to-love: the page sends one batch of taps about every two seconds, so this only stops a script. */
+        RateLimiter::for('landing-love', fn (Request $request) => [
+            Limit::perMinute(40)->by('session|'.hash('sha256', $request->session()->getId())),
+            Limit::perMinute(160)->by('ip|'.$request->ip()),
+        ]);
+        /**
+         * Shippy chat: a person asks a few questions a minute. The address ceiling covers clients that keep no session
+         * and the last limit caps the whole endpoint; Gemini has its own lower ceilings (App\Support\ShippyAssistant).
+         */
+        RateLimiter::for('shippy-chat', fn (Request $request) => [
+            Limit::perMinute(10)->by('session|'.hash('sha256', $request->session()->getId())),
+            Limit::perHour(60)->by('session-hour|'.hash('sha256', $request->session()->getId())),
+            Limit::perMinute(40)->by('ip|'.$request->ip()),
+            Limit::perMinute(300)->by('everyone'),
+        ]);
+        RateLimiter::for('landing-team-photos', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
         RateLimiter::for('customer-review-images', fn (Request $request) => Limit::perMinute(240)->by('ip|'.$request->ip()));
 
         /** Account recovery: per e-mail and address, with an address ceiling, so nobody can spray reset mails. */

@@ -40,7 +40,22 @@ export type WebsiteSeriesBucket = {
     full: string;
     page_views: number;
     visitors: number;
+    heart_taps: number;
 };
+
+/** The tabs of the Owner's Website workspace, in order; an account sees only the ones it may use. */
+export type WebsiteTab = 'analytics' | 'reviews' | 'team' | 'shippy';
+export const WEBSITE_TABS: readonly [WebsiteTab, string][] = [
+    ['analytics', 'Analytics'],
+    ['reviews', 'Reviews'],
+    ['team', 'Team'],
+    ['shippy', 'Shippy'],
+];
+export function websiteTabs(
+    can: Record<WebsiteTab, boolean>,
+): readonly [WebsiteTab, string][] {
+    return WEBSITE_TABS.filter(([tab]) => can[tab]);
+}
 
 export type WebsiteReport = {
     refreshed_at: string;
@@ -59,7 +74,11 @@ export type WebsiteReport = {
         directions_clicks: number;
         menu_clicks: number;
         review_submissions: number;
+        /** Tap-to-love taps saved in the period. */
+        heart_taps: number;
     };
+    /** Every tap ever saved: the number the landing page shows beside the chef. */
+    heart_taps_all_time: number;
     series: WebsiteSeriesBucket[];
     tracking_since: string | null;
 };

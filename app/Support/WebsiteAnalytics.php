@@ -11,9 +11,12 @@ use Illuminate\Http\Request;
  * and Facebook / directions / menu taps; a saved review is counted by the server. Nothing identifying is kept: no IP
  * address, user agent, URL or account, only a keyed hash of the visitor's session that changes every day, so unique
  * visitors are an estimate and nobody can be followed from one day to the next. Workspace pages are never tracked.
+ * Heart taps (v1.3.0) come from the same hourly counts as the landing page's shared total (see LandingLove).
  */
 class WebsiteAnalytics
 {
+    public function __construct(private readonly LandingLove $love) {}
+
     /** Events the landing page itself may report. */
     public const CLIENT_EVENTS = ['page_view', 'facebook_click', 'directions_click', 'menu_click'];
 
@@ -47,11 +50,11 @@ class WebsiteAnalytics
     }
 
     /**
-     * Totals and the page-view trend of one period, in three bounded aggregate queries. A single day is bucketed by
-     * Manila clock hour, a longer period by Manila date. Visitors are distinct daily session hashes, so a multi-day
-     * total is the sum of each day's visitors.
+     * Totals and the page-view trend of one period, in three bounded aggregate queries, plus two for heart taps (the
+     * period and the all-time total). A single day is bucketed by Manila clock hour, a longer period by Manila date.
+     * Visitors are distinct daily session hashes, so a multi-day total is the sum of each day's visitors.
      *
-     * @return array{refreshed_at: string, period: array{preset: string, from: string, to: string, label: string, days: int, granularity: string}, totals: array{page_views: int, visitors: int, facebook_clicks: int, directions_clicks: int, menu_clicks: int, review_submissions: int}, series: list<array{key: string, label: string, full: string, page_views: int, visitors: int}>, tracking_since: string|null}
+     * @return array{refreshed_at: string, period: array{preset: string, from: string, to: string, label: string, days: int, granularity: string}, totals: array{page_views: int, visitors: int, facebook_clicks: int, directions_clicks: int, menu_clicks: int, review_submissions: int, heart_taps: int}, heart_taps_all_time: int, series: list<array{key: string, label: string, full: string, page_views: int, visitors: int, heart_taps: int}>, tracking_since: string|null}
      */
     public function report(ReportPeriod $period): array
     {
@@ -66,6 +69,7 @@ class WebsiteAnalytics
         $views = WebsiteEvent::query()->toBase()->whereBetween('occurred_on', $range)->where('event', 'page_view')
             ->selectRaw("{$bucket} AS bucket, COUNT(*) AS total, COUNT(DISTINCT visitor) AS visitors")
             ->groupByRaw($bucket)->get()->keyBy(fn (object $row): string => (string) $row->bucket);
+        $hearts = $this->love->during($period);
         $series = [];
         foreach ($hourly ? array_map(strval(...), range(0, 23)) : $period->bucketKeys() as $key) {
             $series[] = [
@@ -73,6 +77,7 @@ class WebsiteAnalytics
                 ...($hourly ? $this->hourLabels((int) $key) : $period->bucketLabels($key)),
                 'page_views' => (int) ($views->get($key)->total ?? 0),
                 'visitors' => (int) ($views->get($key)->visitors ?? 0),
+                'heart_taps' => $hearts[$key] ?? 0,
             ];
         }
         $first = WebsiteEvent::query()->min('occurred_on');
@@ -90,7 +95,10 @@ class WebsiteAnalytics
                 'directions_clicks' => $total('directions_click'),
                 'menu_clicks' => $total('menu_click'),
                 'review_submissions' => $total(self::REVIEW_SUBMISSION),
+                'heart_taps' => array_sum($hearts),
             ],
+            /** The same number the landing page shows next to the chef. */
+            'heart_taps_all_time' => $this->love->total(),
             'series' => $series,
             'refreshed_at' => CarbonImmutable::now(ReportPeriod::TIMEZONE)->toIso8601String(),
             'tracking_since' => is_string($first) ? ReportPeriod::day(substr($first, 0, 10))?->format('M j, Y') : null,

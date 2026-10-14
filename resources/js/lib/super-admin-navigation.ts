@@ -182,7 +182,7 @@ export const superAdminDestinations: readonly SuperAdminDestination[] = [
     },
     {
         id: 'website-analytics',
-        label: 'Website Analytics',
+        label: 'Website',
         shortLabel: 'Website',
         section: 'owner',
         routeName: 'workspaces.website-analytics',

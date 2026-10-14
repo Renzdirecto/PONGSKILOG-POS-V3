@@ -36,5 +36,9 @@
         <env name="VAPID_SUBJECT" value=""/>
         <env name="VAPID_PUBLIC_KEY" value=""/>
         <env name="VAPID_PRIVATE_KEY" value=""/>
+        <env name="GEMINI_API_KEY" value=""/>
+        <env name="GEMINI_MODEL" value="gemini-3.1-flash-lite"/>
+        <env name="GEMINI_INPUT_USD_PER_MILLION" value="0.30"/>
+        <env name="GEMINI_OUTPUT_USD_PER_MILLION" value="2.50"/>
     </php>
 </phpunit>

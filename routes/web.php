@@ -25,7 +25,9 @@ use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\KitchenStatusController;
 use App\Http\Controllers\KitchenWorkspaceController;
+use App\Http\Controllers\LandingLoveController;
 use App\Http\Controllers\LandingPageController;
+use App\Http\Controllers\LandingTeamController;
 use App\Http\Controllers\ModifierGroupController;
 use App\Http\Controllers\ModifierOptionController;
 use App\Http\Controllers\NotificationController;
@@ -54,6 +56,8 @@ use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\SeoController;
 use App\Http\Controllers\SetVoidAuthorizationPinController;
+use App\Http\Controllers\ShippyController;
+use App\Http\Controllers\ShippyKnowledgeController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StaffQrOrderController;
 use App\Http\Controllers\StoreSessionCloseController;
@@ -75,6 +79,12 @@ Route::get('sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
 Route::post('reviews', [CustomerReviewController::class, 'store'])->middleware('throttle:customer-review-submit')->name('reviews.store');
 /** Anonymous landing-page counters (App\Support\WebsiteAnalytics): no IP address or account is stored. */
 Route::post('website-events', WebsiteEventController::class)->middleware('throttle:website-events')->name('website-events.store');
+/** Tap-to-love on the landing page (App\Support\LandingLove): one shared total, nothing about the visitor is stored. */
+Route::post('landing-loves', LandingLoveController::class)->middleware('throttle:landing-love')->name('landing-loves.store');
+/** Shippy, the landing page chat (App\Support\ShippyAssistant): a question is answered and never stored. */
+Route::post('shippy/messages', [ShippyController::class, 'message'])->middleware('throttle:shippy-chat')->name('shippy.messages.store');
+/** The portrait of a team card the landing page shows; a hidden card's portrait is for its managers only. */
+Route::get('landing-team/{member}/photo', [LandingTeamController::class, 'photo'])->whereNumber('member')->middleware('throttle:landing-team-photos')->name('landing-team.photo');
 Route::get('reviews/{review}/images/{image}', [CustomerReviewController::class, 'image'])->whereUuid('review')->whereNumber('image')->middleware('throttle:customer-review-images')->name('reviews.images.show');
 /** Every throttle is a named limiter with its own counter (App\Support\RateLimits); never an un-named throttle:X,Y. */
 Route::get('receipt/{order}', [ReceiptShareController::class, 'show'])->whereUuid('order')->middleware('throttle:public-receipt')->name('receipt.show');
@@ -232,10 +242,36 @@ Route::middleware(['auth'])->group(function () {
         ->middleware(['permission:reports.view', 'throttle:reports-export'])
         ->name('workspaces.reports.export');
 
-    /** Business-wide landing-page counters: Reports access plus a business-wide scope (WebsiteAnalyticsRequest). */
-    Route::get('workspaces/website-analytics', WebsiteAnalyticsController::class)
-        ->middleware('permission:reports.view')
-        ->name('workspaces.website-analytics');
+    /**
+     * Website (v1.3.0): Analytics, Reviews and Team of the public landing page. Business-wide accounts with Reports
+     * or with website content access open it; each tab keeps its own authorization (WebsiteAnalyticsRequest).
+     */
+    Route::get('workspaces/website-analytics', WebsiteAnalyticsController::class)->name('workspaces.website-analytics');
+    /** Website → Team: the Owner and Super Admin add, edit, order and delete the landing page's team (LandingTeamMemberPolicy). */
+    Route::prefix('workspaces/website/team')->name('workspaces.website.team.')->middleware('throttle:website-content')->group(function (): void {
+        Route::post('/', [LandingTeamController::class, 'store'])->name('store');
+        Route::put('order', [LandingTeamController::class, 'reorder'])->name('reorder');
+    });
+    Route::prefix('workspaces/website/team/{member}')->whereNumber('member')->name('workspaces.website.team.')->middleware('throttle:website-content')->group(function (): void {
+        Route::put('/', [LandingTeamController::class, 'update'])->name('update');
+        Route::delete('/', [LandingTeamController::class, 'destroy'])->name('destroy');
+        Route::post('photo', [LandingTeamController::class, 'storePhoto'])->name('photo.store');
+        Route::delete('photo', [LandingTeamController::class, 'destroyPhoto'])->name('photo.destroy');
+    });
+    /** Website → Shippy: the Owner and Super Admin switch the landing page chat on or off (ShippySettingPolicy). */
+    Route::put('workspaces/website/shippy', [ShippyController::class, 'update'])->middleware('throttle:website-content')->name('workspaces.website.shippy.update');
+    /** Test Shippy asks the real answer engine, so it has its own lower limit; Gemini keeps its own ceilings and quota. */
+    Route::post('workspaces/website/shippy/test', [ShippyController::class, 'test'])->middleware('throttle:shippy-test')->name('workspaces.website.shippy.test');
+    /** Website → Shippy → Knowledge and Documents: the FAQs and Markdown files Shippy answers from (ShippySettingPolicy). */
+    Route::prefix('workspaces/website/shippy')->name('workspaces.website.shippy.')->middleware('throttle:website-content')->group(function (): void {
+        Route::post('faqs', [ShippyKnowledgeController::class, 'storeFaq'])->name('faqs.store');
+        Route::put('faqs/{faq}', [ShippyKnowledgeController::class, 'updateFaq'])->whereNumber('faq')->name('faqs.update');
+        Route::delete('faqs/{faq}', [ShippyKnowledgeController::class, 'destroyFaq'])->whereNumber('faq')->name('faqs.destroy');
+        Route::post('documents', [ShippyKnowledgeController::class, 'storeDocuments'])->name('documents.store');
+        Route::put('documents/{document}', [ShippyKnowledgeController::class, 'updateDocument'])->whereNumber('document')->name('documents.update');
+        Route::post('documents/{document}/file', [ShippyKnowledgeController::class, 'replaceDocument'])->whereNumber('document')->name('documents.replace');
+        Route::delete('documents/{document}', [ShippyKnowledgeController::class, 'destroyDocument'])->whereNumber('document')->name('documents.destroy');
+    });
 
     Route::get('workspaces/transactions', [TransactionHistoryController::class, 'business'])
         ->middleware('permission:transactions.view')

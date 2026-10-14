@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import {
     CalendarDays,
     Eye,
+    Heart,
     MapPin,
     MessageCircle,
     RefreshCw,
@@ -10,6 +11,9 @@ import {
     UtensilsCrossed,
 } from 'lucide-react';
 import { useState } from 'react';
+import { CustomerReviewSettings } from '@/components/customer-review-settings';
+import { WebsiteShippySettings } from '@/components/website-shippy-settings';
+import { WebsiteTeamSettings } from '@/components/website-team-settings';
 import { useWebsiteAnalyticsRefresh } from '@/hooks/use-website-analytics-refresh';
 import {
     AnalyticsCard,
@@ -22,6 +26,8 @@ import {
     ownerPanelClass,
     ownerPrimaryActionClass,
 } from '@/components/owner-ui';
+import type { ReviewBranch } from '@/lib/customer-reviews';
+import type { TeamCard } from '@/lib/landing';
 import { countLabel } from '@/lib/owner-analytics';
 import type { TrendBucket } from '@/lib/owner-analytics';
 import { customRangeError } from '@/lib/reports';
@@ -29,8 +35,14 @@ import {
     WEBSITE_PERIODS,
     websiteAnalyticsQuery,
     websiteRefreshLabel,
+    websiteTabs,
 } from '@/lib/website-analytics';
-import type { WebsitePeriod, WebsiteReport } from '@/lib/website-analytics';
+import type {
+    WebsitePeriod,
+    WebsiteReport,
+    WebsiteTab,
+} from '@/lib/website-analytics';
+import type { WebsiteShippy } from '@/lib/website-shippy';
 import { websiteAnalytics } from '@/routes/workspaces';
 
 const labelClass =
@@ -38,10 +50,112 @@ const labelClass =
 
 const count = (value: number): string => value.toLocaleString('en-PH');
 
-export default function WebsiteAnalytics({
+/**
+ * The Owner's Website workspace (v1.3.0): Analytics, Reviews (the moderation that used to sit in Settings), Team (the
+ * landing page's team) and Shippy (the chat's switch and usage). The server says which tabs the account may use and
+ * sends data only for those.
+ */
+export default function Website({
+    can,
     report,
+    reviewBranches,
+    team,
+    shippy,
+}: {
+    can: Record<WebsiteTab, boolean>;
+    report: WebsiteReport | null;
+    reviewBranches: ReviewBranch[];
+    team: TeamCard[];
+    shippy: WebsiteShippy | null;
+}) {
+    const tabs = websiteTabs(can);
+    const [tab, setTab] = useState<WebsiteTab>(tabs[0]?.[0] ?? 'analytics');
+    const [loading, setLoading] = useState(false);
+    const { refreshing, failed, refresh } = useWebsiteAnalyticsRefresh();
+    const analytics = tab === 'analytics' && report !== null;
+
+    return (
+        <>
+            <Head title="Website" />
+            <OwnerPage
+                title="Website"
+                description="The public landing page: its visits and taps, customer reviews, team and Shippy chat. Business-wide: the website is not tied to one Branch."
+                action={
+                    analytics ? (
+                        <div className="flex w-full items-center justify-end gap-2.5">
+                            <div className="text-right text-[11px] leading-5 text-[#767676]">
+                                <div>Last updated · Philippine time</div>
+                                <time
+                                    dateTime={report.refreshed_at}
+                                    className="font-semibold text-[#555]"
+                                >
+                                    {websiteRefreshLabel(report.refreshed_at)}
+                                </time>
+                                {failed && (
+                                    <p role="status">
+                                        Refresh failed. Showing the last update.
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                aria-label="Refresh analytics"
+                                aria-busy={refreshing}
+                                title="Refresh analytics"
+                                disabled={refreshing || loading}
+                                onClick={refresh}
+                                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#555] hover:border-[#111] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none disabled:opacity-60"
+                            >
+                                <RefreshCw
+                                    aria-hidden="true"
+                                    className={`size-4 ${refreshing ? 'motion-safe:animate-spin' : ''}`}
+                                />
+                            </button>
+                        </div>
+                    ) : undefined
+                }
+            >
+                {tabs.length > 1 && (
+                    <div className="max-w-full min-w-0 self-start">
+                        <SegmentedTabs
+                            wrap
+                            label="Website section"
+                            value={tab}
+                            options={tabs}
+                            onChange={setTab}
+                            size="lg"
+                        />
+                    </div>
+                )}
+                {analytics && (
+                    <WebsiteAnalyticsPanel
+                        report={report}
+                        loading={loading}
+                        setLoading={setLoading}
+                    />
+                )}
+                {tab === 'reviews' && can.reviews && (
+                    <CustomerReviewSettings branches={reviewBranches} />
+                )}
+                {tab === 'team' && can.team && (
+                    <WebsiteTeamSettings members={team} />
+                )}
+                {tab === 'shippy' && can.shippy && shippy !== null && (
+                    <WebsiteShippySettings shippy={shippy} />
+                )}
+            </OwnerPage>
+        </>
+    );
+}
+
+function WebsiteAnalyticsPanel({
+    report,
+    loading,
+    setLoading,
 }: {
     report: WebsiteReport;
+    loading: boolean;
+    setLoading: (loading: boolean) => void;
 }) {
     const { errors } = usePage<{ errors: Record<string, string> }>().props;
     const { period, totals, series } = report;
@@ -49,9 +163,10 @@ export default function WebsiteAnalytics({
     const [from, setFrom] = useState(period.from);
     const [to, setTo] = useState(period.to);
     const [customError, setCustomError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-    const { refreshing, failed, refresh } = useWebsiteAnalyticsRefresh();
     const active: WebsitePeriod = customOpen ? 'custom' : period.preset;
+    const hearts = new Map(
+        series.map((bucket) => [bucket.key, bucket.heart_taps]),
+    );
     const visitors = new Map(
         series.map((bucket) => [bucket.key, bucket.visitors]),
     );
@@ -145,206 +260,174 @@ export default function WebsiteAnalytics({
             'Saved reviews',
             Star,
         ],
+        /** The period's taps on the card; the note is the landing page's own all-time number, for comparison. */
+        [
+            'Heart taps',
+            'Heart taps',
+            count(totals.heart_taps),
+            `${count(report.heart_taps_all_time)} all-time on the landing page`,
+            Heart,
+        ],
     ] as const;
 
     return (
         <>
-            <Head title="Website Analytics" />
-            <OwnerPage
-                title="Website Analytics"
-                description="Real visits and taps on the public landing page, counted by PONGSKILOG itself. Business-wide: the website is not tied to one Branch."
-                action={
-                    <div className="flex w-full items-center justify-end gap-2.5">
-                        <div className="text-right text-[11px] leading-5 text-[#767676]">
-                            <div>Last updated · Philippine time</div>
-                            <time
-                                dateTime={report.refreshed_at}
-                                className="font-semibold text-[#555]"
-                            >
-                                {websiteRefreshLabel(report.refreshed_at)}
-                            </time>
-                            {failed && (
-                                <p role="status">
-                                    Refresh failed. Showing the last update.
-                                </p>
-                            )}
-                        </div>
-                        <button
-                            type="button"
-                            aria-label="Refresh analytics"
-                            aria-busy={refreshing}
-                            title="Refresh analytics"
-                            disabled={refreshing || loading}
-                            onClick={refresh}
-                            className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#555] hover:border-[#111] focus-visible:ring-2 focus-visible:ring-[#111] focus-visible:outline-none disabled:opacity-60"
-                        >
-                            <RefreshCw
-                                aria-hidden="true"
-                                className={`size-4 ${refreshing ? 'motion-safe:animate-spin' : ''}`}
-                            />
-                        </button>
+            <section
+                aria-label="Reporting period"
+                className={`${ownerPanelClass} flex flex-col gap-3 px-3.5 py-3`}
+            >
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-0.5">
+                        <span className={labelClass}>Reporting period</span>
+                        <span className="truncate text-sm font-bold tracking-[-0.01em]">
+                            {period.label}
+                        </span>
+                        <span className="text-[11px] text-[#8a8a8a]">
+                            Public landing page · Philippine time
+                        </span>
                     </div>
-                }
+                    <SegmentedTabs
+                        label="Reporting period"
+                        value={active}
+                        options={WEBSITE_PERIODS}
+                        onChange={choose}
+                    />
+                </div>
+                {customOpen && (
+                    <div className="flex flex-col gap-1.5">
+                        <span className={labelClass}>Custom range</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex min-h-11 max-w-full min-w-0 items-center gap-[7px] rounded-[11px] border border-[#e5e5e5] bg-white px-[11px]">
+                                <CalendarDays
+                                    className="size-4 shrink-0 text-[#767676] max-[389px]:hidden"
+                                    aria-hidden="true"
+                                />
+                                <input
+                                    type="date"
+                                    value={from}
+                                    max={to || undefined}
+                                    aria-label="From date"
+                                    onChange={(event) =>
+                                        setFrom(event.target.value)
+                                    }
+                                    className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
+                                />
+                                <span className="text-[#c9c9c9]">–</span>
+                                <input
+                                    type="date"
+                                    value={to}
+                                    min={from || undefined}
+                                    aria-label="To date"
+                                    onChange={(event) =>
+                                        setTo(event.target.value)
+                                    }
+                                    className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={applyCustom}
+                                disabled={loading}
+                                className={`${ownerPrimaryActionClass} inline-flex items-center justify-center gap-2 disabled:opacity-60`}
+                            >
+                                Apply range
+                            </button>
+                        </div>
+                        <span className="text-[11px] text-[#767676]">
+                            Up to 31 days, in Philippine time.
+                        </span>
+                        {(customError ?? errors.from ?? errors.to) && (
+                            <p
+                                role="alert"
+                                className="text-[12.5px] font-semibold text-red-700"
+                            >
+                                {customError ?? errors.from ?? errors.to}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </section>
+
+            <div
+                aria-busy={loading}
+                className={`flex flex-col gap-3 transition-opacity ${loading ? 'opacity-60' : ''}`}
             >
                 <section
-                    aria-label="Reporting period"
-                    className={`${ownerPanelClass} flex flex-col gap-3 px-3.5 py-3`}
+                    aria-label="Key figures"
+                    className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-4"
                 >
-                    <div className="flex flex-wrap items-center gap-2.5">
-                        <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-0.5">
-                            <span className={labelClass}>Reporting period</span>
-                            <span className="truncate text-sm font-bold tracking-[-0.01em]">
-                                {period.label}
-                            </span>
-                            <span className="text-[11px] text-[#8a8a8a]">
-                                Public landing page · Philippine time
-                            </span>
-                        </div>
-                        <SegmentedTabs
-                            label="Reporting period"
-                            value={active}
-                            options={WEBSITE_PERIODS}
-                            onChange={choose}
+                    {cards.map(([label, short, value, note, Icon]) => (
+                        <KpiCard
+                            key={label}
+                            label={
+                                <>
+                                    <span className="sm:hidden">{short}</span>
+                                    <span className="hidden sm:inline">
+                                        {label}
+                                    </span>
+                                </>
+                            }
+                            value={value}
+                            delta={null}
+                            comparison={note}
+                            icon={<Icon className="size-4" />}
                         />
-                    </div>
-                    {customOpen && (
-                        <div className="flex flex-col gap-1.5">
-                            <span className={labelClass}>Custom range</span>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex min-h-11 max-w-full min-w-0 items-center gap-[7px] rounded-[11px] border border-[#e5e5e5] bg-white px-[11px]">
-                                    <CalendarDays
-                                        className="size-4 shrink-0 text-[#767676] max-[389px]:hidden"
-                                        aria-hidden="true"
-                                    />
-                                    <input
-                                        type="date"
-                                        value={from}
-                                        max={to || undefined}
-                                        aria-label="From date"
-                                        onChange={(event) =>
-                                            setFrom(event.target.value)
-                                        }
-                                        className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
-                                    />
-                                    <span className="text-[#c9c9c9]">–</span>
-                                    <input
-                                        type="date"
-                                        value={to}
-                                        min={from || undefined}
-                                        aria-label="To date"
-                                        onChange={(event) =>
-                                            setTo(event.target.value)
-                                        }
-                                        className="w-[128px] min-w-0 border-0 bg-transparent text-base outline-none sm:text-[12.5px]"
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={applyCustom}
-                                    disabled={loading}
-                                    className={`${ownerPrimaryActionClass} inline-flex items-center justify-center gap-2 disabled:opacity-60`}
-                                >
-                                    Apply range
-                                </button>
-                            </div>
-                            <span className="text-[11px] text-[#767676]">
-                                Up to 31 days, in Philippine time.
-                            </span>
-                            {(customError ?? errors.from ?? errors.to) && (
-                                <p
-                                    role="alert"
-                                    className="text-[12.5px] font-semibold text-red-700"
-                                >
-                                    {customError ?? errors.from ?? errors.to}
-                                </p>
-                            )}
-                        </div>
-                    )}
+                    ))}
                 </section>
 
-                <div
-                    aria-busy={loading}
-                    className={`flex flex-col gap-3 transition-opacity ${loading ? 'opacity-60' : ''}`}
+                <AnalyticsCard
+                    title="Visits over time"
+                    hint={`${countLabel(totals.page_views, 'page view')} · about ${countLabel(totals.visitors, 'visitor')} · ${countLabel(totals.heart_taps, 'heart tap')} · ${period.granularity === 'hour' ? 'by hour' : 'by day'}`}
                 >
-                    <section
-                        aria-label="Key figures"
-                        className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-3"
-                    >
-                        {cards.map(([label, short, value, note, Icon]) => (
-                            <KpiCard
-                                key={label}
-                                label={
-                                    <>
-                                        <span className="sm:hidden">
-                                            {short}
-                                        </span>
-                                        <span className="hidden sm:inline">
-                                            {label}
-                                        </span>
-                                    </>
-                                }
-                                value={value}
-                                delta={null}
-                                comparison={note}
-                                icon={<Icon className="size-4" />}
-                            />
-                        ))}
-                    </section>
+                    <TrendChart
+                        buckets={buckets}
+                        metric="transactions"
+                        compare={false}
+                        height={182}
+                        text={{
+                            primary: (bucket) =>
+                                countLabel(bucket.transactions, 'page view'),
+                            secondary: (bucket) =>
+                                `About ${countLabel(visitors.get(bucket.key) ?? 0, 'visitor')} · ${countLabel(hearts.get(bucket.key) ?? 0, 'heart tap')}`,
+                            empty: 'No visits recorded in this period',
+                        }}
+                    />
+                </AnalyticsCard>
 
-                    <AnalyticsCard
-                        title="Visits over time"
-                        hint={`${countLabel(totals.page_views, 'page view')} · about ${countLabel(totals.visitors, 'visitor')} · ${period.granularity === 'hour' ? 'by hour' : 'by day'}`}
-                    >
-                        <TrendChart
-                            buckets={buckets}
-                            metric="transactions"
-                            compare={false}
-                            height={182}
-                            text={{
-                                primary: (bucket) =>
-                                    countLabel(
-                                        bucket.transactions,
-                                        'page view',
-                                    ),
-                                secondary: (bucket) =>
-                                    `About ${countLabel(visitors.get(bucket.key) ?? 0, 'visitor')}`,
-                                empty: 'No visits recorded in this period',
-                            }}
-                        />
-                    </AnalyticsCard>
-
-                    <AnalyticsCard
-                        title="How this is counted"
-                        hint={
-                            report.tracking_since
-                                ? `Counting started ${report.tracking_since}. Earlier dates show zero because nothing was recorded, not because nobody visited.`
-                                : 'Nothing has been recorded yet. Figures appear after the first visit to the landing page.'
-                        }
-                    >
-                        <ul className="flex list-disc flex-col gap-1.5 pl-4 text-[12.5px] leading-5 text-[#555]">
-                            <li>
-                                <strong>
-                                    Unique visitors are an estimate.
-                                </strong>{' '}
-                                One browser counts once per day. The same person
-                                on another day, device or browser counts again,
-                                and a period total adds each day&apos;s
-                                visitors.
-                            </li>
-                            <li>
-                                Only the public landing page is counted.
-                                Signed-in staff, workspace pages and
-                                recognizable bots are left out.
-                            </li>
-                            <li>
-                                No IP address, name, device details or
-                                third-party tracker is stored or used. Counts
-                                are kept for 12 months.
-                            </li>
-                        </ul>
-                    </AnalyticsCard>
-                </div>
-            </OwnerPage>
+                <AnalyticsCard
+                    title="How this is counted"
+                    hint={
+                        report.tracking_since
+                            ? `Counting started ${report.tracking_since}. Earlier dates show zero because nothing was recorded, not because nobody visited.`
+                            : 'Nothing has been recorded yet. Figures appear after the first visit to the landing page.'
+                    }
+                >
+                    <ul className="flex list-disc flex-col gap-1.5 pl-4 text-[12.5px] leading-5 text-[#555]">
+                        <li>
+                            <strong>Unique visitors are an estimate.</strong>{' '}
+                            One browser counts once per day. The same person on
+                            another day, device or browser counts again, and a
+                            period total adds each day&apos;s visitors.
+                        </li>
+                        <li>
+                            Only the public landing page is counted. Signed-in
+                            staff, workspace pages and recognizable bots are
+                            left out.
+                        </li>
+                        <li>
+                            <strong>Heart taps</strong> are every tap on the
+                            chef at the bottom of the landing page, repeat taps
+                            included. The card shows the taps of this period;
+                            the landing page shows the all-time total.
+                        </li>
+                        <li>
+                            No IP address, name, device details or third-party
+                            tracker is stored or used. Counts are kept for 12
+                            months; heart taps are kept as hourly totals.
+                        </li>
+                    </ul>
+                </AnalyticsCard>
+            </div>
         </>
     );
 }

@@ -18,7 +18,7 @@ class CustomerReview extends Model
     /** @use HasFactory<CustomerReviewFactory> */
     use HasFactory, HasUuids;
 
-    public const NOTICE_VERSION = '2026-10-13-v3';
+    public const NOTICE_VERSION = '2026-10-14-v5';
 
     /** New submissions only: the column keeps 60 characters so names saved before v1.2.1 Manual QA are never cut. */
     public const PREFERRED_NAME_MAX = 10;
@@ -49,6 +49,20 @@ class CustomerReview extends Model
     public function isPublished(): bool
     {
         return self::query()->published()->whereKey($this->id)->exists();
+    }
+
+    /**
+     * The public rating summary. It covers every published review, not only the newest ones the landing page lists,
+     * and never a pending, rejected or private one.
+     *
+     * @return array{count: int, average: float|null}
+     */
+    public static function publishedSummary(): array
+    {
+        $summary = self::query()->published()->toBase()->selectRaw('COUNT(*) AS total, AVG(rating) AS average')->first();
+        $count = (int) ($summary->total ?? 0);
+
+        return ['count' => $count, 'average' => $count > 0 ? round((float) $summary->average, 1) : null];
     }
 
     /** @return array<string, mixed> */

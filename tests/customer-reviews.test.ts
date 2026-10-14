@@ -13,6 +13,7 @@ import {
     reviewDateLabel,
     reviewFileError,
     reviewSubmitFailure,
+    reviewSummaryDisplay,
     reviewSwipeStep,
 } from '../resources/js/lib/customer-reviews.ts';
 
@@ -342,7 +343,13 @@ function elements(value: any): Element[] {
     if (Array.isArray(value)) return value.flatMap(elements);
     return [value, ...elements(value.props?.children)];
 }
-function carouselHarness(reduced = false) {
+function carouselHarness(
+    reduced = false,
+    summary: { count: number; average: number | null } = {
+        count: 2,
+        average: 4.5,
+    },
+) {
     let position = 0;
     let callback: (time: number) => void = () => {};
     let cancelled = 0;
@@ -387,6 +394,7 @@ function carouselHarness(reduced = false) {
     );
     const tree = exports.CustomerReviews({
         reviews: [review, { ...review, id: 'b' }],
+        summary,
         branches: [],
         noticeVersion: 'v1',
     });
@@ -886,13 +894,25 @@ test('submission failures are described by their real cause', () => {
     assert.match(reviewSubmitFailure(500), /Nothing was posted/);
 });
 
-test('Settings keeps the Reviews tab reachable on a phone and ignores a superseded review request', () => {
+test('review moderation lives in Website, reachable on a phone, and ignores a superseded review request', () => {
+    const website = readFileSync(
+        new URL(
+            '../resources/js/pages/workspaces/website-analytics.tsx',
+            import.meta.url,
+        ),
+        'utf8',
+    );
+    assert.match(website, /<SegmentedTabs\s+wrap\s+label="Website section"/);
+    assert.match(
+        website,
+        /tab === 'reviews' && can\.reviews && \(\s*<CustomerReviewSettings branches=\{reviewBranches\} \/>/,
+    );
+    /** Moved, not copied: Settings no longer has a Reviews tab. */
     const settings = readFileSync(
         new URL('../resources/js/pages/branches/index.tsx', import.meta.url),
         'utf8',
     );
-    assert.match(settings, /<SegmentedTabs\s+wrap\s+label="Settings section"/);
-    assert.match(settings, /\['reviews', 'Reviews'\]/);
+    assert.doesNotMatch(settings, /CustomerReviewSettings|'reviews'/);
     const panel = readFileSync(
         new URL(
             '../resources/js/components/customer-review-settings.tsx',
@@ -926,4 +946,86 @@ test('the privacy notice discloses the anonymous website counters and opens with
     assert.match(text, /counts page visits and taps/);
     assert.match(text, /no IP address, name or advertising tracker/);
     assert.match(text, /kept for up to 12 months/);
+    /** v1.3.0: the shared heart count is disclosed too, as totals with nothing about the visitor. */
+    assert.match(
+        text,
+        /shared heart count, kept only as hourly totals with nothing about who tapped/,
+    );
+    /** v1.3.0 Batch 2: Shippy sends what a visitor types to Gemini and keeps no conversation. */
+    assert.match(text, /to write a reply, to Google’s Gemini AI service/);
+    assert.match(
+        text,
+        /does not save your conversation or link it to you: only daily totals/,
+    );
+    assert.match(text, /do not type personal information in the chat/);
+});
+
+test('the rating summary formats the server average and count and is absent until a review is published', () => {
+    assert.deepEqual(reviewSummaryDisplay({ count: 128, average: 4.6 }), {
+        average: '4.6',
+        stars: 5,
+        count: '128 reviews',
+    });
+    /** A whole-number average arrives from JSON as 4, and one review is singular. */
+    assert.deepEqual(reviewSummaryDisplay({ count: 1, average: 4 }), {
+        average: '4.0',
+        stars: 4,
+        count: '1 review',
+    });
+    assert.equal(
+        reviewSummaryDisplay({ count: 1234, average: 3.4 })?.count,
+        '1,234 reviews',
+    );
+    assert.equal(reviewSummaryDisplay({ count: 3, average: 3.4 })?.stars, 3);
+    assert.equal(reviewSummaryDisplay({ count: 0, average: null }), null);
+    assert.equal(reviewSummaryDisplay({ count: 0, average: 5 }), null);
+});
+
+test('the Reviews heading shows the real average, stars and count instead of fixed numbers', () => {
+    const h = carouselHarness(true, { count: 37, average: 4.3 });
+    try {
+        const nodes = elements(h.tree);
+        const block = nodes.find(
+            (node) => node.props.className === 'reviews-summary',
+        )!;
+        const inside = elements(block);
+        assert.equal(
+            inside.find((node) => node.type === 'strong')!.props.children,
+            '4.3',
+        );
+        const stars = inside.find((node) => node.props.role === 'img')!;
+        assert.equal(stars.props['aria-label'], 'Average rating 4.3 out of 5');
+        assert.deepEqual(
+            elements(stars)
+                .filter((node) => node.type === 'path')
+                .map((node) => node.props.fill === '#8A5E12'),
+            [true, true, true, true, false],
+        );
+        assert.ok(inside.some((node) => node.props.children === '37 reviews'));
+    } finally {
+        h.dispose();
+    }
+
+    const empty = carouselHarness(true, { count: 0, average: null });
+    try {
+        const nodes = elements(empty.tree);
+        assert.equal(
+            nodes.some((node) => node.props.className === 'reviews-summary'),
+            false,
+        );
+        assert.ok(
+            nodes.some(
+                (node) =>
+                    node.props.children ===
+                    'Your experience could be the first.',
+            ),
+        );
+    } finally {
+        empty.dispose();
+    }
+    /** No sample rating survives in the component: every figure comes from the summary prop. */
+    assert.doesNotMatch(
+        source,
+        /Stories shared by our customers|4.[0-9] out of 5/,
+    );
 });

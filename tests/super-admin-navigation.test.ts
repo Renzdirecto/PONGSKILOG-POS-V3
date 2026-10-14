@@ -65,7 +65,7 @@ test('super admin navigation exposes the required sections in order', () => {
                     'Owner Dashboard',
                     'Transactions',
                     'Reports',
-                    'Website Analytics',
+                    'Website',
                     'Products',
                     'Inventory',
                 ],

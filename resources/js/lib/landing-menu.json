@@ -1,0 +1,127 @@
+{
+    "silog": {
+        "label": "Silog",
+        "note": "Every silog comes with garlic rice and egg.",
+        "items": [
+            ["Chicken Silog", "₱110"],
+            ["Bangus Silog", "₱110"],
+            ["Tapa Silog", "₱100"],
+            ["Liempo Silog", "₱100"],
+            ["MIX Silog", "₱100"],
+            ["Porkchop Silog", "₱95"],
+            ["Tocino Silog", "₱95"],
+            ["Hungarian Silog", "₱90"],
+            ["Chicken Fillet Silog", "₱90"],
+            ["Siomai Silog", "₱85"],
+            ["Shanghai Silog", "₱85"],
+            ["Longganisa Silog", "₱80"],
+            ["Maling Silog", "₱80"],
+            ["Ham Silog", "₱80"],
+            ["Nuggets Silog", "₱75"],
+            ["Hotdog Silog", "₱70"],
+            ["Embutido Silog", "₱70"],
+            ["Burger Steak", "₱60"]
+        ]
+    },
+    "pares": {
+        "label": "Pares & bowls",
+        "note": "Slow-braised beef and lechon, served with rice. Bowls come hot.",
+        "items": [
+            ["Bulalo", "₱150"],
+            ["Lechon Pares with Rice", "₱85"],
+            ["Beef Pares with Rice", "₱75"],
+            ["Lechon Pares Only", "₱75"],
+            ["Beef Pares Only", "₱60"],
+            ["Beef Mami", "₱50"]
+        ]
+    },
+    "short": {
+        "label": "Short orders",
+        "note": "Good for sharing. Availability changes through the night.",
+        "items": [
+            ["Pancit Canton", "₱130"],
+            ["Miki Bihon", "₱130"],
+            ["Miki Guisado", "₱130"],
+            ["Lechon Kawali", "₱130"],
+            ["Tokwa't Baboy", "₱130"],
+            ["Pancit Bihon", "₱120"],
+            ["Pork Sisig", "₱100"],
+            ["Caldereta", "₱80"]
+        ]
+    },
+    "ala": {
+        "label": "Ala carte",
+        "note": "Ulam and add-ons on their own, no rice unless listed.",
+        "items": [
+            ["Chicken Only", "₱80"],
+            ["Bangus Only", "₱80"],
+            ["Porkchop Only", "₱75"],
+            ["Liempo Only", "₱70"],
+            ["Hungarian Only", "₱60"],
+            ["Shanghai Only", "₱50"],
+            ["Siomai Only", "₱50"],
+            ["Ham", "₱50"],
+            ["Silog", "₱40"],
+            ["Hotdog Only", "₱35"],
+            ["Maling Only", "₱30"],
+            ["Rice", "₱20"],
+            ["Half Rice", "₱15"],
+            ["Egg", "₱15"],
+            ["Siomai (per pc)", "₱5"],
+            ["Mang Tomas", "₱5"]
+        ]
+    },
+    "drinks": {
+        "label": "Drinks",
+        "note": "Three'S Lemonade. Prices shown Small / Medium / Large.",
+        "items": [
+            [
+                "Pure Lemonade",
+                "₱45 / 55 / 65",
+                "/images/landing-v130-66f19537.webp"
+            ],
+            [
+                "Lemon + Yakult",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-4c65be9e.webp"
+            ],
+            [
+                "Lemon + Dutch Mill",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-1ef59c66.webp"
+            ],
+            [
+                "Lemon + Cucumber",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-d5c528c0.webp"
+            ],
+            [
+                "Lemon + Calamansi",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-b9afe219.webp"
+            ],
+            [
+                "Lemon + Lychee",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-ce4a7c25.webp"
+            ],
+            [
+                "Lemon + Cola",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-b951d673.webp"
+            ],
+            ["Mango Shake", "₱55"],
+            ["Yakult only", "₱20"],
+            ["Crystal / Nata add-on", "₱10"]
+        ]
+    },
+    "dessert": {
+        "label": "Dessert",
+        "note": "Chilled graham bars, made in-house.",
+        "items": [
+            ["Mango Graham Bar", "₱35"],
+            ["Oreo Graham Bar", "₱30"],
+            ["Classic Graham Bar", "₱25"]
+        ]
+    }
+}

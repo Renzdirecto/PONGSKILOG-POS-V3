@@ -48,6 +48,13 @@ function websiteEvent(string $event, ?string $session = null, string $agent = WE
     return $request->postJson(route('website-events.store'), ['event' => $event]);
 }
 
+/** Heart taps the landing page saved at one Manila moment; `$key` repeats a batch that was already sent. */
+function websiteHearts(string $manila, int $taps, ?string $key = null): void
+{
+    websiteAt($manila);
+    test()->postJson(route('landing-loves.store'), ['key' => $key ?? Str::uuid()->toString(), 'taps' => $taps])->assertOk();
+}
+
 /** @param array<string, string> $query */
 function websiteAnalytics(array $query = [], ?User $user = null): TestResponse
 {
@@ -134,10 +141,10 @@ test('the owner reads today by Manila hour with real totals', function () {
         ->where('report.period.granularity', 'hour')
         ->where('report.totals', [
             'page_views' => 3, 'visitors' => 2, 'facebook_clicks' => 1,
-            'directions_clicks' => 2, 'menu_clicks' => 3, 'review_submissions' => 1,
+            'directions_clicks' => 2, 'menu_clicks' => 3, 'review_submissions' => 1, 'heart_taps' => 0,
         ])
         ->has('report.series', 24)
-        ->where('report.series.18', ['key' => '18', 'label' => '6 PM', 'full' => '6 PM – 7 PM', 'page_views' => 2, 'visitors' => 1])
+        ->where('report.series.18', ['key' => '18', 'label' => '6 PM', 'full' => '6 PM – 7 PM', 'page_views' => 2, 'visitors' => 1, 'heart_taps' => 0])
         ->where('report.series.20.page_views', 1)
         ->where('report.series.19.page_views', 0)
         ->where('report.tracking_since', 'Oct 12, 2026'));
@@ -166,11 +173,55 @@ test('a period without visits reports zeroes instead of invented figures', funct
     websiteAnalytics(['period' => 'last_7_days'])->assertInertia(fn (Assert $page) => $page
         ->where('report.totals', [
             'page_views' => 0, 'visitors' => 0, 'facebook_clicks' => 0,
-            'directions_clicks' => 0, 'menu_clicks' => 0, 'review_submissions' => 0,
+            'directions_clicks' => 0, 'menu_clicks' => 0, 'review_submissions' => 0, 'heart_taps' => 0,
         ])
-        ->where('report.series.6', ['key' => '2026-10-13', 'label' => 'Oct 13', 'full' => 'Oct 13, 2026', 'page_views' => 0, 'visitors' => 0])
+        ->where('report.heart_taps_all_time', 0)
+        ->where('report.series.6', ['key' => '2026-10-13', 'label' => 'Oct 13', 'full' => 'Oct 13, 2026', 'page_views' => 0, 'visitors' => 0, 'heart_taps' => 0])
         ->where('report.tracking_since', null));
 });
+
+test('heart taps of today are reported by Manila hour and agree with the total on the landing page', function () {
+    websiteHearts('2026-10-12 23:30', 4);
+    /** Ten past midnight in Manila is still the 12th in UTC: it belongs to the 13th here. */
+    websiteHearts('2026-10-13 00:10', 2);
+    websiteHearts('2026-10-13 18:05', 5, 'b3f0c6a2-41d7-4e0b-9a55-7c1f2d3e4a5b');
+    /** The same batch sent again (a retry) is not counted twice anywhere. */
+    websiteHearts('2026-10-13 18:06', 5, 'b3f0c6a2-41d7-4e0b-9a55-7c1f2d3e4a5b');
+    websiteHearts('2026-10-13 18:40', 3);
+    websiteAt('2026-10-13 21:00');
+
+    websiteAnalytics()->assertInertia(fn (Assert $page) => $page
+        ->where('report.period.granularity', 'hour')
+        ->where('report.totals.heart_taps', 10)
+        ->where('report.series.0.heart_taps', 2)
+        ->where('report.series.18.heart_taps', 8)
+        ->where('report.series.19.heart_taps', 0)
+        ->where('report.series.23.heart_taps', 0)
+        ->where('report.heart_taps_all_time', 14));
+    auth()->logout();
+    $this->get(route('home'))->assertInertia(fn (Assert $page) => $page->where('loveTotal', 14));
+});
+
+test('seven days, thirty days and a custom range total the heart taps of their own Manila dates', function (array $query, int $taps, array $days) {
+    websiteHearts('2026-09-13 12:00', 8);
+    websiteHearts('2026-10-06 23:59', 4);
+    websiteHearts('2026-10-07 23:59', 2);
+    websiteHearts('2026-10-13 09:00', 1);
+    websiteAt('2026-10-13 21:00');
+
+    $response = websiteAnalytics($query)->assertInertia(fn (Assert $page) => $page
+        ->where('report.period.granularity', 'day')
+        ->where('report.totals.heart_taps', $taps)
+        /** Every period shows the same all-time total, which is the landing page's number. */
+        ->where('report.heart_taps_all_time', 15));
+    foreach ($days as $date => $expected) {
+        $response->assertInertia(fn (Assert $page) => $page->where('report.series', fn ($series) => collect($series)->firstWhere('key', $date)['heart_taps'] === $expected));
+    }
+})->with([
+    '7 days' => [['period' => 'last_7_days'], 3, ['2026-10-07' => 2, '2026-10-08' => 0, '2026-10-13' => 1]],
+    '30 days' => [['period' => 'last_30_days'], 7, ['2026-10-06' => 4, '2026-09-14' => 0]],
+    'custom' => [['period' => 'custom', 'from' => '2026-10-06', 'to' => '2026-10-07'], 6, ['2026-10-06' => 4, '2026-10-07' => 2]],
+]);
 
 test('an invalid period or custom range is rejected', function (array $query, string $field) {
     websiteAnalytics($query)->assertSessionHasErrors($field);

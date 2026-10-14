@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\LandingTeamMember;
 use App\Models\User;
 use App\Support\ReportPeriod;
 use App\Support\WebsiteAnalytics;
@@ -13,8 +14,9 @@ use Illuminate\Validation\Validator;
 class WebsiteAnalyticsRequest extends FormRequest
 {
     /**
-     * Website Analytics is business-wide reporting: an active account with Reports access and a business-wide scope
-     * (Owner, Super Admin, business-wide Custom Role). A Branch-scoped account with Reports never reads it.
+     * Website is business-wide: an active account with a business-wide scope that either reads Reports (the Analytics
+     * tab: Owner, Super Admin, business-wide Custom Role) or manages website content (Reviews, Team and Shippy: Owner
+     * and Super Admin). A Branch-scoped account never opens it; each tab's own data keeps its own check.
      */
     public function authorize(): bool
     {
@@ -22,8 +24,8 @@ class WebsiteAnalyticsRequest extends FormRequest
 
         return $user instanceof User
             && $user->is_active
-            && $user->hasPermission('reports.view')
-            && $user->hasBusinessWideScope();
+            && $user->hasBusinessWideScope()
+            && ($user->hasPermission('reports.view') || $user->can('viewAny', LandingTeamMember::class));
     }
 
     /**

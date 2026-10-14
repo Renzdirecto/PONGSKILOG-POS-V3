@@ -1,3 +1,5 @@
+import menu from './landing-menu.json' with { type: 'json' };
+
 // Published menu and address cross-checked on 2026-10-13 against
 // https://pongskilog.kesug.com/LANDINGPAGE/PONGSKILOG-LANDING-PAGE.html
 export const FB = 'https://www.facebook.com/profile.php?id=100094575655003';
@@ -46,6 +48,15 @@ export const ULAM = [
         alt: 'Pork silog',
     },
 ];
+
+/**
+ * Three's Lemonade (Landing V7): each drink's poster sits beside its name and price in the published menu, so the
+ * Drinks cards, the Three's Lemonade section and Shippy read one path per drink. A poster carries its own name and
+ * prices, so it is always shown whole.
+ */
+export const CUPS = menu.drinks.items
+    .filter((item) => item.length > 2)
+    .map(([name, price, img]) => ({ name, price, img, alt: `${name} poster` }));
 
 export const CARDS = [
     {
@@ -273,6 +284,8 @@ export const CARDS = [
         alt: 'Crystal add-on',
         cat: 'ala',
     },
+    /* The Three's Lemonade posters from CUPS; a `drink` poster is shown whole over its own blur. */
+    ...CUPS.map(({ img, alt }) => ({ img, alt, cat: 'drinks', drink: true })),
 ];
 
 export const BOARD_CATS = [
@@ -281,134 +294,14 @@ export const BOARD_CATS = [
     ['pares', 'Pares & bowls'],
     ['short', 'Short orders'],
     ['ala', 'Ala carte'],
+    ['drinks', 'Drinks'],
 ];
 
-export const CUPS = [
-    {
-        name: 'Pure Lemonade',
-        price: '₱45 / 55 / 65',
-        img: '/images/landing-v121-3dafa3d6.webp',
-        alt: 'Pure lemonade',
-    },
-    {
-        name: 'Lemon + Yakult',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-4774659c.webp',
-        alt: 'Lemon Yakult',
-    },
-    {
-        name: 'Lemon + Calamansi',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-a8ea1cff.webp',
-        alt: 'Lemon calamansi',
-    },
-    {
-        name: 'Lemon + Cola',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-d5ef5ce2.webp',
-        alt: 'Lemon cola',
-    },
-];
-
-export const MENU = {
-    silog: {
-        label: 'Silog',
-        note: 'Every silog comes with garlic rice and egg.',
-        items: [
-            ['Chicken Silog', '₱110'],
-            ['Bangus Silog', '₱110'],
-            ['Tapa Silog', '₱100'],
-            ['Liempo Silog', '₱100'],
-            ['MIX Silog', '₱100'],
-            ['Porkchop Silog', '₱95'],
-            ['Tocino Silog', '₱95'],
-            ['Hungarian Silog', '₱90'],
-            ['Chicken Fillet Silog', '₱90'],
-            ['Siomai Silog', '₱85'],
-            ['Shanghai Silog', '₱85'],
-            ['Longganisa Silog', '₱80'],
-            ['Maling Silog', '₱80'],
-            ['Ham Silog', '₱80'],
-            ['Nuggets Silog', '₱75'],
-            ['Hotdog Silog', '₱70'],
-            ['Embutido Silog', '₱70'],
-            ['Burger Steak', '₱60'],
-        ],
-    },
-    pares: {
-        label: 'Pares & bowls',
-        note: 'Slow-braised beef and lechon, served with rice. Bowls come hot.',
-        items: [
-            ['Bulalo', '₱150'],
-            ['Lechon Pares with Rice', '₱85'],
-            ['Beef Pares with Rice', '₱75'],
-            ['Lechon Pares Only', '₱75'],
-            ['Beef Pares Only', '₱60'],
-            ['Beef Mami', '₱50'],
-        ],
-    },
-    short: {
-        label: 'Short orders',
-        note: 'Good for sharing. Availability changes through the night.',
-        items: [
-            ['Pancit Canton', '₱130'],
-            ['Miki Bihon', '₱130'],
-            ['Miki Guisado', '₱130'],
-            ['Lechon Kawali', '₱130'],
-            ["Tokwa't Baboy", '₱130'],
-            ['Pancit Bihon', '₱120'],
-            ['Pork Sisig', '₱100'],
-            ['Caldereta', '₱80'],
-        ],
-    },
-    ala: {
-        label: 'Ala carte',
-        note: 'Ulam and add-ons on their own, no rice unless listed.',
-        items: [
-            ['Chicken Only', '₱80'],
-            ['Bangus Only', '₱80'],
-            ['Porkchop Only', '₱75'],
-            ['Liempo Only', '₱70'],
-            ['Hungarian Only', '₱60'],
-            ['Shanghai Only', '₱50'],
-            ['Siomai Only', '₱50'],
-            ['Ham', '₱50'],
-            ['Silog', '₱40'],
-            ['Hotdog Only', '₱35'],
-            ['Maling Only', '₱30'],
-            ['Rice', '₱20'],
-            ['Half Rice', '₱15'],
-            ['Egg', '₱15'],
-            ['Siomai (per pc)', '₱5'],
-            ['Mang Tomas', '₱5'],
-        ],
-    },
-    drinks: {
-        label: 'Drinks',
-        note: "Three'S Lemonade. Prices shown Small / Medium / Large.",
-        items: [
-            ['Pure Lemonade', '₱45 / 55 / 65'],
-            ['Lemon + Yakult', '₱55 / 65 / 75'],
-            ['Lemon + Dutch Mill', '₱55 / 65 / 75'],
-            ['Lemon + Cucumber', '₱55 / 65 / 75'],
-            ['Lemon + Calamansi', '₱55 / 65 / 75'],
-            ['Lemon + Lychee', '₱55 / 65 / 75'],
-            ['Lemon + Cola', '₱55 / 65 / 75'],
-            ['Mango Shake', '₱55'],
-            ['Yakult only', '₱20'],
-            ['Crystal / Nata add-on', '₱10'],
-        ],
-    },
-    dessert: {
-        label: 'Dessert',
-        note: 'Chilled graham bars, made in-house.',
-        items: [
-            ['Mango Graham Bar', '₱35'],
-            ['Oreo Graham Bar', '₱30'],
-            ['Classic Graham Bar', '₱25'],
-        ],
-    },
-};
+/**
+ * The published menu. It lives in one JSON file so the landing page and the server (Shippy: `ShippyKnowledge`) read
+ * the same names and prices; nothing about the menu is typed twice.
+ */
+export const MENU = menu;
 
 export const CAT_ORDER: (keyof typeof MENU)[] = [
     'silog',
@@ -418,6 +311,71 @@ export const CAT_ORDER: (keyof typeof MENU)[] = [
     'drinks',
     'dessert',
 ];
+
+/**
+ * One card of Meet the Team (Landing V6), from `LandingTeamMember::card()`. The Owner edits the six cards in
+ * Website → Team; a `null` photo, name or bio renders a clearly marked placeholder, so nothing is ever made up.
+ */
+export type TeamCard = {
+    id: number;
+    code: string;
+    title: string;
+    name: string | null;
+    bio: string | null;
+    img: string | null;
+    visible: boolean;
+};
+
+/**
+ * One Branch in "Choose your branch" (Landing V7 online kiosk), from `LandingPageController`: its public Customer QR
+ * ordering page and whether it takes orders right now. The link always opens; the kiosk page itself decides what may
+ * be ordered.
+ */
+export type KioskBranch = {
+    name: string;
+    address: string | null;
+    url: string;
+    open: boolean;
+};
+
+const OPEN = '#2E5A4B';
+const CLOSED = '#B0281F';
+
+/** A Branch's own line in the branch sheet. */
+export function kioskBranchStatus(branch: KioskBranch) {
+    return branch.open
+        ? { label: 'Open now', fg: OPEN }
+        : { label: 'Closed now', fg: CLOSED };
+}
+
+/** The status beside "Start your order": the real state of the Branches, or nothing when there is none to show. */
+export function kioskStatus(branches: KioskBranch[]) {
+    const open = branches.filter((branch) => branch.open).length;
+    if (!branches.length) return null;
+    if (branches.length === 1) return kioskBranchStatus(branches[0]);
+    return open
+        ? {
+              label: `Open now at ${open} of ${branches.length} branches`,
+              fg: OPEN,
+          }
+        : { label: 'All branches closed now', fg: CLOSED };
+}
+
+/**
+ * Meet the Team auto-slide: 0.024 px per ms, which is V6's 0.4 px per frame at 60 Hz on any screen refresh rate.
+ * Reaching the last card asks for a return to the first one.
+ */
+export function advanceTeamScroll(
+    position: number,
+    maximum: number,
+    elapsed: number,
+) {
+    if (position >= maximum - 1) return { position: 0, restart: true };
+    return {
+        position: Math.min(maximum, position + Math.min(elapsed, 64) * 0.024),
+        restart: false,
+    };
+}
 
 export const HOURS = [
     {

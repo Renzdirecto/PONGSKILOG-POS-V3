@@ -187,6 +187,12 @@ const SHIPPY_SOURCES: Record<string, ShippySource> = {
         tone: 'green',
         detail: 'From the published menu, hours and location.',
     },
+    team: {
+        label: 'Team',
+        ai: false,
+        tone: 'green',
+        detail: 'From a visible card in Website → Team, with its photo.',
+    },
     faq: {
         label: 'Instant FAQ',
         ai: false,

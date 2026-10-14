@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\DB;
  * every customer, order and staff record stay out of reach. The same facts answer on their own (`answer()`) whenever
  * Gemini is not used.
  *
- * @phpstan-type Item array{name: string, price: string, amount: int, prices: list<int>, category: string, img: string|null}
- * @phpstan-type Row array{name: string, price: string, img: string|null}
+ * @phpstan-type Item array{name: string, price: string, amount: int, prices: list<int>, category: string, img: string|null, poster: bool}
+ * @phpstan-type Row array{name: string, price: string, img: string|null, kind?: 'poster'|'person'}
  * @phpstan-type Answer array{text: string, items: list<Row>, actions: list<string>}
  */
 class ShippyKnowledge
@@ -32,6 +32,7 @@ class ShippyKnowledge
         'maps' => ['label' => 'Open in Google Maps', 'href' => 'https://maps.app.goo.gl/nivpx3cxuP56wAXo8'],
         'messenger' => ['label' => 'Message on Facebook', 'href' => 'https://www.facebook.com/profile.php?id=100094575655003'],
         'reviews' => ['label' => 'See the reviews', 'href' => '#reviews'],
+        'team' => ['label' => 'Meet the team', 'href' => '#team'],
     ];
 
     /**
@@ -61,7 +62,8 @@ class ShippyKnowledge
     private const MEALS = ['silog', 'pares', 'short'];
 
     /**
-     * The photo of a menu item, from the landing page's own menu cards.
+     * The photo of a menu item, from the landing page's own menu cards. A drink with a poster names it in the
+     * published menu itself, beside its price.
      *
      * @var array<string, string>
      */
@@ -77,7 +79,6 @@ class ShippyKnowledge
         'Bangus Only' => '6a193b10', 'Porkchop Only' => '93911d07', 'Liempo Only' => 'f0f3cc4a', 'Hungarian Only' => 'd8d56c44',
         'Shanghai Only' => '21029c67', 'Siomai Only' => 'f8953943', 'Silog' => 'd3bcb09c', 'Hotdog Only' => 'ed339048',
         'Maling Only' => '0cd269f2', 'Rice' => 'fd74d8a0', 'Half Rice' => '7304e306', 'Egg' => 'd0bdf098',
-        'Pure Lemonade' => '3dafa3d6', 'Lemon + Yakult' => '4774659c', 'Lemon + Calamansi' => 'a8ea1cff', 'Lemon + Cola' => 'd5ef5ce2',
         'Crystal / Nata add-on' => '5c08777b',
     ];
 
@@ -135,6 +136,15 @@ class ShippyKnowledge
         'short' => 'short orders?|ulam|sharing|share|barkada', 'silog' => 'silogs?|almusal|breakfast',
     ];
 
+    /**
+     * Words about whether something is in stock right now, in a question or in a reply. Nothing here can see what is
+     * left tonight, so an item is never called available, and a question about it gets the menu price and the way to ask.
+     */
+    public const STOCK = 'available|availability|in stock|stocks?|naubos|ubos na|sold ?out|out of stock|meron pa|mayroon pa|may natira|natira';
+
+    /** Words that leave the stock to be checked, so a clause with them is advice, not a claim. */
+    private const UNSURE = 'check|i-?check|confirm|kung|if|whether|sure|makasiguro|sigurado|alam|know|makita|see|masabi|tell|malaman|ask|message|i-?message|tanong|itanong';
+
     /** The words of a budget question besides the amount. */
     private const BUDGET_WORDS = 'budget|php|pesos?|piso|lang|under|below|mura|cheap|kasya|pasok|meron|kong|kainin|makakain|mabibili|bilhin|meals?|pagkain|food|worth';
 
@@ -168,18 +178,20 @@ class ShippyKnowledge
         if (self::$menu !== null) {
             return self::$menu;
         }
-        /** @var array<string, array{label: string, note: string, items: list<array{0: string, 1: string}>}> $published */
+        /** @var array<string, array{label: string, note: string, items: list<array{0: string, 1: string, 2?: string}>}> $published */
         $published = json_decode((string) file_get_contents(resource_path('js/lib/landing-menu.json')), true, flags: JSON_THROW_ON_ERROR);
         $menu = [];
         foreach ($published as $category => $section) {
             $items = [];
-            foreach ($section['items'] as [$name, $price]) {
+            foreach ($section['items'] as $row) {
+                [$name, $price] = $row;
                 preg_match_all('/\d+/', $price, $numbers);
                 $prices = array_map(intval(...), $numbers[0]);
                 $photo = self::PHOTOS[$name] ?? null;
                 $items[] = [
                     'name' => $name, 'price' => $price, 'amount' => $prices === [] ? 0 : min($prices), 'prices' => $prices,
-                    'category' => $category, 'img' => $photo === null ? null : '/images/landing-v121-'.$photo.'.webp',
+                    'category' => $category, 'img' => $row[2] ?? ($photo === null ? null : '/images/landing-v121-'.$photo.'.webp'),
+                    'poster' => isset($row[2]),
                 ];
             }
             $menu[$category] = ['label' => $section['label'], 'note' => $section['note'], 'items' => $items];
@@ -220,12 +232,14 @@ class ShippyKnowledge
     }
 
     /**
+     * A menu item as the chat shows it. A poster carries its own name and prices, so the chat shows it whole.
+     *
      * @param  Item  $item
      * @return Row
      */
     public function row(array $item): array
     {
-        return ['name' => $item['name'], 'price' => $item['price'], 'img' => $item['img']];
+        return ['name' => $item['name'], 'price' => $item['price'], 'img' => $item['img'], ...($item['poster'] ? ['kind' => 'poster'] : [])];
     }
 
     /**
@@ -400,6 +414,48 @@ class ShippyKnowledge
         return $this->mentioned(self::words($text));
     }
 
+    /** Whether a text talks about something being in stock or available right now. */
+    public static function aboutStock(string $text): bool
+    {
+        return preg_match('/\b('.self::STOCK.')\b/u', self::lower($text)) === 1;
+    }
+
+    /**
+     * Whether a reply states that something is or is not in stock: a clause with a stock word and nothing that says it
+     * still has to be checked. "Available ang Bulalo!" claims it; "message us to check if it's available" does not.
+     */
+    public static function claimsStock(string $text): bool
+    {
+        foreach (preg_split('/[.,;:!?]+|\b(?:pero|but|so|kaya)\b/u', self::lower($text)) ?: [] as $clause) {
+            if (self::aboutStock($clause) && preg_match('/\b('.self::UNSURE.')\b/u', $clause) !== 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The honest answer when a guest asks whether menu items are available right now: their published price, and that
+     * only the store knows what is left. Null when the question does not ask that about a menu item.
+     *
+     * @return Answer|null
+     */
+    public function stock(string $message, bool $english = false): ?array
+    {
+        $weak = false;
+        $found = self::aboutStock($message) ? array_slice($this->mentioned(self::words($message), $weak), 0, self::MAX_ITEMS) : [];
+        if ($found === [] || $weak) {
+            return null;
+        }
+        $one = count($found) === 1;
+
+        return $this->reply($english
+            ? ($one ? $found[0]['name'].' is '.$found[0]['price'].' on our menu.' : "They're on our menu.")." I can't see what's left right now, so message us on Facebook to be sure."
+            : ($one ? $found[0]['name'].' ay '.$found[0]['price'].' sa menu namin.' : 'Nasa menu namin ang mga ito.').' Hindi ko makita kung available pa ngayon, kaya message mo kami sa Facebook para sure.',
+            array_map($this->row(...), $found), ['messenger']);
+    }
+
     /**
      * What a question is about and the answer the facts give for it.
      *
@@ -464,6 +520,10 @@ class ShippyKnowledge
             return ['budget', $this->reply($say('Pasok sa ₱'.$budget.' ang mga ito.', 'These fit ₱'.$budget.'.').$say(self::SILOG_NOTE, self::SILOG_NOTE_ENGLISH), array_map($this->row(...), $fits), ['menu'])];
         }
 
+        $stock = $this->stock($message, $english);
+        if ($stock !== null) {
+            return ['stock', $stock];
+        }
         $weak = false;
         $found = $this->mentioned($words, $weak);
         if ($found !== []) {

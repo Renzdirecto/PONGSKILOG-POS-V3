@@ -75,13 +75,41 @@
         "label": "Drinks",
         "note": "Three'S Lemonade. Prices shown Small / Medium / Large.",
         "items": [
-            ["Pure Lemonade", "₱45 / 55 / 65"],
-            ["Lemon + Yakult", "₱55 / 65 / 75"],
-            ["Lemon + Dutch Mill", "₱55 / 65 / 75"],
-            ["Lemon + Cucumber", "₱55 / 65 / 75"],
-            ["Lemon + Calamansi", "₱55 / 65 / 75"],
-            ["Lemon + Lychee", "₱55 / 65 / 75"],
-            ["Lemon + Cola", "₱55 / 65 / 75"],
+            [
+                "Pure Lemonade",
+                "₱45 / 55 / 65",
+                "/images/landing-v130-66f19537.webp"
+            ],
+            [
+                "Lemon + Yakult",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-4c65be9e.webp"
+            ],
+            [
+                "Lemon + Dutch Mill",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-1ef59c66.webp"
+            ],
+            [
+                "Lemon + Cucumber",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-d5c528c0.webp"
+            ],
+            [
+                "Lemon + Calamansi",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-b9afe219.webp"
+            ],
+            [
+                "Lemon + Lychee",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-ce4a7c25.webp"
+            ],
+            [
+                "Lemon + Cola",
+                "₱55 / 65 / 75",
+                "/images/landing-v130-b951d673.webp"
+            ],
             ["Mango Shake", "₱55"],
             ["Yakult only", "₱20"],
             ["Crystal / Nata add-on", "₱10"]

@@ -5,7 +5,7 @@ import type {
     ReviewBranch,
     ReviewSummary,
 } from '@/lib/customer-reviews';
-import type { TeamCard } from '@/lib/landing';
+import type { KioskBranch, TeamCard } from '@/lib/landing';
 import { dashboard, login } from '@/routes';
 import '../../css/landing.css';
 
@@ -24,6 +24,7 @@ export default function Welcome({
     reviewNoticeVersion,
     team,
     loveTotal,
+    kiosk,
     shippy,
     seo,
 }: {
@@ -33,6 +34,7 @@ export default function Welcome({
     reviewNoticeVersion: string;
     team: TeamCard[];
     loveTotal: number;
+    kiosk: KioskBranch[];
     shippy: { presets: string[] } | null;
     seo: Seo;
 }) {
@@ -136,6 +138,7 @@ export default function Welcome({
                 reviewNoticeVersion={reviewNoticeVersion}
                 team={team}
                 loveTotal={loveTotal}
+                kiosk={kiosk}
                 shippy={shippy}
             />
         </>

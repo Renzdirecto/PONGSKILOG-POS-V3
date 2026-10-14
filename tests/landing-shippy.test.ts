@@ -694,6 +694,107 @@ test('a reply is rendered as plain text with its product cards and approved butt
     }
 });
 
+test('a team member shows their portrait with the role under the name, and a lemonade poster is marked to show whole', async (t) => {
+    const portrait = `/landing-team/2/photo?v=${'a'.repeat(32)}`;
+    const h = shippyHarness(t, {
+        reply: async () => ({
+            reply: {
+                text: 'Si Shamarra Faustino ang Chief Operating Officer ng PONGSKILOG.',
+                items: [
+                    {
+                        name: 'Shamarra Faustino',
+                        price: 'Chief Operating Officer',
+                        img: portrait,
+                        kind: 'person',
+                    },
+                    {
+                        name: 'Lemon + Yakult',
+                        price: '₱55 / 65 / 75',
+                        img: '/images/landing-v130-4c65be9e.webp',
+                        kind: 'poster',
+                    },
+                ],
+                actions: [
+                    {
+                        key: 'team',
+                        label: 'Meet the team',
+                        href: '#team',
+                        external: false,
+                    },
+                ],
+            },
+        }),
+    });
+    try {
+        h.open();
+        elements(h.find('Suggested questions'))
+            .find((node) => node.type === 'button')!
+            .props.onClick();
+        await h.wait(500);
+        await h.wait(0);
+        const answer = h.byClass('shippy-theirs').at(-1)!;
+        const [person, poster] = elements(answer).filter(
+            (node) => node.type === 'li',
+        );
+        assert.equal(person.props.className, 'shippy-person');
+        assert.equal(
+            elements(person).find((node) => node.type === 'img')!.props.src,
+            portrait,
+        );
+        assert.equal(
+            words(elements(person).find((node) => node.type === 'small')),
+            'Chief Operating Officer',
+        );
+        assert.equal(
+            elements(person).some((node) => node.type === 'b'),
+            false,
+        );
+        assert.equal(poster.props.className, 'shippy-poster');
+        assert.equal(
+            words(elements(poster).find((node) => node.type === 'b')),
+            '₱55 / 65 / 75',
+        );
+    } finally {
+        h.dispose();
+    }
+
+    assert.deepEqual(
+        shippyReply({
+            text: 'Team',
+            items: [
+                { name: 'A', price: 'COO', img: portrait, kind: 'person' },
+                {
+                    name: 'B',
+                    price: 'CTO',
+                    img: '/landing-team/2/photo',
+                    kind: 'staff',
+                },
+                {
+                    name: 'C',
+                    price: 'CFO',
+                    img: `/landing-team/x/photo?v=${'a'.repeat(32)}`,
+                },
+                {
+                    name: 'D',
+                    price: 'CEO',
+                    img: `https://evil.example/landing-team/2/photo?v=${'a'.repeat(32)}`,
+                },
+            ],
+        })!.items,
+        [
+            { name: 'A', price: 'COO', img: portrait, kind: 'person' },
+            { name: 'B', price: 'CTO', img: null },
+            { name: 'C', price: 'CFO', img: null },
+            { name: 'D', price: 'CEO', img: null },
+        ],
+    );
+    const css = read('css/landing.css');
+    assert.match(
+        css,
+        /\.landing-v3 \.shippy-items \.shippy-poster img \{\s*object-fit: contain;/,
+    );
+});
+
 test('a request that fails still answers: a pause when too fast, otherwise the Facebook link', async (t) => {
     let status = 429;
     const h = shippyHarness(t, {

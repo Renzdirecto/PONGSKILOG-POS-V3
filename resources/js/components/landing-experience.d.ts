@@ -4,7 +4,7 @@ import type {
     ReviewBranch,
     ReviewSummary,
 } from '@/lib/customer-reviews';
-import type { TeamCard } from '@/lib/landing';
+import type { KioskBranch, TeamCard } from '@/lib/landing';
 import type { RouteDefinition } from '@/wayfinder';
 
 declare const LandingExperience: ComponentType<{
@@ -18,6 +18,8 @@ declare const LandingExperience: ComponentType<{
     reviewNoticeVersion: string;
     team: TeamCard[];
     loveTotal: number;
+    /** The online kiosk's Branches (Landing V7), with whether each takes orders right now. */
+    kiosk: KioskBranch[];
     /** Shippy's preset questions, or null while the chat is switched off in Website → Shippy. */
     shippy: { presets: string[] } | null;
 }>;

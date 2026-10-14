@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AuditLog;
+use App\Models\LandingTeamMember;
 use App\Models\Role;
 use App\Models\ShippyDocument;
 use App\Models\ShippyFaq;
@@ -450,9 +451,11 @@ test('an unfinished question is asked back instead of being matched to the FAQ i
     'only a question word' => ['ano?', 'Ano yung gusto mong malaman? Pwede kang magtanong about sa menu, prices, hours o location.', []],
 ]);
 
-test('a person no FAQ or document describes is not guessed, and the one an FAQ describes is answered', function () {
+test('a person no FAQ, document or visible team card describes is not guessed, and the one an FAQ describes is answered', function () {
     config(['services.gemini.key' => KNOWLEDGE_KEY]);
     ShippyFaq::factory()->create(['question' => 'Sino si Shamarra?', 'answer' => 'Si Shamarra ang pinakamagandang staff ng PONGSKILOG.']);
+    /** Off the landing page, her card says nothing, so the Owner's FAQ about her answers. */
+    LandingTeamMember::query()->where('name', 'Shamarra Faustino')->update(['is_visible' => false]);
 
     knowledgeAsk('Sino si Juan?')->assertOk()
         ->assertJsonPath('reply.source', 'fallback')
@@ -461,6 +464,24 @@ test('a person no FAQ or document describes is not guessed, and the one an FAQ d
     knowledgeAsk('Sino po si Shamarra?')->assertOk()->assertJsonPath('reply.source', 'faq');
 
     Http::assertNothingSent();
+});
+
+test('an Owner note about a dish still reaches Gemini, but a reply that calls the dish available is replaced by the honest answer', function () {
+    config(['services.gemini.key' => KNOWLEDGE_KEY]);
+    ShippyDocument::factory()->create(['filename' => 'kusina.md', 'content' => "# Bulalo\n\nTuwing Biyernes lang kami nagluluto ng bulalo."]);
+    $gemini = fn (array $answer): array => ['candidates' => [['content' => ['parts' => [['text' => json_encode($answer)]]], 'finishReason' => 'STOP']]];
+    Http::fake([KNOWLEDGE_GEMINI => Http::sequence()
+        ->push($gemini(['reply' => 'Tuwing Biyernes lang ang bulalo, message mo kami para sure.', 'items' => ['Bulalo']]))
+        ->push($gemini(['reply' => 'Oo, available ang Bulalo ngayon!', 'items' => ['Bulalo']]))]);
+
+    knowledgeAsk('Available ba ang bulalo ngayon?')->assertOk()
+        ->assertJsonPath('reply.source', 'ai')
+        ->assertJsonPath('reply.text', 'Tuwing Biyernes lang ang bulalo, message mo kami para sure.');
+    knowledgeAsk('Available pa ba ang bulalo mamaya?')->assertOk()
+        ->assertJsonPath('reply.source', 'fallback')
+        ->assertJsonPath('reply.text', 'Bulalo ay ₱150 sa menu namin. Hindi ko makita kung available pa ngayon, kaya message mo kami sa Facebook para sure.');
+
+    Http::assertSentCount(2);
 });
 
 test('Gemini is never given an FAQ that shares only a question word with the question', function () {

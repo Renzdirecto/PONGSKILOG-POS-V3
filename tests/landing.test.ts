@@ -18,9 +18,23 @@ test('public prices and hours agree with the independently verified published bu
         ULAM.map(({ price }) => price),
         [100, 100, 110, 110, 95],
     );
+    /** Landing V7: the seven Three's Lemonade posters, at the prices printed on them and in the published menu. */
     assert.deepEqual(
-        CUPS.map(({ price }) => price),
-        ['₱45 / 55 / 65', '₱55 / 65 / 75', '₱55 / 65 / 75', '₱55 / 65 / 75'],
+        CUPS.map(({ name, price }) => [name, price]),
+        [
+            ['Pure Lemonade', '₱45 / 55 / 65'],
+            ['Lemon + Yakult', '₱55 / 65 / 75'],
+            ['Lemon + Dutch Mill', '₱55 / 65 / 75'],
+            ['Lemon + Cucumber', '₱55 / 65 / 75'],
+            ['Lemon + Calamansi', '₱55 / 65 / 75'],
+            ['Lemon + Lychee', '₱55 / 65 / 75'],
+            ['Lemon + Cola', '₱55 / 65 / 75'],
+        ],
+    );
+    /** One path per poster: the cups come from the published menu itself, beside each name and price. */
+    assert.deepEqual(
+        CUPS.map(({ name, price, img }) => [name, price, img]),
+        MENU.drinks.items.filter((item) => item.length > 2),
     );
     assert.deepEqual(MENU.dessert.items, [
         ['Mango Graham Bar', '₱35'],
@@ -44,7 +58,7 @@ test('public prices and hours agree with the independently verified published bu
 
 test('every referenced landing photograph is a local WebP asset', () => {
     for (const { img } of [...ULAM, ...CARDS, ...CUPS]) {
-        assert.match(img, /^\/images\/landing-v121-[a-f\d]+\.webp$/);
+        assert.match(img, /^\/images\/landing-v1(?:21|30)-[a-f\d]+\.webp$/);
         assert.ok(existsSync(new URL(`../public${img}`, import.meta.url)), img);
         const bytes = readFileSync(new URL(`../public${img}`, import.meta.url));
         assert.equal(bytes.toString('ascii', 8, 12), 'WEBP');
@@ -463,14 +477,14 @@ test('V2 menu lenses share category filters and reset when changing view', () =>
     ui.setMenuLens('pics');
     assert.equal(ui.state.boardCat, 'all');
     assert.equal(ui.chipRowRef.current.scrollLeft, 0);
-    /** Landing V6: Pics has Drinks too, counting its four photos while Prices counts the ten listed drinks. */
+    /** Pics has Drinks too, counting its seven posters while Prices counts the ten listed drinks. */
     assert.equal(
         ui
             .renderVals()
             .boardChips.find(
                 (chip: { label: string }) => chip.label === 'Drinks',
             ).n,
-        4,
+        7,
     );
     assert.ok(
         !ui
@@ -759,13 +773,11 @@ test('phone headings step down without shrinking body copy below a readable size
         'utf8',
     );
     const phone = css.slice(css.lastIndexOf('@media (max-width: 699px)'));
-    assert.match(
-        phone,
-        /\.landing-v3 \.v3-s155 \{\s*font-size: clamp\(46px, 13vw, 56px\);/,
-    );
+    /** Landing V7: "Visit us" is already section-sized on every screen, so the phone keeps the base size. */
+    assert.doesNotMatch(phone, /\.v3-s155 \{/);
     assert.match(
         css,
-        /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(64px, 14vw, 220px\);/,
+        /\.landing-v3 \.v3-s155 \{[^}]*font-size: clamp\(44px, 8vw, 120px\);/,
     );
     const sizes = [...phone.matchAll(/font-size: ([\d.]+)px/g)].map((match) =>
         Number(match[1]),
@@ -787,11 +799,11 @@ test('the mobile About statement is sized by its content instead of a viewport-h
     assert.doesNotMatch(about, /min-height/);
 });
 
-test('the Drinks filter shows the four verified lemonade cups whole over their own blur', () => {
+test('the Drinks filter shows the seven lemonade posters whole over their own blur', () => {
     const { ui } = experienceHarness();
     assert.deepEqual(landingData.BOARD_CATS.at(-1), ['drinks', 'Drinks']);
     const drinks = CARDS.filter((card) => card.cat === 'drinks');
-    /** The same four products, photos and names as the Three's Lemonade section: nothing new is claimed. */
+    /** The same seven products, posters and names as the Three's Lemonade section: nothing new is claimed. */
     assert.deepEqual(
         drinks.map(({ img, alt }) => ({ img, alt })),
         CUPS.map(({ img, alt }) => ({ img, alt })),
@@ -813,7 +825,7 @@ test('the Drinks filter shows the four verified lemonade cups whole over their o
     const figures = renderedNodes(ui).filter(
         (node) => node.props.className === 'v3-s114 v3-s115',
     );
-    assert.equal(figures.length, 4);
+    assert.equal(figures.length, 7);
     for (const [index, figure] of figures.entries()) {
         const [blur, photo] = figure.props.children;
         assert.equal(blur.props.className, 'board-drink-blur');
@@ -870,6 +882,53 @@ test("the Three's Lemonade section carries the V6 yellow heading over its lazily
         'utf8',
     );
     assert.match(css, /\.landing-v3 \.v3-s127 \{[^}]*color: #f2b419;/);
+});
+
+test('Landing V7: the online kiosk sits before the reviews, "Visit us" heads the map and the big Message us link is gone', () => {
+    const { ui } = experienceHarness();
+    const kiosk = [
+        { name: 'Adarna St.', address: null, url: '/kiosk/ADARNA', open: true },
+    ];
+    ui.props = { ...ui.props, kiosk };
+    const nodes = renderedNodes(ui);
+    const main = nodes.find((node) => node.type === 'main');
+    const order = main.props.children
+        .filter(Boolean)
+        .map((child: any) => child.props?.id ?? child.type);
+    const lemonade = order.indexOf('lemonade');
+    /** The Owner asked for the kiosk right before "Sabi ng mga suki." (the reviews). */
+    assert.deepEqual(order.slice(lemonade, lemonade + 4), [
+        'lemonade',
+        'LandingKiosk',
+        'CustomerReviews',
+        'visit',
+    ]);
+    assert.equal(
+        nodes.find((node) => node.type === 'LandingKiosk').props.branches,
+        kiosk,
+    );
+    const visitHeading = nodes.find(
+        (node) => node.props['data-part'] === 'comeRef',
+    );
+    assert.equal(visitHeading.props.children, 'Visit us');
+    const texts = nodes.flatMap((node) =>
+        typeof node.props.children === 'string' ? [node.props.children] : [],
+    );
+    assert.ok(!texts.includes('Come hungry.'));
+    assert.ok(!texts.includes('Message us'));
+    /** The Info and contact cards keep their own Facebook button. */
+    assert.ok(texts.includes('Message on Facebook'));
+
+    const css = readFileSync(
+        new URL('../resources/css/landing.css', import.meta.url),
+        'utf8',
+    );
+    /** Each poster carries its name and prices, so it is shown whole in Three's Lemonade. */
+    assert.match(
+        css,
+        /\.landing-v3 \.v3-s132 \{\s*display: block;\s*width: 100%;\s*height: auto;\s*aspect-ratio: 4\/5;\s*object-fit: contain;\s*\}/,
+    );
+    assert.doesNotMatch(css, /\.v3-s217|\.v3-s218|\.v3-s219|\.v3-s220/);
 });
 
 test('the team rail advances at the V6 pace on any refresh rate and restarts at the end', () => {

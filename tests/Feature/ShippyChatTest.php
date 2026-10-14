@@ -113,11 +113,15 @@ test('the location answer gives the published address and the approved map link'
         ->assertJsonPath('reply.actions', [['key' => 'maps', 'label' => 'Open in Google Maps', 'href' => 'https://maps.app.goo.gl/nivpx3cxuP56wAXo8', 'external' => true]]);
 });
 
-test('the lemonade question lists every flavor with its three sizes', function () {
+test('the lemonade question lists every flavor with its three sizes and the poster the landing page shows', function () {
     $items = shippyAsk('Lemonade flavors')->assertOk()->json('reply.items');
+    /** The poster paths live beside the names and prices in the one published menu file. */
+    $published = json_decode((string) file_get_contents(resource_path('js/lib/landing-menu.json')), true)['drinks']['items'];
 
     expect(array_column($items, 'name'))->toBe(['Pure Lemonade', 'Lemon + Yakult', 'Lemon + Dutch Mill', 'Lemon + Cucumber', 'Lemon + Calamansi', 'Lemon + Lychee', 'Lemon + Cola'])
-        ->and($items[0]['price'])->toBe('₱45 / 55 / 65');
+        ->and($items[0])->toBe(['name' => 'Pure Lemonade', 'price' => '₱45 / 55 / 65', 'img' => '/images/landing-v130-66f19537.webp', 'kind' => 'poster'])
+        ->and(array_column($items, 'img'))->toBe(array_column(array_slice($published, 0, 7), 2))
+        ->and(array_unique(array_column($items, 'kind')))->toBe(['poster']);
 });
 
 test('store hours follow the schedule at the current Manila time', function (string $manila, string $answer) {
@@ -185,7 +189,48 @@ test('a Gemini answer that breaks a rule is discarded for the rule-based answer'
     'a bare web address' => [['reply' => 'Punta ka sa evil-site.com para sa promo.', 'items' => []]],
     'text that is not the agreed JSON' => ['Tapa Silog is 85'],
     'an empty reply' => [['reply' => '   ', 'items' => ['Tapa Silog']]],
+    'a dish called available right now' => [['reply' => 'Yes, available ang Tapa Silog ngayon!', 'items' => ['Tapa Silog']]],
+    'a dish said to be still in stock without its card' => [['reply' => 'Meron pa kaming tapsilog, punta ka na!', 'items' => []]],
 ]);
+
+test('whether a dish is left tonight is never claimed: its menu price and the way to ask come at once', function (string $question, string $text) {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+
+    shippyAsk($question)->assertOk()
+        ->assertJsonPath('reply.source', 'menu')
+        ->assertJsonPath('reply.text', $text)
+        ->assertJsonPath('reply.items.0.name', 'Bulalo')
+        ->assertJsonPath('reply.actions.0.key', 'messenger');
+
+    Http::assertNothingSent();
+})->with([
+    ['Available ba ang bulalo ngayon?', 'Bulalo ay ₱150 sa menu namin. Hindi ko makita kung available pa ngayon, kaya message mo kami sa Facebook para sure.'],
+    ['Ubos na ba ang bulalo?', 'Bulalo ay ₱150 sa menu namin. Hindi ko makita kung available pa ngayon, kaya message mo kami sa Facebook para sure.'],
+    ['Is the bulalo available tonight?', "Bulalo is ₱150 on our menu. I can't see what's left right now, so message us on Facebook to be sure."],
+]);
+
+test('a Gemini reply that leaves the stock to be checked is kept', function (string $reply) {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+    Http::fake([SHIPPY_GEMINI => shippyGemini(['reply' => $reply, 'items' => ['Tapa Silog']])]);
+
+    shippyAsk(SHIPPY_OPEN_QUESTION)->assertOk()->assertJsonPath('reply.source', 'ai')->assertJsonPath('reply.text', $reply);
+})->with([
+    ['Para makasiguro sa availability ng Tapa Silog, i-message mo kami sa Facebook.'],
+    ['Message us on Facebook to check if the Tapa Silog is available tonight.'],
+    ['Hindi ko makita kung meron pa ngayon, kaya message mo kami.'],
+]);
+
+test('Gemini is told it cannot see what is left tonight', function () {
+    config(['services.gemini.key' => SHIPPY_TEST_KEY]);
+    Http::fake([SHIPPY_GEMINI => shippyGemini(['reply' => 'Oo, sulit at malasa ang Tapa Silog.', 'items' => ['Tapa Silog']])]);
+
+    shippyAsk(SHIPPY_OPEN_QUESTION)->assertOk()->assertJsonPath('reply.source', 'ai');
+
+    Http::assertSent(fn (Request $request) => str_contains(
+        $request->data()['systemInstruction']['parts'][0]['text'],
+        'Nobody here can see what is left tonight: never say an item is available, in stock, sold out or "meron pa".',
+    ));
+});
 
 test('an injected instruction cannot add markup, unknown products or unapproved buttons to the reply', function () {
     config(['services.gemini.key' => SHIPPY_TEST_KEY]);
@@ -314,7 +359,6 @@ test('a question the facts only partly answer is left to Gemini instead of being
     'hours on a day the schedule does not know' => ['Open ba kayo pag holiday?'],
     'the word open about something else' => ['May open mic ba kayo?'],
     'a comparison of two dishes' => ['Tapsilog o chicksilog, alin ang mas sulit?'],
-    'availability, which is never known' => ['Available ba ang bulalo ngayon?'],
     'a location word about something else' => ['Saan pwede mag-park ng motor?'],
     'a quantity the menu does not price' => ['Magkano ang 3 tapsilog?'],
     'rice alone, which could mean anything' => ['May rice ba?'],

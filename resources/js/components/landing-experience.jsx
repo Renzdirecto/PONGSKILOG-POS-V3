@@ -4,6 +4,7 @@ import {
     CustomerReviews,
     ReviewLegalDialog,
 } from '@/components/customer-reviews';
+import { LandingKiosk } from '@/components/landing-kiosk';
 import { LandingLove } from '@/components/landing-love';
 import { LandingMenuPrices } from '@/components/landing-menu-prices';
 import { LandingShippy } from '@/components/landing-shippy';
@@ -2235,8 +2236,8 @@ export default class LandingExperience extends React.Component {
                                                         <img
                                                             src={cp.img}
                                                             alt={cp.alt}
-                                                            width="820"
-                                                            height="702"
+                                                            width="720"
+                                                            height="900"
                                                             loading="lazy"
                                                             className="v3-s132"
                                                             decoding="async"
@@ -2262,6 +2263,9 @@ export default class LandingExperience extends React.Component {
                         </div>
                     </section>
 
+                    {/* Landing V7 online kiosk, placed before the reviews at the Owner's request. */}
+                    <LandingKiosk branches={this.props.kiosk ?? []} />
+
                     <CustomerReviews
                         reviews={this.props.reviews ?? []}
                         summary={
@@ -2284,7 +2288,7 @@ export default class LandingExperience extends React.Component {
                                 data-part="comeRef"
                                 className="v3-s155"
                             >
-                                Come hungry.
+                                Visit us
                             </h2>
                             <div data-reveal="" className="v3-s156">
                                 <div
@@ -2628,29 +2632,6 @@ export default class LandingExperience extends React.Component {
                                         </div>
                                     </article>
                                 </div>
-                                <a
-                                    data-info=""
-                                    href="https://www.facebook.com/profile.php?id=100094575655003"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="v3-s217 v3-s218"
-                                >
-                                    <span className="v3-s219">Message us</span>
-                                    <svg
-                                        width="1em"
-                                        height="1em"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        aria-hidden="true"
-                                        className="v3-s220"
-                                    >
-                                        <path d="M7 17L17 7M8 7h9v9"></path>
-                                    </svg>
-                                </a>
                             </div>
                         </div>
                         <footer className="v3-s221">

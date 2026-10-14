@@ -383,7 +383,14 @@ export function LandingShippy({
                                 {message.items.length > 0 && (
                                     <ul className="shippy-items">
                                         {message.items.map((item) => (
-                                            <li key={item.name}>
+                                            <li
+                                                key={item.name}
+                                                className={
+                                                    item.kind
+                                                        ? `shippy-${item.kind}`
+                                                        : undefined
+                                                }
+                                            >
                                                 {item.img ? (
                                                     <img
                                                         src={item.img}
@@ -396,8 +403,20 @@ export function LandingShippy({
                                                 ) : (
                                                     <i aria-hidden="true" />
                                                 )}
-                                                <span>{item.name}</span>
-                                                <b>{item.price}</b>
+                                                {/* A team member's role sits under their name, never in the price column. */}
+                                                {item.kind === 'person' ? (
+                                                    <span>
+                                                        {item.name}
+                                                        <small>
+                                                            {item.price}
+                                                        </small>
+                                                    </span>
+                                                ) : (
+                                                    <>
+                                                        <span>{item.name}</span>
+                                                        <b>{item.price}</b>
+                                                    </>
+                                                )}
                                             </li>
                                         ))}
                                     </ul>

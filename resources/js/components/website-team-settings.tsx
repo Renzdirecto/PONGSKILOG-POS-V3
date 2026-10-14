@@ -7,7 +7,7 @@ import {
     Trash2,
     UserRound,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
     actionClass,
@@ -16,6 +16,7 @@ import {
 } from '@/components/catalog-ui';
 import { OwnerStatusBadge, ownerPanelClass } from '@/components/owner-ui';
 import { SettingSwitch } from '@/components/receipt-settings';
+import { TeamPhotoCropDialog } from '@/components/team-photo-crop-dialog';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -33,6 +34,7 @@ import {
     NEW_TEAM_MEMBER,
     TEAM_LIMITS,
     TEAM_MAX_MEMBERS,
+    TEAM_PHOTO_SOURCE_BYTES,
     movedTeamOrder,
     teamCardChanged,
 } from '@/lib/website-team';
@@ -48,7 +50,7 @@ import {
     store as uploadPhoto,
 } from '@/routes/workspaces/website/team/photo';
 
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const TOO_LARGE = 'Choose a photo of at most 20 MB.';
 
 /**
  * Website → Team: the members of the landing page's Meet the Team rail, in the order the page shows them. Members are
@@ -194,6 +196,8 @@ function TeamMemberEditor({
     });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    /** The photo being framed before it is uploaded. */
+    const [framing, setFraming] = useState<File | null>(null);
     const changed = teamCardChanged(form, member);
     const incomplete = !form.role_label.trim() || !form.role_title.trim();
     const field = (name: string) => `team-${member.id}-${name}`;
@@ -308,19 +312,40 @@ function TeamMemberEditor({
                             const image = event.target.files?.[0];
                             event.target.value = '';
                             if (!image) return;
-                            if (image.size > MAX_PHOTO_BYTES) {
-                                setError('Choose an image of at most 5 MB.');
+                            if (image.size > TEAM_PHOTO_SOURCE_BYTES) {
+                                setError(TOO_LARGE);
                                 return;
                             }
-                            const payload = new FormData();
-                            payload.set('image', image);
-                            void run(
-                                () =>
-                                    qrRequest(uploadPhoto(member.id), payload),
-                                'Team photo saved',
-                            );
+                            setError('');
+                            setFraming(image);
                         }}
                     />
+                    {framing && (
+                        <TeamPhotoCropDialog
+                            file={framing}
+                            card={{
+                                code: form.role_label,
+                                title: form.role_title,
+                                name: form.name,
+                                bio: form.bio,
+                            }}
+                            saveLabel="Save photo"
+                            onCancel={() => setFraming(null)}
+                            onCropped={(photo) => {
+                                setFraming(null);
+                                const payload = new FormData();
+                                payload.set('image', photo);
+                                void run(
+                                    () =>
+                                        qrRequest(
+                                            uploadPhoto(member.id),
+                                            payload,
+                                        ),
+                                    'Team photo saved',
+                                );
+                            }}
+                        />
+                    )}
                     <Button
                         type="button"
                         variant="outline"
@@ -434,7 +459,7 @@ function TeamMemberEditor({
                             ? 'Required: a role label and a role.'
                             : changed
                               ? 'Unsaved changes.'
-                              : 'Photos: JPG, PNG or WebP up to 5 MB, saved right away and resized for the web.')}
+                              : 'Photos: JPG, PNG or WebP up to 20 MB. Frame it in the card, then it is saved right away and resized for the web.')}
                 </p>
                 <Button
                     type="submit"
@@ -453,8 +478,19 @@ function AddTeamMemberDialog({ onClose }: { onClose: () => void }) {
     const file = useRef<HTMLInputElement>(null);
     const [form, setForm] = useState<TeamCardForm>(NEW_TEAM_MEMBER);
     const [photo, setPhoto] = useState<File | null>(null);
+    const [framing, setFraming] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const preview = useMemo(
+        () => (photo ? URL.createObjectURL(photo) : null),
+        [photo],
+    );
+    useEffect(
+        () => () => {
+            if (preview) URL.revokeObjectURL(preview);
+        },
+        [preview],
+    );
     const incomplete = !form.role_label.trim() || !form.role_title.trim();
     const set = (values: Partial<TeamCardForm>) =>
         setForm((current) => ({ ...current, ...values }));
@@ -575,15 +611,40 @@ function AddTeamMemberDialog({ onClose }: { onClose: () => void }) {
                         onChange={(event) => {
                             const image = event.target.files?.[0] ?? null;
                             event.target.value = '';
-                            if (image && image.size > MAX_PHOTO_BYTES) {
-                                setError('Choose an image of at most 5 MB.');
+                            if (!image) return;
+                            if (image.size > TEAM_PHOTO_SOURCE_BYTES) {
+                                setError(TOO_LARGE);
                                 return;
                             }
                             setError('');
-                            setPhoto(image);
+                            setFraming(image);
                         }}
                     />
+                    {framing && (
+                        <TeamPhotoCropDialog
+                            file={framing}
+                            card={{
+                                code: form.role_label,
+                                title: form.role_title,
+                                name: form.name,
+                                bio: form.bio,
+                            }}
+                            saveLabel="Use photo"
+                            onCancel={() => setFraming(null)}
+                            onCropped={(framed) => {
+                                setFraming(null);
+                                setPhoto(framed);
+                            }}
+                        />
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
+                        {preview && (
+                            <img
+                                src={preview}
+                                alt="New member photo as framed"
+                                className="h-18 w-13.5 shrink-0 rounded-lg border border-neutral-200 object-cover"
+                            />
+                        )}
                         <Button
                             type="button"
                             variant="outline"
@@ -596,8 +657,8 @@ function AddTeamMemberDialog({ onClose }: { onClose: () => void }) {
                         </Button>
                         <span className="min-w-0 flex-1 truncate text-xs text-neutral-600">
                             {photo
-                                ? photo.name
-                                : 'JPG, PNG or WebP up to 5 MB.'}
+                                ? 'Framed and ready.'
+                                : 'JPG, PNG or WebP up to 20 MB.'}
                         </span>
                     </div>
                     <SettingSwitch

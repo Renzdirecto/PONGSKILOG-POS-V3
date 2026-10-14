@@ -5,8 +5,20 @@ export const SHIPPY_MAX_TURN = 420;
 /** The conversation lives in memory only: it is gone on a reload and never written to the browser's storage. */
 export const SHIPPY_KEPT_MESSAGES = 40;
 
-/** A product card or an hours row: the name and price come from the server, the photo from the landing page's own images. */
-export type ShippyItem = { name: string; price: string; img: string | null };
+/**
+ * A product card, an hours row or a team member: the name and price (a member's role) come from the server, the photo
+ * from the landing page's own images or a visible Meet the Team portrait. A `poster` is shown whole.
+ */
+export type ShippyItem = {
+    name: string;
+    price: string;
+    img: string | null;
+    kind?: 'poster' | 'person';
+};
+
+/** A photo the chat may show: one of this site's own images or the versioned portrait of a team card. */
+const SHIPPY_PHOTO =
+    /^(?:\/images\/[\w.-]+|\/landing-team\/\d+\/photo\?v=[a-f\d]{32})$/;
 /** A button the server approved: an anchor on this page or one of the business's own links. */
 export type ShippyAction = {
     key: string;
@@ -47,14 +59,16 @@ export function shippyReply(value: unknown): ShippyReply | null {
     return {
         text: words,
         items: list(reply.items)
-            .map((item) => ({
+            .map((item): ShippyItem => ({
                 name: text(item.name),
                 price: text(item.price),
                 img:
-                    typeof item.img === 'string' &&
-                    /^\/images\/[\w.-]+$/.test(item.img)
+                    typeof item.img === 'string' && SHIPPY_PHOTO.test(item.img)
                         ? item.img
                         : null,
+                ...(item.kind === 'poster' || item.kind === 'person'
+                    ? { kind: item.kind }
+                    : {}),
             }))
             .filter((item) => item.name !== ''),
         actions: list(reply.actions)

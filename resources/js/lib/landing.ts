@@ -49,6 +49,15 @@ export const ULAM = [
     },
 ];
 
+/**
+ * Three's Lemonade (Landing V7): each drink's poster sits beside its name and price in the published menu, so the
+ * Drinks cards, the Three's Lemonade section and Shippy read one path per drink. A poster carries its own name and
+ * prices, so it is always shown whole.
+ */
+export const CUPS = menu.drinks.items
+    .filter((item) => item.length > 2)
+    .map(([name, price, img]) => ({ name, price, img, alt: `${name} poster` }));
+
 export const CARDS = [
     {
         img: '/images/landing-v121-822fd717.webp',
@@ -275,31 +284,8 @@ export const CARDS = [
         alt: 'Crystal add-on',
         cat: 'ala',
     },
-    /* Landing V6: the four Three's Lemonade cups from CUPS; a `drink` photo is shown whole over its own blur. */
-    {
-        img: '/images/landing-v121-3dafa3d6.webp',
-        alt: 'Pure lemonade',
-        cat: 'drinks',
-        drink: true,
-    },
-    {
-        img: '/images/landing-v121-4774659c.webp',
-        alt: 'Lemon Yakult',
-        cat: 'drinks',
-        drink: true,
-    },
-    {
-        img: '/images/landing-v121-a8ea1cff.webp',
-        alt: 'Lemon calamansi',
-        cat: 'drinks',
-        drink: true,
-    },
-    {
-        img: '/images/landing-v121-d5ef5ce2.webp',
-        alt: 'Lemon cola',
-        cat: 'drinks',
-        drink: true,
-    },
+    /* The Three's Lemonade posters from CUPS; a `drink` poster is shown whole over its own blur. */
+    ...CUPS.map(({ img, alt }) => ({ img, alt, cat: 'drinks', drink: true })),
 ];
 
 export const BOARD_CATS = [
@@ -309,33 +295,6 @@ export const BOARD_CATS = [
     ['short', 'Short orders'],
     ['ala', 'Ala carte'],
     ['drinks', 'Drinks'],
-];
-
-export const CUPS = [
-    {
-        name: 'Pure Lemonade',
-        price: '₱45 / 55 / 65',
-        img: '/images/landing-v121-3dafa3d6.webp',
-        alt: 'Pure lemonade',
-    },
-    {
-        name: 'Lemon + Yakult',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-4774659c.webp',
-        alt: 'Lemon Yakult',
-    },
-    {
-        name: 'Lemon + Calamansi',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-a8ea1cff.webp',
-        alt: 'Lemon calamansi',
-    },
-    {
-        name: 'Lemon + Cola',
-        price: '₱55 / 65 / 75',
-        img: '/images/landing-v121-d5ef5ce2.webp',
-        alt: 'Lemon cola',
-    },
 ];
 
 /**
@@ -366,6 +325,41 @@ export type TeamCard = {
     img: string | null;
     visible: boolean;
 };
+
+/**
+ * One Branch in "Choose your branch" (Landing V7 online kiosk), from `LandingPageController`: its public Customer QR
+ * ordering page and whether it takes orders right now. The link always opens; the kiosk page itself decides what may
+ * be ordered.
+ */
+export type KioskBranch = {
+    name: string;
+    address: string | null;
+    url: string;
+    open: boolean;
+};
+
+const OPEN = '#2E5A4B';
+const CLOSED = '#B0281F';
+
+/** A Branch's own line in the branch sheet. */
+export function kioskBranchStatus(branch: KioskBranch) {
+    return branch.open
+        ? { label: 'Open now', fg: OPEN }
+        : { label: 'Closed now', fg: CLOSED };
+}
+
+/** The status beside "Start your order": the real state of the Branches, or nothing when there is none to show. */
+export function kioskStatus(branches: KioskBranch[]) {
+    const open = branches.filter((branch) => branch.open).length;
+    if (!branches.length) return null;
+    if (branches.length === 1) return kioskBranchStatus(branches[0]);
+    return open
+        ? {
+              label: `Open now at ${open} of ${branches.length} branches`,
+              fg: OPEN,
+          }
+        : { label: 'All branches closed now', fg: CLOSED };
+}
 
 /**
  * Meet the Team auto-slide: 0.024 px per ms, which is V6's 0.4 px per frame at 60 Hz on any screen refresh rate.

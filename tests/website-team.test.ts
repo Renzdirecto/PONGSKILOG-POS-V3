@@ -106,6 +106,81 @@ test('a team card offers Save only when something really changed', () => {
     });
 });
 
+test('a photo is framed in the 3:4 card: zoom 1 just covers it and a drag never uncovers an edge', () => {
+    const { clampTeamCrop, movedTeamCrop, teamCropFrame, teamCropRect } =
+        teamLib;
+    const landscape = { width: 4000, height: 3000 };
+    const centred = { zoom: 1, x: 0.5, y: 0.5 };
+    /** The full height of a wide photo, 3:4 out of its middle. */
+    assert.deepEqual(teamCropRect(centred, landscape), {
+        x: 875,
+        y: 0,
+        width: 2250,
+        height: 3000,
+    });
+    /** Twice the zoom shows half the width and height around the same point. */
+    assert.deepEqual(teamCropRect({ ...centred, zoom: 2 }, landscape), {
+        x: 1437.5,
+        y: 750,
+        width: 1125,
+        height: 1500,
+    });
+    /** The zoom stays between covering the card and four times that. */
+    assert.equal(clampTeamCrop({ ...centred, zoom: 0.2 }, landscape).zoom, 1);
+    assert.equal(clampTeamCrop({ ...centred, zoom: 9 }, landscape).zoom, 4);
+
+    /** Dragging right shows more of the left side, and stops at the photo's edge. */
+    const dragged = movedTeamCrop(centred, landscape, 0.2, 0);
+    assert.ok(dragged.x < 0.5);
+    assert.equal(
+        teamCropRect(movedTeamCrop(centred, landscape, 5, 5), landscape).x,
+        0,
+    );
+    assert.equal(
+        teamCropRect(movedTeamCrop(centred, landscape, -5, 0), landscape).x,
+        4000 - 2250,
+    );
+    /** A tall photo is already 3:4 wide enough: it can move up and down only. */
+    const tall = { width: 1200, height: 2400 };
+    assert.equal(movedTeamCrop(centred, tall, 1, 0).x, 0.5);
+    assert.deepEqual(teamCropRect(movedTeamCrop(centred, tall, 0, 5), tall), {
+        x: 0,
+        y: 0,
+        width: 1200,
+        height: 1600,
+    });
+
+    /** The preview places the photo in percent of the card, so it fits any preview size. */
+    assert.deepEqual(teamCropFrame(centred, landscape), {
+        width: '177.778%',
+        height: '100.000%',
+        left: '-38.889%',
+        top: '0.000%',
+    });
+    assert.deepEqual(teamLib.TEAM_PHOTO, { width: 810, height: 1080 });
+});
+
+test('the photo is cut to the card in the browser and the original never leaves it', () => {
+    const dialog = read('components/team-photo-crop-dialog.tsx');
+    assert.match(dialog, /canvas\.toBlob\(resolve, 'image\/jpeg', 0\.92\)/);
+    assert.match(
+        dialog,
+        /Math\.min\(TEAM_PHOTO\.width, Math\.round\(rect\.width\)\)/,
+    );
+    assert.match(dialog, /touch-none/);
+    assert.match(dialog, /setPointerCapture/);
+    assert.match(dialog, /aria-label="Zoom"/);
+    /** The preview card carries the public card's parts: role tab, shade, name, bio and role. */
+    for (const part of [
+        "card.code || 'ROLE'",
+        "card.name.trim() || 'Name to follow'",
+        "card.bio.trim() || 'Details to follow.'",
+        "card.title || 'Role'",
+    ])
+        assert.ok(dialog.includes(part), part);
+    assert.equal(teamLib.TEAM_PHOTO_SOURCE_BYTES, 20 * 1024 * 1024);
+});
+
 type Element = { type: unknown; props: Record<string, any> };
 function elements(value: any): Element[] {
     if (!value || typeof value !== 'object') return [];
@@ -170,6 +245,8 @@ function editorHarness(
                     refs[index] ??= { current: value };
                     return refs[index];
                 },
+                useMemo: (factory: () => unknown) => factory(),
+                useEffect: () => {},
             };
         if (name === 'react/jsx-runtime')
             return {
@@ -293,24 +370,47 @@ test('a card without a role label or role cannot be saved and says what is requi
     assert.equal(h.find('bio').props.maxLength, 120);
 });
 
-test('a portrait is uploaded, changed or removed right away and one over 5 MB is refused before sending', async () => {
+test('a portrait is framed in the card before it is uploaded, removed right away, and a photo over 20 MB is refused', async () => {
     const h = editorHarness(member, async () => ({ saved: true }));
     const input = () => h.find('Choose a photo for the COO card');
+    const crop = () =>
+        h.render().find((node) => node.type === 'TeamPhotoCropDialog');
     assert.equal(input().props.accept, 'image/jpeg,image/png,image/webp');
     assert.ok(h.button('Change photo'));
 
     input().props.onChange({
-        target: { files: [{ size: 5 * 1024 * 1024 + 1 }], value: 'big.jpg' },
+        target: { files: [{ size: 20 * 1024 * 1024 + 1 }], value: 'big.jpg' },
     });
-    assert.equal(words(h.message()), 'Choose an image of at most 5 MB.');
+    assert.equal(words(h.message()), 'Choose a photo of at most 20 MB.');
     assert.equal(h.message().props.role, 'alert');
-    assert.equal(h.requests.length, 0);
+    assert.equal(crop(), undefined);
 
+    /** Cancelling the framing sends nothing. */
     const photo = new File(['portrait'], 'me.jpg', { type: 'image/jpeg' });
     input().props.onChange({ target: { files: [photo], value: 'me.jpg' } });
+    assert.equal(crop()!.props.file, photo);
+    crop()!.props.onCancel();
+    assert.equal(crop(), undefined);
+    assert.equal(h.requests.length, 0);
+
+    /** The preview card shows the card's current details, and only the framed portrait is uploaded. */
+    h.find('bio').props.onChange({ target: { value: 'Bagong bio.' } });
+    input().props.onChange({ target: { files: [photo], value: 'me.jpg' } });
+    assert.deepEqual(crop()!.props.card, {
+        code: 'COO',
+        title: 'Chief Operating Officer',
+        name: 'Shamarra Faustino',
+        bio: 'Bagong bio.',
+    });
+    assert.equal(crop()!.props.saveLabel, 'Save photo');
+    const framed = new File(['framed'], 'team-photo.jpg', {
+        type: 'image/jpeg',
+    });
+    crop()!.props.onCropped(framed);
+    assert.equal(crop(), undefined);
     await settle();
     assert.equal(h.requests[0].route, 'POST team/2/photo');
-    assert.equal((h.requests[0].data as FormData).get('image'), photo);
+    assert.equal((h.requests[0].data as FormData).get('image'), framed);
     assert.deepEqual(h.toasts, ['Team photo saved']);
     h.reloads[0].onFinish();
 
@@ -406,6 +506,8 @@ function teamHarness(
                     refs[index] ??= { current: value };
                     return refs[index];
                 },
+                useMemo: (factory: () => unknown) => factory(),
+                useEffect: () => {},
             };
         if (name === 'react/jsx-runtime')
             return {
@@ -623,12 +725,37 @@ test('a new member is sent with their details and optional photo in one request'
                 'Choose a photo for the new team member',
         )!;
     picker.props.onChange({
-        target: { files: [{ size: 5 * 1024 * 1024 + 1 }], value: 'big.jpg' },
+        target: { files: [{ size: 20 * 1024 * 1024 + 1 }], value: 'big.jpg' },
     });
-    assert.ok(words(h.render()).includes('Choose an image of at most 5 MB.'));
-    const photo = new File(['portrait'], 'ana.jpg', { type: 'image/jpeg' });
-    picker.props.onChange({ target: { files: [photo], value: 'ana.jpg' } });
-    assert.ok(words(h.render()).includes('ana.jpg'));
+    assert.ok(words(h.render()).includes('Choose a photo of at most 20 MB.'));
+    /** A chosen photo is framed in the card first; only the framed portrait is kept for the request. */
+    const chosen = new File(['portrait'], 'ana.jpg', { type: 'image/jpeg' });
+    picker.props.onChange({ target: { files: [chosen], value: 'ana.jpg' } });
+    const crop = () =>
+        h.render().find((node) => node.type === 'TeamPhotoCropDialog');
+    assert.equal(crop()!.props.file, chosen);
+    assert.equal(crop()!.props.saveLabel, 'Use photo');
+    assert.deepEqual(crop()!.props.card, {
+        code: ' CREW ',
+        title: 'Kitchen Crew',
+        name: 'Ana Reyes',
+        bio: '',
+    });
+    const photo = new File(['framed'], 'team-photo.jpg', {
+        type: 'image/jpeg',
+    });
+    crop()!.props.onCropped(photo);
+    assert.equal(crop(), undefined);
+    assert.ok(words(h.render()).includes('Framed and ready.'));
+    assert.ok(
+        h
+            .render()
+            .some(
+                (node) =>
+                    node.type === 'img' &&
+                    node.props.alt === 'New member photo as framed',
+            ),
+    );
     h.render()
         .find((node) => node.type === 'SettingSwitch')!
         .props.onChange(false);

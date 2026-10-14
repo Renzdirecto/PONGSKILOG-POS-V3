@@ -865,6 +865,9 @@ test('on a phone the chat fills the visible screen, stops the page scrolling and
             .props.onClick({ preventDefault() {} });
         assert.equal(h.byClass('shippy-panel').length, 0);
         assert.equal(h.page.overflow, '');
+        /** React reuses the panel's element for the launcher, which must return to the bottom-right corner. */
+        assert.equal(panel.style.top, '');
+        assert.equal(panel.style.height, '');
         await h.wait(40);
         assert.deepEqual(h.sections, ['reviews']);
     } finally {

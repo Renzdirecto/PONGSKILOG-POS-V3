@@ -136,6 +136,11 @@ export function LandingShippy({
             window.visualViewport?.removeEventListener('scroll', fit);
             document.removeEventListener('keydown', onKey);
             root.style.overflow = scrolling;
+            /* React reuses this element for the closed launcher, so the phone sizing must not stay behind. */
+            if (element) {
+                element.style.top = '';
+                element.style.height = '';
+            }
         };
     }, [open]);
 

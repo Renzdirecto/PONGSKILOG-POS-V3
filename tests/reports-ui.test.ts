@@ -329,7 +329,7 @@ test('report filter chips, reset and the custom range fit phones with 44px targe
     assert.match(page, /inline-flex min-h-11 items-center rounded-full px-\[11px\][^"]+md:min-h-8"\s+>\s+Reset all/);
     assert.match(page, /max-w-full min-w-0 items-center gap-\[7px\]/);
     assert.equal(page.match(/className="w-\[128px\] min-w-0 /g)?.length, 2);
-    assert.match(page, /Choosing Cash, Cashless\s+or Split leaves out unpaid Pay Later orders\./);
+    assert.match(page, /Paid\s+Sales always excludes unpaid and partial orders\./);
     assert.match(page, /hidden overflow-x-auto rounded-\[13px\] border border-\[#efefef\] md:block">\s+<table/);
 });
 
@@ -555,7 +555,7 @@ test('Collections & drawer effects is Opening, Expenses then Closing, with the d
         /summary\.payments\[channel\]|summary\.corrections\[channel\]|summary\.voids\[channel\]/,
     );
     assert.doesNotMatch(ladder, /label: 'Corrections'|label: 'Void reversals'/);
-    assert.match(calculation, /Total sales/);
+    assert.match(calculation, /Paid Sales/);
     assert.match(calculation, /peso\(summary\.net_sales\)/);
     assert.match(ladder, /reconciliation\.expected\[channel\]/);
     assert.match(ladder, /reconciliation\.closing\[channel\]/);

@@ -1014,7 +1014,7 @@ export function SummaryDialog({
                                         <Chip tone="gold">Estimated</Chip>
                                     </span>
                                     <KeyValue
-                                        label="Net sales"
+                                        label="Paid Sales"
                                         value={formatPeso(figures.sales_cents)}
                                     />
                                     <KeyValue

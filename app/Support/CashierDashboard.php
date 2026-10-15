@@ -12,14 +12,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Read-only operational projection for the Cashier Dashboard: the active Branch and its current OPEN Store Session.
  *
- * Sales come from actual Payment rows of non-voided Orders in the current Store Session, net of lower-total
- * corrections on those Orders. Cash and Cashless are net of the corrections Store Session reconciliation attributes
+ * Paid Sales is the full final total of fully settled committed Active/Completed Orders, using OrderMoney.
+ * Cash and Cashless are collections, including partial payments, net of corrections Store Session reconciliation attributes
  * to each channel; a mixed-method correction still awaiting allocation is reported separately and never guessed.
  * Split payments are already stored as separate Cash and Cashless Payment rows, so the Split breakdown is
  * explanatory only and is never added to Sales again.
  *
  * Drinks sales is a product figure, not a drawer figure: the immutable Order Item `line_total` snapshots of committed
- * Active/Completed Orders of this Store Session whose Product sits in the current Drinks category. It is never netted
+ * fully settled Active/Completed Orders of this Store Session whose Product sits in the current Drinks category. It is never netted
  * against corrections (those belong to an Order, not a line) and is never added to Cash or Cashless.
  *
  * @phpstan-type SessionSummary array{
@@ -121,13 +121,14 @@ class CashierDashboard
             ->where('store_session_id', $session->id)
             ->whereNotNull('committed_at')
             ->whereIn('commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value])
-            ->count();
-
-        $gross = ExactMoney::add($collected['cash'], $collected['cashless']);
+            ->first([
+                DB::raw('COUNT(*) AS order_count'),
+                DB::raw('COALESCE(SUM(CASE WHEN ('.OrderMoney::outstandingSql().') = 0 THEN '.$this->cents('orders.total').' ELSE 0 END), 0) AS paid_sales'),
+            ]);
 
         return [
-            'orders' => $orders,
-            'sales' => ExactMoney::decimal(max(0, $gross - $correctionTotal)),
+            'orders' => (int) $orders?->order_count,
+            'sales' => ExactMoney::decimal((int) $orders?->paid_sales),
             'cash' => ExactMoney::decimal(max(0, $collected['cash'] - $corrections['cash'])),
             'cashless' => ExactMoney::decimal(max(0, $collected['cashless'] - $corrections['cashless'])),
             'drinks' => ExactMoney::decimal($this->drinks($branch, $session)),
@@ -155,6 +156,7 @@ class CashierDashboard
             ->where('orders.store_session_id', $session->id)
             ->whereNotNull('orders.committed_at')
             ->whereIn('orders.commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value])
+            ->whereRaw('('.OrderMoney::outstandingSql().') = 0')
             ->whereRaw('LOWER(categories.name) = ?', [strtolower(self::DRINKS_CATEGORY)])
             ->first([DB::raw('COALESCE(SUM('.$this->cents('order_items.line_total').'), 0) AS cents')]);
 

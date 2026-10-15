@@ -237,7 +237,7 @@ export default function OwnerDashboard({
                             {compare && <CompareLegend />}
                         </AnalyticsCard>
                         <AnalyticsCard
-                            title="Payment mix"
+                            title="Collections mix"
                             hint={`${peso(analytics.collections.total)} collected · net of corrections and voids`}
                         >
                             <PaymentMix collections={analytics.collections} />
@@ -375,7 +375,7 @@ export default function OwnerDashboard({
                                             <span className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] tabular-nums sm:grid-cols-4">
                                                 {(
                                                     [
-                                                        ['Net sales', peso(session.net_sales)],
+                                                        ['Paid Sales', peso(session.net_sales)],
                                                         ['Cash', peso(session.collections.cash)],
                                                         ['Cashless', peso(session.collections.cashless)],
                                                         ['Expenses', peso(session.expenses.total)],

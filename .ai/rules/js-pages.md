@@ -21,4 +21,4 @@ Audit Trail and Void Orders search/filter controls must apply without a submit o
 After a committed-order edit the Edit modal closes and the server's post-edit transaction opens in Details. After a settlement the page re-reads the transaction and shows Details for it. The balance-resolution step keeps that detail: choosing *Pay later* returns to the refreshed Details, never to the history list. Never show pre-edit or pre-payment data.
 
 ## The Cashier Dashboard reports real Drinks sales
-`CashierDashboard::drinks()` sums the committed Active/Completed Order Item `line_total` snapshots of the current Store Session whose Product sits in the current `Drinks` category (`DRINKS_CATEGORY`). It is a product figure: never netted against corrections, never added to Cash or Cashless, and never hard-coded.
+`CashierDashboard::drinks()` sums the fully settled committed Active/Completed Order Item `line_total` snapshots of the current Store Session whose Product sits in the current `Drinks` category (`DRINKS_CATEGORY`). It is a product figure: never netted against corrections, never added to Cash or Cashless, and never hard-coded.

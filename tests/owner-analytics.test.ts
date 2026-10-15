@@ -110,7 +110,7 @@ test('the product table sorts a bounded server list and narrows by category for 
 test('the dashboard follows the standalone sections with real data only', () => {
     for (const title of [
         'Sales trend',
-        'Payment mix',
+        'Collections mix',
         'Sales by category',
         'Peak sales hours',
         'Top products',
@@ -243,7 +243,7 @@ test('the reports payment donut is clickable, keyboard reachable and shows exact
     assert.match(components, /of \{peso\(total\)\} paid · \{peso\(active\.amount\)\}/);
     assert.match(components, /check Include split to show Split separately\./);
     assert.match(components, /pending allocation and not deducted from Cash or Cashless/);
-    assert.match(components, /not in this chart until settled/);
+    assert.match(components, /excluded until fully\s+settled/);
     assert.match(components, /Percentages are shares of paid sales/);
     assert.doesNotMatch(components.slice(components.indexOf('export function PaymentMethodDonut'), components.indexOf('export function CategoryBars')), /onMouseEnter|title=/);
 });

@@ -341,7 +341,7 @@ export default function Reports({
                             {plural(period.days, 'day')} ·{' '}
                             {plural(
                                 analytics.kpis.transactions.value ?? 0,
-                                'transaction',
+                                'paid transaction',
                             )}{' '}
                             · {scopeLabel}
                         </span>
@@ -670,7 +670,7 @@ export default function Reports({
 
                     <AnalyticsCard
                         title="Collections & drawer effects"
-                        hint={`Store Session reconciliation for every order: Net sales ${peso(summary.net_sales)} · collected ${peso(summary.collected)}. The same components Close Store uses — never a second calculation.`}
+                        hint={`Store Session reconciliation for every order: Paid Sales ${peso(summary.net_sales)} · collected ${peso(summary.collected)}. The same components Close Store uses — never a second calculation.`}
                     >
                         {analytics.filters.active && (
                             <Notice tone="neutral">
@@ -1186,7 +1186,7 @@ export default function Reports({
 
                         <AnalyticsCard
                             title="Cashier performance"
-                            hint="Transactions handled and how they were paid"
+                            hint="Paid transactions, operational orders and outstanding balances"
                             action={
                                 <SegmentedTabs
                                     label="Cashier ranking"
@@ -1219,7 +1219,7 @@ export default function Reports({
                                                     <span className="text-[11px] text-[#767676] tabular-nums">
                                                         {plural(
                                                             cashier.transactions,
-                                                            'transaction',
+                                                            'paid transaction',
                                                         )}{' '}
                                                         · avg order{' '}
                                                         {cashier.average ===
@@ -1268,7 +1268,7 @@ export default function Reports({
                                             {!isZero(cashier.unpaid) && (
                                                 <p className="text-[11px] text-[#767676] tabular-nums">
                                                     {peso(cashier.unpaid)}{' '}
-                                                    still unpaid (Pay Later)
+                                                    outstanding (unpaid or partial)
                                                 </p>
                                             )}
                                         </li>
@@ -1304,8 +1304,8 @@ export default function Reports({
                                             {[
                                                 'Business date',
                                                 'Sessions',
-                                                'Orders',
-                                                'Net sales',
+                                                'Operational orders',
+                                                'Paid Sales',
                                                 'Cash',
                                                 'Cashless',
                                                 'Expenses',
@@ -1516,7 +1516,7 @@ function DrawerLadder({
             sign: '',
             value: reconciliation.opening[channel],
         },
-        { label: `${label} Sales`, sign: '+', value: summary[channel] },
+        { label: `${label} collections`, sign: '+', value: summary[channel] },
         {
             label: `${label} Expenses`,
             sign: '−',
@@ -1672,7 +1672,7 @@ function CalculationDetails({ summary }: { summary: Report['summary'] }) {
                 <DisclosureChevron />
             </summary>
             <div className="border-t border-[#efefef] px-3 py-2.5">
-                <p className={labelClass}>Total sales</p>
+                <p className={labelClass}>Paid Sales</p>
                 <strong className="text-lg tabular-nums">
                     {peso(summary.net_sales)}
                 </strong>
@@ -1900,7 +1900,7 @@ function FilterDialog({
                         Order type, payment method and cashier apply to every
                         KPI, chart and table (Store Session reconciliation
                         always covers the whole drawer). Choosing Cash, Cashless
-                        or Split leaves out unpaid Pay Later orders. Category
+                        or Split filters by recorded payment channels. Paid Sales always excludes unpaid and partial orders. Category
                         narrows Top products and Product performance only.
                     </DialogDescription>
                     {groups.map((group) => {

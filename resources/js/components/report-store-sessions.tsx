@@ -265,13 +265,13 @@ export function SessionDetail({
                             </DetailSection>
                             <DetailSection title="Sales">
                                 <DetailRow
-                                    label="Orders"
+                                    label="Operational orders"
                                     value={session.orders.toLocaleString(
                                         'en-PH',
                                     )}
                                 />
                                 <DetailRow
-                                    label="Net Sales"
+                                    label="Paid Sales"
                                     value={peso(session.net_sales)}
                                     strong
                                 />
@@ -476,13 +476,13 @@ export function StoreSessionList({
                                                     scope="col"
                                                     className="px-3 py-2.5 text-right font-semibold"
                                                 >
-                                                    Orders
+                                                    Operational orders
                                                 </th>
                                                 <th
                                                     scope="col"
                                                     className="px-3 py-2.5 text-right font-semibold"
                                                 >
-                                                    Net sales
+                                                    Paid Sales
                                                 </th>
                                                 <th
                                                     scope="col"
@@ -639,11 +639,11 @@ export function StoreSessionList({
                                             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[12.5px] tabular-nums sm:grid-cols-4">
                                                 {[
                                                     [
-                                                        'Net sales',
+                                                        'Paid Sales',
                                                         peso(session.net_sales),
                                                     ],
                                                     [
-                                                        'Orders',
+                                                        'Operational orders',
                                                         String(session.orders),
                                                     ],
                                                     [

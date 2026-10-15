@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\DB;
  * Read-only Sales & Store Session report shared by the Owner and Super Admin workspaces.
  *
  * Business date is the Asia/Manila calendar date on which a Store Session OPENED; a session that crosses midnight stays
- * entirely under its opening date. Net Sales is sales value: the current final `orders.total` of committed Active or
- * Completed Orders (Pay Later included, drafts, uncommitted QR and voided Orders excluded), so committed edits are never
- * subtracted twice. Cash and Cashless are net collections per channel from `StoreSessionReconciliation`: Payment
+ * entirely under its opening date. Paid Sales is the current final `orders.total` of fully settled committed Active or
+ * Completed Orders. Unpaid and partial Orders contribute zero; corrections are included in settlement and never
+ * subtracted from the final total twice. Cash and Cashless are net collections per channel from `StoreSessionReconciliation`: Payment
  * amounts − allocated corrections − payments of voided Orders. Split legs are already inside those channels, so the
  * split value is explanatory only. Expenses are Store Session expenses only; stock-only inventory adjustments have no
  * financial effect. A CLOSED session reports its persisted close-time snapshot; an OPEN session is computed live and
@@ -185,7 +185,7 @@ class StoreSessionSalesReport
     }
 
     /**
-     * Per-session Orders, Net Sales and Cash/Cashless flows. Without an order scope a CLOSED session reports its
+     * Per-session operational Orders, Paid Sales and Cash/Cashless flows. A CLOSED session's flows use its
      * persisted close-time snapshot. With an order scope (report filters by order type, payment method or cashier)
      * every session is computed from its append-only Payment and correction records narrowed to the matching Orders:
      * the same reconciliation formula over fewer Orders. Store expenses are drawer-level and are never narrowed.
@@ -234,7 +234,7 @@ class StoreSessionSalesReport
     }
 
     /**
-     * Committed Order counts and Net Sales per Store Session in one grouped query.
+     * Operational Order counts and fully settled Paid Sales per Store Session in one grouped query.
      *
      * @param  array<string, string>  $sessionBranches
      * @param  OrderScope|null  $orderScope
@@ -244,6 +244,7 @@ class StoreSessionSalesReport
     {
         $total = 'CAST(ROUND(orders.total * 100) AS BIGINT)';
         $eligible = "orders.commercial_status IN ('".CommercialStatus::Active->value."', '".CommercialStatus::Completed->value."')";
+        $paid = $eligible.' AND ('.OrderMoney::outstandingSql().') = 0';
         $voided = "orders.commercial_status = '".CommercialStatus::Voided->value."'";
         $query = DB::table('orders')
             ->whereIn('orders.branch_id', array_values(array_unique($sessionBranches)))
@@ -259,7 +260,7 @@ class StoreSessionSalesReport
                 DB::raw('orders.store_session_id AS store_session_id'),
                 DB::raw('orders.branch_id AS branch_id'),
                 DB::raw("SUM(CASE WHEN {$eligible} THEN 1 ELSE 0 END) AS order_count"),
-                DB::raw("COALESCE(SUM(CASE WHEN {$eligible} THEN {$total} ELSE 0 END), 0) AS sales_cents"),
+                DB::raw("COALESCE(SUM(CASE WHEN {$paid} THEN {$total} ELSE 0 END), 0) AS sales_cents"),
                 DB::raw("SUM(CASE WHEN {$voided} THEN 1 ELSE 0 END) AS voided_count"),
             ])
             ->filter(fn (object $row): bool => ($sessionBranches[(string) $row->store_session_id] ?? null) === (string) $row->branch_id)

@@ -136,9 +136,9 @@ export default function OperationsOverview(props: Props) {
         tone?: 'gold' | 'warn';
     }[] = [
         {
-            label: 'Sales today',
+            label: 'Paid Sales today',
             value: formatPeso(sales, true),
-            note: `${figures?.items ?? 0} items · ${figures?.orders ?? 0} orders`,
+            note: `${figures?.items ?? 0} paid items · ${figures?.orders ?? 0} paid orders`,
             href: planHref('stock'),
         },
         {
@@ -146,7 +146,7 @@ export default function OperationsOverview(props: Props) {
             value: formatPeso(figures?.cogs_cents ?? 0, true),
             note: figures?.uncosted_sales_cents
                 ? `${formatPeso(figures.uncosted_sales_cents, true)} of sales not costed`
-                : 'From recorded recipe costs',
+                : 'From committed order recipe costs',
             href: planHref('recipes'),
         },
         {

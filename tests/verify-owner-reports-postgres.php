@@ -11,8 +11,14 @@
 use App\Actions\StoreSessions\CloseStoreSession;
 use App\Enums\KitchenStatus;
 use App\Models\Branch;
+use App\Models\OrderAdjustment;
+use App\Models\OrderItemModifier;
 use App\Models\StoreSession;
 use App\Support\BusinessSnapshot;
+use App\Support\CashierDashboard;
+use App\Support\OperationsSummary;
+use App\Support\OrderMoney;
+use App\Support\ReportCsvExport;
 use App\Support\SalesAnalytics;
 use App\Support\StoreSessionReconciliation;
 use App\Support\StoreSessionSalesReport;
@@ -215,6 +221,51 @@ try {
     $history = app(TransactionHistory::class)->for(null, []);
     verifyPhase16a($history['transactions']->total() === $history['history_total'], 'J: All Branches history');
     echo 'J PASS: Business snapshot and All Branches Transaction History query PostgreSQL.'.PHP_EOL;
+
+    /** L: settlement gates Paid Sales; collections and close-time snapshots keep their own basis. */
+    phase16aAt('2026-09-25 23:00');
+    $paidSales = StoreCloseScenario::create();
+    $paidSales->branch->update(['code' => 'PAID']);
+    $now = $paidSales->payNow(2, 'cash');
+    $unpaid = $paidSales->payLater(3);
+    $partial = $paidSales->edit($paidSales->payNow(1, 'cashless'), 4);
+    OrderItemModifier::factory()->for($partial->items()->sole())->create(['semantic_role_snapshot' => 'size', 'option_name_snapshot' => 'Large']);
+    $partial->update(['payment_status' => 'paid']);
+    $paidDay = ['date' => 'custom', 'from' => '2026-09-25', 'to' => '2026-09-25'];
+    $before = $analytics->for($paidSales->branch, $paidDay);
+    $a = $before['analytics'];
+    verifyPhase16a($a['kpis']['sales']['value'] === '200.00' && $a['kpis']['transactions']['value'] === 1 && $a['kpis']['items']['value'] === 2, 'L: only fully paid sales/transactions/items');
+    verifyPhase16a($a['kpis']['operational_orders']['value'] === 3 && $a['collections']['partial_collections'] === '100.00' && $a['collections']['outstanding'] === '600.00', 'L: operations/partial/outstanding separate');
+    verifyPhase16a($a['products'][0]['quantity'] === 2 && $a['products'][0]['sizes'] === [] && $a['categories'][0]['items'] === 2, 'L: products/categories/sizes exclude partial');
+    verifyPhase16a($a['cashiers'][0]['sales'] === '200.00' && $a['cashiers'][0]['unpaid'] === '600.00', 'L: cashier paid/outstanding');
+    verifyPhase16a($before['report']['summary']['net_sales'] === '200.00' && $before['report']['summary']['collected'] === '300.00', 'L: report Paid Sales vs Collections');
+    $cashier = app(CashierDashboard::class)->for($paidSales->branch);
+    verifyPhase16a($cashier['summary']['sales'] === '200.00' && $cashier['summary']['orders'] === 3 && $cashier['payments']['balance_due'] === '600.00', 'L: Cashier Dashboard paid/operational/outstanding');
+    $operations = app(OperationsSummary::class)->today($paidSales->branch)['business'];
+    verifyPhase16a($operations['sales_cents'] === 20000 && $operations['orders'] === 1 && $operations['products_sold'][0]['quantity'] === 2, 'L: Operations Paid Sales and Products Sold');
+    $cashless = $analytics->for($paidSales->branch, [...$paidDay, 'payment_methods' => ['cashless']])['analytics'];
+    verifyPhase16a($cashless['kpis']['sales']['value'] === '0.00' && $cashless['collections']['cashless'] === '100.00', 'L: partial channel filter');
+    $csvRows = app(ReportCsvExport::class)->rows($before['report'], $a, []);
+    verifyPhase16a(in_array(['Paid Sales', '200.00', '0.00'], $csvRows, true) && in_array(['Outstanding balance', '600.00'], $csvRows, true), 'L: CSV parity');
+    phase16aAt('2026-09-26 00:15');
+    $paidSales->done($paidSales->settle($partial, 'cash', '300.00'));
+    $paidSales->done($paidSales->settle($unpaid, 'split', '200.00', '100.00'));
+    $paidSales->done($now);
+    phase16aClose($paidSales, '2026-09-26 00:30');
+    $snapshot = $paidSales->session->fresh()->reconciliation_snapshot;
+    $settled = $analytics->for($paidSales->branch, $paidDay);
+    verifyPhase16a($settled['analytics']['kpis']['sales']['value'] === '900.00' && $settled['analytics']['payment_mix']['totals'] === ['combined' => '900.00', 'separate' => '900.00'], 'L: full later settlement once');
+    verifyPhase16a($settled['analytics']['products'][0]['sizes'] === [['name' => 'Large', 'quantity' => 4]], 'L: historical size counted after settlement');
+    verifyPhase16a($analytics->for($paidSales->branch, $paidDay) === $settled, 'L: repeated refresh does not accumulate');
+    verifyPhase16a($analytics->for($paidSales->branch, ['date' => 'custom', 'from' => '2026-09-26', 'to' => '2026-09-26'])['analytics']['kpis']['sales']['value'] === '0.00', 'L: payment date receives no sale');
+    verifyPhase16a($paidSales->session->fresh()->reconciliation_snapshot === $snapshot, 'L: close snapshot unchanged');
+    /** A historical reversal must reopen settlement without rewriting the stored reconciliation. */
+    OrderAdjustment::factory()->for($unpaid)->create(['store_session_id' => $paidSales->session->id, 'amount' => '300.00', 'cash_amount' => '200.00', 'cashless_amount' => '100.00']);
+    verifyPhase16a(app(OrderMoney::class)->totals($unpaid->fresh())['outstanding'] === 30000, 'L: reversal settlement authority');
+    $reversed = $analytics->for($paidSales->branch, $paidDay);
+    verifyPhase16a($reversed['analytics']['kpis']['sales']['value'] === '600.00' && $reversed['report']['summary']['net_sales'] === '600.00', 'L: historical reversed payment excluded');
+    verifyPhase16a($paidSales->session->fresh()->reconciliation_snapshot === $snapshot && $reversed['report']['summary']['collected'] === '900.00', 'L: historical close collections preserved after correction');
+    echo 'L PASS: unpaid/partial, stale status, edits, products/categories/sizes, cashier, filters, CSV, later split settlement, repeat refresh, historical reversal and immutable close snapshot.'.PHP_EOL;
     echo 'PASS: PostgreSQL Owner report read parity.'.PHP_EOL;
 } finally {
     Carbon::setTestNow();

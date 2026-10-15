@@ -122,9 +122,7 @@ function DashboardSection({
                     </span>
                 )}
             </div>
-            <div className={`grid gap-2.5 ${columns}`}>
-                {children}
-            </div>
+            <div className={`grid gap-2.5 ${columns}`}>{children}</div>
         </section>
     );
 }
@@ -204,8 +202,8 @@ export default function CashierDashboard({
     const hasCorrections = summary !== null && summary.corrections !== '0.00';
     const channelHint = (channel: string) =>
         hasCorrections
-            ? `${channel} collected, net of corrections`
-            : `${channel} payments this Store Session`;
+            ? `${channel} collections, including partial payments, net of corrections${unallocatedHint}`
+            : `${channel} collections, including partial payments`;
     const unallocatedHint =
         summary && summary.unallocated_corrections !== '0.00'
             ? ` · ${pesos(summary.unallocated_corrections)} awaiting Cash/Cashless allocation`
@@ -213,7 +211,7 @@ export default function CashierDashboard({
     const sessionTiles: Tile[] = [
         {
             key: 'orders',
-            label: 'Orders',
+            label: 'Operational orders',
             value: summary ? String(summary.orders) : '—',
             hint: summary ? 'Committed this Store Session' : closedHint,
             icon: ShoppingBag,
@@ -221,19 +219,17 @@ export default function CashierDashboard({
         },
         {
             key: 'sales',
-            label: 'Sales',
+            label: 'Paid Sales',
             value: summary ? pesos(summary.sales) : '—',
             hint: summary
-                ? hasCorrections
-                    ? `Payments collected, less ${pesos(summary.corrections)} corrections${unallocatedHint}`
-                    : 'Payments collected this Store Session'
+                ? 'Full final totals of fully settled orders only'
                 : closedHint,
             icon: TrendingUp,
             tone: 'bg-[#111] text-white',
         },
         {
             key: 'cash',
-            label: 'Cash',
+            label: 'Cash collections',
             value: summary ? pesos(summary.cash) : '—',
             hint: summary ? channelHint('Cash') : closedHint,
             icon: Banknote,
@@ -241,11 +237,9 @@ export default function CashierDashboard({
         },
         {
             key: 'cashless',
-            label: 'Cashless',
+            label: 'Cashless collections',
             value: summary ? pesos(summary.cashless) : '—',
-            hint: summary
-                ? (splitHint ?? channelHint('Cashless'))
-                : closedHint,
+            hint: summary ? (splitHint ?? channelHint('Cashless')) : closedHint,
             icon: Smartphone,
             tone: 'bg-[#eff6ff] text-[#1d4ed8]',
         },
@@ -254,7 +248,7 @@ export default function CashierDashboard({
             label: 'Drinks sales',
             value: summary ? pesos(summary.drinks) : '—',
             hint: summary
-                ? 'Drinks category items sold this Store Session'
+                ? 'Fully settled Drinks items this Store Session'
                 : closedHint,
             icon: CupSoda,
             tone: 'bg-[#fff7ed] text-[#c2410c]',

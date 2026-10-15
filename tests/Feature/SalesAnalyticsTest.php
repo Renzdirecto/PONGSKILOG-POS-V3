@@ -6,11 +6,14 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\ModifierGroup;
 use App\Models\ModifierOption;
+use App\Models\OrderAdjustment;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Role;
 use App\Models\StoreSession;
 use App\Models\User;
 use App\Support\ActiveBranchContext;
+use App\Support\OrderMoney;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Facades\DB;
@@ -508,11 +511,11 @@ test('the csv export contains the same scoped and filtered figures and never ano
     expect($rows($scoped))
         ->toContain(['Branch scope', 'ALPHA · ALPHA Branch'])
         ->toContain(['Active filters', 'Order type: Dine in'])
-        ->toContain(['Total sales', '200.00', '0.00'])
+        ->toContain(['Paid Sales', '200.00', '0.00'])
         ->and((string) $scoped->getContent())->not->toContain('BRAVO')
         ->and($rows($all))
         ->toContain(['Branch scope', 'All Branches'])
-        ->toContain(['Total sales', '700.00', '0.00'])
+        ->toContain(['Paid Sales', '700.00', '0.00'])
         ->toContain(['BRAVO · BRAVO Branch', '1', '1', '100.00', '0.00', '100.00', '0.00']);
 });
 
@@ -537,7 +540,7 @@ test('the csv export carries the payment method mix and the category filter of t
 
     expect($rows)
         ->toContain(['Active filters', 'Category (product tables only): Drinks'])
-        ->toContain(['Total sales', '550.00', '0.00'])
+        ->toContain(['Paid Sales', '550.00', '0.00'])
         ->toContain(['Payment method (split parts inside Cash and Cashless)', 'Amount', '% of paid sales', 'Orders', 'Of which split'])
         ->toContain(['Cash', '300.00', '54.50', '2', '1'])
         ->toContain(['Cashless', '250.00', '45.50', '2', '1'])
@@ -721,6 +724,7 @@ test('product Size breakdowns come from the order snapshots, not from today\'s m
     ]];
     $scenario->payNow(3, 'cash', null, ['items' => $line($small->id, 3)]);
     $scenario->payNow(5, 'cash', null, ['items' => $line($large->id, 5)]);
+    $scenario->edit($scenario->payNow(2, 'cash', null, ['items' => $line($small->id, 2)]), 4, ['items' => $line($small->id, 4)]);
     /** Renaming the option today must never reinterpret the orders already recorded. */
     $large->update(['name' => 'Jumbo']);
 
@@ -746,3 +750,136 @@ test('a branch-scoped report never reaches another branch session through the Se
     expect($response->inertiaProps('report.session_filter.selected'))->toBe($main->session->id)
         ->and($response->inertiaProps('analytics.kpis.sales.value'))->toBe('200.00');
 });
+
+test('unpaid and partial orders stay operational and outstanding but never inflate paid performance or exports', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $scenario->payNow(2, 'cash');
+    $scenario->done($scenario->payLater(3));
+    $partial = $scenario->payLater(4);
+    Payment::factory()->for($partial)->create([
+        'store_session_id' => $scenario->session->id, 'created_by_user_id' => $scenario->cashier->id,
+        'amount' => '150.00', 'amount_received' => '150.00', 'change_amount' => '0.00',
+    ]);
+    /** Cached status must not override the authoritative ledger. */
+    $partial->update(['payment_status' => 'paid']);
+    $foreign = analyticsScenario('2026-09-23 09:00', 'FOREIGN');
+    $foreign->payNow(9, 'cash');
+
+    $response = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk();
+    $analytics = $response->inertiaProps('analytics');
+
+    expect($analytics['kpis']['sales']['value'])->toBe('200.00')
+        ->and($analytics['kpis']['transactions']['value'])->toBe(1)
+        ->and($analytics['kpis']['operational_orders']['value'])->toBe(3)
+        ->and($analytics['kpis']['items']['value'])->toBe(2)
+        ->and($analytics['kpis']['average_order']['value'])->toBe('200.00')
+        ->and($analytics['collections'])->toMatchArray(['cash' => '350.00', 'outstanding' => '550.00', 'outstanding_orders' => 2, 'partial_collections' => '150.00'])
+        ->and($analytics['payment_mix']['totals'])->toBe(['combined' => '200.00', 'separate' => '200.00'])
+        ->and($analytics['products'][0])->toMatchArray(['sales' => '200.00', 'quantity' => 2, 'orders' => 1])
+        ->and($analytics['categories'][0])->toMatchArray(['sales' => '200.00', 'items' => 2])
+        ->and($analytics['cashiers'][0])->toMatchArray(['sales' => '200.00', 'transactions' => 1, 'operational_orders' => 3, 'unpaid' => '550.00'])
+        ->and($analytics['order_types'][1])->toMatchArray(['sales' => '200.00', 'transactions' => 1, 'items' => 2])
+        ->and(collect($analytics['trend']['buckets'])->sum('sales_cents'))->toBe(20000)
+        ->and($analytics['kitchen']['completed'])->toBe(1)
+        ->and($response->inertiaProps('report.summary'))->toMatchArray(['orders' => 3, 'net_sales' => '200.00', 'collected' => '350.00'])
+        ->and($response->inertiaProps('report.days.0.net_sales'))->toBe('200.00');
+
+    $cash = analyticsReport($scenario->branch, [...analyticsDay('2026-09-23'), 'payment_methods' => ['cash']])->inertiaProps('analytics');
+    expect($cash['kpis']['sales']['value'])->toBe('200.00')
+        ->and($cash['collections']['cash'])->toBe('350.00')
+        ->and($cash['collections']['outstanding'])->toBe('250.00');
+
+    $csv = (string) $this->actingAs(analyticsViewer())
+        ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+        ->get(route('workspaces.reports.export', analyticsDay('2026-09-23')))->assertOk()->getContent();
+    $rows = array_map(fn (string $line): array => str_getcsv($line, escape: ''), explode("\n", trim(ltrim($csv, "\u{FEFF}"))));
+    expect($rows)->toContain(['Paid Sales', '200.00', '0.00'])
+        ->toContain(['Operational orders', '3', '0'])
+        ->toContain(['Partial collections (included in collections)', '150.00'])
+        ->toContain(['Outstanding balance', '550.00']);
+    expect($csv)->not->toContain('FOREIGN');
+
+    foreach (['owner' => 'workspaces.owner', 'super_admin' => 'workspaces.super-admin'] as $role => $route) {
+        $dashboard = $this->actingAs(analyticsViewer($role))
+            ->withSession([ActiveBranchContext::SESSION_KEY => $scenario->branch->id])
+            ->get(route($route))->assertOk();
+        expect($dashboard->inertiaProps('analytics.kpis.sales.value'))->toBe('200.00')
+            ->and($dashboard->inertiaProps('analytics.collections.outstanding'))->toBe('550.00');
+    }
+});
+
+test('later settlement counts the full sale once on the original Manila business date and preserves the close snapshot', function () {
+    $scenario = analyticsScenario('2026-09-23 23:00');
+    $order = $scenario->payLater(3);
+    analyticsAt('2026-09-24 00:15');
+    $scenario->done($scenario->settle($order, 'split', '200.00', '100.00'));
+    $session = analyticsClose($scenario, '2026-09-24 00:30');
+    $snapshot = $session->reconciliation_snapshot;
+    analyticsReopen($scenario, '2026-09-24 08:00');
+
+    $first = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps();
+    $again = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps();
+    $next = analyticsReport($scenario->branch, analyticsDay('2026-09-24'))->inertiaProps('analytics');
+
+    expect($first['analytics']['kpis']['sales']['value'])->toBe('300.00')
+        ->and($first['analytics']['payment_mix']['totals'])->toBe(['combined' => '300.00', 'separate' => '300.00'])
+        ->and($again['analytics'])->toBe($first['analytics'])
+        ->and($next['kpis']['sales']['value'])->toBe('0.00')
+        ->and($next['kpis']['sales']['previous'])->toBe('300.00')
+        ->and($first['report']['sessions'][0]['business_date'])->toBe('2026-09-23')
+        ->and($first['report']['sessions'][0]['reconciliation']['source'])->toBe('closing_snapshot')
+        ->and($session->fresh()->reconciliation_snapshot)->toBe($snapshot);
+});
+
+test('balance due edits remove a paid sale until resettled and corrections and voids never count it twice', function () {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $order = $scenario->edit($scenario->payNow(2, 'cash'), 3);
+
+    $partial = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+    expect($partial['kpis']['sales']['value'])->toBe('0.00')
+        ->and($partial['products'])->toBe([])
+        ->and($partial['payment_mix']['paid_orders'])->toBe(0)
+        ->and($partial['collections'])->toMatchArray(['cash' => '200.00', 'outstanding' => '100.00', 'partial_collections' => '200.00']);
+
+    $order = $scenario->settle($order, 'cashless');
+    expect(analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics.kpis.sales.value'))->toBe('300.00');
+    $order = $scenario->edit($order, 2, ['refund_cash_amount' => '100.00']);
+    $corrected = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+    expect($corrected['kpis']['sales']['value'])->toBe('200.00')
+        ->and($corrected['payment_mix']['totals'])->toBe(['combined' => '200.00', 'separate' => '200.00']);
+    $scenario->void($order);
+    $voided = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->inertiaProps('analytics');
+    expect($voided['kpis']['sales']['value'])->toBe('0.00')
+        ->and($voided['collections']['total'])->toBe('0.00')
+        ->and($voided['products'])->toBe([]);
+});
+
+test('reporting settlement matches OrderMoney even when cached status disagrees or collections are reversed', function (string $payment, string $correction, string $expectedSales, string $expectedOutstanding) {
+    $scenario = analyticsScenario('2026-09-23 09:00');
+    $order = $scenario->payLater(1);
+    $order->update(['payment_status' => 'paid']);
+    if ($payment !== '0.00') {
+        Payment::factory()->for($order)->create(['store_session_id' => $scenario->session->id, 'amount' => $payment]);
+    }
+    if ($correction !== '0.00') {
+        OrderAdjustment::factory()->for($order)->create([
+            'store_session_id' => $scenario->session->id, 'amount' => $correction,
+            'cash_amount' => $correction, 'cashless_amount' => '0.00',
+        ]);
+    }
+
+    $response = analyticsReport($scenario->branch, analyticsDay('2026-09-23'))->assertOk();
+    $money = app(OrderMoney::class)->totals($order->fresh());
+
+    expect($response->inertiaProps('analytics.kpis.sales.value'))->toBe($expectedSales)
+        ->and($response->inertiaProps('report.summary.net_sales'))->toBe($expectedSales)
+        ->and($response->inertiaProps('analytics.collections.outstanding'))->toBe($expectedOutstanding)
+        ->and($money['outstanding'])->toBe((int) round((float) $expectedOutstanding * 100));
+})->with([
+    'unpaid despite paid cache' => ['0.00', '0.00', '0.00', '100.00'],
+    'partial collection' => ['50.00', '0.00', '0.00', '50.00'],
+    'fully collected' => ['100.00', '0.00', '100.00', '0.00'],
+    'refund reopens balance' => ['100.00', '25.00', '0.00', '25.00'],
+    'fully reversed collection' => ['100.00', '100.00', '0.00', '100.00'],
+    'adjustments above payments clamp settlement' => ['50.00', '75.00', '0.00', '100.00'],
+]);

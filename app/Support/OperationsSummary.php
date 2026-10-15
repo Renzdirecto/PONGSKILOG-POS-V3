@@ -15,10 +15,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Today's Operations sales, estimated COGS, pamamalengke and profit for one Branch or All Branches, server-side.
  *
- * "Today" is the Phase 16 business date: the Store Sessions that opened on today's Asia/Manila date. Business Net
- * Sales and Store expenses come from StoreSessionSalesReport (the Reports authority), so Operations never re-derives
+ * "Today" is the Phase 16 business date: the Store Sessions that opened on today's Asia/Manila date. Business
+ * Paid Sales and Store expenses come from StoreSessionSalesReport (the Reports authority), so Operations never re-derives
  * them. Plan figures use each Order line's historical recipe snapshot (Plan, recipe state) and the cost snapshotted on
  * its Ingredient movements, so moving a Product or editing a recipe or cost never rewrites past figures.
+ * Paid Sales and Products Sold exclude unpaid/partial Orders; consumption costs retain all committed Orders.
  *
  * - Estimated COGS counts only recipe-backed sales; missing-recipe and direct-resale sales are reported as uncosted
  *   (there is no trustworthy direct Product cost), never as ₱0 cost.
@@ -59,12 +60,13 @@ class OperationsSummary
             ->whereIn('store_session_id', $sessionIds)
             ->whereNotNull('committed_at')
             ->whereIn('commercial_status', [CommercialStatus::Active->value, CommercialStatus::Completed->value]);
+        $paidOrderIds = $orderIds === null ? null : (clone $orderIds)->whereRaw('('.OrderMoney::outstandingSql().') = 0');
 
         $plans = [];
         $business = $this->empty();
         $costedSales = 0;
         $outsideSales = 0;
-        foreach ($this->lines($orderIds) as $line) {
+        foreach ($this->lines($paidOrderIds) as $line) {
             $plan = $line['plan_id'];
             $costed = $line['state'] === RecipeState::Recipe->value;
             if ($costed) {
@@ -108,7 +110,7 @@ class OperationsSummary
         }
 
         $business['sales_cents'] = $netSales;
-        $business['orders'] = $orderIds === null ? 0 : (clone $orderIds)->count();
+        $business['orders'] = $paidOrderIds === null ? 0 : (clone $paidOrderIds)->count();
         $business['uncosted_sales_cents'] = max(0, $netSales - $costedSales);
         $business['other_expenses_cents'] = max(0, $expenses - $expensedPurchases);
 

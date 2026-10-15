@@ -406,3 +406,28 @@ test('Drinks sales stay a product figure and never move Cash or Cashless', funct
             'split' => ['count' => 1, 'cash' => '120.00', 'cashless' => '80.00'],
         ]));
 });
+
+test('cashier Paid Sales and Drinks exclude partial and unpaid orders while collections and operations retain them', function () {
+    $scenario = StoreCloseScenario::create();
+    $scenario->product->update(['category_id' => Category::factory()->create(['name' => 'Drinks'])->id]);
+    $scenario->payNow(2, 'cash');
+    $scenario->payLater(3);
+    $partial = $scenario->edit($scenario->payNow(1, 'cashless'), 4);
+
+    $this->actingAs($scenario->cashier)->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.summary.orders', 3)
+            ->where('dashboard.summary.sales', '200.00')
+            ->where('dashboard.summary.drinks', '200.00')
+            ->where('dashboard.summary.cash', '200.00')
+            ->where('dashboard.summary.cashless', '100.00')
+            ->where('dashboard.payments.pending', 2)
+            ->where('dashboard.payments.balance_due', '600.00'));
+
+    $scenario->settle($partial, 'cash', '300.00');
+    $this->get(route('workspaces.cashier-dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.summary.sales', '600.00')
+            ->where('dashboard.summary.drinks', '600.00')
+            ->where('dashboard.payments.balance_due', '300.00'));
+});

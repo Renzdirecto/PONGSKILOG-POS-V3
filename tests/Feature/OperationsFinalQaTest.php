@@ -5,6 +5,7 @@ use App\Events\IngredientStockChanged;
 use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\CustomerQrSession;
+use App\Models\IngredientMovement;
 use App\Models\PamamalengkeListEntry;
 use App\Models\Product;
 use App\Support\ActiveBranchContext;
@@ -121,4 +122,32 @@ test('Products Sold groups a plan\'s sales by category with size counts from the
         ->and($sold[0]['sizes'])->toBe([['name' => 'Large', 'quantity' => 5], ['name' => 'Medium', 'quantity' => 1]])
         ->and(array_map(fn (array $line): array => [$line['quantity'], $line['size'], $line['name']], $sold[0]['lines']))
         ->toBe([[5, 'Large', 'Lemon Yakult'], [1, null, 'Coke Mismo'], [1, 'Medium', 'Lemon Yakult']]);
+});
+
+test('Plan Paid Sales and Products Sold exclude unpaid and partial orders without changing ingredient consumption', function () {
+    $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    $this->ops->payLater([$this->ops->line($this->ops->lemonYakult, 1, 'm')]);
+    $partial = $this->ops->edit(
+        $this->ops->payNow([$this->ops->line($this->ops->lemonYakult, 1, 'm')]),
+        [$this->ops->line($this->ops->lemonYakult, 2, 'm')],
+    );
+    $movementCount = IngredientMovement::query()->count();
+
+    $summary = app(OperationsSummary::class)->today($this->ops->branch);
+    $plan = $summary['plans'][$this->ops->drinks->id];
+
+    expect($summary['business']['sales_cents'])->toBe(7000)
+        ->and($summary['business']['orders'])->toBe(1)
+        ->and($plan['sales_cents'])->toBe(7000)
+        ->and($plan['items'])->toBe(1)
+        ->and($plan['products_sold'][0]['sizes'])->toBe([['name' => 'Medium', 'quantity' => 1]])
+        ->and($plan['cogs_cents'])->toBe(9000)
+        ->and(IngredientMovement::query()->count())->toBe($movementCount);
+
+    $this->ops->settle($partial);
+    $settled = app(OperationsSummary::class)->today($this->ops->branch)['plans'][$this->ops->drinks->id];
+    expect($settled['sales_cents'])->toBe(21000)
+        ->and($settled['items'])->toBe(3)
+        ->and($settled['cogs_cents'])->toBe(9000)
+        ->and(IngredientMovement::query()->count())->toBe($movementCount);
 });

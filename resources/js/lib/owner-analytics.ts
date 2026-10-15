@@ -76,6 +76,7 @@ export type ProductRow = {
 };
 
 export type CashierRow = {
+    operational_orders: number;
     id: number | null;
     name: string;
     transactions: number;
@@ -85,6 +86,7 @@ export type CashierRow = {
     cash: string;
     cashless: string;
     split: string;
+    /** Outstanding balance, including partial Orders; retained under the existing payload key. */
     unpaid: string;
 };
 
@@ -145,6 +147,7 @@ export type PaymentMixData = {
     separate: PaymentMixMethod[];
     totals: { combined: string; separate: string };
     split_pending: string;
+    /** Outstanding Orders and balance, including partial Orders, excluded from Paid Sales. */
     unpaid: { transactions: number; sales: string };
 };
 
@@ -168,6 +171,7 @@ export type Analytics = {
     kpis: {
         sales: Kpi<string>;
         transactions: Kpi<number>;
+        operational_orders: Kpi<number>;
         average_order: Kpi<string>;
         items: Kpi<number>;
         /** Net collections per channel as amounts (Split legs already inside), never a share. */
@@ -189,6 +193,9 @@ export type Analytics = {
         cash_share: number | null;
         cashless_share: number | null;
         orders: { cash: number; cashless: number; split: number; unpaid: number };
+        outstanding_orders: number;
+        outstanding: string;
+        partial_collections: string;
         split: { count: number; total: string; cash: string; cashless: string };
         unallocated: string;
     };

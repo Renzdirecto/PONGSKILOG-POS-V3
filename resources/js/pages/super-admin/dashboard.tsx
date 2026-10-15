@@ -649,7 +649,7 @@ function LatestSessionCard({
                     <span className="grid grid-cols-2 gap-x-3 gap-y-2 text-[12px] tabular-nums">
                         {(
                             [
-                                ['Net sales', peso(session.net_sales)],
+                                ['Paid Sales', peso(session.net_sales)],
                                 ['Orders', String(session.orders)],
                                 ['Cash', peso(session.collections.cash)],
                                 [

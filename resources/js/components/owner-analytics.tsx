@@ -200,7 +200,7 @@ export function KpiCard({
     );
 }
 
-/** The six KPI cards: Total sales, Transactions, Average order, Items sold, Cash sales and Cashless sales. */
+/** Paid Sales metrics and collections, with outstanding and operational Orders stated separately. */
 export function KpiGrid({
     analytics,
     comparison,
@@ -215,20 +215,20 @@ export function KpiGrid({
     const { kpis } = analytics;
     const cards: [string, string, string, Delta | null][] = [
         [
-            'Total sales',
-            'Total sales',
+            'Paid Sales',
+            'Paid Sales',
             kpis.sales.value === null ? '—' : peso(kpis.sales.value),
             kpis.sales.delta,
         ],
         [
-            'Total transactions',
-            'Transactions',
+            'Paid transactions',
+            'Paid transactions',
             (kpis.transactions.value ?? 0).toLocaleString('en-PH'),
             kpis.transactions.delta,
         ],
         [
-            'Average order value',
-            'Average order',
+            'Average paid order',
+            'Average paid order',
             kpis.average_order.value === null
                 ? '—'
                 : peso(kpis.average_order.value),
@@ -241,14 +241,14 @@ export function KpiGrid({
             kpis.items.delta,
         ],
         [
-            'Cash sales',
-            'Cash sales',
+            'Cash collections',
+            'Cash collections',
             kpis.cash_sales.value === null ? '—' : peso(kpis.cash_sales.value),
             kpis.cash_sales.delta,
         ],
         [
-            'Cashless sales',
-            'Cashless sales',
+            'Cashless collections',
+            'Cashless collections',
             kpis.cashless_sales.value === null
                 ? '—'
                 : peso(kpis.cashless_sales.value),
@@ -285,6 +285,16 @@ export function KpiGrid({
                     href={href}
                 />
             ))}
+            <p className="col-span-full text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
+                Fully settled orders only, on the original Store Session
+                business date. Operational orders:{' '}
+                {kpis.operational_orders.value ?? 0} · Outstanding:{' '}
+                {peso(analytics.collections.outstanding)} across{' '}
+                {countLabel(analytics.collections.outstanding_orders, 'order')}{' '}
+                · Partial collections:{' '}
+                {peso(analytics.collections.partial_collections)} (included in
+                collections).
+            </p>
         </section>
     );
 }
@@ -691,7 +701,7 @@ export function PaymentMix({
                                     <span className="text-[11px] text-[#8a8a8a] tabular-nums">
                                         {countLabel(
                                             channel.orders,
-                                            `${channel.label.toLowerCase()}-only order`,
+                                            `fully settled ${channel.label.toLowerCase()}-only order`,
                                         )}
                                     </span>
                                 </span>
@@ -939,9 +949,9 @@ export function PaymentMethodDonut({
                 <p className="text-[11.5px] leading-[1.5] text-[#666] tabular-nums">
                     {countLabel(
                         mix.unpaid.transactions,
-                        'unpaid Pay Later order',
+                        'unpaid or partially paid order',
                     )}{' '}
-                    ({peso(mix.unpaid.sales)}) not in this chart until settled.
+                    ({peso(mix.unpaid.sales)} outstanding) excluded until fully settled.
                 </p>
             )}
             <p className="text-[11px] leading-[1.5] text-[#8a8a8a]">
@@ -1255,13 +1265,13 @@ export function BranchComparison({
                                 scope="col"
                                 className="px-3.5 py-2.5 text-right font-semibold"
                             >
-                                Orders
+                                Operational orders
                             </th>
                             <th
                                 scope="col"
                                 className="px-3.5 py-2.5 text-right font-semibold"
                             >
-                                Sales
+                                Paid Sales
                             </th>
                             <th
                                 scope="col"
@@ -1351,7 +1361,7 @@ export function BranchComparison({
                             {(
                                 [
                                     ['Sessions', String(row.sessions)],
-                                    ['Orders', String(row.orders)],
+                                    ['Operational orders', String(row.orders)],
                                     ['Cash', peso(row.cash)],
                                     ['Cashless', peso(row.cashless)],
                                     [

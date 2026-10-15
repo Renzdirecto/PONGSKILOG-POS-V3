@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\DB;
  * Every figure covers committed Active/Completed Orders of the Store Sessions whose business date (the Manila date the
  * session opened) falls in the period, for one authorized Branch or All Branches:
  *
- * - Total sales = the current final `orders.total` (Phase 16A Net Sales); transactions = those Orders; items sold = their
- *   Order Item quantities; average order = sales ÷ transactions. Voided Orders contribute nothing.
+ * - Paid Sales = the current final `orders.total` of fully settled Orders; transactions and items sold cover only those
+ *   Orders; average order = Paid Sales ÷ paid transactions. Operational Orders and outstanding are reported separately.
  * - Cash and Cashless are net collections from `StoreSessionReconciliation` (Payment.amount − allocated corrections −
  *   payments of voided Orders). A CLOSED session uses its close-time snapshot unless an order filter narrows the Orders.
  *   Split legs already sit inside Cash and Cashless, so Split is explanatory only and never added again. Tendered cash
@@ -34,7 +34,7 @@ use Illuminate\Support\Facades\DB;
  * - The previous period has the same length and granularity; drilling into one Store Session has no comparison.
  * - The default `session` period reports the live Store Session of the scope (otherwise the latest one) over its own
  *   business date and compares it with every Store Session opened the day before, never with one earlier session.
- * - The Cash sales and Cashless sales KPIs are those net collections as amounts; `cashless_share` stays a share.
+ * - The Cash collections and Cashless collections KPIs are those net collections as amounts; `cashless_share` stays a share.
  * - Product rows carry the Size breakdown of the Order Item modifier snapshots (`semantic_role_snapshot = size`);
  *   today's modifier configuration never reinterprets a historical Order.
  *
@@ -45,8 +45,7 @@ use Illuminate\Support\Facades\DB;
  *
  * The Payment method mix is a share of paid sales (₱). By default a Split Order's cash and cashless parts join Cash and
  * Cashless; with Split shown, each Order is classified once by its persisted Payment legs (`paymentClassSql()`):
- * Cash-only, Cashless-only or Split. Either way the paid total is the same and nothing is counted twice; unpaid Pay Later
- * Orders are reported separately.
+ * Cash-only, Cashless-only or Split. Unpaid and partial Orders contribute zero and are reported as outstanding.
  *
  * @phpstan-import-type SessionRow from StoreSessionSalesReport
  *
@@ -54,12 +53,12 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type ProductFigure array{key: string, name: string, category: string, category_id: string|null, quantity: int, orders: int, sales: int}
  * @phpstan-type Tally array{orders: int, sales: int, items: int}
  * @phpstan-type Aggregate array{
- *     totals: array{orders: int, sales: int, items: int, done: int, prep_total: float, prep_count: int},
+ *     totals: array{orders: int, operational_orders: int, outstanding_orders: int, outstanding: int, partial_collections: int, sales: int, items: int, done: int, prep_total: float, prep_count: int},
  *     buckets: array<string, array{orders: int, sales: int}>,
  *     hours: array<int, array{orders: int, sales: int, prep_total: float, prep_count: int}>,
  *     types: array<string, Tally>,
  *     methods: array<string, array{orders: int, sales: int}>,
- *     cashiers: array<int, array{orders: int, sales: int, cash: int, cashless: int, split: int, unpaid: int}>
+ *     cashiers: array<int, array{orders: int, operational_orders: int, sales: int, cash: int, cashless: int, split: int, unpaid: int}>
  * }
  * @phpstan-type Delta array{direction: 'up'|'down'|'flat', text: string, tone: 'good'|'bad'|'neutral'}
  */
@@ -311,7 +310,7 @@ class SalesAnalytics
     private function aggregate(Collection $sessions, ReportPeriod $period, array $filters, bool $previous = false): array
     {
         $aggregate = [
-            'totals' => ['orders' => 0, 'sales' => 0, 'items' => 0, 'done' => 0, 'prep_total' => 0.0, 'prep_count' => 0],
+            'totals' => ['orders' => 0, 'operational_orders' => 0, 'outstanding_orders' => 0, 'outstanding' => 0, 'partial_collections' => 0, 'sales' => 0, 'items' => 0, 'done' => 0, 'prep_total' => 0.0, 'prep_count' => 0],
             'buckets' => array_fill_keys($period->granularity === 'hour' ? [] : $period->bucketKeys($previous), ['orders' => 0, 'sales' => 0]),
             'hours' => [],
             'types' => [],
@@ -329,6 +328,9 @@ class SalesAnalytics
             DB::raw('orders.order_type AS order_type'),
             DB::raw(self::cashierSql().' AS cashier_id'),
             DB::raw(self::paymentClassSql().' AS payment_class'),
+            DB::raw('CASE WHEN ('.OrderMoney::outstandingSql().') = 0 THEN 1 ELSE 0 END AS paid'),
+            DB::raw(OrderMoney::outstandingSql().' AS outstanding'),
+            DB::raw(OrderMoney::settledSql().' AS settled'),
             DB::raw('CAST(ROUND(orders.total * 100) AS BIGINT) AS cents'),
             DB::raw('(SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = orders.id) AS items'),
             DB::raw("CASE WHEN orders.kitchen_status = '".KitchenStatus::Done->value."' THEN 1 ELSE 0 END AS done"),
@@ -340,7 +342,11 @@ class SalesAnalytics
             ->groupBy('session_id', 'hour', 'order_type', 'cashier_id', 'payment_class')
             ->get([
                 'session_id', 'hour', 'order_type', 'cashier_id', 'payment_class',
-                DB::raw('COUNT(*) AS orders'), DB::raw('COALESCE(SUM(cents), 0) AS sales'), DB::raw('COALESCE(SUM(items), 0) AS items'),
+                DB::raw('SUM(paid) AS orders'), DB::raw('COUNT(*) AS operational_orders'),
+                DB::raw('COALESCE(SUM(CASE WHEN paid = 1 THEN cents ELSE 0 END), 0) AS sales'),
+                DB::raw('COALESCE(SUM(CASE WHEN paid = 1 THEN items ELSE 0 END), 0) AS items'),
+                DB::raw('COALESCE(SUM(outstanding), 0) AS outstanding'),
+                DB::raw('COALESCE(SUM(CASE WHEN paid = 0 THEN settled ELSE 0 END), 0) AS partial_collections'),
                 DB::raw('COALESCE(SUM(done), 0) AS done'), DB::raw('COALESCE(SUM(prep_seconds), 0) AS prep_total'), DB::raw('COUNT(prep_seconds) AS prep_count'),
             ]);
 
@@ -355,6 +361,10 @@ class SalesAnalytics
             $cashier = (int) ($group->cashier_id ?? 0);
             $totals = &$aggregate['totals'];
             $totals['orders'] += $orders;
+            $totals['operational_orders'] += (int) $group->operational_orders;
+            $totals['outstanding_orders'] += (int) $group->operational_orders - $orders;
+            $totals['outstanding'] += (int) $group->outstanding;
+            $totals['partial_collections'] += (int) $group->partial_collections;
             $totals['sales'] = ExactMoney::add($totals['sales'], $sales);
             $totals['items'] += $items;
             $totals['done'] += (int) $group->done;
@@ -385,8 +395,10 @@ class SalesAnalytics
             $aggregate['methods'][$class]['orders'] += $orders;
             $aggregate['methods'][$class]['sales'] += $sales;
 
-            $aggregate['cashiers'][$cashier] ??= ['orders' => 0, 'sales' => 0, 'cash' => 0, 'cashless' => 0, 'split' => 0, 'unpaid' => 0];
+            $aggregate['cashiers'][$cashier] ??= ['orders' => 0, 'operational_orders' => 0, 'sales' => 0, 'cash' => 0, 'cashless' => 0, 'split' => 0, 'unpaid' => 0];
             $aggregate['cashiers'][$cashier]['orders'] += $orders;
+            $aggregate['cashiers'][$cashier]['operational_orders'] += (int) $group->operational_orders;
+            $aggregate['cashiers'][$cashier]['unpaid'] += (int) $group->outstanding;
             $aggregate['cashiers'][$cashier]['sales'] += $sales;
             $aggregate['cashiers'][$cashier][in_array($class, ['cash', 'cashless', 'split'], true) ? $class : 'unpaid'] += $sales;
         }
@@ -408,6 +420,7 @@ class SalesAnalytics
             return [];
         }
         $query = $this->eligibleOrders($sessions)
+            ->whereRaw('('.OrderMoney::outstandingSql().') = 0')
             ->join('order_items', 'order_items.order_id', '=', 'orders.id')
             ->leftJoin('products', 'products.id', '=', 'order_items.product_id')
             ->leftJoin('categories', 'categories.id', '=', 'products.category_id');
@@ -490,6 +503,7 @@ class SalesAnalytics
                 'delta' => $previous === null ? null : $this->percentDelta($current['totals']['sales'], $previous['totals']['sales']),
             ],
             'transactions' => $metric($current['totals']['orders'], $previous['totals']['orders'] ?? null),
+            'operational_orders' => $metric($current['totals']['operational_orders'], $previous['totals']['operational_orders'] ?? null),
             'average_order' => [
                 'value' => $currentAverage === null ? null : ExactMoney::decimal($currentAverage),
                 'previous' => $previousAverage === null ? null : ExactMoney::decimal($previousAverage),
@@ -571,7 +585,10 @@ class SalesAnalytics
             'cashless_cents' => $collections['cashless'],
             'cash_share' => $this->share($collections['cash'], $total),
             'cashless_share' => $this->share($collections['cashless'], $total),
-            'orders' => ['cash' => $orders('cash'), 'cashless' => $orders('cashless'), 'split' => $orders('split'), 'unpaid' => $orders('unpaid')],
+            'orders' => ['cash' => $orders('cash'), 'cashless' => $orders('cashless'), 'split' => $orders('split'), 'unpaid' => $current['totals']['outstanding_orders']],
+            'outstanding_orders' => $current['totals']['outstanding_orders'],
+            'outstanding' => ExactMoney::decimal($current['totals']['outstanding']),
+            'partial_collections' => ExactMoney::decimal($current['totals']['partial_collections']),
             'split' => [
                 'count' => $collections['split']['count'],
                 'total' => ExactMoney::signedDecimal($collections['split']['cash'] + $collections['split']['cashless']),
@@ -629,7 +646,7 @@ class SalesAnalytics
      * - `separate` (Include split on): Cash-only, Cashless-only and Split Orders, each Order counted once.
      *
      * Order amounts are the current `orders.total` of the same eligible, filtered Orders as every other figure (voided and
-     * unpaid Pay Later Orders excluded). A Split Order's parts are its Payment legs net of its allocated corrections; a
+     * unpaid and partial Orders excluded). A Split Order's parts are its Payment legs net of its allocated corrections; a
      * correction still pending allocation is reported, never guessed. Shares are basis points in 0.1% steps that add up
      * to exactly 100%.
      *
@@ -659,7 +676,7 @@ class SalesAnalytics
 
         return [
             'basis' => 'sales',
-            'paid_orders' => $count('cash') + $count('cashless') + $count('split'),
+            'paid_orders' => $current['totals']['orders'],
             'split_orders' => $count('split'),
             'combined' => [
                 $row('cash', 'Cash', $combined['cash'], $count('cash') + $count('split'), $count('split'), $combinedShares['cash']),
@@ -676,8 +693,8 @@ class SalesAnalytics
             ],
             'split_pending' => ExactMoney::decimal($legs['pending']),
             'unpaid' => [
-                'transactions' => $count('unpaid'),
-                'sales' => ExactMoney::decimal($sales('unpaid')),
+                'transactions' => $current['totals']['outstanding_orders'],
+                'sales' => ExactMoney::decimal($current['totals']['outstanding']),
             ],
         ];
     }
@@ -695,7 +712,9 @@ class SalesAnalytics
         if ($sessions->isEmpty()) {
             return ['cash' => 0, 'cashless' => 0, 'pending' => 0];
         }
-        $splitOrders = $this->eligibleOrders($sessions)->whereRaw(self::paymentClassSql()." = 'split'")->select('orders.id');
+        $splitOrders = $this->eligibleOrders($sessions)
+            ->whereRaw('('.OrderMoney::outstandingSql().') = 0')
+            ->whereRaw(self::paymentClassSql()." = 'split'")->select('orders.id');
         $this->applyOrderFilters($splitOrders, $filters);
         $payments = DB::table('payments')
             ->whereIn('payments.order_id', $splitOrders)
@@ -826,6 +845,7 @@ class SalesAnalytics
             return [];
         }
         $query = $this->eligibleOrders($sessions)
+            ->whereRaw('('.OrderMoney::outstandingSql().') = 0')
             ->join('order_items', 'order_items.order_id', '=', 'orders.id')
             ->join('order_item_modifiers', 'order_item_modifiers.order_item_id', '=', 'order_items.id')
             ->where('order_item_modifiers.semantic_role_snapshot', 'size');
@@ -883,6 +903,7 @@ class SalesAnalytics
                 'id' => $id > 0 ? $id : null,
                 'name' => $id > 0 ? (string) ($names[$id] ?? 'Former staff') : 'Unattributed',
                 'transactions' => $tally['orders'],
+                'operational_orders' => $tally['operational_orders'],
                 'sales' => ExactMoney::decimal($tally['sales']),
                 'sales_cents' => $tally['sales'],
                 'average' => $tally['orders'] === 0 ? null : ExactMoney::decimal(intdiv(2 * $tally['sales'] + $tally['orders'], 2 * $tally['orders'])),

@@ -29,18 +29,22 @@ class ReportCsvExport
             ['Active filters', $filterLabels === [] ? 'None' : implode(' | ', $filterLabels)],
             [],
             ['Metric', 'This period', 'Previous period'],
-            ['Total sales', $kpis['sales']['value'], $kpis['sales']['previous']],
-            ['Transactions', $kpis['transactions']['value'], $kpis['transactions']['previous']],
+            ['Paid Sales', $kpis['sales']['value'], $kpis['sales']['previous']],
+            ['Paid transactions', $kpis['transactions']['value'], $kpis['transactions']['previous']],
+            ['Operational orders', $kpis['operational_orders']['value'], $kpis['operational_orders']['previous']],
             ['Average order value', $kpis['average_order']['value'], $kpis['average_order']['previous']],
             ['Items sold', $kpis['items']['value'], $kpis['items']['previous']],
-            ['Cash sales (net collections)', $kpis['cash_sales']['value'], $kpis['cash_sales']['previous']],
-            ['Cashless sales (net collections)', $kpis['cashless_sales']['value'], $kpis['cashless_sales']['previous']],
+            ['Cash collections (net)', $kpis['cash_sales']['value'], $kpis['cash_sales']['previous']],
+            ['Cashless collections (net)', $kpis['cashless_sales']['value'], $kpis['cashless_sales']['previous']],
             ['Cashless share %', $share($kpis['cashless_share']['value']), $share($kpis['cashless_share']['previous'])],
             [],
             ['Collections', 'Amount'],
             ['Cash (net)', $analytics['collections']['cash']],
             ['Cashless (net)', $analytics['collections']['cashless']],
             ['Total collected', $analytics['collections']['total']],
+            ['Partial collections (included in collections)', $analytics['collections']['partial_collections']],
+            ['Outstanding balance', $analytics['collections']['outstanding']],
+            ['Orders with outstanding balance', $analytics['collections']['outstanding_orders']],
             ['Split payments (already in Cash and Cashless)', $analytics['collections']['split']['total']],
             ['Corrections pending allocation', $analytics['collections']['unallocated']],
             [],
@@ -55,14 +59,14 @@ class ReportCsvExport
             $rows[] = [$method['label'], $method['amount'], $share($method['share']), $method['orders']];
         }
         $rows[] = ['Split corrections pending allocation', $analytics['payment_mix']['split_pending']];
-        $rows[] = ['Unpaid (Pay Later, not in the mix)', $analytics['payment_mix']['unpaid']['sales'], '', $analytics['payment_mix']['unpaid']['transactions']];
+        $rows[] = ['Outstanding (unpaid and partial, excluded from Paid Sales)', $analytics['payment_mix']['unpaid']['sales'], '', $analytics['payment_mix']['unpaid']['transactions']];
         $rows[] = [];
-        $rows[] = ['Sales trend', 'Sales', 'Transactions', 'Previous sales', 'Previous transactions'];
+        $rows[] = ['Paid Sales trend', 'Paid Sales', 'Paid transactions', 'Previous Paid Sales', 'Previous paid transactions'];
         foreach ($analytics['trend']['buckets'] as $bucket) {
             $rows[] = [$bucket['full'], $bucket['sales'], $bucket['transactions'], $bucket['previous']['sales'] ?? null, $bucket['previous']['transactions'] ?? null];
         }
         $rows[] = [];
-        $rows[] = ['Order type', 'Sales', 'Transactions', 'Items', 'Average order'];
+        $rows[] = ['Order type', 'Paid Sales', 'Paid transactions', 'Paid items', 'Average paid order'];
         foreach ($analytics['order_types'] as $type) {
             $rows[] = [$type['label'], $type['sales'], $type['transactions'], $type['items'], $type['average']];
         }
@@ -77,14 +81,14 @@ class ReportCsvExport
             $rows[] = [$product['name'], $product['category'], $product['quantity'], $product['orders'], $product['sales'], $share($product['share']), $product['average_price']];
         }
         $rows[] = [];
-        $rows[] = ['Hour (Asia/Manila)', 'Sales', 'Transactions'];
+        $rows[] = ['Hour (Asia/Manila)', 'Paid Sales', 'Paid transactions'];
         foreach ($analytics['hours'] as $hour) {
             $rows[] = [$hour['full'], $hour['sales'], $hour['transactions']];
         }
         $rows[] = [];
-        $rows[] = ['Cashier', 'Transactions', 'Sales', 'Average order', 'Cash orders', 'Cashless orders', 'Split orders', 'Unpaid'];
+        $rows[] = ['Cashier', 'Paid transactions', 'Paid Sales', 'Average paid order', 'Cash paid sales', 'Cashless paid sales', 'Split paid sales', 'Outstanding', 'Operational orders'];
         foreach ($analytics['cashiers'] as $cashier) {
-            $rows[] = [$cashier['name'], $cashier['transactions'], $cashier['sales'], $cashier['average'], $cashier['cash'], $cashier['cashless'], $cashier['split'], $cashier['unpaid']];
+            $rows[] = [$cashier['name'], $cashier['transactions'], $cashier['sales'], $cashier['average'], $cashier['cash'], $cashier['cashless'], $cashier['split'], $cashier['unpaid'], $cashier['operational_orders']];
         }
         $rows[] = [];
         $rows[] = ['Kitchen', 'Value'];
@@ -92,13 +96,13 @@ class ReportCsvExport
         $rows[] = ['Average prep time (seconds, committed to ready)', $analytics['kitchen']['average_prep_seconds']];
         if (is_array($analytics['branches'])) {
             $rows[] = [];
-            $rows[] = ['Branch', 'Store Sessions', 'Orders', 'Sales', 'Cash (net)', 'Cashless (net)', 'Expenses'];
+            $rows[] = ['Branch', 'Store Sessions', 'Operational orders', 'Paid Sales', 'Cash (net)', 'Cashless (net)', 'Expenses'];
             foreach ($analytics['branches'] as $branch) {
                 $rows[] = [$branch['branch']['code'].' · '.$branch['branch']['name'], $branch['sessions'], $branch['orders'], $branch['sales'], $branch['cash'], $branch['cashless'], $branch['expenses']];
             }
         }
         $rows[] = [];
-        $rows[] = ['Store Session (all orders)', 'Branch', 'Status', 'Opened by', 'Closed by', 'Orders', 'Net sales', 'Cash', 'Cashless', 'Expenses', 'Expected Cash', 'Expected Cashless', 'Actual Cash', 'Actual Cashless', 'Cash variance', 'Cashless variance'];
+        $rows[] = ['Store Session (all orders)', 'Branch', 'Status', 'Opened by', 'Closed by', 'Operational orders', 'Paid Sales', 'Cash', 'Cashless', 'Expenses', 'Expected Cash', 'Expected Cashless', 'Actual Cash', 'Actual Cashless', 'Cash variance', 'Cashless variance'];
         foreach ($report['sessions'] as $session) {
             $reconciliation = $session['reconciliation'];
             $rows[] = [

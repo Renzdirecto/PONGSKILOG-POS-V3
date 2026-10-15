@@ -174,13 +174,13 @@ test('All Branches aggregates every Branch while a selected Branch reports only 
         ->and(salesReport($qave->branch, reportDay('2026-09-23'))->inertiaProps('report.summary.net_sales'))->toBe('5000.00');
 });
 
-test('Pay Later is a sale before it is a collection', function () {
+test('Pay Later contributes zero Paid Sales until fully settled', function () {
     $scenario = reportScenario('2026-09-23 09:00');
     $order = $scenario->payLater(5);
 
     $unpaid = salesReport($scenario->branch, reportDay('2026-09-23'));
     expect($unpaid->inertiaProps('report.summary'))->toMatchArray([
-        'net_sales' => '500.00', 'orders' => 1, 'cash' => '0.00', 'cashless' => '0.00', 'collected' => '0.00',
+        'net_sales' => '0.00', 'orders' => 1, 'cash' => '0.00', 'cashless' => '0.00', 'collected' => '0.00',
     ]);
 
     $scenario->settle($order, 'cash', '500.00');
